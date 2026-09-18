@@ -1,9 +1,8 @@
-/* Fuji Trip Planner - Cute Pastel Minimal Design System v2 */
-/* Inspired by Dribbble travel planner - soft, cute, muted */
+/* Fuji Trip Planner - Cute Pastel Minimal Design System v2.1 - Cohesive Muted */
+/* All themes are muted low-saturation pastel, cohesive */
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap');
 
 :root {
-  /* Base - Sage Pastel Minimal (default cute) */
   --bg: #fbfaf7;
   --bg-secondary: #f2f4ef;
   --bg-tertiary: #e8ebe4;
@@ -19,7 +18,6 @@
   --border-strong: #d0d9cc;
   --border-light: #eef2eb;
   
-  /* Shadows - super soft, cute */
   --shadow-xs: 0 1px 3px rgba(46,61,47,0.04);
   --shadow-sm: 0 2px 8px rgba(46,61,47,0.06);
   --shadow: 0 4px 16px rgba(46,61,47,0.08);
@@ -28,7 +26,7 @@
   --shadow-soft: 0 8px 32px rgba(46,61,47,0.06);
   --shadow-inner: inset 0 1px 0 rgba(255,255,255,0.8);
 
-  /* Primary - Muted Pastel Green (default cute) */
+  /* Default sage - muted pastel green */
   --primary: #8bb89a;
   --primary-hover: #7aa688;
   --primary-light: #e6f0e8;
@@ -36,17 +34,15 @@
   --primary-dark: #6b8f79;
   --primary-soft: rgba(139,184,154,0.15);
   
-  /* Accents - muted pastel palette */
   --accent-sage: #8bb89a;
   --accent-moss: #a8c5b5;
   --accent-clay: #d4b5a0;
   --accent-sand: #e8d5c4;
-  --accent-blush: #e8b5b5;
-  --accent-sky: #a8c5d8;
-  --accent-lavender: #b8b5d8;
-  --accent-lemon: #e8e0a0;
+  --accent-blush: #c5a0a8;
+  --accent-sky: #8aa8b5;
+  --accent-lavender: #a0a0b5;
+  --accent-lemon: #c5b5a0;
   
-  /* Gradients - cute muted */
   --gradient-primary: linear-gradient(135deg, #8bb89a 0%, #a8c5b5 100%);
   --gradient-sage: linear-gradient(135deg, #8bb89a 0%, #b8d4c2 100%);
   --gradient-fuji: linear-gradient(135deg, #8bb89a 0%, #a8c5b5 50%, #d4c5b5 100%);
@@ -54,20 +50,18 @@
   --gradient-mesh: radial-gradient(at 20% 30%, rgba(139,184,154,0.10) 0%, transparent 50%), radial-gradient(at 80% 20%, rgba(212,181,160,0.08) 0%, transparent 50%), radial-gradient(at 50% 80%, rgba(168,197,216,0.06) 0%, transparent 50%);
   --gradient-glass: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.6) 100%);
   
-  /* Semantic - muted */
   --success: #7da68a;
   --success-light: #e6f0e8;
   --success-bg: #f0f6f1;
-  --warning: #d4a574;
-  --warning-light: #f5e6d3;
+  --warning: #b5a08a;
+  --warning-light: #f0e6d3;
   --warning-bg: #fdf6ee;
-  --danger: #d48a8a;
-  --danger-light: #f5d3d3;
+  --danger: #b58a8a;
+  --danger-light: #f0d3d3;
   --danger-bg: #fdf0f0;
-  --info: #8ab5c5;
+  --info: #8aa8b5;
   --info-light: #d3e6ef;
 
-  /* Spacing - more breathing */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -78,7 +72,6 @@
   --space-10: 40px;
   --space-12: 48px;
 
-  /* Radius - extra cute rounded */
   --radius-xs: 8px;
   --radius-sm: 12px;
   --radius: 16px;
@@ -88,7 +81,6 @@
   --radius-2xl: 40px;
   --radius-full: 9999px;
 
-  /* Typography - cute modern */
   --font-sans: "Plus Jakarta Sans", "Noto Sans Thai", system-ui, -apple-system, sans-serif;
   --font-display: "Fraunces", "Plus Jakarta Sans", serif;
   --font-mono: "Geist Mono", monospace;
@@ -103,69 +95,79 @@
   --leading-tight: 1.1;
   --leading-snug: 1.3;
 
-  /* Layout */
   --header-h: 72px;
   --bottom-nav-h: 80px;
   --content-max: 1280px;
   --sidebar-w: 280px;
 }
 
-/* Theme Presets - User can choose */
+/* Theme Presets - All cohesive muted pastel */
 [data-color="sage"] {
   --primary: #8bb89a;
   --primary-hover: #7aa688;
   --primary-light: #e6f0e8;
+  --primary-soft: rgba(139,184,154,0.15);
   --gradient-primary: linear-gradient(135deg, #8bb89a 0%, #a8c5b5 100%);
   --gradient-fuji: linear-gradient(135deg, #8bb89a 0%, #b8d4c2 100%);
-  --accent: #d4b5a0;
+  --accent: #a8c5b5;
 }
 
 [data-color="fuji"] {
-  --primary: #8b9cf0;
-  --primary-hover: #7a8ce0;
-  --primary-light: #e6e8f5;
-  --gradient-primary: linear-gradient(135deg, #8b9cf0 0%, #b5a0f0 50%, #f0a0b5 100%);
-  --gradient-fuji: linear-gradient(135deg, #8b9cf0 0%, #b5a0f0 50%, #f0a0b5 100%);
-  --accent: #f0a0b5;
+  /* Fuji Mist - muted sage-gray-blue, cohesive with sage, not bright purple */
+  --primary: #8aa89a;
+  --primary-hover: #7a988a;
+  --primary-light: #e4ece7;
+  --primary-soft: rgba(138,168,154,0.15);
+  --gradient-primary: linear-gradient(135deg, #8aa89a 0%, #a8b5a0 50%, #b5c5b5 100%);
+  --gradient-fuji: linear-gradient(135deg, #8aa89a 0%, #a0b5a8 100%);
+  --accent: #b5c5b5;
 }
 
 [data-color="sakura"] {
-  --primary: #e8a0b5;
-  --primary-hover: #d48fa3;
-  --primary-light: #f5d3dd;
-  --gradient-primary: linear-gradient(135deg, #e8a0b5 0%, #e8b5a0 100%);
-  --gradient-fuji: linear-gradient(135deg, #e8a0b5 0%, #e8c5a0 100%);
-  --accent: #e8c5a0;
+  /* Sakura Muted - dusty rose, low saturation */
+  --primary: #b89aa0;
+  --primary-hover: #a68a90;
+  --primary-light: #f0e4e6;
+  --primary-soft: rgba(184,154,160,0.15);
+  --gradient-primary: linear-gradient(135deg, #b89aa0 0%, #c5a8a0 100%);
+  --gradient-fuji: linear-gradient(135deg, #b89aa0 0%, #c5b5a0 100%);
+  --accent: #c5b5a0;
 }
 
 [data-color="ocean"] {
-  --primary: #8ab5c5;
-  --primary-hover: #7aa3b3;
-  --primary-light: #d3e6ef;
-  --gradient-primary: linear-gradient(135deg, #8ab5c5 0%, #a0c5d4 100%);
-  --gradient-fuji: linear-gradient(135deg, #8ab5c5 0%, #a0d4c5 100%);
-  --accent: #a0d4c5;
+  /* Ocean Mist - muted blue-gray */
+  --primary: #8aa8b5;
+  --primary-hover: #7a98a5;
+  --primary-light: #e0eaef;
+  --primary-soft: rgba(138,168,181,0.15);
+  --gradient-primary: linear-gradient(135deg, #8aa8b5 0%, #a0b5c5 100%);
+  --gradient-fuji: linear-gradient(135deg, #8aa8b5 0%, #a0b5b5 100%);
+  --accent: #a0b5c5;
 }
 
 [data-color="sunset"] {
-  --primary: #d4a574;
-  --primary-hover: #c29464;
-  --primary-light: #f5e6d3;
-  --gradient-primary: linear-gradient(135deg, #d4a574 0%, #e8b5a0 100%);
-  --gradient-fuji: linear-gradient(135deg, #d4a574 0%, #e8c5a0 100%);
-  --accent: #e8b5a0;
+  /* Sunset Sand - muted warm beige */
+  --primary: #b5a08a;
+  --primary-hover: #a5907a;
+  --primary-light: #f0e8e0;
+  --primary-soft: rgba(181,160,138,0.15);
+  --gradient-primary: linear-gradient(135deg, #b5a08a 0%, #c5b5a0 100%);
+  --gradient-fuji: linear-gradient(135deg, #b5a08a 0%, #c5b5a0 100%);
+  --accent: #c5b5a0;
 }
 
 [data-color="lavender"] {
-  --primary: #a8a0c5;
-  --primary-hover: #978fb3;
-  --primary-light: #e6e0f0;
-  --gradient-primary: linear-gradient(135deg, #a8a0c5 0%, #b5a0d4 100%);
-  --gradient-fuji: linear-gradient(135deg, #a8a0c5 0%, #c5a0d4 100%);
-  --accent: #c5a0d4;
+  /* Lavender Fog - muted gray-lavender */
+  --primary: #9a9ab5;
+  --primary-hover: #8a8aa5;
+  --primary-light: #e6e6f0;
+  --primary-soft: rgba(154,154,181,0.15);
+  --gradient-primary: linear-gradient(135deg, #9a9ab5 0%, #a8a8c5 100%);
+  --gradient-fuji: linear-gradient(135deg, #9a9ab5 0%, #b5b5c5 100%);
+  --accent: #b5b5c5;
 }
 
-/* Dark mode - muted dark sage */
+/* Dark mode - improved contrast, keep muted sage vibe */
 [data-theme="dark"] {
   --bg: #1a221b;
   --bg-secondary: #232e24;
@@ -205,13 +207,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: "ss01", "ss02";
   overflow-x: hidden;
+  transition: background 0.3s ease, color 0.3s ease;
 }
 
-/* Cute scrollbar */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: var(--bg-secondary); border-radius: var(--radius-full); }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-full); border: 2px solid var(--bg-secondary); }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
 
-/* Selection cute */
 ::selection { background: var(--primary-light); color: var(--primary-dark); }
