@@ -1,4 +1,4 @@
-// Firebase initialization - Modular v9+ - Optimized v2.3 with hardcoded config support
+// Firebase initialization - v2.4 - Free tier without Storage support
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, setPersistence, browserLocalPersistence, browserSessionPersistence, onAuthStateChanged, signInWithEmailAndPassword, signInWithCustomToken, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, enableIndexedDbPersistence, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -6,7 +6,6 @@ import { getStorage } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js';
 import { firebaseConfig as hardcodedConfig, isConfigHardcoded } from './firebase.config.js';
 
-// Placeholder config
 const placeholderConfig = {
   apiKey: "__FIREBASE_API_KEY__",
   authDomain: "__FIREBASE_AUTH_DOMAIN__",
@@ -27,27 +26,17 @@ function checkConfigured(cfg) {
   return true;
 }
 
-// Try multiple sources in priority order:
-// 1. window.__FIREBASE_CONFIG__ (for testing / URL param)
-// 2. Hardcoded config from firebase.config.js (if isConfigHardcoded true and valid)
-// 3. localStorage fuji_firebase_config (legacy)
-// 4. Placeholder (will fail check)
 let finalConfig = placeholderConfig;
 let configSource = 'placeholder';
 
 try {
-  // Source 1: window override
   if (window.__FIREBASE_CONFIG__ && checkConfigured(window.__FIREBASE_CONFIG__)) {
     finalConfig = window.__FIREBASE_CONFIG__;
     configSource = 'window';
-  }
-  // Source 2: Hardcoded file
-  else if (isConfigHardcoded && checkConfigured(hardcodedConfig)) {
+  } else if (isConfigHardcoded && checkConfigured(hardcodedConfig)) {
     finalConfig = hardcodedConfig;
     configSource = 'hardcoded';
-  }
-  // Source 3: localStorage
-  else {
+  } else {
     const saved = localStorage.getItem('fuji_firebase_config');
     if (saved) {
       try {
@@ -76,28 +65,41 @@ export const firebaseConfigStatus = {
 };
 
 if (typeof window !== 'undefined') {
-  console.log('[Firebase] Configured:', isFirebaseConfigured, 'Source:', configSource, 'Missing:', firebaseConfigStatus.missing);
+  console.log('[Firebase] Configured:', isFirebaseConfigured, 'Source:', configSource);
   if (!isFirebaseConfigured) {
-    console.warn('[Firebase] Not configured - will show config screen. To fix: edit src/js/firebase.config.js with real config and push');
-  } else {
-    console.log(`[Firebase] Using config from ${configSource} - login will work directly without browser storage prompt`);
+    console.warn('[Firebase] Not configured - will show config screen');
   }
 }
 
 let app = null, auth = null, db = null, storage = null, functions = null;
+let storageAvailable = false;
 
 if (isFirebaseConfigured) {
   try {
     app = initializeApp(finalConfig);
     auth = getAuth(app);
     db = getFirestore(app);
-    storage = getStorage(app);
-    functions = getFunctions(app, 'asia-southeast1');
+    // Storage is optional - try to init but don't fail if not available (free tier)
+    try {
+      storage = getStorage(app);
+      storageAvailable = true;
+      console.log('[Firebase] Storage initialized - available');
+    } catch (storageErr) {
+      console.warn('[Firebase] Storage not available (free tier without Storage):', storageErr.message);
+      storage = null;
+      storageAvailable = false;
+    }
+    try {
+      functions = getFunctions(app, 'asia-southeast1');
+    } catch (fnErr) {
+      console.warn('[Firebase] Functions not available:', fnErr.message);
+      functions = null;
+    }
 
     const enablePersistence = () => {
       enableIndexedDbPersistence(db).catch(err => {
         if (err.code !== 'failed-precondition' && err.code !== 'unimplemented') {
-          console.warn('Persistence failed:', err.code, err.message);
+          console.warn('Persistence failed:', err.code);
         }
       });
     };
@@ -108,16 +110,15 @@ if (isFirebaseConfigured) {
         setTimeout(enablePersistence, 1000);
       }
     }
-    console.log('[Firebase] Initialized OK from', configSource);
+    console.log('[Firebase] Initialized OK from', configSource, 'Storage:', storageAvailable ? 'yes' : 'no (free tier fallback)');
   } catch (e) {
     console.error('Firebase init failed:', e.message, e.code);
     app = null; auth = null; db = null; storage = null; functions = null;
   }
-} else {
-  console.log('[Firebase] Skipping init - not configured');
 }
 
 export { app, auth, db, storage, functions, serverTimestamp };
+export const isStorageAvailable = storageAvailable;
 export { onAuthStateChanged, signInWithEmailAndPassword, signInWithCustomToken, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence, httpsCallable };
 
 export const syncState = {
@@ -145,20 +146,21 @@ export function getAuthErrorMessage(error) {
   const msg = error?.message || '';
   
   if (code.includes('network-request-failed') || msg.includes('network')) {
-    return `🌐 เชื่อมต่อ Firebase ไม่ได้ (network-request-failed)\n\nวิธีแก้:\n1. ตรวจสอบ Internet\n2. ตรวจสอบ Firebase Config ถูกต้องไหม\n3. Firebase Console > Authentication > Settings > Authorized domains > เพิ่ม ${location.hostname}\n4. เปิด Email/Password provider\n5. ปิด AdBlock/VPN\n\nError: ${code} ${msg}`;
+    return `🌐 เชื่อมต่อ Firebase ไม่ได้\nวิธีแก้: ตรวจ Internet, Authorized domains เพิ่ม ${location.hostname}, เปิด Email/Password\n\n${code} ${msg}`;
   }
-  if (code.includes('invalid-api-key')) {
-    return `🔑 API Key ไม่ถูกต้อง\n${code}`;
-  }
+  if (code.includes('invalid-api-key')) return `🔑 API Key ไม่ถูกต้อง\n${code}`;
   if (code.includes('user-not-found')) return '❌ ไม่พบผู้ใช้นี้';
   if (code.includes('wrong-password') || code.includes('invalid-credential')) return '❌ อีเมลหรือรหัสผ่านไม่ถูกต้อง';
-  if (code.includes('too-many-requests')) return '⏳ ลองมากเกินไป กรุณารอสักครู่';
+  if (code.includes('too-many-requests')) return '⏳ ลองมากเกินไป รอสักครู่';
   if (code.includes('invalid-email')) return '❌ อีเมลไม่ถูกต้อง';
   if (code.includes('permission-denied') || code.includes('PERMISSION_DENIED')) {
-    return `🔒 ไม่มีสิทธิ์ - ตรวจสอบ Firestore Rules\nต้อง deploy rules ใหม่\n\n${code} ${msg}`;
+    return `🔒 ไม่มีสิทธิ์ - deploy Firestore Rules ใหม่\n${code} ${msg}`;
+  }
+  if (code.includes('storage/unauthorized') || code.includes('storage/unknown') || code.includes('bucket-not-found')) {
+    return `📦 Storage ไม่พร้อมใช้งาน (ฟรี tier) - จะใช้สีธีมแทนภาพปก\n${code}`;
   }
   if (code.includes('auth-domain-config-required') || code.includes('unauthorized-domain')) {
-    return `🔒 Domain ไม่ได้รับอนุญาต\nเพิ่ม ${location.hostname} ใน Firebase Console > Auth > Authorized domains\n\n${code}`;
+    return `🔒 Domain ไม่ได้รับอนุญาต เพิ่ม ${location.hostname} ใน Auth > Authorized domains\n${code}`;
   }
   return `❌ ${code ? code + ': ' : ''}${msg || 'Login failed'}`;
 }
