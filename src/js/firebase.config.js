@@ -9,23 +9,13 @@
 //
 // ถ้าไม่ใส่ config ตรงนี้ ระบบจะลองอ่านจาก localStorage (วิธีเก่า) หรือแสดงหน้า config
 
+// วางใน src/js/firebase.config.js แล้ว push
 export const firebaseConfig = {
-  // ตัวอย่าง - แทนค่าจริงตรงนี้
-  // apiKey: "AIzaSy...",
-  // authDomain: "your-project.firebaseapp.com",
-  // projectId: "your-project-id",
-  // storageBucket: "your-project.appspot.com",
-  // messagingSenderId: "1234567890",
-  // appId: "1:1234567890:web:abcdef"
-
-  // ปล่อยว่างไว้ถ้ายังไม่มี config - จะใช้วิธี localStorage หรือหน้า config
-  apiKey: "AIzaSyDiJeIRBoE0QBxH8COoCAWQsPS3sH-ljvE",
-  authDomain: "trip-manager-93b22.firebaseapp.com",
-  projectId: "trip-manager-93b22",
-  storageBucket: "trip-manager-93b22.firebasestorage.app",
-  messagingSenderId: "1022352508207",
-  appId: "1:1022352508207:web:76e1cd0748c30343074dda",
+  "apiKey": "AIzaSyDiJeIRBoE0QBxH8COoCAWQsPS3sH-ljvE\"",
+  "authDomain": "rip-manager-93b22.firebaseapp.com",
+  "projectId": "trip-manager-93b22",
+  "storageBucket": "trip-manager-93b22.firebasestorage.app",
+  "messagingSenderId": "022352508207",
+  "appId": "1:1022352508207:web:76e1cd0748c30343074dda"
 };
-
-// ถ้าใส่ config จริงแล้ว ให้ตั้งเป็น true เพื่อบอกว่า config พร้อม
-export const isConfigHardcoded = false;
+export const isConfigHardcoded = true;
