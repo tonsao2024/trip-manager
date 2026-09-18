@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Unit Tests</title></head><body>
+<h1>Running unit tests - check console</h1>
+<script type="module">
+import { testScheduling } from './unit/scheduling.test.js';
+import { testSplit } from './unit/split.test.js';
+import { testSettlement } from './unit/settlement.test.js';
+import { testCurrency } from './unit/currency.test.js';
+try {
+  testScheduling();
+  testSplit();
+  testSettlement();
+  testCurrency();
+  document.body.innerHTML += '<p style="color:green">All tests passed! Check console for details</p>';
+} catch (e) {
+  document.body.innerHTML += `<p style="color:red">Failed: ${e.message}</p><pre>${e.stack}</pre>`;
+  console.error(e);
+}
+</script>
+</body></html>

@@ -1,0 +1,69 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isTripMember(tripId) {
+      return isAuthenticated() && (
+        firestore.exists(/databases/(default)/documents/trips/$(tripId)/members/$(request.auth.uid)) ||
+        firestore.get(/databases/(default)/documents/trips/$(tripId)).data.memberUids.hasAny([request.auth.uid])
+      );
+    }
+
+    function isTripAdmin(tripId) {
+      return isAuthenticated() && (
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'super_admin' ||
+        firestore.get(/databases/(default)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.role in ['trip_admin', 'super_admin']
+      );
+    }
+
+    // Avatars - user can upload own
+    match /avatars/{userId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId
+        && request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Trip covers
+    match /trips/{tripId}/covers/{fileName} {
+      allow read: if isTripMember(tripId);
+      allow write: if isTripAdmin(tripId)
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Place images
+    match /trips/{tripId}/places/{placeId}/{fileName} {
+      allow read: if isTripMember(tripId);
+      allow write: if isTripMember(tripId)
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Expense receipts
+    match /trips/{tripId}/expenses/{expenseId}/receipts/{fileId} {
+      allow read: if isTripMember(tripId);
+      allow write: if isTripMember(tripId)
+        && request.resource.size < 5 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*') || request.resource.contentType == 'application/pdf');
+      allow delete: if isTripAdmin(tripId);
+    }
+
+    // Settlement proofs
+    match /trips/{tripId}/settlements/{settlementId}/proofs/{fileId} {
+      allow read: if isTripMember(tripId);
+      allow write: if isTripMember(tripId)
+        && request.resource.size < 5 * 1024 * 1024;
+      allow delete: if isTripAdmin(tripId);
+    }
+
+    // Deny all else
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

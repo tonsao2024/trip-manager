@@ -1,0 +1,153 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
+    }
+
+    function isTripMember(tripId) {
+      return isAuthenticated() && (
+        isSuperAdmin() ||
+        exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/trips/$(tripId)) && get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids.hasAny([request.auth.uid]))
+      );
+    }
+
+    function getMemberRole(tripId) {
+      return get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.role;
+    }
+
+    function isTripAdmin(tripId) {
+      return isSuperAdmin() || (isTripMember(tripId) && getMemberRole(tripId) in ['trip_admin', 'super_admin']);
+    }
+
+    function hasPermission(tripId, perm) {
+      return isTripAdmin(tripId) || (isTripMember(tripId) && get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.permissions[perm] == true);
+    }
+
+    // Users collection - only self or super admin
+    match /users/{uid} {
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isSuperAdmin());
+      allow write: if isSuperAdmin() || (isAuthenticated() && request.auth.uid == uid && request.resource.data.role == resource.data.role);
+    }
+
+    // loginAccounts - never allow client read, only via cloud functions
+    match /loginAccounts/{username} {
+      allow read, write: if false;
+    }
+
+    // Trips
+    match /trips/{tripId} {
+      allow read: if isTripMember(tripId);
+      allow create: if isAuthenticated();
+      allow update: if isTripAdmin(tripId);
+      allow delete: if isSuperAdmin();
+
+      // Members
+      match /members/{memberId} {
+        allow read: if isTripMember(tripId);
+        allow create: if isTripAdmin(tripId);
+        allow update: if isTripAdmin(tripId) || (isAuthenticated() && request.auth.uid == memberId && request.resource.data.role == resource.data.role);
+        allow delete: if isTripAdmin(tripId);
+        // Prevent self role escalation
+        allow update: if isAuthenticated() && request.auth.uid == memberId && request.resource.data.role == resource.data.role;
+      }
+
+      // Days (optional grouping)
+      match /days/{dayId} {
+        allow read: if isTripMember(tripId);
+        allow write: if isTripAdmin(tripId) || hasPermission(tripId, 'canEditItinerary');
+      }
+
+      // Itinerary Items
+      match /itineraryItems/{itemId} {
+        allow read: if isTripMember(tripId);
+        allow create: if hasPermission(tripId, 'canEditItinerary') || isTripAdmin(tripId);
+        allow update: if (hasPermission(tripId, 'canEditItinerary') || isTripAdmin(tripId))
+          && request.resource.data.version == resource.data.version + 1
+          && request.resource.data.title is string
+          && request.resource.data.durationMinutes >= 0
+          && request.resource.data.travelToNextMinutes >= 0;
+        allow delete: if isTripAdmin(tripId) || hasPermission(tripId, 'canEditItinerary');
+      }
+
+      // Expenses
+      match /expenses/{expenseId} {
+        allow read: if isTripMember(tripId);
+        allow create: if hasPermission(tripId, 'canEditExpense') || isTripAdmin(tripId);
+        allow update: if (hasPermission(tripId, 'canEditExpense') || isTripAdmin(tripId))
+          && request.resource.data.netTotalMinor >= 0
+          && request.resource.data.subtotalMinor >= 0;
+        allow delete: if false; // Use voided status
+
+        match /lineItems/{lineItemId} {
+          allow read: if isTripMember(tripId);
+          allow write: if hasPermission(tripId, 'canEditExpense') || isTripAdmin(tripId);
+        }
+      }
+
+      // Settlements
+      match /settlements/{settlementId} {
+        allow read: if isTripMember(tripId);
+        allow create: if isTripAdmin(tripId) || hasPermission(tripId, 'canEditExpense');
+        allow update: if isTripAdmin(tripId);
+        allow delete: if isSuperAdmin();
+
+        match /payments/{paymentId} {
+          allow read: if isTripMember(tripId);
+          allow create: if isTripMember(tripId);
+          allow update, delete: if isTripAdmin(tripId);
+        }
+      }
+
+      // Categories
+      match /categories/{categoryId} {
+        allow read: if isTripMember(tripId);
+        allow write: if isTripAdmin(tripId);
+      }
+
+      // Cards
+      match /cards/{cardId} {
+        allow read: if isTripMember(tripId);
+        allow write: if isTripAdmin(tripId);
+        // Ensure no full card number stored
+        allow create: if request.resource.data.keys().hasAll(['last4']) && !request.resource.data.keys().hasAny(['fullNumber', 'cvv']);
+        allow update: if !request.resource.data.keys().hasAny(['fullNumber', 'cvv']);
+      }
+
+      // Exchange Rates
+      match /exchangeRates/{rateId} {
+        allow read: if isTripMember(tripId);
+        allow write: if isTripAdmin(tripId);
+      }
+
+      // Settings
+      match /settings/{settingId} {
+        allow read: if isTripMember(tripId);
+        allow write: if isTripAdmin(tripId);
+      }
+
+      // Activity Logs
+      match /activityLogs/{logId} {
+        allow read: if isTripAdmin(tripId) || isSuperAdmin();
+        allow create: if isTripMember(tripId);
+        allow update, delete: if false;
+      }
+
+      // Imports
+      match /imports/{importId} {
+        allow read: if isTripAdmin(tripId);
+        allow create: if isTripAdmin(tripId);
+        allow update: if isTripAdmin(tripId);
+        allow delete: if isSuperAdmin();
+      }
+    }
+  }
+}
