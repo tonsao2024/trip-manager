@@ -1,12 +1,13 @@
-// Firebase initialization - Modular v9+ - Optimized v2.2
+// Firebase initialization - Modular v9+ - Optimized v2.3 with hardcoded config support
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, setPersistence, browserLocalPersistence, browserSessionPersistence, onAuthStateChanged, signInWithEmailAndPassword, signInWithCustomToken, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, enableIndexedDbPersistence, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { getStorage } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js';
+import { firebaseConfig as hardcodedConfig, isConfigHardcoded } from './firebase.config.js';
 
 // Placeholder config
-const firebaseConfig = {
+const placeholderConfig = {
   apiKey: "__FIREBASE_API_KEY__",
   authDomain: "__FIREBASE_AUTH_DOMAIN__",
   projectId: "__FIREBASE_PROJECT_ID__",
@@ -14,8 +15,6 @@ const firebaseConfig = {
   messagingSenderId: "__FIREBASE_MESSAGING_SENDER_ID__",
   appId: "__FIREBASE_APP_ID__"
 };
-
-const finalConfig = window.__FIREBASE_CONFIG__ || firebaseConfig;
 
 function checkConfigured(cfg) {
   if (!cfg) return false;
@@ -28,19 +27,61 @@ function checkConfigured(cfg) {
   return true;
 }
 
+// Try multiple sources in priority order:
+// 1. window.__FIREBASE_CONFIG__ (for testing / URL param)
+// 2. Hardcoded config from firebase.config.js (if isConfigHardcoded true and valid)
+// 3. localStorage fuji_firebase_config (legacy)
+// 4. Placeholder (will fail check)
+let finalConfig = placeholderConfig;
+let configSource = 'placeholder';
+
+try {
+  // Source 1: window override
+  if (window.__FIREBASE_CONFIG__ && checkConfigured(window.__FIREBASE_CONFIG__)) {
+    finalConfig = window.__FIREBASE_CONFIG__;
+    configSource = 'window';
+  }
+  // Source 2: Hardcoded file
+  else if (isConfigHardcoded && checkConfigured(hardcodedConfig)) {
+    finalConfig = hardcodedConfig;
+    configSource = 'hardcoded';
+  }
+  // Source 3: localStorage
+  else {
+    const saved = localStorage.getItem('fuji_firebase_config');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (checkConfigured(parsed)) {
+          finalConfig = parsed;
+          configSource = 'localStorage';
+        }
+      } catch {}
+    }
+  }
+} catch (e) {
+  console.warn('Config loading error:', e);
+}
+
 export const isFirebaseConfigured = checkConfigured(finalConfig);
 export const firebaseConfigStatus = {
   configured: isFirebaseConfigured,
+  source: configSource,
   hasOverride: !!window.__FIREBASE_CONFIG__,
+  isHardcoded: configSource === 'hardcoded',
   missing: (() => {
     const required = ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId'];
-    return required.filter(k => !finalConfig[k] || String(finalConfig[k]).startsWith('__'));
+    return required.filter(k => !finalConfig[k] || String(finalConfig[k]).startsWith('__') || !String(finalConfig[k]).trim());
   })()
 };
 
 if (typeof window !== 'undefined') {
-  console.log('[Firebase] Configured:', isFirebaseConfigured, 'Override:', !!window.__FIREBASE_CONFIG__, 'Missing:', firebaseConfigStatus.missing);
-  if (!isFirebaseConfigured) console.warn('[Firebase] Not configured - showing config screen');
+  console.log('[Firebase] Configured:', isFirebaseConfigured, 'Source:', configSource, 'Missing:', firebaseConfigStatus.missing);
+  if (!isFirebaseConfigured) {
+    console.warn('[Firebase] Not configured - will show config screen. To fix: edit src/js/firebase.config.js with real config and push');
+  } else {
+    console.log(`[Firebase] Using config from ${configSource} - login will work directly without browser storage prompt`);
+  }
 }
 
 let app = null, auth = null, db = null, storage = null, functions = null;
@@ -53,7 +94,6 @@ if (isFirebaseConfigured) {
     storage = getStorage(app);
     functions = getFunctions(app, 'asia-southeast1');
 
-    // Persistence - non-blocking, use requestIdleCallback if available
     const enablePersistence = () => {
       enableIndexedDbPersistence(db).catch(err => {
         if (err.code !== 'failed-precondition' && err.code !== 'unimplemented') {
@@ -68,7 +108,7 @@ if (isFirebaseConfigured) {
         setTimeout(enablePersistence, 1000);
       }
     }
-    console.log('[Firebase] Initialized OK');
+    console.log('[Firebase] Initialized OK from', configSource);
   } catch (e) {
     console.error('Firebase init failed:', e.message, e.code);
     app = null; auth = null; db = null; storage = null; functions = null;
@@ -100,23 +140,25 @@ if (typeof window !== 'undefined') {
   window.addEventListener('offline', () => syncState.set('offline'));
 }
 
-// Helper to get user-friendly auth error
 export function getAuthErrorMessage(error) {
   const code = error?.code || '';
   const msg = error?.message || '';
   
   if (code.includes('network-request-failed') || msg.includes('network')) {
-    return `🌐 เชื่อมต่อ Firebase ไม่ได้ (network-request-failed)\n\nวิธีแก้:\n1. ตรวจสอบ Internet\n2. ตรวจสอบ Firebase Config ถูกต้องไหม (apiKey ต้องขึ้นต้น AIza...)\n3. ไป Firebase Console > Authentication > Settings > Authorized domains > เพิ่ม ${location.hostname}\n4. เปิด Authentication > Email/Password ให้ Enabled\n5. ลองปิด AdBlock / VPN\n\nError: ${code} ${msg}`;
+    return `🌐 เชื่อมต่อ Firebase ไม่ได้ (network-request-failed)\n\nวิธีแก้:\n1. ตรวจสอบ Internet\n2. ตรวจสอบ Firebase Config ถูกต้องไหม\n3. Firebase Console > Authentication > Settings > Authorized domains > เพิ่ม ${location.hostname}\n4. เปิด Email/Password provider\n5. ปิด AdBlock/VPN\n\nError: ${code} ${msg}`;
   }
   if (code.includes('invalid-api-key')) {
-    return `🔑 API Key ไม่ถูกต้อง\nตรวจสอบ Firebase Config ใน localStorage ว่า apiKey ถูกต้อง\n\n${code}`;
+    return `🔑 API Key ไม่ถูกต้อง\n${code}`;
   }
   if (code.includes('user-not-found')) return '❌ ไม่พบผู้ใช้นี้';
   if (code.includes('wrong-password') || code.includes('invalid-credential')) return '❌ อีเมลหรือรหัสผ่านไม่ถูกต้อง';
   if (code.includes('too-many-requests')) return '⏳ ลองมากเกินไป กรุณารอสักครู่';
   if (code.includes('invalid-email')) return '❌ อีเมลไม่ถูกต้อง';
+  if (code.includes('permission-denied') || code.includes('PERMISSION_DENIED')) {
+    return `🔒 ไม่มีสิทธิ์ - ตรวจสอบ Firestore Rules\nต้อง deploy rules ใหม่\n\n${code} ${msg}`;
+  }
   if (code.includes('auth-domain-config-required') || code.includes('unauthorized-domain')) {
-    return `🔒 Domain นี้ไม่ได้รับอนุญาต\nไปที่ Firebase Console > Authentication > Settings > Authorized domains\nเพิ่ม: ${location.hostname}\n\n${code}`;
+    return `🔒 Domain ไม่ได้รับอนุญาต\nเพิ่ม ${location.hostname} ใน Firebase Console > Auth > Authorized domains\n\n${code}`;
   }
   return `❌ ${code ? code + ': ' : ''}${msg || 'Login failed'}`;
 }

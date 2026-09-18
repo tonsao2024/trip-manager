@@ -401,20 +401,40 @@ function renderConfigNeeded() {
       <div class="card p-8">
         <div class="text-center mb-6">${renderFujiMascot('normal', 120)}</div>
         <h1 class="text-2xl font-bold mb-2" style="font-family: var(--font-display);">ตั้งค่า Firebase 🌿</h1>
-        <p class="text-sm text-[var(--text-secondary)] mb-6">วาง Config ครั้งเดียว เก็บใน Browser — โทนพาสเทล muted ทั้งหมดเข้าพวกกันแล้ว!</p>
+        <p class="text-sm text-[var(--text-secondary)] mb-2">เลือกวิธีตั้งค่า 1 ใน 2 แบบ:</p>
+        
+        <div class="grid md:grid-cols-2 gap-4 mb-6">
+          <div class="p-4 rounded-xl border-2 border-emerald-200 bg-emerald-50">
+            <h3 class="font-bold text-sm mb-1">✅ แบบที่ 1: Hardcode (แนะนำ)</h3>
+            <p class="text-[11px] leading-relaxed">แก้ไฟล์ <code>src/js/firebase.config.js</code> ใส่ config จริง แล้ว push ขึ้น GitHub<br>ทุกเครื่องจะ login ได้เลย ไม่ต้องกรอกซ้ำ</p>
+            <pre class="mt-2 p-2 bg-white rounded text-[10px] overflow-auto">export const firebaseConfig = {
+  apiKey: "AIza...",
+  authDomain: "...",
+  projectId: "...",
+  ...
+};
+export const isConfigHardcoded = true;</pre>
+          </div>
+          <div class="p-4 rounded-xl border" style="border-color:var(--border); background:var(--bg-secondary);">
+            <h3 class="font-bold text-sm mb-1">📱 แบบที่ 2: Browser Storage (ชั่วคราว)</h3>
+            <p class="text-[11px] leading-relaxed">วาง config ด้านล่าง เก็บใน Browser นี้เครื่องเดียว<br>ต้องกรอกใหม่ทุกเครื่อง ไม่สะดวก</p>
+            <p class="text-[10px] text-amber-600 mt-1">⚠️ วิธีนี้ไม่แนะนำแล้ว ใช้แบบที่ 1 ดีกว่า</p>
+          </div>
+        </div>
 
         <div class="p-4 rounded-xl border mb-6" style="border-color:var(--border); background:var(--bg-secondary);">
           <h3 class="font-bold text-sm mb-2">📍 เอา Config มาจากไหน?</h3>
           <ol class="text-xs leading-6 list-decimal pl-4 space-y-1">
             <li>ไปที่ <a href="https://console.firebase.google.com" target="_blank" class="text-[var(--primary)] underline">Firebase Console</a> > สร้างโปรเจกต์</li>
             <li>Project Settings > Your apps > Web app > Config</li>
-            <li>คัดลอก <code>{ ... }</code> มาวางด้านล่าง</li>
+            <li>คัดลอก <code>{ ... }</code> มาวางด้านล่าง หรือในไฟล์ firebase.config.js</li>
+            <li>ต้อง deploy Firestore Rules + Storage Rules ใหม่ด้วย (ไฟล์ที่แก้แล้ว)</li>
           </ol>
         </div>
 
         <div class="space-y-5">
           <div class="input-group">
-            <label class="input-label">🔑 Firebase Config JSON</label>
+            <label class="input-label">🔑 Firebase Config JSON (วิธีชั่วคราว - ไม่แนะนำ)</label>
             <textarea id="cfg-input" class="input min-h-[160px] font-mono text-xs" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"..."}'>${escapeHtml(savedPretty)}</textarea>
           </div>
 
@@ -430,18 +450,22 @@ function renderConfigNeeded() {
           </div>
 
           <div class="flex gap-2">
-            <button id="save-cfg" class="btn btn-primary flex-1 btn-lg">💾 บันทึกและรีโหลด</button>
+            <button id="save-cfg" class="btn btn-primary flex-1 btn-lg">💾 บันทึกใน Browser นี้ (ชั่วคราว)</button>
             <button id="clear-cfg" class="btn btn-ghost">ล้าง</button>
           </div>
           <div class="flex gap-2">
             <button id="test-cfg" class="btn btn-secondary flex-1 btn-sm">ทดสอบ</button>
             <button id="copy-example" class="btn btn-secondary flex-1 btn-sm">ตัวอย่าง</button>
+            <button id="gen-hardcode" class="btn btn-secondary flex-1 btn-sm">สร้างโค้ดสำหรับ hardcode</button>
           </div>
         </div>
 
         <div class="mt-6 p-4 rounded-xl bg-[var(--bg-secondary)] text-xs leading-relaxed">
-          <strong>🌿 โทนสีใหม่:</strong> ทั้ง 6 ธีมเป็น muted pastel เข้าพวกกันหมดแล้ว (sage, fuji mist, sakura dust, ocean mist, sand, fog) ไม่ฉูดฉาด<br>
-          เปลี่ยนธีมได้ที่ปุ่ม 🎨 + โหมดมืดสว่าง 🌙/☀️ มุมขวาบน
+          <strong>🌿 อัปเดตล่าสุด:</strong><br>
+          • แก้ Timeout สร้างทริป - ต้อง deploy Firestore Rules + Storage Rules ใหม่<br>
+          • เพิ่มระบบครอปภาพปกทริป - เลือกอัตราส่วน 16:9/4:3/1:1/3:2/Free<br>
+          • เลือกสีธีมได้ 12 สี + custom color<br>
+          • เพิ่มวิธี hardcode config ไม่ต้องกรอกซ้ำทุกเครื่อง
         </div>
       </div>
     </div>
@@ -490,6 +514,33 @@ function renderConfigNeeded() {
     toast.success('คัดลอกแล้ว');
   };
 
+  document.getElementById('gen-hardcode').onclick = async () => {
+    try {
+      const raw = document.getElementById('cfg-input').value.trim();
+      if (!raw) throw new Error('กรุณาวาง JSON ก่อน');
+      const json = JSON.parse(raw);
+      const required = ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId'];
+      for (const k of required) if (!json[k]) throw new Error('ขาด ' + k);
+      const code = `// วางใน src/js/firebase.config.js แล้ว push
+export const firebaseConfig = ${JSON.stringify(json, null, 2)};
+export const isConfigHardcoded = true;`;
+      await navigator.clipboard.writeText(code);
+      toast.success('คัดลอกโค้ด hardcode แล้ว - ไปวางใน firebase.config.js');
+      // Show in modal
+      showBottomSheet(`
+        <h3 class="font-bold mb-3">📋 โค้ดสำหรับ Hardcode</h3>
+        <p class="text-xs mb-3">คัดลอกโค้ดนี้ไปวางใน <code>src/js/firebase.config.js</code> แล้ว push ขึ้น GitHub</p>
+        <pre class="p-3 bg-black text-green-400 rounded-xl text-[11px] overflow-auto max-h-[300px]">${escapeHtml(code)}</pre>
+        <div class="flex gap-2 mt-4">
+          <button class="btn btn-primary flex-1 btn-sm" onclick="navigator.clipboard.writeText(\`${code.replace(/`/g, '\\`')}\`).then(()=>alert('คัดลอกแล้ว'))">คัดลอกอีกครั้ง</button>
+          <button class="btn btn-ghost flex-1 btn-sm" onclick="document.querySelector('.bottom-sheet-backdrop')?.click()">ปิด</button>
+        </div>
+      `);
+    } catch (e) {
+      toast.error('❌ ' + e.message);
+    }
+  };
+
   document.getElementById('clear-cfg').onclick = () => {
     localStorage.removeItem('fuji_firebase_config');
     document.getElementById('cfg-input').value = '';
@@ -516,7 +567,7 @@ function renderConfigNeeded() {
     } catch (e) {
       toast.error('❌ ' + e.message);
       btn.disabled = false;
-      btn.textContent = '💾 บันทึกและรีโหลด';
+      btn.textContent = '💾 บันทึกใน Browser นี้ (ชั่วคราว)';
     }
   };
 }
@@ -657,26 +708,76 @@ async function renderTripSelector() {
 
   function showCreateTripModal() {
     let coverFile = null;
+    let croppedBlob = null;
+    let cropperInstance = null;
+    let currentAspect = 16/9;
+    
+    const themeColors = [
+      { color: '#8bb89a', name: 'Sage' },
+      { color: '#8aa89a', name: 'Fuji Mist' },
+      { color: '#a8c5b5', name: 'Moss' },
+      { color: '#b5c5b5', name: 'Fog Green' },
+      { color: '#b89aa0', name: 'Sakura Dust' },
+      { color: '#c5a8a0', name: 'Clay' },
+      { color: '#d4b5a0', name: 'Sand' },
+      { color: '#b5a08a', name: 'Sunset Sand' },
+      { color: '#8aa8b5', name: 'Ocean Mist' },
+      { color: '#a0b5c5', name: 'Sky' },
+      { color: '#9a9ab5', name: 'Lavender Fog' },
+      { color: '#a8a0c5', name: 'Lavender' },
+    ];
     
     showBottomSheet(`
-      <div class="space-y-5">
+      <div class="space-y-5 max-h-[85vh] overflow-y-auto pr-1">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-full grid place-items-center text-lg" style="background: var(--primary-light);">🌿</div>
           <div>
             <h3 class="font-bold text-lg" style="font-family: var(--font-display);">${t('createTrip')}</h3>
-            <p class="text-xs text-[var(--text-secondary)]">${lang==='th' ? 'สร้างทริปใหม่แบบมินิมอลน่ารัก' : 'Create new cute minimal trip'}</p>
+            <p class="text-xs text-[var(--text-secondary)]">${lang==='th' ? 'สร้างทริปใหม่ • อัปโหลดภาพแล้วครอปได้ • เลือกสีธีม' : 'Create trip • Upload & crop image • Pick theme color'}</p>
           </div>
         </div>
         
-        <form id="create-trip-form" class="space-y-4">
-          <div class="input-group"><label class="input-label">✨ ${t('tripName')}</label><input id="ct-name" class="input" required placeholder="${lang==='th' ? 'Fuji Autumn 2027' : 'Fuji Autumn 2027'}"></div>
+        <form id="create-trip-form" class="space-y-5">
+          <div class="input-group"><label class="input-label">✨ ${t('tripName')} *</label><input id="ct-name" class="input" required placeholder="${lang==='th' ? 'Fuji Autumn 2027' : 'Fuji Autumn 2027'}"></div>
           
           <div class="input-group">
-            <label class="input-label">🖼️ ${t('coverImage')} (optional)</label>
-            <div id="cover-preview" class="hidden w-full h-32 rounded-xl overflow-hidden border-2 border-dashed mb-2" style="border-color: var(--border);">
-              <img id="cover-img" class="w-full h-full object-cover">
+            <label class="input-label">🖼️ ${t('coverImage')} + ครอปภาพ</label>
+            <div class="p-4 rounded-xl border-2 border-dashed" style="border-color: var(--border); background: var(--bg-secondary);">
+              <div id="cover-dropzone" class="text-center cursor-pointer">
+                <div class="text-3xl mb-2">📸</div>
+                <p class="text-sm font-medium">ลากภาพมาวาง หรือคลิกเพื่อเลือก</p>
+                <p class="text-[11px] text-[var(--text-tertiary)] mt-1">JPG/PNG/WebP • รองรับครอปภาพ • สูงสุด 10MB</p>
+              </div>
+              <input id="ct-cover" type="file" accept="image/*" class="hidden">
+              
+              <div id="cover-cropper-container" class="hidden mt-4">
+                <div class="flex gap-2 mb-3 flex-wrap">
+                  <span class="text-xs font-medium">อัตราส่วน:</span>
+                  <button type="button" data-aspect="16/9" class="chip chip-active text-[11px] aspect-btn">16:9</button>
+                  <button type="button" data-aspect="4/3" class="chip text-[11px] aspect-btn">4:3</button>
+                  <button type="button" data-aspect="1" class="chip text-[11px] aspect-btn">1:1</button>
+                  <button type="button" data-aspect="3/2" class="chip text-[11px] aspect-btn">3:2</button>
+                  <button type="button" data-aspect="free" class="chip text-[11px] aspect-btn">Free</button>
+                </div>
+                <div id="cropper-wrapper" class="w-full rounded-xl overflow-hidden bg-black" style="min-height: 300px;"></div>
+                <div class="flex gap-2 mt-3">
+                  <button type="button" id="crop-confirm" class="btn btn-primary btn-sm flex-1">✂️ ครอปและใช้ภาพนี้</button>
+                  <button type="button" id="crop-cancel" class="btn btn-secondary btn-sm">ยกเลิก</button>
+                </div>
+                <p class="text-[11px] text-[var(--text-tertiary)] mt-2">💡 ลากกรอบเพื่อย้าย • ลากจุดเพื่อปรับขนาด • เส้นประคือจุดตัด 3 ส่วน</p>
+              </div>
+              
+              <div id="cover-preview" class="hidden mt-4">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-bold">👁️ ตัวอย่างภาพปก</span>
+                  <button type="button" id="change-image" class="btn btn-ghost btn-sm text-xs">เปลี่ยนภาพ</button>
+                </div>
+                <div class="w-full h-40 rounded-xl overflow-hidden border" style="border-color: var(--border);">
+                  <img id="cover-img" class="w-full h-full object-cover">
+                </div>
+                <p id="cover-info" class="text-[11px] text-[var(--text-tertiary)] mt-2"></p>
+              </div>
             </div>
-            <input id="ct-cover" type="file" accept="image/*" class="input text-sm">
           </div>
           
           <div class="grid grid-cols-2 gap-3">
@@ -685,8 +786,8 @@ async function renderTripSelector() {
           </div>
           
           <div class="grid grid-cols-2 gap-3">
-            <div class="input-group"><label class="input-label">📅 ${t('startDate')}</label><input id="ct-start" class="input" type="date" required></div>
-            <div class="input-group"><label class="input-label">📅 ${t('endDate')}</label><input id="ct-end" class="input" type="date" required></div>
+            <div class="input-group"><label class="input-label">📅 ${t('startDate')} *</label><input id="ct-start" class="input" type="date" required></div>
+            <div class="input-group"><label class="input-label">📅 ${t('endDate')} *</label><input id="ct-end" class="input" type="date" required></div>
           </div>
           
           <div class="grid grid-cols-2 gap-3">
@@ -695,49 +796,186 @@ async function renderTripSelector() {
           </div>
           
           <div class="input-group">
-            <label class="input-label">🎨 ${t('themeColor')}</label>
-            <div class="flex gap-2 flex-wrap">
-              ${['#8bb89a','#8aa89a','#b89aa0','#8aa8b5','#b5a08a','#9a9ab5'].map(c => 
-                `<button type="button" data-color="${c}" class="w-10 h-10 rounded-full border-2 border-white shadow-sm" style="background:${c};"></button>`
+            <label class="input-label">🎨 ${t('themeColor')} • เลือกสีธีมทริป</label>
+            <div class="grid grid-cols-6 gap-2 p-3 rounded-xl" style="background: var(--bg-secondary); border: 1px solid var(--border);">
+              ${themeColors.map(c => 
+                `<button type="button" data-color="${c.color}" title="${c.name}" class="group relative w-full aspect-square rounded-full border-2 border-white shadow-sm hover:scale-110 transition-transform flex flex-col items-center justify-center" style="background:${c.color};">
+                  <span class="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[9px] font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white px-1.5 py-0.5 rounded-full">${c.name}</span>
+                </button>`
               ).join('')}
             </div>
-            <input id="ct-color" type="hidden" value="#8bb89a">
+            <div class="flex gap-2 mt-3 items-center">
+              <input id="ct-color-custom" type="color" value="#8bb89a" class="w-10 h-10 rounded-full border-2 border-white shadow-sm cursor-pointer">
+              <input id="ct-color" type="text" value="#8bb89a" class="input flex-1 text-sm font-mono" placeholder="#8bb89a">
+              <div id="ct-color-preview" class="w-10 h-10 rounded-full border-2 border-white shadow-sm" style="background:#8bb89a;"></div>
+            </div>
+            <p class="text-[11px] text-[var(--text-tertiary)] mt-2">💡 สีนี้จะใช้เป็นสีหลักของทริป • แสดงใน header และการ์ด</p>
           </div>
           
           <button id="ct-submit" class="btn btn-primary w-full btn-lg">🌿 ${t('createTrip')}</button>
+          <p class="text-[11px] text-center text-[var(--text-tertiary)]">ถ้าสร้างไม่ได้ Timeout → ตรวจสอบ Firestore Rules ต้อง deploy ใหม่</p>
         </form>
       </div>
     `);
     
-    // Bind immediately, no setTimeout
+    // Theme color picker logic
     let selectedColor = '#8bb89a';
+    const colorInput = document.getElementById('ct-color');
+    const colorCustom = document.getElementById('ct-color-custom');
+    const colorPreview = document.getElementById('ct-color-preview');
+    
+    function updateColor(newColor) {
+      selectedColor = newColor;
+      colorInput.value = newColor;
+      colorCustom.value = newColor;
+      colorPreview.style.background = newColor;
+      document.querySelectorAll('[data-color]').forEach(b => {
+        b.style.borderColor = 'white';
+        b.style.transform = '';
+        if (b.dataset.color.toLowerCase() === newColor.toLowerCase()) {
+          b.style.borderColor = 'var(--text)';
+          b.style.transform = 'scale(1.15)';
+        }
+      });
+    }
+    
     document.querySelectorAll('[data-color]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        selectedColor = btn.dataset.color;
-        document.getElementById('ct-color').value = selectedColor;
-        document.querySelectorAll('[data-color]').forEach(b => b.style.borderColor = 'white');
-        btn.style.borderColor = 'var(--text)';
+      btn.addEventListener('click', () => updateColor(btn.dataset.color));
+    });
+    
+    colorCustom.addEventListener('input', (e) => updateColor(e.target.value));
+    colorInput.addEventListener('input', (e) => {
+      const val = e.target.value;
+      if (/^#[0-9A-F]{6}$/i.test(val)) updateColor(val);
+    });
+    
+    updateColor('#8bb89a');
+    
+    // Image cropper logic
+    const dropzone = document.getElementById('cover-dropzone');
+    const fileInput = document.getElementById('ct-cover');
+    const cropperContainer = document.getElementById('cover-cropper-container');
+    const cropperWrapper = document.getElementById('cropper-wrapper');
+    const previewContainer = document.getElementById('cover-preview');
+    const previewImg = document.getElementById('cover-img');
+    const coverInfo = document.getElementById('cover-info');
+    
+    async function handleFile(file) {
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+        toast.error('กรุณาเลือกไฟล์ภาพเท่านั้น');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error('ไฟล์ใหญ่เกิน 10MB');
+        return;
+      }
+      
+      coverFile = file;
+      dropzone.classList.add('hidden');
+      previewContainer.classList.add('hidden');
+      cropperContainer.classList.remove('hidden');
+      
+      try {
+        const { ImageCropper } = await import('./utils/imageCropper.js');
+        if (cropperInstance) cropperInstance.destroy();
+        cropperInstance = new ImageCropper({ aspectRatio: currentAspect });
+        await cropperInstance.loadFile(file, cropperWrapper);
+        toast.success('ลากกรอบเพื่อเลือกส่วนที่ต้องการแสดง');
+      } catch (err) {
+        console.error('Cropper load failed', err);
+        toast.error('โหลดภาพไม่สำเร็จ: ' + err.message);
+        // Fallback to simple preview
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          previewImg.src = ev.target.result;
+          previewContainer.classList.remove('hidden');
+          cropperContainer.classList.add('hidden');
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+    
+    // Dropzone events
+    dropzone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+    
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.style.borderColor = 'var(--primary)';
+      dropzone.style.background = 'var(--primary-light)';
+    });
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.style.borderColor = '';
+      dropzone.style.background = '';
+    });
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.style.borderColor = '';
+      dropzone.style.background = '';
+      const file = e.dataTransfer.files[0];
+      handleFile(file);
+    });
+    
+    // Aspect ratio buttons
+    document.querySelectorAll('.aspect-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        document.querySelectorAll('.aspect-btn').forEach(b => b.classList.remove('chip-active'));
+        btn.classList.add('chip-active');
+        const aspect = btn.dataset.aspect;
+        currentAspect = aspect === 'free' ? null : eval(aspect);
+        if (cropperInstance && coverFile) {
+          cropperInstance.aspectRatio = currentAspect;
+          await cropperInstance.loadFile(coverFile, cropperWrapper);
+        }
       });
     });
-    const firstColor = document.querySelector('[data-color="#8bb89a"]');
-    if (firstColor) firstColor.style.borderColor = 'var(--text)';
     
-    document.getElementById('ct-cover').addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      coverFile = file;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        document.getElementById('cover-img').src = ev.target.result;
-        document.getElementById('cover-preview').classList.remove('hidden');
-      };
-      reader.readAsDataURL(file);
+    // Crop confirm
+    document.getElementById('crop-confirm').addEventListener('click', async () => {
+      if (!cropperInstance) return;
+      const btn = document.getElementById('crop-confirm');
+      btn.disabled = true;
+      btn.textContent = 'กำลังครอป...';
+      try {
+        croppedBlob = await cropperInstance.getCroppedBlob('image/webp', 0.85);
+        const previewUrl = cropperInstance.getPreviewDataUrl(600);
+        previewImg.src = previewUrl;
+        previewContainer.classList.remove('hidden');
+        cropperContainer.classList.add('hidden');
+        coverInfo.textContent = `✅ ครอปแล้ว • ${(croppedBlob.size/1024).toFixed(0)}KB • ${currentAspect ? `อัตราส่วน ${document.querySelector('.aspect-btn.chip-active')?.textContent}` : 'อิสระ'}`;
+        toast.success('ครอปภาพเรียบร้อย');
+      } catch (err) {
+        toast.error('ครอปไม่สำเร็จ: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '✂️ ครอปและใช้ภาพนี้';
+      }
     });
     
+    document.getElementById('crop-cancel').addEventListener('click', () => {
+      cropperContainer.classList.add('hidden');
+      dropzone.classList.remove('hidden');
+      if (cropperInstance) {
+        cropperInstance.destroy();
+        cropperInstance = null;
+      }
+    });
+    
+    document.getElementById('change-image').addEventListener('click', () => {
+      previewContainer.classList.add('hidden');
+      dropzone.classList.remove('hidden');
+      coverFile = null;
+      croppedBlob = null;
+      fileInput.value = '';
+    });
+    
+    // Submit
     document.getElementById('create-trip-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const submitBtn = document.getElementById('ct-submit');
       submitBtn.disabled = true;
+      const originalText = submitBtn.textContent;
       submitBtn.textContent = lang==='th' ? 'กำลังสร้าง...' : 'Creating...';
       
       const tLoad = toast.loading(lang==='th' ? 'กำลังสร้างทริป...' : 'Creating trip...');
@@ -752,17 +990,20 @@ async function renderTripSelector() {
           baseCurrency: document.getElementById('ct-cur').value,
           themeColor: document.getElementById('ct-color').value,
           coverFile: coverFile,
+          coverBlob: croppedBlob,
           creatorName: currentUser.displayName || currentUser.email
         }, currentUser.uid);
         tLoad.close();
         toast.success(lang==='th' ? 'สร้างทริปสำเร็จ 🌿' : 'Trip created 🌿');
         document.querySelector('.bottom-sheet-backdrop')?.click();
+        if (cropperInstance) cropperInstance.destroy();
         setTimeout(() => location.hash = `#/trip/${id}/dashboard`, 100);
       } catch (err) {
         tLoad.close();
-        toast.error(err.message);
+        console.error('Create trip failed', err);
+        toast.error(err.message, 8000);
         submitBtn.disabled = false;
-        submitBtn.textContent = `🌿 ${t('createTrip')}`;
+        submitBtn.textContent = originalText;
       }
     });
   }

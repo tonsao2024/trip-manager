@@ -9,14 +9,16 @@ service firebase.storage {
     function isTripMember(tripId) {
       return isAuthenticated() && (
         firestore.exists(/databases/(default)/documents/trips/$(tripId)/members/$(request.auth.uid)) ||
-        firestore.get(/databases/(default)/documents/trips/$(tripId)).data.memberUids.hasAny([request.auth.uid])
+        firestore.get(/databases/(default)/documents/trips/$(tripId)).data.memberUids.hasAny([request.auth.uid]) ||
+        firestore.get(/databases/(default)/documents/trips/$(tripId)).data.createdBy == request.auth.uid
       );
     }
 
     function isTripAdmin(tripId) {
       return isAuthenticated() && (
         firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'super_admin' ||
-        firestore.get(/databases/(default)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.role in ['trip_admin', 'super_admin']
+        firestore.get(/databases/(default)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.role in ['trip_admin', 'super_admin'] ||
+        firestore.get(/databases/(default)/documents/trips/$(tripId)).data.createdBy == request.auth.uid
       );
     }
 
@@ -28,10 +30,10 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
     }
 
-    // Trip covers
+    // Trip covers - FIXED: allow member or creator to upload
     match /trips/{tripId}/covers/{fileName} {
-      allow read: if isTripMember(tripId);
-      allow write: if isTripAdmin(tripId)
+      allow read: if isTripMember(tripId) || isTripAdmin(tripId);
+      allow write: if (isTripMember(tripId) || isTripAdmin(tripId))
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
     }

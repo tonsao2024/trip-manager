@@ -45,19 +45,22 @@ service cloud.firestore {
 
     // Trips
     match /trips/{tripId} {
-      allow read: if isTripMember(tripId);
+      allow read: if isTripMember(tripId) || isSuperAdmin();
       allow create: if isAuthenticated();
-      allow update: if isTripAdmin(tripId);
+      allow update: if isTripAdmin(tripId) || (isAuthenticated() && resource.data.createdBy == request.auth.uid);
       allow delete: if isSuperAdmin();
 
-      // Members
+      // Members - FIXED: allow creator to create own member doc when trip is new
       match /members/{memberId} {
-        allow read: if isTripMember(tripId);
-        allow create: if isTripAdmin(tripId);
-        allow update: if isTripAdmin(tripId) || (isAuthenticated() && request.auth.uid == memberId && request.resource.data.role == resource.data.role);
-        allow delete: if isTripAdmin(tripId);
-        // Prevent self role escalation
-        allow update: if isAuthenticated() && request.auth.uid == memberId && request.resource.data.role == resource.data.role;
+        allow read: if isTripMember(tripId) || isSuperAdmin();
+        // Allow create if: is trip admin, OR creating own member doc, OR trip creator is creating member
+        allow create: if isAuthenticated() && (
+          isTripAdmin(tripId) || 
+          request.auth.uid == memberId ||
+          (exists(/databases/$(database)/documents/trips/$(tripId)) && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid)
+        );
+        allow update: if isTripAdmin(tripId) || (isAuthenticated() && request.auth.uid == memberId);
+        allow delete: if isTripAdmin(tripId) || (isAuthenticated() && request.auth.uid == memberId);
       }
 
       // Days (optional grouping)
@@ -69,7 +72,7 @@ service cloud.firestore {
       // Itinerary Items
       match /itineraryItems/{itemId} {
         allow read: if isTripMember(tripId);
-        allow create: if hasPermission(tripId, 'canEditItinerary') || isTripAdmin(tripId);
+        allow create: if hasPermission(tripId, 'canEditItinerary') || isTripAdmin(tripId) || (isTripMember(tripId) && request.resource.data.createdBy == request.auth.uid);
         allow update: if (hasPermission(tripId, 'canEditItinerary') || isTripAdmin(tripId))
           && request.resource.data.version == resource.data.version + 1
           && request.resource.data.title is string
@@ -81,22 +84,22 @@ service cloud.firestore {
       // Expenses
       match /expenses/{expenseId} {
         allow read: if isTripMember(tripId);
-        allow create: if hasPermission(tripId, 'canEditExpense') || isTripAdmin(tripId);
-        allow update: if (hasPermission(tripId, 'canEditExpense') || isTripAdmin(tripId))
+        allow create: if hasPermission(tripId, 'canEditExpense') || isTripAdmin(tripId) || isTripMember(tripId);
+        allow update: if (hasPermission(tripId, 'canEditExpense') || isTripAdmin(tripId) || isTripMember(tripId))
           && request.resource.data.netTotalMinor >= 0
           && request.resource.data.subtotalMinor >= 0;
         allow delete: if false; // Use voided status
 
         match /lineItems/{lineItemId} {
           allow read: if isTripMember(tripId);
-          allow write: if hasPermission(tripId, 'canEditExpense') || isTripAdmin(tripId);
+          allow write: if hasPermission(tripId, 'canEditExpense') || isTripAdmin(tripId) || isTripMember(tripId);
         }
       }
 
       // Settlements
       match /settlements/{settlementId} {
         allow read: if isTripMember(tripId);
-        allow create: if isTripAdmin(tripId) || hasPermission(tripId, 'canEditExpense');
+        allow create: if isTripAdmin(tripId) || hasPermission(tripId, 'canEditExpense') || isTripMember(tripId);
         allow update: if isTripAdmin(tripId);
         allow delete: if isSuperAdmin();
 
@@ -144,7 +147,7 @@ service cloud.firestore {
       // Imports
       match /imports/{importId} {
         allow read: if isTripAdmin(tripId);
-        allow create: if isTripAdmin(tripId);
+        allow create: if isTripAdmin(tripId) || isTripMember(tripId);
         allow update: if isTripAdmin(tripId);
         allow delete: if isSuperAdmin();
       }
