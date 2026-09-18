@@ -151,7 +151,8 @@ router.beforeEach = (matched) => {
   renderDesktopNav();
   updateBottomNav();
   renderFAB(matched.path);
-  if (!isFirebaseConfigured && matched.path !== '/login') {
+  // FIX: Always show config if not configured, even on /login
+  if (!isFirebaseConfigured) {
     renderConfigNeeded();
     return false;
   }
@@ -314,6 +315,9 @@ function renderConfigNeeded() {
 }
 
 function renderLogin() {
+  if (!isFirebaseConfigured) {
+    return renderConfigNeeded();
+  }
   appEl.innerHTML = `
     <div class="min-h-[70vh] grid place-items-center">
       <div class="w-full max-w-[440px]">

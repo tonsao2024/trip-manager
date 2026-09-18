@@ -2,14 +2,14 @@ import { auth, db, functions, isFirebaseConfigured, signInWithEmailAndPassword, 
 import { toast } from '../components/toast.js';
 
 export async function loginAdmin(email, password, remember = true) {
-  if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured — กรุณาตั้งค่า Firebase Config ก่อน (ดูหน้า Config ที่ขึ้นอัตโนมัติเมื่อเปิดเว็บ)');
   await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
   const cred = await signInWithEmailAndPassword(auth, email, password);
   return cred.user;
 }
 
 export async function loginMember(username, pin, tripId, remember = true) {
-  if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured — กรุณาตั้งค่า Firebase Config ก่อน');
   const fn = httpsCallable(functions, 'loginWithUsernamePin');
   const res = await fn({ username, pin, tripId });
   const { token } = res.data;
