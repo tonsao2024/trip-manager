@@ -19,8 +19,30 @@ const firebaseConfig = {
 // Allow override via window.__FIREBASE_CONFIG__ for GitHub Pages
 const finalConfig = window.__FIREBASE_CONFIG__ || firebaseConfig;
 
-// Check if config is still placeholder
-export const isFirebaseConfigured = !Object.values(finalConfig).some(v => typeof v === 'string' && v.startsWith('__'));
+// Robust check
+function checkConfigured(cfg) {
+  if (!cfg) return false;
+  const required = ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId'];
+  for (const k of required) {
+    const v = cfg[k];
+    if (!v || typeof v !== 'string' || v.trim() === '' || v.startsWith('__')) return false;
+  }
+  return true;
+}
+export const isFirebaseConfigured = checkConfigured(finalConfig);
+export const firebaseConfigStatus = {
+  configured: isFirebaseConfigured,
+  hasOverride: !!window.__FIREBASE_CONFIG__,
+  missing: (() => {
+    const required = ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId'];
+    return required.filter(k => !finalConfig[k] || String(finalConfig[k]).startsWith('__'));
+  })()
+};
+
+if (typeof window !== 'undefined') {
+  console.log('[Firebase] Configured:', isFirebaseConfigured, 'Override:', !!window.__FIREBASE_CONFIG__, 'Missing:', firebaseConfigStatus.missing);
+  if (!isFirebaseConfigured) console.warn('[Firebase] Not configured - showing config screen. Set localStorage fuji_firebase_config');
+}
 
 let app, auth, db, storage, functions;
 

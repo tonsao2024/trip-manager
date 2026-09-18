@@ -101,9 +101,18 @@ function renderFAB(route) {
   } else fabEl.classList.add('hidden');
 }
 
-// Auth state
-if (auth) {
+// Auth state - skip if not configured
+if (!isFirebaseConfigured) {
+  console.log('[Auth] Skipping auth listener - Firebase not configured');
+  // Ensure config screen shows even if auth is null
+  setTimeout(() => renderConfigNeeded(), 50);
+} else if (auth) {
   onAuthStateChanged(auth, async user => {
+    // Double check config still valid
+    if (!isFirebaseConfigured) {
+      renderConfigNeeded();
+      return;
+    }
     currentUser = user;
     if (user) {
       const initial = (user.displayName || user.email || '?')[0].toUpperCase();
@@ -113,17 +122,27 @@ if (auth) {
         <p class="text-sm text-[var(--text-secondary)] mb-4">${escapeHtml(user.email || user.uid)}</p>
         <button id="logout-btn" class="btn btn-secondary w-full">Logout</button>
         <button id="forget-device" class="btn btn-ghost w-full mt-2">ลืมอุปกรณ์นี้</button>
+        <button id="clear-cfg-btn" class="btn btn-ghost w-full mt-2 text-[11px]">ล้าง Firebase Config</button>
       `, {});
       setTimeout(() => {
         document.getElementById('logout-btn')?.addEventListener('click', async () => { await logout(); location.hash = '#/login'; });
         document.getElementById('forget-device')?.addEventListener('click', () => { localStorage.clear(); location.reload(); });
+        document.getElementById('clear-cfg-btn')?.addEventListener('click', () => { localStorage.removeItem('fuji_firebase_config'); location.reload(); });
       }, 50);
       // If on login, go to trips
       if (location.hash.includes('login')) location.hash = '#/trips';
     } else {
       userAvatarBtn.textContent = '?';
       userAvatarBtn.onclick = () => location.hash = '#/login';
-      if (!location.hash.includes('login')) location.hash = '#/login';
+      // Don't auto-redirect if not configured (already handled)
+      if (!isFirebaseConfigured) {
+        renderConfigNeeded();
+        return;
+      }
+      if (!location.hash.includes('login') && !location.hash.includes('config')) {
+        // Only redirect to login if configured
+        location.hash = '#/login';
+      }
     }
     if (window.lucide) lucide.createIcons();
   });
@@ -151,8 +170,9 @@ router.beforeEach = (matched) => {
   renderDesktopNav();
   updateBottomNav();
   renderFAB(matched.path);
-  // FIX: Always show config if not configured, even on /login
+  // FIX: Always show config if not configured, even on /login - prevents Firebase not configured error
   if (!isFirebaseConfigured) {
+    console.warn('[Router] Firebase not configured, showing config screen for', matched.path);
     renderConfigNeeded();
     return false;
   }
@@ -166,7 +186,31 @@ router.beforeEach = (matched) => {
     updateBottomNav();
   }
 };
-router.init();
+
+// Early check - show config immediately if not configured, before any auth logic
+function earlyConfigCheck() {
+  if (!isFirebaseConfigured) {
+    console.log('[App] Early check - Firebase not configured, forcing config screen');
+    // Wait for DOM
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => renderConfigNeeded());
+    } else {
+      renderConfigNeeded();
+    }
+    return true;
+  }
+  return false;
+}
+const isEarlyBlocked = earlyConfigCheck();
+
+if (!isEarlyBlocked) {
+  router.init();
+} else {
+  // Still init router but it will be blocked by beforeEach
+  router.init();
+  // Force render again after a tick to ensure config shows
+  setTimeout(() => { if (!isFirebaseConfigured) renderConfigNeeded(); }, 200);
+}
 
 refreshBtn?.addEventListener('click', () => {
   syncState.set('syncing');
