@@ -19,12 +19,12 @@ export const firebaseConfig = {
   // appId: "1:1234567890:web:abcdef"
 
   // ปล่อยว่างไว้ถ้ายังไม่มี config - จะใช้วิธี localStorage หรือหน้า config
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+  apiKey: "AIzaSyDiJeIRBoE0QBxH8COoCAWQsPS3sH-ljvE",
+  authDomain: "trip-manager-93b22.firebaseapp.com",
+  projectId: "trip-manager-93b22",
+  storageBucket: "trip-manager-93b22.firebasestorage.app",
+  messagingSenderId: "1022352508207",
+  appId: "1:1022352508207:web:76e1cd0748c30343074dda",
 };
 
 // ถ้าใส่ config จริงแล้ว ให้ตั้งเป็น true เพื่อบอกว่า config พร้อม
