@@ -174,33 +174,142 @@ refreshBtn?.addEventListener('click', () => {
 
 // Views
 function renderConfigNeeded() {
+  const saved = localStorage.getItem('fuji_firebase_config');
+  let savedPretty = '';
+  try { savedPretty = saved ? JSON.stringify(JSON.parse(saved), null, 2) : ''; } catch { savedPretty = saved || ''; }
   appEl.innerHTML = `
-    <div class="max-w-[640px] mx-auto">
+    <div class="max-w-[720px] mx-auto animate-fadeIn">
       <div class="card p-8">
         <div class="text-center mb-6">${renderFujiMascot('normal', 120)}</div>
-        <h1 class="text-2xl font-bold mb-2">ตั้งค่า Firebase ก่อนใช้งาน</h1>
-        <p class="text-sm text-[var(--text-secondary)] mb-6">ระบบต้องเชื่อมต่อ Firebase เพื่อทำงาน คุณต้องกรอก Config จาก Firebase Console</p>
-        <div class="space-y-4">
-          <div class="input-group"><label class="input-label">Firebase Config JSON</label><textarea id="cfg-input" class="input min-h-[140px]" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"..."}'></textarea><span class="input-hint">คัดลอกจาก Firebase Console > Project Settings > Your apps > Config</span></div>
-          <button id="save-cfg" class="btn btn-primary w-full">บันทึกและรีโหลด</button>
+        <h1 class="text-2xl font-bold mb-2">ตั้งค่า Firebase — วิธี GitHub Pages (ไม่ต้องแก้โค้ด)</h1>
+        <p class="text-sm text-[var(--text-secondary)] mb-6">นี่คือวิธีที่แนะนำ: วาง Config ครั้งเดียว เก็บใน Browser ของคุณ (localStorage) ไม่ต้อง push โค้ดใหม่ ปลอดภัยสำหรับ repo public</p>
+
+        <div class="p-4 rounded-xl border mb-6" style="border-color:var(--border); background:var(--bg-secondary);">
+          <h3 class="font-bold text-sm mb-2">📍 เอา Config มาจากไหน?</h3>
+          <ol class="text-xs leading-6 list-decimal pl-4 space-y-1">
+            <li>ไปที่ <a href="https://console.firebase.google.com" target="_blank" class="text-[var(--primary)] underline">Firebase Console</a> > สร้างโปรเจกต์</li>
+            <li>Project Settings (⚙️) > General > Your apps > <span class="font-bold">Web app</span> > ถ้ายังไม่มีให้กด Add app > Web</li>
+            <li>เลือก <b>Config</b> (ไม่ใช่ CDN) จะได้โค้ดแบบนี้:
+              <pre class="mt-2 p-2 bg-[var(--surface)] rounded text-[11px] overflow-auto">const firebaseConfig = {
+  apiKey: "AIza...",
+  authDomain: "xxx.firebaseapp.com",
+  projectId: "xxx",
+  storageBucket: "xxx.appspot.com",
+  messagingSenderId: "123...",
+  appId: "1:123:web:abc"
+};</pre>
+            </li>
+            <li>คัดลอกเฉพาะข้างใน <code>{ ... }</code> มาวางด้านล่าง</li>
+            <li>อย่าลืมเปิด <b>Auth > Email/Password</b>, <b>Firestore</b>, <b>Storage</b>, <b>Functions (asia-southeast1)</b> แล้ว deploy rules/functions ตาม README</li>
+          </ol>
         </div>
-        <div class="mt-6 p-4 rounded-xl bg-[var(--bg-secondary)] text-xs leading-relaxed">
-          <strong>วิธี Setup:</strong><br>
-          1. สร้างโปรเจกต์ Firebase<br>
-          2. เปิด Authentication (Email/Password), Firestore, Storage, Functions (asia-southeast1)<br>
-          3. คัดลอก config มาวาง<br>
-          4. Deploy firestore.rules, storage.rules, functions<br>
-          ดูคู่มือเต็มใน README.md
+
+        <div class="space-y-5">
+          <div class="input-group">
+            <label class="input-label">วิธีที่ 1: วาง JSON ทั้งก้อน (เร็วที่สุด)</label>
+            <textarea id="cfg-input" class="input min-h-[160px] font-mono text-xs" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"..."}'>${escapeHtml(savedPretty)}</textarea>
+            <span class="input-hint">วาง JSON ที่คัดลอกมาได้เลย ระบบจะตรวจว่าครบ 6 ฟิลด์</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 p-4 rounded-xl border" style="border-color:var(--border);">
+            <h4 class="md:col-span-2 font-bold text-sm">วิธีที่ 2: กรอกแยกฟิลด์ (ถ้าไม่มี JSON)</h4>
+            <div class="input-group"><label class="input-label">apiKey</label><input id="cfg-apikey" class="input text-xs"></div>
+            <div class="input-group"><label class="input-label">authDomain</label><input id="cfg-auth" class="input text-xs"></div>
+            <div class="input-group"><label class="input-label">projectId</label><input id="cfg-project" class="input text-xs"></div>
+            <div class="input-group"><label class="input-label">storageBucket</label><input id="cfg-bucket" class="input text-xs"></div>
+            <div class="input-group"><label class="input-label">messagingSenderId</label><input id="cfg-sender" class="input text-xs"></div>
+            <div class="input-group"><label class="input-label">appId</label><input id="cfg-appid" class="input text-xs"></div>
+            <button id="build-json" type="button" class="md:col-span-2 btn btn-secondary btn-sm">รวมเป็น JSON ด้านบน</button>
+          </div>
+
+          <div class="flex gap-2">
+            <button id="save-cfg" class="btn btn-primary flex-1 btn-lg">💾 บันทึกและรีโหลด</button>
+            <button id="clear-cfg" class="btn btn-ghost">ล้าง</button>
+          </div>
+          <div class="flex gap-2">
+            <button id="test-cfg" class="btn btn-secondary flex-1 btn-sm">ทดสอบ JSON</button>
+            <button id="copy-example" class="btn btn-secondary flex-1 btn-sm">คัดลอกตัวอย่าง</button>
+          </div>
+        </div>
+
+        <div class="mt-8 p-4 rounded-xl bg-[var(--bg-secondary)] text-xs leading-relaxed">
+          <strong>ทำไมวิธีนี้ปลอดภัยสำหรับ GitHub Pages?</strong><br>
+          • Firebase <code>apiKey</code> ไม่ใช่ Secret — มันถูกออกแบบให้อยู่บน client ได้ ปลอดภัยด้วย <code>firestore.rules</code> และ <code>storage.rules</code><br>
+          • การเก็บใน <code>localStorage</code> ทำให้ไม่ต้อง commit config ลง repo public<br>
+          • ถ้าต้องการให้ทุกคนเข้าเว็บแล้วใช้ได้เลยโดยไม่ต้องตั้งค่า: ให้แก้ <code>src/js/firebase.js</code> ใส่ค่าจริงแล้ว push (ยอมรับได้สำหรับโปรเจกต์ส่วนตัว)<br>
+          • Config นี้เก็บเฉพาะใน browser เครื่องนี้ ถ้าเปลี่ยนเครื่อง/ล้าง cache ต้องตั้งใหม่
+        </div>
+
+        <div class="mt-4 text-[11px] text-[var(--text-tertiary)]">
+          ไฟล์ที่เกี่ยวข้อง: <code>src/js/firebase.js</code> (placeholder), <code>index.html</code> โหลดจาก <code>localStorage key: fuji_firebase_config</code> ก่อน <code>app.js</code><br>
+          ดูคู่มือเต็ม: <code>README.md</code> / <code>docs/DEPLOY.md</code>
         </div>
       </div>
     </div>
   `;
-  document.getElementById('save-cfg').onclick = () => {
+
+  // Fill separate fields from saved
+  try {
+    const j = saved ? JSON.parse(saved) : {};
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+    set('cfg-apikey', j.apiKey); set('cfg-auth', j.authDomain); set('cfg-project', j.projectId);
+    set('cfg-bucket', j.storageBucket); set('cfg-sender', j.messagingSenderId); set('cfg-appid', j.appId);
+  } catch {}
+
+  document.getElementById('build-json').onclick = () => {
+    const json = {
+      apiKey: document.getElementById('cfg-apikey').value.trim(),
+      authDomain: document.getElementById('cfg-auth').value.trim(),
+      projectId: document.getElementById('cfg-project').value.trim(),
+      storageBucket: document.getElementById('cfg-bucket').value.trim(),
+      messagingSenderId: document.getElementById('cfg-sender').value.trim(),
+      appId: document.getElementById('cfg-appid').value.trim()
+    };
+    document.getElementById('cfg-input').value = JSON.stringify(json, null, 2);
+    toast.success('รวม JSON แล้ว ตรวจสอบด้านบน');
+  };
+
+  document.getElementById('test-cfg').onclick = () => {
     try {
       const json = JSON.parse(document.getElementById('cfg-input').value);
+      const required = ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId'];
+      const missing = required.filter(k => !json[k]);
+      if (missing.length) throw new Error('ขาดฟิลด์: ' + missing.join(', '));
+      toast.success('JSON ถูกต้องครบ 6 ฟิลด์ พร้อมบันทึก');
+    } catch (e) { toast.error('JSON ไม่ถูกต้อง: ' + e.message); }
+  };
+
+  document.getElementById('copy-example').onclick = async () => {
+    const example = `{
+  "apiKey": "AIzaSy...",
+  "authDomain": "your-project.firebaseapp.com",
+  "projectId": "your-project-id",
+  "storageBucket": "your-project.appspot.com",
+  "messagingSenderId": "1234567890",
+  "appId": "1:1234567890:web:abcdef123456"
+}`;
+    await navigator.clipboard.writeText(example);
+    toast.success('คัดลอกตัวอย่างแล้ว แก้ค่าจริงแล้ววาง');
+  };
+
+  document.getElementById('clear-cfg').onclick = () => {
+    localStorage.removeItem('fuji_firebase_config');
+    document.getElementById('cfg-input').value = '';
+    ['cfg-apikey','cfg-auth','cfg-project','cfg-bucket','cfg-sender','cfg-appid'].forEach(id => document.getElementById(id).value = '');
+    toast.warning('ล้าง config แล้ว');
+  };
+
+  document.getElementById('save-cfg').onclick = () => {
+    try {
+      const raw = document.getElementById('cfg-input').value.trim();
+      if (!raw) throw new Error('กรุณาวาง JSON ก่อน');
+      const json = JSON.parse(raw);
+      const required = ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId'];
+      for (const k of required) if (!json[k]) throw new Error('ขาด ' + k);
       localStorage.setItem('fuji_firebase_config', JSON.stringify(json));
-      location.reload();
-    } catch { toast.error('JSON ไม่ถูกต้อง'); }
+      toast.success('บันทึกแล้ว กำลังรีโหลด...');
+      setTimeout(() => location.reload(), 600);
+    } catch (e) { toast.error('บันทึกไม่สำเร็จ: ' + e.message); }
   };
 }
 
