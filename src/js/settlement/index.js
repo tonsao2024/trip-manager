@@ -3,11 +3,16 @@ import { collection, doc, getDocs, addDoc, updateDoc, query, where } from 'https
 import { calculateSettlement } from '../utils/settlement.js';
 
 export async function fetchSettlementData(tripId) {
-  const expSnap = await getDocs(query(collection(db, `trips/${tripId}/expenses`), where('status', '!=', 'voided')));
-  const memSnap = await getDocs(collection(db, `trips/${tripId}/members`));
-  const expenses = expSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  const members = memSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  return { expenses, members };
+  if (!db) throw new Error('DB not ready');
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout loading settlement data')), 10000));
+  const fetchPromise = (async () => {
+    const expSnap = await getDocs(query(collection(db, `trips/${tripId}/expenses`), where('status', '!=', 'voided')));
+    const memSnap = await getDocs(collection(db, `trips/${tripId}/members`));
+    const expenses = expSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const members = memSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    return { expenses, members };
+  })();
+  return Promise.race([fetchPromise, timeout]);
 }
 
 export async function recalculateAndSaveSettlement(tripId, userId) {

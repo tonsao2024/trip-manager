@@ -12,16 +12,23 @@ export function subscribeExpenses(tripId, cb) {
 }
 
 export async function fetchExpenses(tripId, { filters = {}, pageSize = 20, lastDoc = null } = {}) {
-  let q = collection(db, `trips/${tripId}/expenses`);
-  let constraints = [where('status', '!=', 'voided'), orderBy('status'), orderBy('date', 'desc'), limit(pageSize)];
-  if (filters.category) constraints.unshift(where('category', '==', filters.category));
-  if (filters.payerId) constraints.unshift(where('payerId', '==', filters.payerId));
-  if (filters.currency) constraints.unshift(where('currency', '==', filters.currency));
-  // Firestore limitation: we need composite indexes, for simplicity we filter client side for some
-  let queryRef = query(q, ...constraints);
-  if (lastDoc) queryRef = query(q, ...constraints, startAfter(lastDoc));
-  const snap = await getDocs(queryRef);
-  return { items: snap.docs.map(d => ({ id: d.id, ...d.data() })), lastDoc: snap.docs[snap.docs.length -1] || null };
+  if (!db) throw new Error('DB not ready');
+  
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout loading expenses')), 8000));
+  
+  const fetchPromise = (async () => {
+    let q = collection(db, `trips/${tripId}/expenses`);
+    let constraints = [where('status', '!=', 'voided'), orderBy('status'), orderBy('date', 'desc'), limit(pageSize)];
+    if (filters.category) constraints.unshift(where('category', '==', filters.category));
+    if (filters.payerId) constraints.unshift(where('payerId', '==', filters.payerId));
+    if (filters.currency) constraints.unshift(where('currency', '==', filters.currency));
+    let queryRef = query(q, ...constraints);
+    if (lastDoc) queryRef = query(q, ...constraints, startAfter(lastDoc));
+    const snap = await getDocs(queryRef);
+    return { items: snap.docs.map(d => ({ id: d.id, ...d.data() })), lastDoc: snap.docs[snap.docs.length -1] || null };
+  })();
+  
+  return Promise.race([fetchPromise, timeout]);
 }
 
 export async function addExpense(tripId, data, userId) {

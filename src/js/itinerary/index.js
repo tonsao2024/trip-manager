@@ -14,10 +14,15 @@ export function subscribeItinerary(tripId, day, callback) {
 }
 
 export async function fetchItinerary(tripId, dateStr = null) {
-  let q = query(collection(db, `trips/${tripId}/itineraryItems`), orderBy('order', 'asc'));
-  if (dateStr) q = query(collection(db, `trips/${tripId}/itineraryItems`), where('date', '==', dateStr), orderBy('order', 'asc'));
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data(), startAt: d.data().startAt?.toDate?.() || d.data().startAt, endAt: d.data().endAt?.toDate?.() || d.data().endAt }));
+  if (!db) throw new Error('DB not ready');
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout loading itinerary')), 8000));
+  const fetchPromise = (async () => {
+    let q = query(collection(db, `trips/${tripId}/itineraryItems`), orderBy('order', 'asc'));
+    if (dateStr) q = query(collection(db, `trips/${tripId}/itineraryItems`), where('date', '==', dateStr), orderBy('order', 'asc'));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data(), startAt: d.data().startAt?.toDate?.() || d.data().startAt, endAt: d.data().endAt?.toDate?.() || d.data().endAt }));
+  })();
+  return Promise.race([fetchPromise, timeout]);
 }
 
 export async function addItineraryItem(tripId, data, userId) {

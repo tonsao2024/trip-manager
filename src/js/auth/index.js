@@ -1,31 +1,72 @@
-import { auth, db, functions, isFirebaseConfigured, signInWithEmailAndPassword, signInWithCustomToken, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence, httpsCallable } from '../firebase.js';
-import { toast } from '../components/toast.js';
+import { auth, db, functions, isFirebaseConfigured, signInWithEmailAndPassword, signInWithCustomToken, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence, httpsCallable, getAuthErrorMessage } from '../firebase.js';
 
 export async function loginAdmin(email, password, remember = true) {
-  if (!isFirebaseConfigured) throw new Error('Firebase not configured — กรุณาตั้งค่า Firebase Config ก่อน (ดูหน้า Config ที่ขึ้นอัตโนมัติเมื่อเปิดเว็บ)');
-  await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
-  const cred = await signInWithEmailAndPassword(auth, email, password);
-  return cred.user;
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured — กรุณาตั้งค่า Firebase Config ก่อน (ดูหน้า Config ที่ขึ้นอัตโนมัติ)');
+  if (!auth) throw new Error('Auth not initialized - check Firebase Config');
+  
+  // Validate email
+  if (!email || !email.includes('@')) throw new Error('กรุณากรอกอีเมลที่ถูกต้อง');
+  if (!password || password.length < 6) throw new Error('รหัสผ่านต้องอย่างน้อย 6 ตัวอักษร');
+  
+  try {
+    // Set persistence with timeout
+    const persistencePromise = setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
+    const timeoutPersistence = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout setting persistence')), 5000));
+    await Promise.race([persistencePromise, timeoutPersistence]);
+    
+    // Login with timeout
+    const loginPromise = signInWithEmailAndPassword(auth, email, password);
+    const timeoutLogin = new Promise((_, reject) => setTimeout(() => reject(new Error('auth/network-request-failed - timeout 15s')), 15000));
+    const cred = await Promise.race([loginPromise, timeoutLogin]);
+    return cred.user;
+  } catch (error) {
+    console.error('loginAdmin error:', error);
+    throw new Error(getAuthErrorMessage(error));
+  }
 }
 
 export async function loginMember(username, pin, tripId, remember = true) {
-  if (!isFirebaseConfigured) throw new Error('Firebase not configured — กรุณาตั้งค่า Firebase Config ก่อน');
-  const fn = httpsCallable(functions, 'loginWithUsernamePin');
-  const res = await fn({ username, pin, tripId });
-  const { token } = res.data;
-  await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
-  const cred = await signInWithCustomToken(auth, token);
-  return cred.user;
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  if (!auth || !functions) throw new Error('Auth/Functions not initialized');
+  
+  if (!username || username.trim().length < 2) throw new Error('กรุณากรอกชื่อผู้ใช้');
+  if (!pin || pin.length < 4) throw new Error('PIN ต้องอย่างน้อย 4 ตัว');
+  
+  try {
+    const fn = httpsCallable(functions, 'loginWithUsernamePin');
+    const res = await fn({ username: username.trim(), pin, tripId: tripId || null });
+    const { token } = res.data;
+    if (!token) throw new Error('No token returned from function');
+    
+    await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
+    const cred = await signInWithCustomToken(auth, token);
+    return cred.user;
+  } catch (error) {
+    console.error('loginMember error:', error);
+    // Handle function errors
+    if (error.code === 'functions/not-found') {
+      throw new Error('❌ Cloud Function loginWithUsernamePin ไม่พบ - ต้อง deploy functions ก่อน');
+    }
+    if (error.message?.includes('PIN') || error.message?.includes('username')) {
+      throw new Error(error.message);
+    }
+    throw new Error(getAuthErrorMessage(error));
+  }
 }
 
 export async function logout() {
-  if (auth) await signOut(auth);
+  try {
+    if (auth) await signOut(auth);
+  } catch (e) {
+    console.warn('logout error', e);
+  }
   localStorage.removeItem('fuji_current_trip');
   localStorage.removeItem('fuji_stepup_until');
 }
 
 export async function verifySensitiveAction(pin, action) {
   if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  if (!functions) throw new Error('Functions not ready');
   const fn = httpsCallable(functions, 'verifySensitiveActionPin');
   const res = await fn({ pin, action });
   const { sessionExpiry } = res.data;
@@ -52,4 +93,8 @@ export function requireAuth() {
       else reject(new Error('Not authenticated'));
     });
   });
+}
+
+export function verifySensitiveActionPin(pin, action) {
+  return verifySensitiveAction(pin, action);
 }

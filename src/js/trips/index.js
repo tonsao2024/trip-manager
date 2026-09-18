@@ -3,41 +3,63 @@ import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, query, whe
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { compressImage } from '../utils/helpers.js';
 
+const TRIPS_CACHE_KEY = 'fuji_trips_cache';
+const CACHE_TTL = 5 * 60 * 1000; // 5 min
+
+function getCachedTrips() {
+  try {
+    const cached = localStorage.getItem(TRIPS_CACHE_KEY);
+    if (!cached) return null;
+    const { data, timestamp } = JSON.parse(cached);
+    if (Date.now() - timestamp > CACHE_TTL) return null;
+    return data;
+  } catch { return null; }
+}
+
+function setCachedTrips(trips) {
+  try {
+    localStorage.setItem(TRIPS_CACHE_KEY, JSON.stringify({ data: trips, timestamp: Date.now() }));
+  } catch {}
+}
+
 export async function listTrips(userId, isSuperAdmin = false) {
   if (!db) throw new Error('DB not ready - Firebase not configured');
   if (!userId) throw new Error('User not authenticated');
   
+  // Try cache first for instant UI
+  const cached = getCachedTrips();
+  
   try {
-    // Add timeout to prevent hanging
     const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Timeout loading trips - check Firestore rules/indexes')), 10000)
+      setTimeout(() => reject(new Error('Timeout loading trips - check Firestore rules/indexes')), 8000)
     );
     
     let queryPromise;
     if (isSuperAdmin) {
-      queryPromise = getDocs(query(collection(db, 'trips'), orderBy('createdAt', 'desc'), limit(50)));
+      queryPromise = getDocs(query(collection(db, 'trips'), orderBy('createdAt', 'desc'), limit(30)));
     } else {
-      // Try memberUids query, fallback to getting all and filtering client-side if index missing
-      try {
-        queryPromise = getDocs(query(collection(db, 'trips'), where('memberUids', 'array-contains', userId), orderBy('createdAt', 'desc'), limit(50)));
-      } catch (e) {
-        console.warn('MemberUids query failed, trying without order:', e);
-        queryPromise = getDocs(query(collection(db, 'trips'), where('memberUids', 'array-contains', userId), limit(50)));
-      }
+      queryPromise = getDocs(query(collection(db, 'trips'), where('memberUids', 'array-contains', userId), limit(30)));
     }
     
     const snap = await Promise.race([queryPromise, timeoutPromise]);
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const trips = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    setCachedTrips(trips);
+    return trips;
   } catch (e) {
-    console.error('listTrips error:', e);
-    // If array-contains fails (no index), try to get trips where createdBy == userId as fallback
-    if (e.message.includes('index') || e.code === 'failed-precondition') {
-      try {
-        const fallback = await getDocs(query(collection(db, 'trips'), where('createdBy', '==', userId), limit(50)));
-        return fallback.docs.map(d => ({ id: d.id, ...d.data() }));
-      } catch (fallbackErr) {
-        console.error('Fallback also failed:', fallbackErr);
-      }
+    console.warn('listTrips primary failed:', e.message);
+    // Return cached if available even on error for better UX
+    if (cached && cached.length) {
+      console.log('Returning cached trips');
+      return cached;
+    }
+    // Fallback to createdBy
+    try {
+      const fallback = await getDocs(query(collection(db, 'trips'), where('createdBy', '==', userId), limit(30)));
+      const trips = fallback.docs.map(d => ({ id: d.id, ...d.data() }));
+      setCachedTrips(trips);
+      return trips;
+    } catch (fallbackErr) {
+      console.error('Fallback also failed:', fallbackErr);
     }
     throw e;
   }

@@ -539,20 +539,11 @@ function renderLogin() {
         </div>
         <div class="card p-7">
           <div class="segmented mb-6">
-            <button data-tab="admin" class="segmented-item active">${t('admin')}</button>
-            <button data-tab="member" class="segmented-item">${t('member')}</button>
+            <button data-tab="member" class="segmented-item active">👤 ${t('member')}</button>
+            <button data-tab="admin" class="segmented-item">🔑 ${t('admin')}</button>
           </div>
 
-          <div id="tab-admin">
-            <form id="admin-form" class="space-y-4">
-              <div class="input-group"><label class="input-label">📧 ${t('email')}</label><input id="admin-email" class="input" type="email" placeholder="admin@example.com" required></div>
-              <div class="input-group"><label class="input-label">🔑 ${t('password')}</label><input id="admin-pass" class="input" type="password" required></div>
-              <label class="flex items-center gap-2 text-sm cursor-pointer"><input id="admin-remember" type="checkbox" checked> ${t('rememberDevice')}</label>
-              <button class="btn btn-primary w-full btn-lg" type="submit">${t('loginAdmin')}</button>
-            </form>
-          </div>
-
-          <div id="tab-member" class="hidden">
+          <div id="tab-member">
             <form id="member-form" class="space-y-4">
               <div class="input-group"><label class="input-label">🗺️ Trip ID</label><input id="member-trip" class="input" placeholder="${lang==='th' ? 'เว้นว่างได้' : 'Optional'}"></div>
               <div class="input-group"><label class="input-label">👤 ${t('username')}</label><input id="member-user" class="input" placeholder="fuji_user" required></div>
@@ -560,6 +551,22 @@ function renderLogin() {
               <label class="flex items-center gap-2 text-sm cursor-pointer"><input id="member-remember" type="checkbox" checked> ${t('rememberDevice')}</label>
               <button class="btn btn-primary w-full btn-lg" type="submit">${t('loginMember')}</button>
             </form>
+          </div>
+
+          <div id="tab-admin" class="hidden">
+            <form id="admin-form" class="space-y-4">
+              <div class="input-group"><label class="input-label">📧 ${t('email')}</label><input id="admin-email" class="input" type="email" placeholder="admin@example.com" required></div>
+              <div class="input-group"><label class="input-label">🔑 ${t('password')}</label><input id="admin-pass" class="input" type="password" required></div>
+              <label class="flex items-center gap-2 text-sm cursor-pointer"><input id="admin-remember" type="checkbox" checked> ${t('rememberDevice')}</label>
+              <button class="btn btn-primary w-full btn-lg" type="submit">${t('loginAdmin')}</button>
+            </form>
+            <div class="mt-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] leading-relaxed">
+              <strong>⚠️ ถ้าเข้าไม่ได้ network-request-failed:</strong><br>
+              1. ตรวจ Internet<br>
+              2. Firebase Console > Authentication > Settings > Authorized domains > เพิ่ม ${location.hostname}<br>
+              3. เปิด Email/Password provider<br>
+              4. ตรวจ Config apiKey ถูกต้อง
+            </div>
           </div>
 
           <p class="text-[11px] text-center text-[var(--text-tertiary)] mt-6 leading-relaxed">🔒 Member login ผ่าน Cloud Function<br>🌿 โทน muted pastel ทั้งหมดเข้าพวกกัน</p>
