@@ -43,11 +43,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Trips
+    // Trips - fixed for list queries
     match /trips/{tripId} {
-      allow read: if isTripMember(tripId) || isSuperAdmin();
+      allow read: if isTripMember(tripId) || isSuperAdmin() || (isAuthenticated() && resource.data.memberUids.hasAny([request.auth.uid])) || (isAuthenticated() && resource.data.createdBy == request.auth.uid);
       allow create: if isAuthenticated();
-      allow update: if isTripAdmin(tripId) || (isAuthenticated() && resource.data.createdBy == request.auth.uid);
+      allow update: if isTripAdmin(tripId) || (isAuthenticated() && resource.data.createdBy == request.auth.uid) || (isAuthenticated() && request.resource.data.memberUids.hasAny([request.auth.uid]));
       allow delete: if isSuperAdmin();
 
       // Members - FIXED: allow creator to create own member doc when trip is new
@@ -150,6 +150,14 @@ service cloud.firestore {
         allow create: if isTripAdmin(tripId) || isTripMember(tripId);
         allow update: if isTripAdmin(tripId);
         allow delete: if isSuperAdmin();
+      }
+
+      // Documents - important docs by category
+      match /documents/{docId} {
+        allow read: if isTripMember(tripId);
+        allow create: if isTripMember(tripId);
+        allow update: if isTripMember(tripId);
+        allow delete: if isTripAdmin(tripId) || (isTripMember(tripId) && resource.data.createdBy == request.auth.uid);
       }
     }
   }

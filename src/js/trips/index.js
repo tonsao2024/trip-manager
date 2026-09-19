@@ -149,17 +149,25 @@ export async function createTrip(data, userId) {
   if (!data.name || !data.name.trim()) throw new Error('กรุณากรอกชื่อทริป');
   if (!data.startDate || !data.endDate) throw new Error('กรุณาเลือกวันเริ่มและสิ้นสุด');
   
-  // Handle cover image for free tier: if we have blob, try to get data URL immediately for Firestore
-  let coverImageUrl = data.coverImage || '';
+  // Handle cover image: support URL, file, blob, base64
+  let coverImageUrl = data.coverImage || data.coverUrl || '';
   let coverFileForUpload = data.coverFile || null;
   let coverBlobForUpload = data.coverBlob || null;
+  
+  // If coverUrl provided as image URL, use it directly
+  if (data.coverUrl && data.coverUrl.startsWith('http')) {
+    coverImageUrl = data.coverUrl;
+    coverFileForUpload = null;
+    coverBlobForUpload = null;
+    console.log('Using cover URL:', coverImageUrl.slice(0,60));
+  }
   
   // For free tier without storage, prepare base64 upfront if storage not available
   if ((coverFileForUpload || coverBlobForUpload) && (!storage || !isStorageAvailable)) {
     try {
       const blob = coverBlobForUpload || coverFileForUpload;
       const dataUrl = await blobToDataURL(blob instanceof File ? await compressImage(blob, 800, 0.7) : blob);
-      if (dataUrl.length < 900 * 1024) { // Firestore limit check
+      if (dataUrl.length < 900 * 1024) {
         coverImageUrl = dataUrl;
         coverFileForUpload = null;
         coverBlobForUpload = null;

@@ -5,34 +5,72 @@ import { validateAllocations } from '../utils/split.js';
 
 export function subscribeExpenses(tripId, cb) {
   if (!db) return () => {};
-  const q = query(collection(db, `trips/${tripId}/expenses`), where('status', '!=', 'voided'), orderBy('status'), orderBy('date', 'desc'));
+  // Simple query to avoid index requirement - filter voided client-side
+  const q = query(collection(db, `trips/${tripId}/expenses`), orderBy('date', 'desc'), limit(50));
   return onSnapshot(q, snap => {
-    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-  }, err => console.warn(err));
+    const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const filtered = all.filter(e => e.status !== 'voided');
+    cb(filtered);
+  }, err => console.warn('subscribeExpenses error', err));
 }
 
 export async function fetchExpenses(tripId, { filters = {}, pageSize = 20, lastDoc = null } = {}) {
   if (!db) throw new Error('DB not ready');
   
-  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout loading expenses')), 8000));
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout loading expenses - check Firestore indexes')), 10000));
   
   const fetchPromise = (async () => {
-    let q = collection(db, `trips/${tripId}/expenses`);
-    let constraints = [where('status', '!=', 'voided'), orderBy('status'), orderBy('date', 'desc'), limit(pageSize)];
-    if (filters.category) constraints.unshift(where('category', '==', filters.category));
-    if (filters.payerId) constraints.unshift(where('payerId', '==', filters.payerId));
-    if (filters.currency) constraints.unshift(where('currency', '==', filters.currency));
-    let queryRef = query(q, ...constraints);
-    if (lastDoc) queryRef = query(q, ...constraints, startAfter(lastDoc));
-    const snap = await getDocs(queryRef);
-    return { items: snap.docs.map(d => ({ id: d.id, ...d.data() })), lastDoc: snap.docs[snap.docs.length -1] || null };
+    try {
+      // Try simple query first - no composite index needed
+      let q = collection(db, `trips/${tripId}/expenses`);
+      let queryRef;
+      
+      if (lastDoc) {
+        queryRef = query(q, orderBy('date', 'desc'), startAfter(lastDoc), limit(pageSize));
+      } else {
+        queryRef = query(q, orderBy('date', 'desc'), limit(pageSize));
+      }
+      
+      const snap = await getDocs(queryRef);
+      let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      
+      // Filter voided client-side to avoid != index
+      items = items.filter(e => e.status !== 'voided');
+      
+      // Apply filters client-side to avoid composite indexes
+      if (filters.category) {
+        items = items.filter(e => e.category === filters.category);
+      }
+      if (filters.payerId) {
+        items = items.filter(e => e.payerId === filters.payerId);
+      }
+      if (filters.currency) {
+        items = items.filter(e => e.currency === filters.currency);
+      }
+      
+      return { items, lastDoc: snap.docs[snap.docs.length -1] || null };
+    } catch (e) {
+      // If orderBy date fails (no index), fallback to no order
+      if (e.message.includes('index') || e.code === 'failed-precondition') {
+        console.warn('Expenses index missing, trying fallback without orderBy', e.message);
+        const snap = await getDocs(query(collection(db, `trips/${tripId}/expenses`), limit(pageSize)));
+        let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        items = items.filter(e => e.status !== 'voided');
+        // Sort client-side
+        items.sort((a, b) => new Date(b.date) - new Date(a.date));
+        return { items, lastDoc: null };
+      }
+      throw e;
+    }
   })();
   
   return Promise.race([fetchPromise, timeout]);
 }
 
 export async function addExpense(tripId, data, userId) {
-  // Validate allocations
+  if (!db) throw new Error('DB not ready');
+  if (!userId) throw new Error('User not authenticated');
+  
   const net = calculateNetTotal({
     subtotalMinor: data.subtotalMinor,
     discountMinor: data.discountMinor || 0,
@@ -67,13 +105,20 @@ export async function addExpense(tripId, data, userId) {
     itineraryItemId: data.itineraryItemId || null,
     receiptUrl: data.receiptUrl || '',
     status: 'active',
+    // New fields for estimated vs actual, budget
+    isEstimated: data.isEstimated || false,
+    estimatedMinor: data.estimatedMinor || 0,
+    actualMinor: data.actualMinor || net,
+    budgetCategory: data.budgetCategory || '',
+    // Exchange rate to THB
+    thbRate: data.thbRate || 1,
+    thbMinor: data.thbMinor || net,
     createdBy: userId,
     updatedBy: userId,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   };
   const ref = await addDoc(collection(db, `trips/${tripId}/expenses`), payload);
-  // Add line items if itemized
   if (data.lineItems?.length) {
     for (const line of data.lineItems) {
       await addDoc(collection(db, `trips/${tripId}/expenses/${ref.id}/lineItems`), line);
@@ -84,7 +129,6 @@ export async function addExpense(tripId, data, userId) {
 
 export async function updateExpense(tripId, expenseId, updates, userId) {
   const ref = doc(db, `trips/${tripId}/expenses`, expenseId);
-  // If updating amounts, recalc net
   if (updates.subtotalMinor != null) {
     const snap = await getDoc(ref);
     const existing = snap.data();
@@ -112,4 +156,21 @@ export async function voidExpense(tripId, expenseId, userId) {
     updatedBy: userId,
     updatedAt: serverTimestamp()
   });
+}
+
+// Export/import expenses
+export async function exportExpensesToJson(tripId) {
+  const snap = await getDocs(collection(db, `trips/${tripId}/expenses`));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function importExpensesFromJson(tripId, expenses, userId) {
+  const { writeBatch } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+  const batch = writeBatch(db);
+  for (const exp of expenses) {
+    const ref = doc(collection(db, `trips/${tripId}/expenses`));
+    const { id, ...data } = exp;
+    batch.set(ref, { ...data, createdBy: userId, updatedBy: userId, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  }
+  await batch.commit();
 }

@@ -167,6 +167,36 @@
   --accent: #b5b5c5;
 }
 
+[data-color="forest"] {
+  --primary: #6b8f79;
+  --primary-hover: #5a7a68;
+  --primary-light: #dde8e0;
+  --primary-soft: rgba(107,143,121,0.15);
+  --gradient-primary: linear-gradient(135deg, #6b8f79 0%, #8bb89a 50%, #a8c5b5 100%);
+  --gradient-fuji: linear-gradient(135deg, #6b8f79 0%, #8bb89a 100%);
+  --accent: #8bb89a;
+}
+
+[data-color="dusk"] {
+  --primary: #8a7a9a;
+  --primary-hover: #7a6a8a;
+  --primary-light: #e8e0f0;
+  --primary-soft: rgba(138,122,154,0.15);
+  --gradient-primary: linear-gradient(135deg, #8a7a9a 0%, #9a8ab5 50%, #b5a0c5 100%);
+  --gradient-fuji: linear-gradient(135deg, #8a7a9a 0%, #b5a0c5 100%);
+  --accent: #b5a0c5;
+}
+
+[data-color="clay"] {
+  --primary: #b58a7a;
+  --primary-hover: #a57a6a;
+  --primary-light: #f0ddd4;
+  --primary-soft: rgba(181,138,122,0.15);
+  --gradient-primary: linear-gradient(135deg, #b58a7a 0%, #c5a08a 50%, #d4b5a0 100%);
+  --gradient-fuji: linear-gradient(135deg, #b58a7a 0%, #d4b5a0 100%);
+  --accent: #d4b5a0;
+}
+
 /* Dark mode - improved contrast, keep muted sage vibe */
 [data-theme="dark"] {
   --bg: #1a221b;

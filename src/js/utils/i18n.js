@@ -174,7 +174,7 @@ const translations = {
   }
 };
 
-let currentLang = localStorage.getItem('fuji_lang') || (navigator.language.startsWith('th') ? 'th' : 'en');
+let currentLang = localStorage.getItem('fuji_lang') || 'th'; // Default Thai as requested
 
 export function t(key) {
   return translations[currentLang]?.[key] || translations['en']?.[key] || key;

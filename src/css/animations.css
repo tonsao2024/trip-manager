@@ -1,46 +1,74 @@
-/* Animations - Fast, Cute, Non-blocking - transform/opacity only */
+/* Animations - Fast, Cute, All screens, dark/light aware */
 
 @keyframes slideInCute { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 @keyframes slideUpCute { from { transform: translateY(30%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes fadeInUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes fadeInUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes fadeInScale { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes popIn { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
 @keyframes pulseSoft { 0%,100% { opacity: 1; } 50% { opacity: 0.85; } }
+@keyframes bounceIn { 0% { transform: scale(0.8); opacity: 0; } 50% { transform: scale(1.05); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes slideInLeft { from { transform: translateX(-20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes slideInRight { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes scaleIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
-.animate-fadeIn { animation: fadeIn 0.2s ease; }
-.animate-fadeInUp { animation: fadeInUp 0.25s ease; }
-.animate-fadeInScale { animation: fadeInScale 0.2s ease; }
-.animate-popIn { animation: popIn 0.25s cubic-bezier(0.16,1,0.3,1); }
+.animate-fadeIn { animation: fadeIn 0.25s ease; }
+.animate-fadeInUp { animation: fadeInUp 0.3s ease; }
+.animate-fadeInScale { animation: fadeInScale 0.25s ease; }
+.animate-popIn { animation: popIn 0.3s cubic-bezier(0.16,1,0.3,1); }
+.animate-bounceIn { animation: bounceIn 0.4s cubic-bezier(0.16,1,0.3,1); }
 .animate-float { animation: float 3s ease-in-out infinite; }
 .animate-pulse-soft { animation: pulseSoft 2s ease-in-out infinite; }
 
-/* Page transitions - FAST, no stagger delay */
-.page-enter { animation: fadeIn 0.15s ease; }
+/* Page transitions - all screens */
+.page-enter { animation: fadeInUp 0.35s cubic-bezier(0.16,1,0.3,1); }
+.page-enter .card { animation: fadeInUp 0.35s ease backwards; }
+.page-enter .card:nth-child(1) { animation-delay: 0.05s; }
+.page-enter .card:nth-child(2) { animation-delay: 0.1s; }
+.page-enter .card:nth-child(3) { animation-delay: 0.15s; }
+.page-enter .card:nth-child(4) { animation-delay: 0.2s; }
+.page-enter .card:nth-child(5) { animation-delay: 0.25s; }
+.page-enter .card:nth-child(6) { animation-delay: 0.3s; }
 
-/* Menu - fast */
-.menu-item { transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease; }
-.menu-item:hover { transform: translateX(2px); }
-.menu-item.active { color: var(--primary); font-weight: 600; background: var(--primary-light); }
+/* Menu */
+.menu-item { transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease; }
+.menu-item:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.menu-item.active { color: var(--primary); font-weight: 600; background: var(--primary-light); box-shadow: var(--shadow-xs); }
+.menu-item:active { transform: scale(0.96); }
 
-/* Card entrance - minimal */
-.card-entrance { animation: fadeInUp 0.25s ease backwards; }
-.card-entrance:nth-child(1) { animation-delay: 0.02s; }
-.card-entrance:nth-child(2) { animation-delay: 0.04s; }
-.card-entrance:nth-child(3) { animation-delay: 0.06s; }
-.card-entrance:nth-child(4) { animation-delay: 0.08s; }
-.card-entrance:nth-child(5) { animation-delay: 0.10s; }
-.card-entrance:nth-child(6) { animation-delay: 0.12s; }
+/* Card entrance */
+.card-entrance { animation: fadeInUp 0.3s ease backwards; }
+.card-entrance:nth-child(1) { animation-delay: 0.03s; }
+.card-entrance:nth-child(2) { animation-delay: 0.06s; }
+.card-entrance:nth-child(3) { animation-delay: 0.09s; }
+.card-entrance:nth-child(4) { animation-delay: 0.12s; }
+.card-entrance:nth-child(5) { animation-delay: 0.15s; }
+.card-entrance:nth-child(6) { animation-delay: 0.18s; }
 
-/* Button press - instant */
-.btn-press:active { transform: scale(0.96); }
+/* Button press - instant, scale only */
+.btn-press:active, .btn:active { transform: scale(0.96); transition: transform 0.1s ease; }
+.btn { transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease; }
 
 .fuji-mascot { transition: transform 0.2s ease; }
 .fuji-mascot.loading { animation: pulseSoft 1.2s ease-in-out infinite; }
 
+/* Focus */
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 8px; }
+
+/* Responsive - ensure sizing consistent */
+@media (max-width: 640px) {
+  .card-bento { padding: 16px; }
+  .btn-lg { min-height: 48px; padding: 12px 20px; }
+}
+
+/* Dark mode text contrast */
+[data-theme="dark"] .text-[var(--text-secondary)] { color: var(--text-secondary); }
+[data-theme="dark"] .text-[var(--text-tertiary)] { color: var(--text-tertiary); }
+[data-theme="dark"] .card { background: var(--card); border-color: var(--border); }
+[data-theme="dark"] .input { background: var(--surface-2); border-color: var(--border); color: var(--text); }
+[data-theme="dark"] .input::placeholder { color: var(--text-tertiary); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
