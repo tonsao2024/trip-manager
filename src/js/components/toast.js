@@ -33,8 +33,8 @@ function createToast({ type = 'success', title, message, duration = 4000, retryF
 
   const closeBtn = el.querySelector('button[aria-label="Close"]');
   const close = () => {
-    el.style.animation = 'slideIn 0.2s ease reverse';
-    setTimeout(() => el.remove(), 180);
+    el.style.animation = 'toastSlideOut 0.25s ease forwards';
+    setTimeout(() => el.remove(), 220);
   };
   closeBtn.onclick = close;
   const retryBtn = el.querySelector('[data-retry]');
