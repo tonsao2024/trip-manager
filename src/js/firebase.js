@@ -146,21 +146,21 @@ export function getAuthErrorMessage(error) {
   const msg = error?.message || '';
   
   if (code.includes('network-request-failed') || msg.includes('network')) {
-    return `🌐 เชื่อมต่อ Firebase ไม่ได้\nวิธีแก้: ตรวจ Internet, Authorized domains เพิ่ม ${location.hostname}, เปิด Email/Password\n\n${code} ${msg}`;
+    return `เชื่อมต่อ Firebase ไม่ได้ — ตรวจอินเทอร์เน็ต และเพิ่ม ${location.hostname} ใน Authorized domains (${code})`;
   }
-  if (code.includes('invalid-api-key')) return `🔑 API Key ไม่ถูกต้อง\n${code}`;
-  if (code.includes('user-not-found')) return '❌ ไม่พบผู้ใช้นี้';
-  if (code.includes('wrong-password') || code.includes('invalid-credential')) return '❌ อีเมลหรือรหัสผ่านไม่ถูกต้อง';
-  if (code.includes('too-many-requests')) return '⏳ ลองมากเกินไป รอสักครู่';
-  if (code.includes('invalid-email')) return '❌ อีเมลไม่ถูกต้อง';
+  if (code.includes('invalid-api-key')) return `API Key ไม่ถูกต้อง (${code})`;
+  if (code.includes('user-not-found')) return 'ไม่พบผู้ใช้นี้';
+  if (code.includes('wrong-password') || code.includes('invalid-credential')) return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+  if (code.includes('too-many-requests')) return 'ลองบ่อยเกินไป รอสักครู่แล้วลองใหม่';
+  if (code.includes('invalid-email')) return 'อีเมลไม่ถูกต้อง';
   if (code.includes('permission-denied') || code.includes('PERMISSION_DENIED')) {
-    return `🔒 ไม่มีสิทธิ์ - deploy Firestore Rules ใหม่\n${code} ${msg}`;
+    return `ไม่มีสิทธิ์เข้าถึง — ต้อง deploy Firestore Rules ใหม่ (${code})`;
   }
   if (code.includes('storage/unauthorized') || code.includes('storage/unknown') || code.includes('bucket-not-found')) {
-    return `📦 Storage ไม่พร้อมใช้งาน (ฟรี tier) - จะใช้สีธีมแทนภาพปก\n${code}`;
+    return `Storage ไม่พร้อมใช้งาน (แผนฟรี) — ระบบจะใช้สีธีมแทนภาพปก (${code})`;
   }
   if (code.includes('auth-domain-config-required') || code.includes('unauthorized-domain')) {
-    return `🔒 Domain ไม่ได้รับอนุญาต เพิ่ม ${location.hostname} ใน Auth > Authorized domains\n${code}`;
+    return `Domain ไม่ได้รับอนุญาต — เพิ่ม ${location.hostname} ใน Auth > Authorized domains (${code})`;
   }
-  return `❌ ${code ? code + ': ' : ''}${msg || 'Login failed'}`;
+  return `${code ? code + ': ' : ''}${msg || 'Login failed'}`;
 }

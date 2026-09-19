@@ -45,7 +45,7 @@ export async function loginMember(username, pin, tripId, remember = true) {
     console.error('loginMember error:', error);
     // Handle function errors
     if (error.code === 'functions/not-found') {
-      throw new Error('❌ Cloud Function loginWithUsernamePin ไม่พบ - ต้อง deploy functions ก่อน');
+      throw new Error('Cloud Function loginWithUsernamePin ไม่พบ - ต้อง deploy functions ก่อน');
     }
     if (error.message?.includes('PIN') || error.message?.includes('username')) {
       throw new Error(error.message);
@@ -55,13 +55,26 @@ export async function loginMember(username, pin, tripId, remember = true) {
 }
 
 export async function logout() {
+  // Always clear local session state, even if signOut() fails for any reason,
+  // so the user is never stuck logged-in in the UI.
+  let signOutError = null;
   try {
-    if (auth) await signOut(auth);
+    if (auth) {
+      await Promise.race([
+        signOut(auth),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('signOut timeout')), 6000))
+      ]);
+    }
   } catch (e) {
-    console.warn('logout error', e);
+    signOutError = e;
+    console.warn('logout error (continuing with local cleanup)', e);
   }
-  localStorage.removeItem('fuji_current_trip');
-  localStorage.removeItem('fuji_stepup_until');
+  try {
+    localStorage.removeItem('fuji_current_trip');
+    localStorage.removeItem('fuji_stepup_until');
+    localStorage.removeItem('fuji_trips_cache');
+  } catch {}
+  if (signOutError) throw signOutError;
 }
 
 export async function verifySensitiveAction(pin, action) {

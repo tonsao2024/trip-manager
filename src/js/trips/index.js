@@ -197,7 +197,7 @@ export async function createTrip(data, userId) {
         role: 'trip_admin',
         status: 'active',
         color: payload.themeColor,
-        avatar: '🌸',
+        avatar: '',
         permissions: { canEditItinerary: true, canEditExpense: true, canManageMembers: true },
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
