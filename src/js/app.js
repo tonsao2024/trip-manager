@@ -647,120 +647,109 @@ async function renderTripSelector() {
     ];
     
     showBottomSheet(`
-      <div class="space-y-5">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-full grid place-items-center text-lg" style="background: var(--primary-light);">🌿</div>
+      <div class="space-y-3">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-full grid place-items-center text-sm" style="background: var(--primary-light);">🌿</div>
           <div>
-            <h3 class="font-bold text-lg" style="font-family: var(--font-display);">${t('createTrip')}</h3>
-            <p class="text-xs text-[var(--text-secondary)]">${lang==='th' ? 'สร้างทริปใหม่' : 'Create new trip'}</p>
+            <h3 class="font-bold text-base" style="font-family: var(--font-display);">${t('createTrip')}</h3>
+            <p class="text-[11px] text-[var(--text-secondary)]">${lang==='th' ? 'สร้างทริปใหม่' : 'Create new trip'}</p>
           </div>
         </div>
         
-        <form id="create-trip-form" class="space-y-5">
+        <form id="create-trip-form" class="space-y-3">
           <div class="input-group"><label class="input-label">✨ ${t('tripName')} *</label><input id="ct-name" class="input" required placeholder="Fuji Autumn 2027" autocomplete="off"></div>
           
           <div class="input-group">
             <label class="input-label">🖼️ ${t('coverImage')}</label>
-            <div class="p-4 rounded-xl border-2 border-dashed" style="border-color: var(--border); background: var(--bg-secondary);">
-              <div id="cover-dropzone" class="text-center cursor-pointer">
-                <div class="text-3xl mb-2">📸</div>
-                <p class="text-sm font-medium">ลากภาพมาวาง หรือคลิกเลือก</p>
-                <p class="text-[11px] text-[var(--text-tertiary)] mt-1">JPG/PNG/WebP • ครอปได้ • สูงสุด 10MB</p>
+            <div class="p-3 rounded-xl border-2 border-dashed" style="border-color: var(--border); background: var(--bg-secondary);">
+              <div id="cover-dropzone" class="text-center cursor-pointer py-2">
+                <div class="text-2xl mb-1">📸</div>
+                <p class="text-xs font-medium">คลิกเลือกภาพ</p>
+                <p class="text-[10px] text-[var(--text-tertiary)] mt-0.5">JPG/PNG • 10MB • ครอปได้</p>
               </div>
               <input id="ct-cover" type="file" accept="image/*" class="hidden">
               
-              <div id="cover-cropper-container" class="hidden mt-4">
-                <div class="flex gap-2 mb-3 flex-wrap">
-                  <span class="text-xs font-medium">อัตราส่วน:</span>
-                  <button type="button" data-aspect="16/9" class="chip chip-active text-[11px] aspect-btn">16:9</button>
-                  <button type="button" data-aspect="4/3" class="chip text-[11px] aspect-btn">4:3</button>
-                  <button type="button" data-aspect="1" class="chip text-[11px] aspect-btn">1:1</button>
-                  <button type="button" data-aspect="free" class="chip text-[11px] aspect-btn">Free</button>
+              <div id="cover-cropper-container" class="hidden mt-3">
+                <div class="flex gap-1.5 mb-2 flex-wrap">
+                  <span class="text-[11px] font-medium">อัตราส่วน:</span>
+                  <button type="button" data-aspect="16/9" class="chip chip-active text-[10px] aspect-btn py-1 px-2">16:9</button>
+                  <button type="button" data-aspect="4/3" class="chip text-[10px] aspect-btn py-1 px-2">4:3</button>
+                  <button type="button" data-aspect="1" class="chip text-[10px] aspect-btn py-1 px-2">1:1</button>
+                  <button type="button" data-aspect="free" class="chip text-[10px] aspect-btn py-1 px-2">Free</button>
                 </div>
-                <div id="cropper-wrapper" class="w-full rounded-xl overflow-hidden bg-black" style="min-height: 240px;"></div>
-                <div class="flex gap-2 mt-3">
-                  <button type="button" id="crop-confirm" class="btn btn-primary btn-sm flex-1">✂️ ครอป</button>
-                  <button type="button" id="crop-cancel" class="btn btn-secondary btn-sm">ยกเลิก</button>
+                <div id="cropper-wrapper" class="w-full rounded-xl overflow-hidden bg-black" style="min-height: 180px; max-height: 260px;"></div>
+                <div class="flex gap-2 mt-2">
+                  <button type="button" id="crop-confirm" class="btn btn-primary btn-sm flex-1 text-xs">✂️ ครอป</button>
+                  <button type="button" id="crop-cancel" class="btn btn-secondary btn-sm text-xs">ยกเลิก</button>
                 </div>
               </div>
               
-              <div id="cover-preview" class="hidden mt-4">
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs font-bold">👁️ ตัวอย่าง</span>
-                  <button type="button" id="change-image" class="btn btn-ghost btn-sm text-xs">เปลี่ยน</button>
+              <div id="cover-preview" class="hidden mt-3">
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="text-[11px] font-bold">👁️ ตัวอย่าง</span>
+                  <button type="button" id="change-image" class="btn btn-ghost btn-sm text-[10px] h-6">เปลี่ยน</button>
                 </div>
-                <div class="w-full h-40 rounded-xl overflow-hidden border" style="border-color: var(--border);">
+                <div class="w-full h-28 rounded-xl overflow-hidden border" style="border-color: var(--border);">
                   <img id="cover-img" class="w-full h-full object-cover">
                 </div>
-                <p id="cover-info" class="text-[11px] text-[var(--text-tertiary)] mt-2"></p>
+                <p id="cover-info" class="text-[10px] text-[var(--text-tertiary)] mt-1"></p>
               </div>
             </div>
-            <div class="input-group mt-3">
-              <label class="input-label">🔗 หรือใส่ URL รูปภาพ</label>
-              <input id="ct-cover-url" class="input text-sm" placeholder="https://example.com/image.jpg">
-              <p class="input-hint">ใส่ลิงก์รูปภาพโดยตรง จะใช้แทนไฟล์อัปโหลด</p>
+            <div class="input-group mt-2">
+              <label class="input-label text-[12px]">🔗 หรือ URL รูปภาพ</label>
+              <input id="ct-cover-url" class="input text-sm h-9" placeholder="https://...">
             </div>
           </div>
           
-          <div class="grid grid-cols-2 gap-3">
-            <div class="input-group"><label class="input-label">🌍 ${t('country')}</label><input id="ct-country" class="input" placeholder="Japan" autocomplete="off"></div>
-            <div class="input-group"><label class="input-label">🏙️ ${t('city')}</label><input id="ct-city" class="input" placeholder="Fujikawaguchiko" autocomplete="off"></div>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="input-group"><label class="input-label text-[12px]">🌍 ${t('country')}</label><input id="ct-country" class="input h-9 text-sm" placeholder="Japan" autocomplete="off"></div>
+            <div class="input-group"><label class="input-label text-[12px]">🏙️ ${t('city')}</label><input id="ct-city" class="input h-9 text-sm" placeholder="Fujikawaguchiko" autocomplete="off"></div>
           </div>
           
-          <div class="grid grid-cols-2 gap-3">
-            <div class="input-group"><label class="input-label">📅 ${t('startDate')} *</label><input id="ct-start" class="input" type="date" required></div>
-            <div class="input-group"><label class="input-label">📅 ${t('endDate')} *</label><input id="ct-end" class="input" type="date" required></div>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="input-group"><label class="input-label text-[12px]">📅 ${t('startDate')} *</label><input id="ct-start" class="input h-9 text-sm" type="date" required></div>
+            <div class="input-group"><label class="input-label text-[12px]">📅 ${t('endDate')} *</label><input id="ct-end" class="input h-9 text-sm" type="date" required></div>
           </div>
           
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-2 gap-2">
             <div class="input-group">
-              <label class="input-label">🌐 ${t('timezone')}</label>
-              <select id="ct-tz" class="input">
-                <option value="Asia/Bangkok">Asia/Bangkok (BKK)</option>
-                <option value="Asia/Tokyo">Asia/Tokyo (TYO)</option>
-                <option value="Asia/Seoul">Asia/Seoul</option>
-                <option value="Asia/Singapore">Asia/Singapore</option>
-                <option value="Asia/Hong_Kong">Asia/Hong_Kong</option>
-                <option value="Europe/London">Europe/London</option>
-                <option value="Europe/Paris">Europe/Paris</option>
-                <option value="America/New_York">America/New_York</option>
-                <option value="America/Los_Angeles">America/Los_Angeles</option>
-                <option value="Australia/Sydney">Australia/Sydney</option>
+              <label class="input-label text-[12px]">🌐 ${t('timezone')}</label>
+              <select id="ct-tz" class="input h-9 text-sm">
+                <option value="Asia/Bangkok">Bangkok</option>
+                <option value="Asia/Tokyo">Tokyo</option>
+                <option value="Asia/Seoul">Seoul</option>
+                <option value="Asia/Singapore">Singapore</option>
+                <option value="Asia/Hong_Kong">Hong Kong</option>
                 <option value="UTC">UTC</option>
               </select>
             </div>
             <div class="input-group">
-              <label class="input-label">💱 ${t('baseCurrency')}</label>
-              <select id="ct-cur" class="input">
-                <option value="THB">THB - บาทไทย</option>
-                <option value="JPY">JPY - เยน</option>
-                <option value="USD">USD - ดอลลาร์</option>
-                <option value="KRW">KRW - วอน</option>
-                <option value="EUR">EUR - ยูโร</option>
-                <option value="GBP">GBP - ปอนด์</option>
-                <option value="SGD">SGD - ดอลลาร์สิงคโปร์</option>
-                <option value="HKD">HKD - ดอลลาร์ฮ่องกง</option>
-                <option value="CNY">CNY - หยวน</option>
-                <option value="AUD">AUD - ดอลลาร์ออสเตรเลีย</option>
+              <label class="input-label text-[12px]">💱 ${t('baseCurrency')}</label>
+              <select id="ct-cur" class="input h-9 text-sm">
+                <option value="THB">THB</option>
+                <option value="JPY">JPY</option>
+                <option value="USD">USD</option>
+                <option value="KRW">KRW</option>
+                <option value="EUR">EUR</option>
               </select>
             </div>
           </div>
           
           <div class="input-group">
-            <label class="input-label">🎨 ${t('themeColor')}</label>
-            <div class="grid grid-cols-6 gap-2 p-3 rounded-xl" style="background: var(--bg-secondary); border: 1px solid var(--border);">
+            <label class="input-label text-[12px]">🎨 ${t('themeColor')}</label>
+            <div class="grid grid-cols-6 gap-1.5 p-2 rounded-xl" style="background: var(--bg-secondary); border: 1px solid var(--border);">
               ${themeColors.map(c => 
-                `<button type="button" data-color="${c.color}" title="${c.name}" class="group relative w-full aspect-square rounded-full border-2 border-white shadow-sm hover:scale-110 transition-transform" style="background:${c.color};"></button>`
+                `<button type="button" data-color="${c.color}" title="${c.name}" class="w-full aspect-square rounded-full border-2 border-white shadow-sm hover:scale-110 transition-transform" style="background:${c.color};"></button>`
               ).join('')}
             </div>
-            <div class="flex gap-2 mt-3 items-center">
-              <input id="ct-color-custom" type="color" value="#8bb89a" class="w-10 h-10 rounded-full border-2 border-white shadow-sm cursor-pointer">
-              <input id="ct-color" type="text" value="#8bb89a" class="input flex-1 text-sm font-mono" placeholder="#8bb89a">
-              <div id="ct-color-preview" class="w-10 h-10 rounded-full border-2 border-white shadow-sm" style="background:#8bb89a;"></div>
+            <div class="flex gap-2 mt-2 items-center">
+              <input id="ct-color-custom" type="color" value="#8bb89a" class="w-8 h-8 rounded-full border-2 border-white shadow-sm cursor-pointer flex-shrink-0">
+              <input id="ct-color" type="text" value="#8bb89a" class="input flex-1 text-xs font-mono h-8" placeholder="#8bb89a">
+              <div id="ct-color-preview" class="w-8 h-8 rounded-full border-2 border-white shadow-sm flex-shrink-0" style="background:#8bb89a;"></div>
             </div>
           </div>
           
-          <button id="ct-submit" type="submit" class="btn btn-primary w-full btn-lg">🌿 ${t('createTrip')}</button>
+          <button id="ct-submit" type="submit" class="btn btn-primary w-full">🌿 ${t('createTrip')}</button>
         </form>
       </div>
     `);
@@ -997,17 +986,80 @@ async function renderTripSelector() {
     console.error('List trips failed', e);
     let msg = e.message;
     let hint = '';
-    if (msg.includes('permission') || msg.includes('Missing')) {
-      hint = `<p class="text-[11px] mt-2 text-amber-600">⚠️ Firestore Rules ยังไม่ deploy • ต้อง deploy firestore.rules ใหม่</p>`;
-      msg = 'ไม่มีสิทธิ์เข้าถึง';
+    let showRulesHelp = false;
+    
+    if (e.code === 'permission-denied' || msg.includes('permission') || msg.includes('Missing') || msg.includes('insufficient')) {
+      showRulesHelp = true;
+      hint = `
+        <div class="text-left mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] leading-relaxed">
+          <strong>⚠️ Firestore Rules ยังไม่ deploy</strong><br>
+          ต้อง deploy กฎใหม่ที่ Firebase Console:<br>
+          1. ไปที่ <a href="https://console.firebase.google.com" target="_blank" class="underline font-bold">Firebase Console</a> > Firestore > Rules<br>
+          2. คัดลอกเนื้อหาจากไฟล์ <code>firestore.rules</code> ใน repo นี้<br>
+          3. กด Publish<br>
+          <br>
+          <strong>หรือชั่วคราว:</strong> ใช้โหมดทดสอบ (Test mode) ใน Rules<br>
+          <code class="block mt-1 p-1 bg-white rounded text-[10px]">allow read, write: if request.auth != null;</code>
+        </div>
+      `;
+      msg = 'ไม่มีสิทธิ์เข้าถึง - ต้อง deploy Firestore Rules';
     }
-    if (msg.includes('index')) {
-      hint = `<p class="text-[11px] mt-2 text-amber-600">⚠️ ต้องสร้าง Firestore Index • <a href="https://console.firebase.google.com" target="_blank" class="underline">ไปที่ Console</a></p>`;
-      msg = 'ต้องสร้าง Index';
+    if (msg.includes('index') || e.code === 'failed-precondition') {
+      hint = `<div class="text-left mt-3 p-3 rounded-xl bg-blue-50 border border-blue-200 text-[11px]"><strong>⚠️ ต้องสร้าง Firestore Index</strong><br>ไปที่ <a href="https://console.firebase.google.com" target="_blank" class="underline">Console</a> > Firestore > Indexes > สร้าง index ตามลิงก์ใน error</div>`;
+      msg = 'ต้องสร้าง Index - ดูลิงก์ใน Console';
     }
-    grid.innerHTML = `<div class="col-span-full card p-6 text-center"><p class="text-sm text-red-500 mb-3">${escapeHtml(msg)}</p>${hint}<div class="flex gap-2 justify-center mt-3"><button id="retry-trips" class="btn btn-primary btn-sm">🔄 ลองใหม่</button><button id="clear-cfg-btn" class="btn btn-ghost btn-sm">ล้าง Config</button></div><p class="text-[11px] text-[var(--text-tertiary)] mt-3">UID: ${currentUser?.uid?.slice(0,8)}...</p></div>`;
+    
+    // Try to show cached trips even if permission denied
+    try {
+      const cached = localStorage.getItem('fuji_trips_cache');
+      if (cached) {
+        const { data } = JSON.parse(cached);
+        if (data && data.length) {
+          grid.innerHTML = `
+            <div class="col-span-full mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs">⚠️ ใช้ข้อมูลจาก cache • ${data.length} ทริป • กดรีเฟรชหลัง deploy Rules</div>
+            ${data.map((trip, idx) => `
+              <div class="card card-hover p-0 overflow-hidden cursor-pointer" data-trip="${trip.id}" style="animation-delay: ${idx*0.05}s">
+                <div class="h-28 relative overflow-hidden" style="background: ${trip.themeColor || '#8bb89a'};">
+                  ${trip.coverImage ? `<img src="${trip.coverImage}" class="w-full h-full object-cover">` : ''}
+                  <div class="absolute bottom-2 left-3 right-3"><h3 class="font-bold text-white text-sm drop-shadow-sm">${escapeHtml(trip.name)}</h3></div>
+                </div>
+                <div class="p-3">
+                  <p class="text-[11px] text-[var(--text-secondary)]">📅 ${trip.startDate || ''} → ${trip.endDate || ''}</p>
+                </div>
+              </div>
+            `).join('')}
+          `;
+          grid.querySelectorAll('[data-trip]').forEach(el => {
+            el.addEventListener('click', () => location.hash = `#/trip/${el.dataset.trip}/dashboard`);
+          });
+          // Add retry button below
+          const retryDiv = document.createElement('div');
+          retryDiv.className = 'col-span-full flex gap-2 justify-center mt-4';
+          retryDiv.innerHTML = `<button id="retry-trips" class="btn btn-primary btn-sm">🔄 ลองใหม่หลัง deploy Rules</button>`;
+          grid.appendChild(retryDiv);
+          document.getElementById('retry-trips').addEventListener('click', () => renderTripSelector());
+          return;
+        }
+      }
+    } catch {}
+    
+    grid.innerHTML = `<div class="col-span-full card p-5 text-center"><p class="text-sm font-bold text-red-500 mb-2">${escapeHtml(msg)}</p>${hint}<div class="flex gap-2 justify-center mt-4"><button id="retry-trips" class="btn btn-primary btn-sm">🔄 ลองใหม่</button><button id="show-rules" class="btn btn-secondary btn-sm">📋 ดู Rules</button><button id="clear-cfg-btn" class="btn btn-ghost btn-sm">ล้าง Config</button></div><p class="text-[10px] text-[var(--text-tertiary)] mt-3">UID: ${currentUser?.uid?.slice(0,8)} • ${currentUser?.email || ''}</p></div>`;
     document.getElementById('retry-trips').addEventListener('click', () => renderTripSelector());
     document.getElementById('clear-cfg-btn').addEventListener('click', () => { localStorage.removeItem('fuji_firebase_config'); location.reload(); });
+    document.getElementById('show-rules')?.addEventListener('click', async () => {
+      try {
+        const res = await fetch('./firestore.rules');
+        const rulesText = await res.text();
+        showBottomSheet(`
+          <h3 class="font-bold mb-3">📋 Firestore Rules - คัดลอกไป deploy</h3>
+          <p class="text-xs mb-3">คัดลอกทั้งหมดไปวางใน Firebase Console > Firestore > Rules > Publish</p>
+          <pre class="p-3 bg-black text-green-400 rounded-xl text-[10px] overflow-auto max-h-[400px] whitespace-pre-wrap">${escapeHtml(rulesText)}</pre>
+          <button class="btn btn-primary w-full mt-3 btn-sm" onclick="navigator.clipboard.writeText(document.querySelector('pre').textContent).then(()=>alert('คัดลอกแล้ว'))">📋 คัดลอก Rules</button>
+        `);
+      } catch {
+        toast.error('โหลด rules ไม่สำเร็จ');
+      }
+    });
   }
 }
 

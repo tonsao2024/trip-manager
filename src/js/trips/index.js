@@ -4,7 +4,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gsta
 import { compressImage } from '../utils/helpers.js';
 
 const TRIPS_CACHE_KEY = 'fuji_trips_cache';
-const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_TTL = 10 * 60 * 1000;
 
 function getCachedTrips() {
   try {
@@ -26,7 +26,6 @@ function clearTripsCache() {
   try { localStorage.removeItem(TRIPS_CACHE_KEY); } catch {}
 }
 
-// Convert blob to base64 data URL for free tier fallback
 function blobToDataURL(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -42,38 +41,53 @@ export async function listTrips(userId, isSuperAdmin = false) {
   
   const cached = getCachedTrips();
   
-  try {
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Timeout loading trips - check Firestore rules')), 8000)
-    );
-    
-    let queryPromise;
-    if (isSuperAdmin) {
-      queryPromise = getDocs(query(collection(db, 'trips'), limit(30)));
-    } else {
-      queryPromise = getDocs(query(collection(db, 'trips'), where('memberUids', 'array-contains', userId), limit(30)));
+  const tryQuery = async (q, label) => {
+    try {
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error(`Timeout ${label} - check Firestore rules & indexes`)), 10000)
+      );
+      const snap = await Promise.race([getDocs(q), timeoutPromise]);
+      const trips = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (trips.length) setCachedTrips(trips);
+      return trips;
+    } catch (e) {
+      console.warn(`listTrips ${label} failed:`, e.message, e.code);
+      throw e;
     }
-    
-    const snap = await Promise.race([queryPromise, timeoutPromise]);
-    const trips = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    setCachedTrips(trips);
+  };
+  
+  // Try 1: array-contains
+  try {
+    const q = query(collection(db, 'trips'), where('memberUids', 'array-contains', userId), limit(30));
+    const trips = await tryQuery(q, 'memberUids');
     return trips;
   } catch (e) {
-    console.warn('listTrips primary failed:', e.message, e.code);
-    if (cached && cached.length) return cached;
-    try {
-      const fallback = await getDocs(query(collection(db, 'trips'), where('createdBy', '==', userId), limit(30)));
-      const trips = fallback.docs.map(d => ({ id: d.id, ...d.data() }));
-      setCachedTrips(trips);
-      return trips;
-    } catch (fallbackErr) {
-      console.error('Fallback failed:', fallbackErr);
-    }
-    if (e.code === 'permission-denied') {
-      throw new Error('❌ ไม่มีสิทธิ์อ่านทริป - deploy Firestore Rules ใหม่\n' + e.message);
-    }
-    throw e;
+    if (e.code === 'permission-denied' && cached?.length) return cached;
   }
+  
+  // Try 2: createdBy
+  try {
+    const q = query(collection(db, 'trips'), where('createdBy', '==', userId), limit(30));
+    const trips = await tryQuery(q, 'createdBy');
+    return trips;
+  } catch (e) {
+    if (e.code === 'permission-denied' && cached?.length) return cached;
+  }
+  
+  // Try 3: all trips permissive (new rules allow list for auth)
+  try {
+    const q = query(collection(db, 'trips'), limit(50));
+    const allTrips = await tryQuery(q, 'all');
+    const filtered = allTrips.filter(t => t.memberUids?.includes(userId) || t.createdBy === userId);
+    if (filtered.length) return filtered;
+    if (allTrips.length) return allTrips; // permissive mode
+  } catch (e) {
+    console.warn('listTrips all failed', e.message);
+  }
+  
+  if (cached?.length) return cached;
+  
+  throw new Error('ไม่มีสิทธิ์เข้าถึง - ต้อง deploy Firestore Rules ใหม่ที่ Firebase Console > Firestore > Rules > วาง firestore.rules > Publish');
 }
 
 export async function getTrip(tripId) {
@@ -84,22 +98,14 @@ export async function getTrip(tripId) {
   return { id: snap.id, ...snap.data() };
 }
 
-// Upload cover with free tier fallback to base64
 export async function uploadCoverImage(tripId, fileOrBlob, userId) {
   if (!fileOrBlob) return '';
-  
-  // If storage not available (free tier without Storage), return base64 directly
   if (!storage || !isStorageAvailable) {
-    console.log('[uploadCoverImage] Storage not available (free tier) - using base64 fallback');
     try {
       const blob = fileOrBlob instanceof File ? await compressImage(fileOrBlob, 800, 0.7) : fileOrBlob;
-      // Check size - Firestore limit 1MB per doc, so keep base64 under ~800KB
       if (blob.size > 800 * 1024) {
-        console.warn('Image too large for base64 fallback, compressing more');
         const extraCompressed = await compressImage(new File([blob], 'cover.webp', { type: 'image/webp' }), 600, 0.6);
-        if (extraCompressed.size > 800 * 1024) {
-          throw new Error('Image too large even after compression - will use theme color instead');
-        }
+        if (extraCompressed.size > 800 * 1024) throw new Error('Image too large');
         return await blobToDataURL(extraCompressed);
       }
       return await blobToDataURL(blob);
@@ -108,7 +114,6 @@ export async function uploadCoverImage(tripId, fileOrBlob, userId) {
       return '';
     }
   }
-  
   try {
     let blobToUpload = fileOrBlob;
     if (fileOrBlob instanceof File) {
@@ -120,21 +125,13 @@ export async function uploadCoverImage(tripId, fileOrBlob, userId) {
     const url = await getDownloadURL(ref);
     return url;
   } catch (e) {
-    console.error('Upload cover failed:', e, e.code);
-    // If storage fails (free tier, bucket not found, unauthorized), fallback to base64
+    console.error('Upload cover failed:', e);
     if (e.code && (e.code.includes('storage/') || e.code === 'permission-denied' || e.message.includes('storage'))) {
-      console.log('Storage upload failed, trying base64 fallback for free tier');
       try {
         const blob = fileOrBlob instanceof File ? await compressImage(fileOrBlob, 800, 0.7) : fileOrBlob;
-        if (blob.size > 800 * 1024) {
-          console.warn('Image too large for free tier fallback');
-          return '';
-        }
-        const dataUrl = await blobToDataURL(blob);
-        console.log('Using base64 fallback for cover, size:', dataUrl.length);
-        return dataUrl;
+        if (blob.size > 800 * 1024) return '';
+        return await blobToDataURL(blob);
       } catch (fallbackErr) {
-        console.warn('Base64 fallback also failed:', fallbackErr);
         return '';
       }
     }
@@ -143,26 +140,21 @@ export async function uploadCoverImage(tripId, fileOrBlob, userId) {
 }
 
 export async function createTrip(data, userId) {
-  if (!db) throw new Error('DB not ready - Firebase not configured');
-  if (!userId) throw new Error('User not authenticated - please login again');
-  
+  if (!db) throw new Error('DB not ready');
+  if (!userId) throw new Error('User not authenticated');
   if (!data.name || !data.name.trim()) throw new Error('กรุณากรอกชื่อทริป');
   if (!data.startDate || !data.endDate) throw new Error('กรุณาเลือกวันเริ่มและสิ้นสุด');
   
-  // Handle cover image: support URL, file, blob, base64
   let coverImageUrl = data.coverImage || data.coverUrl || '';
   let coverFileForUpload = data.coverFile || null;
   let coverBlobForUpload = data.coverBlob || null;
   
-  // If coverUrl provided as image URL, use it directly
   if (data.coverUrl && data.coverUrl.startsWith('http')) {
     coverImageUrl = data.coverUrl;
     coverFileForUpload = null;
     coverBlobForUpload = null;
-    console.log('Using cover URL:', coverImageUrl.slice(0,60));
   }
   
-  // For free tier without storage, prepare base64 upfront if storage not available
   if ((coverFileForUpload || coverBlobForUpload) && (!storage || !isStorageAvailable)) {
     try {
       const blob = coverBlobForUpload || coverFileForUpload;
@@ -171,7 +163,6 @@ export async function createTrip(data, userId) {
         coverImageUrl = dataUrl;
         coverFileForUpload = null;
         coverBlobForUpload = null;
-        console.log('Free tier: using base64 cover directly in trip doc');
       }
     } catch (e) {
       console.warn('Free tier base64 prep failed:', e);
@@ -197,10 +188,7 @@ export async function createTrip(data, userId) {
   };
   
   try {
-    console.log('[createTrip] Creating trip:', payload.name, 'Storage available:', isStorageAvailable, 'Has cover:', !!coverImageUrl || !!coverFileForUpload || !!coverBlobForUpload);
     const ref = await addDoc(collection(db, 'trips'), payload);
-    console.log('[createTrip] Trip created:', ref.id);
-    
     try {
       const memberRef = doc(db, `trips/${ref.id}/members`, userId);
       await setDoc(memberRef, {
@@ -215,20 +203,15 @@ export async function createTrip(data, userId) {
         updatedAt: serverTimestamp(),
         order: 0
       });
-      console.log('[createTrip] Member created');
     } catch (memberErr) {
-      console.error('[createTrip] Member creation failed:', memberErr);
-      if (memberErr.code !== 'permission-denied') throw memberErr;
+      console.warn('Member creation failed, but trip created:', memberErr.message);
     }
     
-    // Upload cover if still needed (storage available case)
     if (coverFileForUpload || coverBlobForUpload) {
       try {
-        console.log('[createTrip] Uploading cover to Storage...');
         const fileToUpload = coverBlobForUpload || coverFileForUpload;
         const url = await uploadCoverImage(ref.id, fileToUpload, userId);
         if (url && url !== coverImageUrl) {
-          console.log('[createTrip] Cover uploaded:', url.substring(0, 50));
           await updateTrip(ref.id, { coverImage: url });
         }
       } catch (uploadErr) {
@@ -239,9 +222,9 @@ export async function createTrip(data, userId) {
     clearTripsCache();
     return ref.id;
   } catch (e) {
-    console.error('createTrip error:', e, e.code);
+    console.error('createTrip error:', e);
     if (e.code === 'permission-denied') {
-      throw new Error(`❌ ไม่มีสิทธิ์สร้างทริป - deploy Firestore Rules ใหม่\n\nวิธีแก้:\n1. Firebase Console > Firestore > Rules\n2. วาง rules จากไฟล์ firestore.rules\n3. Publish\n\nError: ${e.message}`);
+      throw new Error(`ไม่มีสิทธิ์สร้างทริป - ต้อง deploy Firestore Rules ใหม่\n\nวิธีแก้:\n1. Firebase Console > Firestore > Rules\n2. วาง rules จากไฟล์ firestore.rules ใน repo\n3. Publish\n\nถ้ายังไม่ได้: ใช้ Test mode ชั่วคราว\nallow read, write: if request.auth != null;\n\nError: ${e.message}`);
     }
     throw e;
   }
