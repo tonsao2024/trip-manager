@@ -1,39 +1,50 @@
-/* Fuji Trip Planner - Cute Pastel Minimal Design System v2.1 - Cohesive Muted */
-/* All themes are muted low-saturation pastel, cohesive */
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap');
+/* Fuji Trip Planner — Design System v3
+   Theme engine: every color theme only defines --primary-raw / --grad-1 / --grad-2.
+   All other colors are derived with color-mix() so light & dark modes always
+   produce readable, cohesive ("คลุมโทน") contrast automatically. */
 
 :root {
-  --bg: #fbfaf7;
-  --bg-secondary: #f2f4ef;
-  --bg-tertiary: #e8ebe4;
-  --surface: #ffffff;
-  --surface-2: #f6f7f4;
-  --surface-3: #eef2eb;
-  --card: #ffffff;
-  --card-hover: #fefefe;
-  --text: #2e3d2f;
-  --text-secondary: #6b7f6e;
-  --text-tertiary: #a8b9ab;
-  --border: #e4e9e1;
-  --border-strong: #d0d9cc;
-  --border-light: #eef2eb;
-  
-  --shadow-xs: 0 1px 3px rgba(46,61,47,0.04);
-  --shadow-sm: 0 2px 8px rgba(46,61,47,0.06);
-  --shadow: 0 4px 16px rgba(46,61,47,0.08);
-  --shadow-md: 0 8px 24px rgba(46,61,47,0.10);
-  --shadow-lg: 0 16px 40px rgba(46,61,47,0.12);
-  --shadow-soft: 0 8px 32px rgba(46,61,47,0.06);
-  --shadow-inner: inset 0 1px 0 rgba(255,255,255,0.8);
+  /* ---- Default theme base (Sage) ---- */
+  --primary-raw: #8bb89a;
+  --grad-1: #8bb89a;
+  --grad-2: #a8c5b5;
 
-  /* Default sage - muted pastel green */
-  --primary: #8bb89a;
-  --primary-hover: #7aa688;
-  --primary-light: #e6f0e8;
-  --primary-lighter: #f0f6f1;
-  --primary-dark: #6b8f79;
-  --primary-soft: rgba(139,184,154,0.15);
-  
+  /* ---- Derived primary palette (light mode) ---- */
+  --primary: var(--primary-raw);
+  --primary-hover: color-mix(in srgb, var(--primary-raw) 88%, #000);
+  --primary-light: color-mix(in srgb, var(--primary-raw) 15%, #fff);
+  --primary-lighter: color-mix(in srgb, var(--primary-raw) 8%, #fff);
+  --primary-dark: color-mix(in srgb, var(--primary-raw) 65%, #1d2b20);
+  --primary-soft: color-mix(in srgb, var(--primary-raw) 16%, transparent);
+  --primary-strong: color-mix(in srgb, var(--primary-raw) 62%, #22301f); /* readable text-on-light */
+  --on-primary: #ffffff;
+
+  /* ---- Surfaces: subtly tinted with the theme color (tonal harmony) ---- */
+  --bg: color-mix(in srgb, var(--primary-raw) 3%, #fbfaf8);
+  --bg-secondary: color-mix(in srgb, var(--primary-raw) 6%, #f2f4ef);
+  --bg-tertiary: color-mix(in srgb, var(--primary-raw) 9%, #e8ebe4);
+  --surface: #ffffff;
+  --surface-2: color-mix(in srgb, var(--primary-raw) 4%, #f6f7f4);
+  --surface-3: color-mix(in srgb, var(--primary-raw) 8%, #eef2eb);
+  --card: #ffffff;
+  --card-hover: #ffffff;
+  --text: #2c3630;
+  --text-secondary: #5f7265;
+  --text-tertiary: #93a598;
+  --border: color-mix(in srgb, var(--primary-raw) 10%, #e6e9e3);
+  --border-strong: color-mix(in srgb, var(--primary-raw) 22%, #d3d9cf);
+  --border-light: color-mix(in srgb, var(--primary-raw) 6%, #eff2ec);
+
+  --shadow-xs: 0 1px 3px rgba(38,52,42,0.05);
+  --shadow-sm: 0 2px 8px rgba(38,52,42,0.07);
+  --shadow: 0 4px 16px rgba(38,52,42,0.09);
+  --shadow-md: 0 8px 24px rgba(38,52,42,0.11);
+  --shadow-lg: 0 16px 40px rgba(38,52,42,0.14);
+  --shadow-soft: 0 8px 32px rgba(38,52,42,0.07);
+  --shadow-inner: inset 0 1px 0 rgba(255,255,255,0.8);
+  --shadow-primary: 0 6px 18px color-mix(in srgb, var(--primary-raw) 32%, transparent);
+
+  /* ---- Fixed accents ---- */
   --accent-sage: #8bb89a;
   --accent-moss: #a8c5b5;
   --accent-clay: #d4b5a0;
@@ -42,35 +53,35 @@
   --accent-sky: #8aa8b5;
   --accent-lavender: #a0a0b5;
   --accent-lemon: #c5b5a0;
-  
-  --gradient-primary: linear-gradient(135deg, #8bb89a 0%, #a8c5b5 100%);
-  --gradient-sage: linear-gradient(135deg, #8bb89a 0%, #b8d4c2 100%);
-  --gradient-fuji: linear-gradient(135deg, #8bb89a 0%, #a8c5b5 50%, #d4c5b5 100%);
-  --gradient-fuji-soft: linear-gradient(135deg, rgba(139,184,154,0.12) 0%, rgba(168,197,181,0.12) 50%, rgba(212,197,181,0.12) 100%);
-  --gradient-mesh: radial-gradient(at 20% 30%, rgba(139,184,154,0.10) 0%, transparent 50%), radial-gradient(at 80% 20%, rgba(212,181,160,0.08) 0%, transparent 50%), radial-gradient(at 50% 80%, rgba(168,197,216,0.06) 0%, transparent 50%);
-  --gradient-glass: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.6) 100%);
-  
-  --success: #7da68a;
-  --success-light: #e6f0e8;
-  --success-bg: #f0f6f1;
-  --warning: #b5a08a;
-  --warning-light: #f0e6d3;
-  --warning-bg: #fdf6ee;
-  --danger: #b58a8a;
-  --danger-light: #f0d3d3;
-  --danger-bg: #fdf0f0;
-  --info: #8aa8b5;
-  --info-light: #d3e6ef;
 
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
-  --space-12: 48px;
+  /* ---- Gradients ---- */
+  --gradient-primary: linear-gradient(135deg, var(--grad-1) 0%, var(--grad-2) 100%);
+  --gradient-sage: var(--gradient-primary);
+  --gradient-fuji: linear-gradient(135deg, var(--grad-1) 0%, color-mix(in srgb, var(--grad-2) 70%, var(--grad-1)) 50%, var(--grad-2) 100%);
+  --gradient-fuji-soft: linear-gradient(135deg, color-mix(in srgb, var(--grad-1) 12%, transparent) 0%, color-mix(in srgb, var(--grad-2) 12%, transparent) 100%);
+  --gradient-vivid: linear-gradient(135deg, var(--grad-1) 0%, color-mix(in srgb, var(--grad-1) 50%, var(--grad-2)) 50%, var(--grad-2) 100%);
+  --gradient-mesh:
+    radial-gradient(at 20% 30%, color-mix(in srgb, var(--grad-1) 10%, transparent) 0%, transparent 50%),
+    radial-gradient(at 80% 20%, color-mix(in srgb, var(--grad-2) 9%, transparent) 0%, transparent 50%),
+    radial-gradient(at 50% 80%, color-mix(in srgb, var(--grad-1) 6%, transparent) 0%, transparent 50%);
+  --gradient-glass: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.6) 100%);
+
+  /* ---- Status colors ---- */
+  --success: #6f9e7d;
+  --success-light: color-mix(in srgb, #6f9e7d 14%, #fff);
+  --success-bg: color-mix(in srgb, #6f9e7d 8%, #fff);
+  --warning: #b08d5f;
+  --warning-light: color-mix(in srgb, #b08d5f 16%, #fff);
+  --warning-bg: color-mix(in srgb, #b08d5f 8%, #fff);
+  --danger: #b26a6a;
+  --danger-light: color-mix(in srgb, #b26a6a 14%, #fff);
+  --danger-bg: color-mix(in srgb, #b26a6a 7%, #fff);
+  --info: #6d93a8;
+  --info-light: color-mix(in srgb, #6d93a8 14%, #fff);
+
+  /* ---- Space / radius / type ---- */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px; --space-12: 48px;
 
   --radius-xs: 8px;
   --radius-sm: 12px;
@@ -83,7 +94,7 @@
 
   --font-sans: "Plus Jakarta Sans", "Noto Sans Thai", system-ui, -apple-system, sans-serif;
   --font-display: "Fraunces", "Plus Jakarta Sans", serif;
-  --font-mono: "Geist Mono", monospace;
+  --font-mono: ui-monospace, "SF Mono", "Geist Mono", monospace;
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
   --text-base: 1rem;
@@ -101,130 +112,86 @@
   --sidebar-w: 280px;
 }
 
-/* Theme Presets - All cohesive muted pastel */
-[data-color="sage"] {
-  --primary: #8bb89a;
-  --primary-hover: #7aa688;
-  --primary-light: #e6f0e8;
-  --primary-soft: rgba(139,184,154,0.15);
-  --gradient-primary: linear-gradient(135deg, #8bb89a 0%, #a8c5b5 100%);
-  --gradient-fuji: linear-gradient(135deg, #8bb89a 0%, #b8d4c2 100%);
-  --accent: #a8c5b5;
-}
+/* =========================================================
+   Theme presets — PASTEL collection (muted, cohesive)
+   ========================================================= */
+[data-color="sage"]     { --primary-raw: #8bb89a; --grad-1: #8bb89a; --grad-2: #a8c5b5; }
+[data-color="fuji"]     { --primary-raw: #8aa89a; --grad-1: #8aa89a; --grad-2: #b5c5b5; }
+[data-color="sakura"]   { --primary-raw: #b89aa0; --grad-1: #b89aa0; --grad-2: #c5a8a0; }
+[data-color="ocean"]    { --primary-raw: #8aa8b5; --grad-1: #8aa8b5; --grad-2: #a0b5c5; }
+[data-color="sunset"]   { --primary-raw: #b5a08a; --grad-1: #b5a08a; --grad-2: #c5b5a0; }
+[data-color="lavender"] { --primary-raw: #9a9ab5; --grad-1: #9a9ab5; --grad-2: #b5b5c5; }
+[data-color="forest"]   { --primary-raw: #6b8f79; --grad-1: #6b8f79; --grad-2: #8bb89a; }
+[data-color="dusk"]     { --primary-raw: #8a7a9a; --grad-1: #8a7a9a; --grad-2: #b5a0c5; }
+[data-color="clay"]     { --primary-raw: #b58a7a; --grad-1: #b58a7a; --grad-2: #d4b5a0; }
 
-[data-color="fuji"] {
-  /* Fuji Mist - muted sage-gray-blue, cohesive with sage, not bright purple */
-  --primary: #8aa89a;
-  --primary-hover: #7a988a;
-  --primary-light: #e4ece7;
-  --primary-soft: rgba(138,168,154,0.15);
-  --gradient-primary: linear-gradient(135deg, #8aa89a 0%, #a8b5a0 50%, #b5c5b5 100%);
-  --gradient-fuji: linear-gradient(135deg, #8aa89a 0%, #a0b5a8 100%);
-  --accent: #b5c5b5;
-}
+/* =========================================================
+   Theme presets — GRADIENT collection (modern & vivid)
+   ========================================================= */
+[data-color="aurora"]   { --primary-raw: #14b8a6; --grad-1: #14b8a6; --grad-2: #8b5cf6; }
+[data-color="sunburst"] { --primary-raw: #f97316; --grad-1: #f97316; --grad-2: #ec4899; }
+[data-color="lagoon"]   { --primary-raw: #06b6d4; --grad-1: #06b6d4; --grad-2: #3b82f6; }
+[data-color="berry"]    { --primary-raw: #d946a8; --grad-1: #ec4899; --grad-2: #a855f7; }
+[data-color="matcha"]   { --primary-raw: #65a30d; --grad-1: #84cc16; --grad-2: #22c55e; }
+[data-color="midnight"] { --primary-raw: #6366f1; --grad-1: #6366f1; --grad-2: #1e3a8a; }
+[data-color="peach"]    { --primary-raw: #fb7185; --grad-1: #fbbf24; --grad-2: #fb7185; }
+[data-color="grape"]    { --primary-raw: #8b5cf6; --grad-1: #8b5cf6; --grad-2: #d946ef; }
 
-[data-color="sakura"] {
-  /* Sakura Muted - dusty rose, low saturation */
-  --primary: #b89aa0;
-  --primary-hover: #a68a90;
-  --primary-light: #f0e4e6;
-  --primary-soft: rgba(184,154,160,0.15);
-  --gradient-primary: linear-gradient(135deg, #b89aa0 0%, #c5a8a0 100%);
-  --gradient-fuji: linear-gradient(135deg, #b89aa0 0%, #c5b5a0 100%);
-  --accent: #c5b5a0;
-}
-
-[data-color="ocean"] {
-  /* Ocean Mist - muted blue-gray */
-  --primary: #8aa8b5;
-  --primary-hover: #7a98a5;
-  --primary-light: #e0eaef;
-  --primary-soft: rgba(138,168,181,0.15);
-  --gradient-primary: linear-gradient(135deg, #8aa8b5 0%, #a0b5c5 100%);
-  --gradient-fuji: linear-gradient(135deg, #8aa8b5 0%, #a0b5b5 100%);
-  --accent: #a0b5c5;
-}
-
-[data-color="sunset"] {
-  /* Sunset Sand - muted warm beige */
-  --primary: #b5a08a;
-  --primary-hover: #a5907a;
-  --primary-light: #f0e8e0;
-  --primary-soft: rgba(181,160,138,0.15);
-  --gradient-primary: linear-gradient(135deg, #b5a08a 0%, #c5b5a0 100%);
-  --gradient-fuji: linear-gradient(135deg, #b5a08a 0%, #c5b5a0 100%);
-  --accent: #c5b5a0;
-}
-
-[data-color="lavender"] {
-  /* Lavender Fog - muted gray-lavender */
-  --primary: #9a9ab5;
-  --primary-hover: #8a8aa5;
-  --primary-light: #e6e6f0;
-  --primary-soft: rgba(154,154,181,0.15);
-  --gradient-primary: linear-gradient(135deg, #9a9ab5 0%, #a8a8c5 100%);
-  --gradient-fuji: linear-gradient(135deg, #9a9ab5 0%, #b5b5c5 100%);
-  --accent: #b5b5c5;
-}
-
-[data-color="forest"] {
-  --primary: #6b8f79;
-  --primary-hover: #5a7a68;
-  --primary-light: #dde8e0;
-  --primary-soft: rgba(107,143,121,0.15);
-  --gradient-primary: linear-gradient(135deg, #6b8f79 0%, #8bb89a 50%, #a8c5b5 100%);
-  --gradient-fuji: linear-gradient(135deg, #6b8f79 0%, #8bb89a 100%);
-  --accent: #8bb89a;
-}
-
-[data-color="dusk"] {
-  --primary: #8a7a9a;
-  --primary-hover: #7a6a8a;
-  --primary-light: #e8e0f0;
-  --primary-soft: rgba(138,122,154,0.15);
-  --gradient-primary: linear-gradient(135deg, #8a7a9a 0%, #9a8ab5 50%, #b5a0c5 100%);
-  --gradient-fuji: linear-gradient(135deg, #8a7a9a 0%, #b5a0c5 100%);
-  --accent: #b5a0c5;
-}
-
-[data-color="clay"] {
-  --primary: #b58a7a;
-  --primary-hover: #a57a6a;
-  --primary-light: #f0ddd4;
-  --primary-soft: rgba(181,138,122,0.15);
-  --gradient-primary: linear-gradient(135deg, #b58a7a 0%, #c5a08a 50%, #d4b5a0 100%);
-  --gradient-fuji: linear-gradient(135deg, #b58a7a 0%, #d4b5a0 100%);
-  --accent: #d4b5a0;
-}
-
-/* Dark mode - improved contrast, keep muted sage vibe */
+/* =========================================================
+   Dark mode — tinted neutrals + brighter primary for contrast
+   ========================================================= */
 [data-theme="dark"] {
-  --bg: #1a221b;
-  --bg-secondary: #232e24;
-  --bg-tertiary: #2d3a2e;
-  --surface: #232e24;
-  --surface-2: #2d3a2e;
-  --surface-3: #354436;
-  --card: #232e24;
-  --card-hover: #2d3a2e;
-  --text: #e8ebe4;
-  --text-secondary: #a8b9ab;
-  --text-tertiary: #6b7f6e;
-  --border: #2d3a2e;
-  --border-strong: #3d4f3e;
-  --border-light: #354436;
-  --shadow-xs: 0 1px 3px rgba(0,0,0,0.2);
-  --shadow-sm: 0 2px 8px rgba(0,0,0,0.25);
-  --shadow: 0 4px 16px rgba(0,0,0,0.3);
-  --shadow-md: 0 8px 24px rgba(0,0,0,0.35);
-  --shadow-lg: 0 16px 40px rgba(0,0,0,0.4);
-  --shadow-soft: 0 8px 32px rgba(0,0,0,0.3);
-  --primary-light: #2d3a2e;
-  --primary-lighter: #354436;
-  --success-light: #2d3a2e;
-  --warning-light: #3d352e;
-  --danger-light: #3d2e2e;
-  --gradient-fuji-soft: linear-gradient(135deg, rgba(139,184,154,0.08) 0%, rgba(168,197,181,0.08) 100%);
+  /* primary lightened so it reads well as text/accent on dark surfaces */
+  --primary: color-mix(in srgb, var(--primary-raw) 68%, #fff);
+  --primary-hover: color-mix(in srgb, var(--primary-raw) 78%, #fff);
+  --primary-light: color-mix(in srgb, var(--primary-raw) 22%, #171b19);
+  --primary-lighter: color-mix(in srgb, var(--primary-raw) 12%, #171b19);
+  --primary-dark: color-mix(in srgb, var(--primary-raw) 55%, #fff);
+  --primary-soft: color-mix(in srgb, var(--primary-raw) 26%, transparent);
+  --primary-strong: color-mix(in srgb, var(--primary-raw) 55%, #fff);
+  --on-primary: #12180f;
+
+  --bg: color-mix(in srgb, var(--primary-raw) 6%, #131714);
+  --bg-secondary: color-mix(in srgb, var(--primary-raw) 8%, #1a1f1b);
+  --bg-tertiary: color-mix(in srgb, var(--primary-raw) 11%, #212723);
+  --surface: color-mix(in srgb, var(--primary-raw) 8%, #1a1f1b);
+  --surface-2: color-mix(in srgb, var(--primary-raw) 10%, #212723);
+  --surface-3: color-mix(in srgb, var(--primary-raw) 13%, #282f2a);
+  --card: color-mix(in srgb, var(--primary-raw) 8%, #1b201c);
+  --card-hover: color-mix(in srgb, var(--primary-raw) 11%, #222824);
+  --text: #e9ede8;
+  --text-secondary: #aab6ac;
+  --text-tertiary: #7c8a7f;
+  --border: color-mix(in srgb, var(--primary-raw) 12%, #272d29);
+  --border-strong: color-mix(in srgb, var(--primary-raw) 20%, #343b36);
+  --border-light: color-mix(in srgb, var(--primary-raw) 8%, #232924);
+
+  --shadow-xs: 0 1px 3px rgba(0,0,0,0.25);
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.3);
+  --shadow: 0 4px 16px rgba(0,0,0,0.35);
+  --shadow-md: 0 8px 24px rgba(0,0,0,0.4);
+  --shadow-lg: 0 16px 40px rgba(0,0,0,0.45);
+  --shadow-soft: 0 8px 32px rgba(0,0,0,0.35);
+  --shadow-inner: inset 0 1px 0 rgba(255,255,255,0.05);
+  --shadow-primary: 0 6px 22px color-mix(in srgb, var(--primary-raw) 38%, transparent);
+
+  --success: #86b996;
+  --success-light: color-mix(in srgb, #86b996 18%, #1b201c);
+  --success-bg: color-mix(in srgb, #86b996 10%, #1b201c);
+  --warning: #d3ab77;
+  --warning-light: color-mix(in srgb, #d3ab77 18%, #1b201c);
+  --warning-bg: color-mix(in srgb, #d3ab77 10%, #1b201c);
+  --danger: #d98f8f;
+  --danger-light: color-mix(in srgb, #d98f8f 18%, #1b201c);
+  --danger-bg: color-mix(in srgb, #d98f8f 10%, #1b201c);
+  --info: #8fb4c9;
+  --info-light: color-mix(in srgb, #8fb4c9 18%, #1b201c);
+
+  --gradient-glass: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%);
+  --gradient-mesh:
+    radial-gradient(at 20% 30%, color-mix(in srgb, var(--grad-1) 12%, transparent) 0%, transparent 50%),
+    radial-gradient(at 80% 20%, color-mix(in srgb, var(--grad-2) 10%, transparent) 0%, transparent 50%),
+    radial-gradient(at 50% 80%, color-mix(in srgb, var(--grad-1) 7%, transparent) 0%, transparent 50%);
 }
 
 * { font-family: var(--font-sans); }
@@ -237,7 +204,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: "ss01", "ss02";
   overflow-x: hidden;
-  transition: background 0.3s ease, color 0.3s ease;
+  transition: background 0.45s ease, color 0.45s ease;
 }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -245,4 +212,4 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-full); border: 2px solid var(--bg-secondary); }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
 
-::selection { background: var(--primary-light); color: var(--primary-dark); }
+::selection { background: color-mix(in srgb, var(--primary-raw) 30%, transparent); color: var(--text); }

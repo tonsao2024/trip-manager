@@ -1,9 +1,13 @@
-/* Animations - Fast, Cute, All screens, dark/light aware */
+/* Animations v3 — playful, smooth, on every screen (transform/opacity only) */
 
+/* ---------- Keyframes ---------- */
 @keyframes slideInCute { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-@keyframes slideUpCute { from { transform: translateY(30%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes slideUpCute { from { translate: 0 40px; opacity: 0; } to { translate: 0 0; opacity: 1; } }
+@keyframes sheetPopDesktop { from { translate: 0 24px; scale: 0.97; opacity: 0; } to { translate: 0 0; scale: 1; opacity: 1; } }
+@keyframes modalPop { from { translate: 0 16px; scale: 0.95; opacity: 0; } to { translate: 0 0; scale: 1; opacity: 1; } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes fadeInUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes fadeInUp { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes fadeInDown { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes fadeInScale { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes popIn { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
@@ -13,33 +17,80 @@
 @keyframes slideInLeft { from { transform: translateX(-20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 @keyframes slideInRight { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 @keyframes scaleIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes spinSlow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes spinFast { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes iconPop { 0% { transform: scale(0.4) rotate(-12deg); opacity: 0; } 70% { transform: scale(1.15) rotate(3deg); } 100% { transform: scale(1) rotate(0); opacity: 1; } }
+@keyframes wiggle { 0%,100% { transform: rotate(0deg); } 25% { transform: rotate(-6deg); } 75% { transform: rotate(6deg); } }
+@keyframes gradientPan { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+@keyframes blobDrift1 { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(60px,-40px) scale(1.12); } 66% { transform: translate(-30px,50px) scale(0.94); } }
+@keyframes blobDrift2 { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(-70px,30px) scale(0.9); } 66% { transform: translate(40px,-50px) scale(1.1); } }
+@keyframes blobDrift3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(50px,40px) scale(1.15); } }
+@keyframes glowPulse { 0%,100% { box-shadow: 0 0 0 0 var(--primary-soft); } 50% { box-shadow: 0 0 0 10px transparent; } }
+@keyframes dotBounce { 0%,100% { transform: translateY(0); opacity:.6 } 50% { transform: translateY(-5px); opacity:1 } }
+@keyframes sweepShine { 0% { transform: translateX(-120%) skewX(-20deg); } 100% { transform: translateX(240%) skewX(-20deg); } }
+@keyframes progressStripe { from { background-position: 0 0; } to { background-position: 28px 0; } }
+@keyframes ringPing { 0% { transform: scale(1); opacity: .55; } 100% { transform: scale(1.9); opacity: 0; } }
 
+/* ---------- Utility classes ---------- */
 .animate-fadeIn { animation: fadeIn 0.25s ease; }
-.animate-fadeInUp { animation: fadeInUp 0.3s ease; }
+.animate-fadeInUp { animation: fadeInUp 0.35s cubic-bezier(0.16,1,0.3,1); }
 .animate-fadeInScale { animation: fadeInScale 0.25s ease; }
 .animate-popIn { animation: popIn 0.3s cubic-bezier(0.16,1,0.3,1); }
 .animate-bounceIn { animation: bounceIn 0.4s cubic-bezier(0.16,1,0.3,1); }
 .animate-float { animation: float 3s ease-in-out infinite; }
 .animate-pulse-soft { animation: pulseSoft 2s ease-in-out infinite; }
+.animate-spin-slow { animation: spinSlow 2.4s linear infinite; }
+.animate-wiggle { animation: wiggle 0.5s ease; }
+.animate-iconPop { animation: iconPop 0.45s cubic-bezier(0.16,1,0.3,1) backwards; }
 
-/* Page transitions - all screens */
-.page-enter { animation: fadeInUp 0.35s cubic-bezier(0.16,1,0.3,1); }
-.page-enter .card { animation: fadeInUp 0.35s ease backwards; }
-.page-enter .card:nth-child(1) { animation-delay: 0.05s; }
-.page-enter .card:nth-child(2) { animation-delay: 0.1s; }
-.page-enter .card:nth-child(3) { animation-delay: 0.15s; }
-.page-enter .card:nth-child(4) { animation-delay: 0.2s; }
-.page-enter .card:nth-child(5) { animation-delay: 0.25s; }
-.page-enter .card:nth-child(6) { animation-delay: 0.3s; }
+/* Animated gradient text / surfaces */
+.gradient-pan {
+  background-size: 200% 200%;
+  animation: gradientPan 7s ease infinite;
+}
 
-/* Menu */
-.menu-item { transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease; }
-.menu-item:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
-.menu-item.active { color: var(--primary); font-weight: 600; background: var(--primary-light); box-shadow: var(--shadow-xs); }
+/* ---------- Page transitions — every screen ---------- */
+.page-enter { animation: fadeInUp 0.4s cubic-bezier(0.16,1,0.3,1); }
+.page-enter > * { animation: fadeInUp 0.45s cubic-bezier(0.16,1,0.3,1) backwards; }
+.page-enter > *:nth-child(1) { animation-delay: 0.02s; }
+.page-enter > *:nth-child(2) { animation-delay: 0.07s; }
+.page-enter > *:nth-child(3) { animation-delay: 0.12s; }
+.page-enter > *:nth-child(4) { animation-delay: 0.17s; }
+.page-enter > *:nth-child(5) { animation-delay: 0.22s; }
+
+.page-enter .card { animation: fadeInUp 0.4s ease backwards; }
+.page-enter .card:nth-child(1) { animation-delay: 0.04s; }
+.page-enter .card:nth-child(2) { animation-delay: 0.09s; }
+.page-enter .card:nth-child(3) { animation-delay: 0.14s; }
+.page-enter .card:nth-child(4) { animation-delay: 0.19s; }
+.page-enter .card:nth-child(5) { animation-delay: 0.24s; }
+.page-enter .card:nth-child(6) { animation-delay: 0.29s; }
+
+/* Staggered lists (itinerary, expenses, documents...) */
+.stagger > * { animation: fadeInUp 0.4s cubic-bezier(0.16,1,0.3,1) backwards; }
+.stagger > *:nth-child(1) { animation-delay: 0.03s; }
+.stagger > *:nth-child(2) { animation-delay: 0.07s; }
+.stagger > *:nth-child(3) { animation-delay: 0.11s; }
+.stagger > *:nth-child(4) { animation-delay: 0.15s; }
+.stagger > *:nth-child(5) { animation-delay: 0.19s; }
+.stagger > *:nth-child(6) { animation-delay: 0.23s; }
+.stagger > *:nth-child(7) { animation-delay: 0.27s; }
+.stagger > *:nth-child(8) { animation-delay: 0.31s; }
+.stagger > *:nth-child(9) { animation-delay: 0.35s; }
+.stagger > *:nth-child(10) { animation-delay: 0.39s; }
+.stagger > *:nth-child(n+11) { animation-delay: 0.42s; }
+
+/* ---------- Menu / nav ---------- */
+.menu-item { transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease; }
+.menu-item:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+.menu-item.active { color: var(--primary-strong); font-weight: 700; background: var(--primary-light); box-shadow: var(--shadow-xs); }
+.menu-item.active svg { color: var(--primary-strong); }
 .menu-item:active { transform: scale(0.96); }
+[data-theme="dark"] .menu-item.active { color: var(--primary); }
+[data-theme="dark"] .menu-item.active svg { color: var(--primary); }
 
-/* Card entrance */
-.card-entrance { animation: fadeInUp 0.3s ease backwards; }
+/* ---------- Cards ---------- */
+.card-entrance { animation: fadeInUp 0.32s ease backwards; }
 .card-entrance:nth-child(1) { animation-delay: 0.03s; }
 .card-entrance:nth-child(2) { animation-delay: 0.06s; }
 .card-entrance:nth-child(3) { animation-delay: 0.09s; }
@@ -47,29 +98,60 @@
 .card-entrance:nth-child(5) { animation-delay: 0.15s; }
 .card-entrance:nth-child(6) { animation-delay: 0.18s; }
 
-/* Button press - instant, scale only */
-.btn-press:active, .btn:active { transform: scale(0.96); transition: transform 0.1s ease; }
-.btn { transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease; }
+/* Shine sweep on primary buttons */
+.btn-primary::after, .fab::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+  transform: translateX(-120%) skewX(-20deg);
+  pointer-events: none;
+}
+.btn-primary:hover:not(:disabled)::after, .fab:hover::after { animation: sweepShine 0.9s ease; }
 
+/* Buttons */
+.btn-press:active, .btn:active { transform: scale(0.96); transition: transform 0.1s ease; }
+.btn { transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease; }
+
+/* Icons inside labels & chips animate in */
+.input-label svg, .chip svg, .btn svg, .bottom-nav-item svg { animation: iconPop 0.4s cubic-bezier(0.16,1,0.3,1) backwards; }
+
+/* FAB ring */
+.fab::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: var(--radius-full);
+  border: 2px solid color-mix(in srgb, var(--primary-raw) 45%, transparent);
+  animation: ringPing 2.4s cubic-bezier(0,0,0.2,1) infinite;
+  pointer-events: none;
+}
+
+/* Loading dots */
+.loading-dot { animation: dotBounce 1s ease-in-out infinite; }
+
+/* Mascot */
 .fuji-mascot { transition: transform 0.2s ease; }
 .fuji-mascot.loading { animation: pulseSoft 1.2s ease-in-out infinite; }
 
 /* Focus */
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 8px; }
 
-/* Responsive - ensure sizing consistent */
+/* ---------- Responsive sizing ---------- */
 @media (max-width: 640px) {
   .card-bento { padding: 16px; }
   .btn-lg { min-height: 48px; padding: 12px 20px; }
 }
 
-/* Dark mode text contrast */
-[data-theme="dark"] .text-[var(--text-secondary)] { color: var(--text-secondary); }
-[data-theme="dark"] .text-[var(--text-tertiary)] { color: var(--text-tertiary); }
+/* ---------- Dark mode component touch-ups ---------- */
 [data-theme="dark"] .card { background: var(--card); border-color: var(--border); }
 [data-theme="dark"] .input { background: var(--surface-2); border-color: var(--border); color: var(--text); }
 [data-theme="dark"] .input::placeholder { color: var(--text-tertiary); }
+[data-theme="dark"] .chip { background: var(--surface-2); }
+[data-theme="dark"] .chip-active { background: var(--gradient-primary); color: #fff; border-color: transparent; }
+[data-theme="dark"] .segmented-item.active { background: var(--surface-3); }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }

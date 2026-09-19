@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Fuji Trip Planner — Cute Pastel Minimal</title>
-  <meta name="description" content="Cute pastel minimal trip planner with group expense splitting, inspired by Dribbble">
-  <meta name="theme-color" content="#8bb89a">
+  <title>Fuji Trip Planner — Plan • Split • Settle</title>
+  <meta name="description" content="Modern minimal trip planner with group expense splitting">
+  <meta name="theme-color" id="meta-theme-color" content="#8bb89a">
   <!-- No PWA -->
 
-  <!-- Fonts - Cute modern -->
+  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap" rel="stylesheet">
@@ -22,12 +22,12 @@
     }
   </script>
 
-  <!-- Design System v2 -->
-  <link rel="stylesheet" href="./src/css/tokens.css">
-  <link rel="stylesheet" href="./src/css/components.css">
-  <link rel="stylesheet" href="./src/css/animations.css">
+  <!-- Design System v3 (cache-busted) -->
+  <link rel="stylesheet" href="./src/css/tokens.css?v=3">
+  <link rel="stylesheet" href="./src/css/components.css?v=3">
+  <link rel="stylesheet" href="./src/css/animations.css?v=3">
 
-  <!-- Lucide -->
+  <!-- Lucide Icons -->
   <script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
 
   <!-- Import Map -->
@@ -44,41 +44,81 @@
   </script>
 
   <style>
-    body { padding-bottom: var(--bottom-nav-h); background: var(--bg); transition: background 0.4s ease; }
-    @media (min-width: 768px) { body { padding-bottom: 0; } .bottom-nav { display: none !important; } }
+    body {
+      padding-bottom: calc(var(--bottom-nav-h) + 28px + env(safe-area-inset-bottom));
+      background: var(--bg);
+      transition: background 0.4s ease;
+    }
+    @media (min-width: 768px) {
+      body { padding-bottom: 0; }
+      .bottom-nav { display: none !important; }
+    }
     .desktop-nav { display: none; }
     @media (min-width: 768px) { .desktop-nav { display: flex; } }
-    /* Cute header glass */
+
+    /* Glass header */
     #app-header {
-      background: color-mix(in srgb, var(--surface) 85%, transparent);
+      background: color-mix(in srgb, var(--surface) 82%, transparent);
       backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
       border-bottom: 1.5px solid var(--border-light);
       box-shadow: var(--shadow-xs);
+      transition: background 0.4s ease, border-color 0.4s ease;
     }
     /* Page transition base */
     #app { transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+
+    /* Ambient animated background blobs (theme-tinted, no emoji, no images) */
+    #bg-decor { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+    #bg-decor .blob { position: absolute; border-radius: 9999px; filter: blur(70px); opacity: 0.5; will-change: transform; }
+    #bg-decor .blob-1 { width: 42vmax; height: 42vmax; top: -14vmax; left: -10vmax; background: radial-gradient(circle, color-mix(in srgb, var(--grad-1) 26%, transparent), transparent 65%); animation: blobDrift1 26s ease-in-out infinite; }
+    #bg-decor .blob-2 { width: 36vmax; height: 36vmax; bottom: -12vmax; right: -8vmax; background: radial-gradient(circle, color-mix(in srgb, var(--grad-2) 24%, transparent), transparent 65%); animation: blobDrift2 32s ease-in-out infinite; }
+    #bg-decor .blob-3 { width: 24vmax; height: 24vmax; top: 38%; left: 58%; background: radial-gradient(circle, color-mix(in srgb, var(--grad-1) 14%, transparent), transparent 65%); animation: blobDrift3 22s ease-in-out infinite; }
+    [data-theme="dark"] #bg-decor .blob { opacity: 0.34; }
+
+    /* Logo link */
+    #logo-link { text-decoration: none; color: inherit; border-radius: var(--radius-full); transition: transform 0.2s ease; }
+    #logo-link:hover { transform: translateY(-1px) scale(1.02); }
+    #logo-link:active { transform: scale(0.97); }
+    .logo-badge { transition: box-shadow 0.3s ease; }
+    #logo-link:hover .logo-badge { box-shadow: var(--shadow-primary); }
   </style>
 </head>
 <body class="min-h-screen bg-[var(--bg)] text-[var(--text)]">
-  <!-- Header - Cute Pastel -->
+  <!-- Ambient background -->
+  <div id="bg-decor" aria-hidden="true">
+    <span class="blob blob-1"></span>
+    <span class="blob blob-2"></span>
+    <span class="blob blob-3"></span>
+  </div>
+
+  <!-- Header -->
   <header id="app-header" class="sticky top-0 z-30" style="height: var(--header-h);">
     <div class="max-w-[1280px] mx-auto px-4 h-full flex items-center justify-between gap-3">
+      <!-- Logo = home (trip list) -->
+      <a href="#/trips" id="logo-link" class="flex items-center gap-3 group" title="หน้าแรก — รายการทริป" aria-label="Fuji Planner Home">
+        <span class="logo-badge w-10 h-10 rounded-full grid place-items-center shadow-sm animate-float" style="background: var(--gradient-primary); border: 2px solid rgba(255,255,255,0.85);">
+          <svg viewBox="0 0 100 70" width="22" height="16" aria-hidden="true">
+            <path d="M5 65 L50 6 L95 65 Z" fill="rgba(255,255,255,0.95)"/>
+            <path d="M38 24 L50 6 L62 24 L56 28 L50 22 L44 28 Z" fill="rgba(255,255,255,0.55)"/>
+            <path d="M38 24 L50 6 L62 24 L56 28 L50 22 L44 28 Z" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2"/>
+          </svg>
+        </span>
+        <span>
+          <span class="block font-bold text-[16px] leading-none tracking-tight" style="font-family: var(--font-display);">Fuji Planner</span>
+          <span id="header-subtitle" class="block text-[11px] text-[var(--text-tertiary)] mt-0.5 font-medium">plan • split • settle</span>
+        </span>
+      </a>
+
       <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-full grid place-items-center text-[18px] shadow-sm animate-float" style="background: var(--gradient-primary); color:white; border: 2px solid white;">🌿</div>
-        <div>
-          <div class="font-bold text-[16px] leading-none tracking-tight" style="font-family: var(--font-display);">Fuji Planner</div>
-          <div id="header-subtitle" class="text-[11px] text-[var(--text-tertiary)] mt-0.5 font-medium">cute • minimal • pastel</div>
-        </div>
-        <div id="sync-status" class="hidden md:flex items-center gap-2 ml-3 text-[11px] px-3 py-1.5 rounded-full border font-medium" style="background:var(--surface); border-color:var(--border); box-shadow: var(--shadow-xs);">
+        <div id="sync-status" class="hidden md:flex items-center gap-2 text-[11px] px-3 py-1.5 rounded-full border font-medium" style="background:var(--surface); border-color:var(--border); box-shadow: var(--shadow-xs);">
           <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span><span>Online</span>
         </div>
-      </div>
-      <div class="flex items-center gap-1.5">
         <div id="live-clocks" class="hidden lg:flex items-center gap-2 text-[11px] font-medium mr-1">
           <span id="clock-bkk" class="px-2.5 py-1 rounded-full bg-[var(--bg-secondary)]">BKK --:--</span>
           <span id="clock-tokyo" class="px-2.5 py-1 rounded-full bg-[var(--bg-secondary)]">TYO --:--</span>
         </div>
-        <!-- Theme, Lang, Refresh added dynamically by app.js -->
+        <!-- Theme, Lang, Mode controls injected by app.js -->
         <button id="refresh-btn" class="btn btn-ghost btn-icon btn-press" aria-label="Refresh"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
         <div id="user-menu" class="relative ml-1">
           <button id="user-avatar-btn" class="avatar w-10 h-10 text-[13px] btn-press" style="background: var(--gradient-primary);">?</button>
@@ -87,15 +127,18 @@
     </div>
   </header>
 
-  <!-- Desktop Nav - Cute pills -->
+  <!-- Desktop Nav -->
   <nav class="desktop-nav max-w-[1280px] mx-auto px-4 py-4 gap-2 flex-wrap" id="desktop-nav"></nav>
 
   <!-- Main -->
-  <main id="app" class="max-w-[1280px] mx-auto px-4 py-6 min-h-[calc(100vh-var(--header-h)-var(--bottom-nav-h))] md:min-h-[calc(100vh-var(--header-h)-60px)]">
+  <main id="app" class="max-w-[1280px] mx-auto px-4 py-6 min-h-[calc(100vh_-_var(--header-h)_-_var(--bottom-nav-h))] md:min-h-[calc(100vh_-_var(--header-h)_-_60px)]">
     <div id="loading-screen" class="grid place-items-center py-24">
       <div class="text-center page-enter">
         <div id="fuji-loader" class="animate-float"></div>
-        <p class="mt-6 text-sm font-medium text-[var(--text-secondary)] animate-pulse">🌿 กำลังโหลดความน่ารัก...</p>
+        <p class="mt-6 text-sm font-medium text-[var(--text-secondary)]">
+          กำลังโหลด
+          <span class="loading-dot inline-block">.</span><span class="loading-dot inline-block" style="animation-delay:.15s">.</span><span class="loading-dot inline-block" style="animation-delay:.3s">.</span>
+        </p>
         <div class="mt-4 flex justify-center gap-1">
           <span class="w-2 h-2 rounded-full bg-[var(--primary)] animate-bounce" style="animation-delay: 0s;"></span>
           <span class="w-2 h-2 rounded-full bg-[var(--primary)] animate-bounce" style="animation-delay: 0.15s;"></span>
@@ -105,22 +148,21 @@
     </div>
   </main>
 
-  <!-- Bottom Nav - Floating cute, merged itinerary+map, added docs -->
+  <!-- Bottom Nav (mobile): Home removed — tap the logo to go home -->
   <nav id="bottom-nav" class="bottom-nav md:hidden">
-    <button data-route="#/trip/dashboard" class="bottom-nav-item"><i data-lucide="layout-dashboard"></i><span>Home</span></button>
     <button data-route="#/trip/itinerary" class="bottom-nav-item"><i data-lucide="map-pinned"></i><span>แผน</span></button>
     <button data-route="#/trip/expenses" class="bottom-nav-item"><i data-lucide="wallet"></i><span>ค่าใช้จ่าย</span></button>
     <button data-route="#/trip/documents" class="bottom-nav-item"><i data-lucide="folder"></i><span>เอกสาร</span></button>
     <button data-route="#/trip/more" class="bottom-nav-item"><i data-lucide="more-horizontal"></i><span>เพิ่มเติม</span></button>
   </nav>
 
-  <!-- FAB - Cute -->
+  <!-- FAB -->
   <button id="fab" class="fab hidden btn-press" aria-label="Add"><i data-lucide="plus" class="w-6 h-6"></i></button>
 
   <!-- Toast -->
   <div id="toast-container" class="toast-container"></div>
 
-  <!-- Firebase config - GitHub Pages method 1 -->
+  <!-- Firebase config bootstrap -->
   <script>
     try {
       const saved = localStorage.getItem('fuji_firebase_config');
@@ -131,7 +173,6 @@
           console.log('[Config] Loaded from localStorage');
         }
       }
-      // Allow URL param ?cfg=base64json for quick setup
       const urlParams = new URLSearchParams(location.search);
       const cfgParam = urlParams.get('cfg');
       if (cfgParam) {
@@ -145,7 +186,7 @@
     } catch (e) { console.warn('Config load failed', e); }
   </script>
 
-  <!-- App -->
-  <script type="module" src="./src/js/app.js"></script>
+  <!-- App (cache-busted) -->
+  <script type="module" src="./src/js/app.js?v=3"></script>
 </body>
 </html>
