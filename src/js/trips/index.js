@@ -281,7 +281,8 @@ export async function updateTrip(tripId, updates) {
 
 const TRIP_SUBCOLLECTIONS = [
   'itineraryItems', 'expenses', 'members', 'documents', 'categories',
-  'cards', 'exchangeRates', 'settings', 'imports', 'activityLogs'
+  'cards', 'exchangeRates', 'settings', 'imports', 'activityLogs',
+  'notes', 'joinRequests', 'settlements'
 ];
 
 /**

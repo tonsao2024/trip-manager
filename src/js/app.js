@@ -15,6 +15,10 @@ import {
   approveJoinRequest, rejectJoinRequest, cancelJoinRequest, addMemberFromProfile
 } from './members/join.js';
 import { formatInviteCode, isValidInviteCode, normalizeInviteCode } from './utils/invite.js';
+import {
+  isPermissionError, joinPermissionHelp, adminHelpMessage, fetchRulesText,
+  consoleRulesUrl, consoleAuthUrl
+} from './utils/rulesHelper.js';
 import { fetchItinerary, saveItineraryItem, deleteItineraryItem, reorderItinerary, getItineraryItem, syncItineraryExpense, findLinkedExpense } from './itinerary/index.js';
 import {
   fetchExpenses, fetchAllExpenses, addExpense, updateExpense, deleteExpense,
@@ -641,6 +645,69 @@ if (typeof window !== 'undefined') {
     console.log(formatDiagnosticsReport({ tripId: currentTripId, lang: getLang(), results: result.results }));
     return result;
   };
+}
+
+/**
+ * Firestore denied a join/approve action → show exactly what to publish.
+ * The member may not own the project, so the sheet also prepares a message they
+ * can forward to the trip admin.
+ */
+async function showRulesHelpSheet({ lang, trip = null, action = 'join' } = {}) {
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const projectId = (() => { try { return app?.options?.projectId || null; } catch { return null; } })();
+  const help = joinPermissionHelp(lang, { projectId, action });
+
+  const sheet = showBottomSheet(`
+    <div class="space-y-4">
+      <div class="flex items-center gap-3">
+        <div class="row-icon" style="width:44px;height:44px;border-radius:14px;background:var(--danger-bg);color:var(--danger);">${icon('shield-alert', 'w-5 h-5')}</div>
+        <div>
+          <h3 class="font-bold text-base" style="font-family: var(--font-display);">${escapeHtml(help.title)}</h3>
+          <p class="text-[11px] text-[var(--text-tertiary)]">Missing or insufficient permissions</p>
+        </div>
+      </div>
+      <p class="text-xs text-[var(--text-secondary)] leading-relaxed">${escapeHtml(help.message)}</p>
+      <ol class="text-xs space-y-2 list-decimal pl-5 text-[var(--text-secondary)]">
+        ${help.steps.map(step => `<li>${escapeHtml(step)}</li>`).join('')}
+      </ol>
+      <div class="p-3 rounded-xl" style="background:var(--bg-secondary); border:1px solid var(--border);">
+        <p class="text-[11px] font-semibold mb-1">${th('คอลเลกชันที่กฎยังขาด','Collections missing from the rules')}</p>
+        <div class="flex flex-wrap gap-1.5">${help.missing.map(m => `<code class="text-[10px] px-2 py-0.5 rounded-md" style="background:var(--surface); border:1px solid var(--border);">${escapeHtml(m)}</code>`).join('')}</div>
+      </div>
+      <div class="btn-row">
+        <button id="rules-copy" class="btn btn-primary btn-sm">${icon('clipboard-copy', 'w-4 h-4')} ${th('คัดลอกกฎทั้งหมด','Copy all rules')}</button>
+        <button id="rules-open-console" class="btn btn-secondary btn-sm">${icon('external-link', 'w-4 h-4')} ${th('เปิด Firebase Console','Open Firebase Console')}</button>
+      </div>
+      <button id="rules-ask-admin" class="btn btn-ghost btn-sm w-full">${icon('send', 'w-4 h-4')} ${th('คัดลอกข้อความส่งให้แอดมินทริป','Copy a message for the trip admin')}</button>
+      <div id="rules-status" class="text-[11px] text-[var(--text-tertiary)]"></div>
+    </div>
+  `);
+  queueIcons();
+
+  const status = (msg) => { const el = sheet.sheet.querySelector('#rules-status'); if (el) el.textContent = msg; };
+  const copy = (text, okMsg, failMsg) => {
+    const done = navigator.clipboard?.writeText?.(text);
+    if (done?.then) done.then(() => { status('✅ ' + okMsg); toast.success(okMsg); }).catch(() => status('⚠️ ' + failMsg));
+    else status('⚠️ ' + failMsg);
+  };
+
+  sheet.sheet.querySelector('#rules-copy').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    status(th('กำลังดึงไฟล์กฎ...','Fetching the rules file...'));
+    const text = await fetchRulesText();
+    btn.disabled = false;
+    if (text) copy(text, th('คัดลอกกฎทั้งหมดแล้ว — ไปวางใน Firebase Console > Rules แล้วกด Publish','Rules copied — paste them in Firebase Console > Rules and press Publish'),
+                        th('คัดลอกอัตโนมัติไม่ได้ — กด "เปิด Firebase Console" แล้วคัดลอกจากไฟล์ firestore.rules ในโปรเจกต์','Could not copy — open the console and copy from firestore.rules in the repo'));
+    else window.open(help.repoUrl, '_blank', 'noopener');
+  });
+
+  sheet.sheet.querySelector('#rules-open-console').addEventListener('click', () => window.open(help.consoleUrl, '_blank', 'noopener'));
+  sheet.sheet.querySelector('#rules-ask-admin').addEventListener('click', () => {
+    copy(adminHelpMessage(currentUser, trip || currentTrip, lang),
+         th('คัดลอกข้อความแล้ว — ส่งใน LINE/แชทให้แอดมินได้เลย','Message copied — send it to the trip admin'),
+         th('คัดลอกไม่สำเร็จ','Copy failed'));
+  });
 }
 
 function renderMemberSessionUi(session) {
@@ -1642,6 +1709,16 @@ async function renderTripSelector() {
           <button id="join-code-btn" class="btn btn-primary">${icon('log-in', 'w-4 h-4')} ${lang === 'th' ? 'ขอเข้าร่วม' : 'Request to join'}</button>
         </div>
         <div id="my-join-requests" class="space-y-2"></div>
+        <div id="profile-rules-notice" class="hidden diag-row" data-status="warn">
+          ${icon('shield-alert', 'w-4 h-4 shrink-0')}
+          <div class="min-w-0">
+            <div class="font-semibold">${lang === 'th' ? 'บัญชีของคุณยังไม่ถูกบันทึกลงไดเรกทอรี' : 'Your account is not in the directory yet'}</div>
+            <div class="text-[11px] text-[var(--text-secondary)]">${lang === 'th'
+              ? 'แอดมินจะยังค้นหาอีเมลของคุณไม่เจอ — ต้อง Publish Firestore Rules ก่อน'
+              : 'The trip admin cannot find your email yet — Firestore rules must be published first.'}</div>
+            <button id="profile-rules-help" class="btn btn-ghost btn-sm mt-1">${icon('wrench', 'w-3.5 h-3.5')} ${lang === 'th' ? 'ดูวิธีแก้' : 'How to fix'}</button>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -1649,13 +1726,18 @@ async function renderTripSelector() {
 
   bind('create-trip-btn', 'click', () => openTripForm(null, { onSaved: () => renderTripSelector() }));
 
+  let tripsCache = [];
+
   // ---- join with an invite code ----
   async function renderMyJoinRequests() {
     const box = document.getElementById('my-join-requests');
     if (!box) return;
     const requests = await listMyJoinRequests(currentUser.uid);
     if (isStale(token)) return;
-    box.innerHTML = requests.length ? requests.map(r => `
+    // Once the admin approves, the trip shows up in the list — drop the badge.
+    const joinedIds = new Set(tripsCache.map(t => t.id));
+    const pending = requests.filter(r => !joinedIds.has(r.tripId || r.id));
+    box.innerHTML = pending.length ? pending.map(r => `
       <div class="diag-row" data-join-request="${escapeHtml(r.tripId || r.id)}">
         ${icon(r.status === 'rejected' ? 'x-circle' : 'clock', 'w-4 h-4 shrink-0')}
         <div class="min-w-0">
@@ -1678,6 +1760,7 @@ async function renderTripSelector() {
     });
   }
 
+  let foundTrip = null;
   bind('join-code-btn', 'click', async () => {
     const input = document.getElementById('join-code-input');
     const btn = document.getElementById('join-code-btn');
@@ -1690,6 +1773,7 @@ async function renderTripSelector() {
     const tLoad = toast.loading(lang === 'th' ? 'กำลังค้นหาทริป...' : 'Looking for the trip...');
     try {
       const trip = await findTripByInviteCode(code);
+      foundTrip = trip;
       tLoad.close();
       if (!trip) {
         toast.error(lang === 'th' ? 'ไม่พบทริปที่ใช้รหัสนี้ — ตรวจรหัสอีกครั้ง' : 'No trip uses this code — please check it');
@@ -1723,8 +1807,13 @@ async function renderTripSelector() {
       renderMyJoinRequests();
     } catch (e) {
       tLoad.close();
-      toast.error(e.message);
       btn.disabled = false;
+      if (isPermissionError(e)) {
+        toast.error(lang === 'th' ? 'Firestore Rules ยังไม่อนุญาต — ต้อง Publish กฎก่อน' : 'Firestore rules deny this — publish the rules first');
+        await showRulesHelpSheet({ lang, trip: foundTrip, action: 'join' });
+      } else {
+        toast.error(e.message);
+      }
     }
   });
 
@@ -1779,7 +1868,6 @@ async function renderTripSelector() {
     });
   };
 
-  let tripsCache = [];
   const loadTripsForMenus = async () => tripsCache;
 
   try {
@@ -1801,6 +1889,16 @@ async function renderTripSelector() {
     attachTripCards(grid);
     initReveal(grid);
     queueIcons();
+    renderMyJoinRequests();   // hide requests for trips that are already accessible
+
+  // Accounts that could not be written to Firestore (rules not published yet).
+  if (window.__fujiProfileDenied) {
+    const notice = document.getElementById('profile-rules-notice');
+    if (notice) {
+      notice.classList.remove('hidden');
+      bind('profile-rules-help', 'click', () => showRulesHelpSheet({ lang }));
+    }
+  }
   } catch (e) {
     if (isStale(token)) return;
     console.error('List trips failed', e);
@@ -1810,10 +1908,8 @@ async function renderTripSelector() {
       hint = `
         <div class="text-left mt-3 p-3 rounded-xl text-[11px] leading-relaxed" style="background: var(--warning-bg); border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);">
           <strong class="flex items-center gap-1">${icon('alert-triangle', 'w-3.5 h-3.5')} Firestore Rules ยังไม่ deploy</strong>
-          ต้อง deploy กฎใหม่ที่ Firebase Console:<br>
-          1. ไปที่ <a href="https://console.firebase.google.com" target="_blank" rel="noopener" class="underline font-bold">Firebase Console</a> &gt; Firestore &gt; Rules<br>
-          2. คัดลอกเนื้อหาจากไฟล์ <code>firestore.rules</code> ใน repo นี้<br>
-          3. กด Publish
+          ต้อง publish กฎใหม่ที่ Firebase Console &gt; Firestore &gt; Rules<br>
+          <button id="trips-rules-help" class="btn btn-secondary btn-sm mt-2">${icon('shield-alert', 'w-4 h-4')} ดูวิธีแก้ทีละขั้น</button>
         </div>`;
       msg = 'ไม่มีสิทธิ์เข้าถึง — ต้อง deploy Firestore Rules';
     }
@@ -1821,6 +1917,7 @@ async function renderTripSelector() {
       hint = `<div class="text-left mt-3 p-3 rounded-xl text-[11px]" style="background: var(--info-light); border: 1px solid color-mix(in srgb, var(--info) 35%, transparent);"><strong class="flex items-center gap-1">${icon('database', 'w-3.5 h-3.5')} ต้องสร้าง Firestore Index</strong>รัน <code>firebase deploy --only firestore:indexes</code></div>`;
       msg = 'ต้องสร้าง Index — ดูคำสั่งใน Console';
     }
+    bind('trips-rules-help', 'click', () => showRulesHelpSheet({ lang }));
     try {
       const cached = localStorage.getItem('fuji_trips_cache');
       if (cached) {
@@ -4316,8 +4413,13 @@ async function renderMembers(params) {
         await loadMembersList();
       } catch (e) {
         tLoad.close();
-        toast.error(e.message);
         btn.disabled = false;
+        if (isPermissionError(e)) {
+          toast.error(th('Firestore Rules ยังไม่อนุญาต — ต้อง Publish กฎก่อน','Firestore rules deny this — publish the rules first'));
+          await showRulesHelpSheet({ lang, trip, action: 'approve' });
+        } else {
+          toast.error(e.message);
+        }
       }
     }));
 
@@ -4370,7 +4472,12 @@ async function renderMembers(params) {
       await loadJoinRequests();
     } catch (e) {
       tLoad.close();
-      toast.error(e.message);
+      if (isPermissionError(e)) {
+        toast.error(th('Firestore Rules ยังไม่อนุญาต — ต้อง Publish กฎก่อน','Firestore rules deny this — publish the rules first'));
+        await showRulesHelpSheet({ lang, trip, action: 'approve' });
+      } else {
+        toast.error(e.message);
+      }
     }
   });
 

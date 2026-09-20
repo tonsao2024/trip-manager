@@ -128,6 +128,20 @@ Firestore Rules ได้ทันที จึงเป็นวิธีที
 5. เปิด provider: Firebase Console > Authentication > Sign-in method (Email/Password)
 6. ตรวจในแอป: **ตั้งค่า > ตรวจสอบระบบ** หรือสั่ง `await fujiDiagnose()` ใน console — ต้องขึ้น ✅ ทุกบรรทัด
 
+### เจอ `Missing or insufficient permissions` ตอนกรอกรหัสเชิญ
+
+แปลว่า **ยังไม่ได้ Publish กฎใหม่** (คอลเลกชัน `joinRequests` / `publicProfiles` / `users/{uid}/joinRequests`
+ยังไม่มีในกฎที่ใช้งานอยู่) — ไม่ใช่บั๊กของแอป:
+
+1. ในแอปจะขึ้นกล่อง **"ยังไม่ได้ Publish Firestore Rules"** พร้อมปุ่ม
+   **คัดลอกกฎทั้งหมด** (ดึงไฟล์ `firestore.rules` จากเว็บ/raw GitHub ให้) และ
+   **เปิด Firebase Console** (ลิงก์ตรงไปหน้า Rules ของโปรเจกต์)
+2. วางกฎทั้งหมดแทนของเดิม แล้วกด **Publish**
+3. กลับมากด "ขอเข้าร่วม" อีกครั้ง (ถ้ายังไม่ได้ให้รีเฟรชหน้าเว็บ) — หรือเช็กที่ **ตั้งค่า > ตรวจสอบระบบ**
+   บรรทัด *Rules สำหรับคำขอเข้าร่วมทริป* ต้องขึ้น ✅
+
+ถ้าสมาชิกเป็นคนเจอ error นี้ ให้กดปุ่ม **"คัดลอกข้อความส่งให้แอดมินทริป"** แล้วส่งในแชทได้ทันที
+
 ### ทำไมขึ้น `functions/internal: internal`
 
 | สาเหตุ | วิธีแก้ |
@@ -255,6 +269,8 @@ firebase emulators:start --only firestore,auth,functions,storage
 - Animated, mobile-first UI: bottom nav, FAB, scroll reveal, confetti, count-up KPIs
 - Member login works with **and** without Cloud Functions: Google/email account + invite code + admin approval (free plan), plus the local username + PIN fallback
 - Trip admins can approve join requests, add members by email, and rotate the invite code
+- If the Firestore rules are not published yet, the app explains it step by step (copy-rules button,
+  console deep link, ready-made message for the admin) instead of a raw `Missing or insufficient permissions`
 - Settings > **ตรวจสอบระบบ** runs 9 probes and prints exactly which deploy step is missing
 
 ### v5 fixes

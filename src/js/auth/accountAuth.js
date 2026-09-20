@@ -76,6 +76,14 @@ export async function ensureUserProfile(user, { displayName, role = USER_ROLES.m
     updatedAt: serverTimestamp()
   };
 
+  const flagDenied = (e) => {
+    if (String(e?.code || '').includes('permission-denied')) {
+      // Rules for users/publicProfiles are not published yet — the UI shows a
+      // one-line notice with the fix (the join flow explains it in detail).
+      try { window.__fujiProfileDenied = true; } catch {}
+    }
+  };
+
   // users/{uid} — created once (role member), never self-promoted.
   try {
     const ref = doc(db, 'users', user.uid);
@@ -87,6 +95,7 @@ export async function ensureUserProfile(user, { displayName, role = USER_ROLES.m
     }
   } catch (e) {
     console.warn('ensureUserProfile: users doc failed', e?.code, e?.message);
+    flagDenied(e);
   }
 
   // publicProfiles/{uid} — readable by any signed-in user so admins can search.
@@ -94,6 +103,7 @@ export async function ensureUserProfile(user, { displayName, role = USER_ROLES.m
     await setDoc(doc(db, 'publicProfiles', user.uid), publicProfile, { merge: true });
   } catch (e) {
     console.warn('ensureUserProfile: public profile failed', e?.code, e?.message);
+    flagDenied(e);
   }
 
   return profile;

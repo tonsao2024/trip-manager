@@ -15,6 +15,20 @@ import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, limit
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { normalizeInviteCode, isValidInviteCode } from '../utils/invite.js';
+import { isPermissionError } from '../utils/rulesHelper.js';
+
+/** Keep the Firebase code + cause so the UI can explain *why* it failed. */
+function rethrow(e, fallbackTh, fallbackEn = null) {
+  if (isPermissionError(e)) {
+    const err = new Error('Missing or insufficient permissions.');
+    err.code = 'permission-denied';
+    err.cause = e;
+    throw err;
+  }
+  const err = new Error(e?.message || fallbackTh || fallbackEn || 'ดำเนินการไม่สำเร็จ');
+  err.code = e?.code;
+  throw err;
+}
 
 const DEFAULT_PERMISSIONS = { canEditItinerary: true, canEditExpense: true, canManageMembers: false };
 
@@ -30,7 +44,8 @@ export async function findTripByInviteCode(code) {
     return { id: d.id, ...d.data() };
   } catch (e) {
     console.warn('findTripByInviteCode failed', e?.code, e?.message);
-    throw new Error('ค้นหาทริปไม่ได้ — ตรวจสอบรหัสเชิญและอินเทอร์เน็ตอีกครั้ง');
+    // A permission error here means the rules do not allow listing trips yet.
+    rethrow(e, 'ค้นหาทริปไม่ได้ — ตรวจสอบรหัสเชิญและอินเทอร์เน็ตอีกครั้ง');
   }
 }
 
@@ -50,12 +65,39 @@ export async function requestToJoin(trip, user, { note = '' } = {}) {
     requestedAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   };
-  await setDoc(doc(db, 'trips', trip.id, 'joinRequests', user.uid), request, { merge: true });
+  let primarySaved = false;
+  try {
+    await setDoc(doc(db, 'trips', trip.id, 'joinRequests', user.uid), request, { merge: true });
+    primarySaved = true;
+  } catch (e) {
+    console.warn('join request write failed', e?.code, e?.message);
+    // Rules not published yet: still try the member's own mirror and let the UI
+    // show the "publish Firestore rules" instructions.
+    try {
+      await setDoc(doc(db, 'users', user.uid, 'joinRequests', trip.id), request, { merge: true });
+      console.warn('join request saved in the member mirror only');
+    } catch (mirrorErr) {
+      console.warn('join mirror write failed too', mirrorErr?.code, mirrorErr?.message);
+      if (isPermissionError(e) || isPermissionError(mirrorErr)) {
+        const err = new Error('Missing or insufficient permissions.');
+        err.code = 'permission-denied';
+        err.cause = e;
+        throw err;
+      }
+      throw new Error(e?.message || 'ส่งคำขอเข้าร่วมไม่สำเร็จ');
+    }
+  }
   try {
     await setDoc(doc(db, 'users', user.uid, 'joinRequests', trip.id), request, { merge: true });
   } catch (e) {
     // Only used for the "my requests" list — never block joining on it.
     console.warn('join mirror write failed', e?.code, e?.message);
+  }
+  if (!primarySaved) {
+    const err = new Error('Missing or insufficient permissions.');
+    err.code = 'permission-denied';
+    err.savedLocally = true;
+    throw err;
   }
   return request;
 }
@@ -86,7 +128,7 @@ export async function cancelJoinRequest(tripId, uid) {
     await deleteDoc(doc(db, 'users', uid, 'joinRequests', tripId));
   } catch (e) {
     console.warn('cancelJoinRequest failed', e?.code, e?.message);
-    throw new Error('ยกเลิกคำขอไม่สำเร็จ');
+    rethrow(e, 'ยกเลิกคำขอไม่สำเร็จ');
   }
 }
 
@@ -98,7 +140,14 @@ export async function approveJoinRequest(tripId, request, { role = 'member', per
   if (!db) throw new Error('DB not ready');
   const uid = request.uid || request.id;
   if (!uid) throw new Error('คำขอไม่ถูกต้อง (ไม่มี uid)');
+  try {
+    return await approveJoinRequestInner(tripId, uid, request, role, permissions);
+  } catch (e) {
+    rethrow(e, 'อนุมัติสมาชิกไม่สำเร็จ');
+  }
+}
 
+async function approveJoinRequestInner(tripId, uid, request, role, permissions) {
   // 1) member document — the id MUST be the member's uid (rules check it)
   await setDoc(doc(db, 'trips', tripId, 'members', uid), {
     uid,
@@ -123,12 +172,17 @@ export async function approveJoinRequest(tripId, request, { role = 'member', per
   uids.add(uid);
   await updateDoc(tripRef, { memberUids: [...uids], updatedAt: serverTimestamp() });
 
-  // 3) clean up the request + mirror
+  // 3) clean up the request + mirror (the mirror belongs to the member, so a
+  //    denial there is harmless — the member's list filters approved trips).
   try {
     await deleteDoc(doc(db, 'trips', tripId, 'joinRequests', uid));
+  } catch (e) {
+    console.warn('cleanup request failed', e?.code, e?.message);
+  }
+  try {
     await deleteDoc(doc(db, 'users', uid, 'joinRequests', tripId));
   } catch (e) {
-    console.warn('cleanup after approve failed', e?.code, e?.message);
+    console.warn('cleanup mirror failed (member-owned)', e?.code, e?.message);
   }
 
   return { uid, role, permissions };
@@ -145,7 +199,7 @@ export async function rejectJoinRequest(tripId, request, { reason = '' } = {}) {
     }, { merge: true });
   } catch (e) {
     console.warn('rejectJoinRequest failed', e?.code, e?.message);
-    throw new Error('ปฏิเสธคำขอไม่สำเร็จ');
+    rethrow(e, 'ปฏิเสธคำขอไม่สำเร็จ');
   }
 }
 

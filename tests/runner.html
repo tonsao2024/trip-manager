@@ -10,6 +10,7 @@ import { testCountdown } from './unit/countdown.test.js';
 import { testExcel } from './unit/excel.test.js';
 import { testColors } from './unit/colors.test.js';
 import { testInviteCodes } from './unit/invite.test.js';
+import { testRulesHelper } from './unit/rulesHelper.test.js';
 try {
   testScheduling();
   testSplit();
@@ -19,6 +20,7 @@ try {
   testExcel();
   testColors();
   testInviteCodes();
+  testRulesHelper();
   document.body.innerHTML += '<p style="color:green">All tests passed! Check console for details</p>';
 } catch (e) {
   document.body.innerHTML += `<p style="color:red">Failed: ${e.message}</p><pre>${e.stack}</pre>`;

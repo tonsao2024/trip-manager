@@ -6,7 +6,19 @@
 const store = new Map(); // "trips/t1/expenses/e1" -> plain data object
 
 export const __store = store;
-export function __reset() { store.clear(); }
+export function __reset() { store.clear(); denyPaths = []; }
+
+// --- simulated security rules: __deny('trips/t1/joinRequests') blocks a path ---
+let denyPaths = [];
+export function __deny(prefix) { denyPaths.push(prefix); }
+export function __allowAll() { denyPaths = []; }
+function denyCheck(path) {
+  if (denyPaths.some(p => path.startsWith(p))) {
+    const err = new Error('Missing or insufficient permissions.');
+    err.code = 'permission-denied';
+    throw err;
+  }
+}
 export function __seed(path, data) { store.set(path, { ...data }); }
 export function __dump(path) { return store.get(path); }
 
@@ -120,6 +132,7 @@ function resolveCollectionPath(target) {
 
 export async function getDocs(target) {
   const path = resolveCollectionPath(target);
+  denyCheck(path);
   const constraints = target.__type === 'query' ? target.constraints : [];
   let entries = childDocs(path);
   for (const c of constraints) {
@@ -143,6 +156,7 @@ export async function getDocs(target) {
 }
 
 export async function getDoc(ref) {
+  denyCheck(ref.path);
   const data = store.get(ref.path);
   if (!data) {
     return { id: ref.id, ref, exists: () => false, data: () => undefined, get: () => undefined };
@@ -186,11 +200,13 @@ function mergeData(existing, incoming, merge) {
 }
 
 export async function setDoc(ref, data, opts = {}) {
+  denyCheck(ref.path);
   const existing = store.get(ref.path);
   store.set(ref.path, mergeData(existing, data, opts.merge));
 }
 
 export async function addDoc(coll, data) {
+  denyCheck(coll.path);
   const id = `auto-${Math.random().toString(36).slice(2, 10)}`;
   const path = `${coll.path}/${id}`;
   store.set(path, mergeData(null, data, false));
@@ -198,12 +214,13 @@ export async function addDoc(coll, data) {
 }
 
 export async function updateDoc(ref, data) {
+  denyCheck(ref.path);
   const existing = store.get(ref.path);
   if (!existing) throw new Error(`[stub] updateDoc missing doc ${ref.path}`);
   store.set(ref.path, mergeData(existing, data, true));
 }
 
-export async function deleteDoc(ref) { store.delete(ref.path); }
+export async function deleteDoc(ref) { denyCheck(ref.path); store.delete(ref.path); }
 
 export function writeBatch() {
   const ops = [];

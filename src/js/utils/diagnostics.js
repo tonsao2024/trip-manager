@@ -19,7 +19,7 @@ export const DIAG = { ok: 'ok', warn: 'warn', fail: 'fail' };
 export const FIX = {
   deployFunctions: 'firebase deploy --only functions   (โปรเจกต์ต้องอยู่แผน Blaze ก่อน)',
   runInvoker: 'gcloud run services add-iam-policy-binding loginwithusernamepin --region=asia-southeast1 --member=allUsers --role=roles/run.invoker',
-  deployRules: 'firebase deploy --only firestore:rules   (หรือวาง firestore.rules ใน Firebase Console > Firestore > Rules > Publish)',
+  deployRules: 'firebase deploy --only firestore:rules   (หรือเปิด Firebase Console > Firestore Database > Rules วางไฟล์ firestore.rules แล้วกด Publish)',
   setMemberPin: 'แชร์รหัสเชิญ (หน้าตั้งค่า) ให้สมาชิกกดขอเข้าร่วม แล้วอนุมัติที่หน้าสมาชิก — หรือเพิ่ม/แก้ไขสมาชิกแล้วตั้งชื่อผู้ใช้ + PIN'
 };
 
@@ -301,6 +301,21 @@ export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeout
         add('rules-profiles', pick(lang, 'Rules ไดเรกทอรีบัญชี (publicProfiles)', 'Account directory rules'), info.status,
           pick(lang, 'ยังอ่านไดเรกทอรีบัญชีไม่ได้ — ปุ่ม "เพิ่มด้วยอีเมล" จะใช้ไม่ได้',
                     'The account directory is not readable — "Add by email" will not work'),
+          FIX.deployRules);
+      }
+    }
+
+    // 5c. Rules: invite-code lookup + join requests (members joining a trip)
+    if (tripId) {
+      try {
+        await withTimeout(d.getDocs(d.query(d.collection(d.db, 'trips', tripId, 'joinRequests'), d.limit(1))), timeoutMs, 'joinRequests');
+        add('rules-join', pick(lang, 'Rules สำหรับคำขอเข้าร่วมทริป', 'Join-request rules'), DIAG.ok,
+          pick(lang, 'สมาชิกขอเข้าร่วมทริปได้ตามปกติ', 'Members can request to join'));
+      } catch (e) {
+        const info = classifyFirestoreError(e, pick(lang, 'คำขอเข้าร่วม', 'join requests'), lang);
+        add('rules-join', pick(lang, 'Rules สำหรับคำขอเข้าร่วมทริป', 'Join-request rules'), info.status,
+          pick(lang, 'สมาชิกจะเจอ "Missing or insufficient permissions" ตอนกรอกรหัสเชิญ',
+                    'Members will hit "Missing or insufficient permissions" when entering the invite code'),
           FIX.deployRules);
       }
     }

@@ -710,6 +710,67 @@ console.log('\n▶ v7: member joins with a Google account + invite code (no Clou
   check(!/รอแอดมินอนุมัติ/.test(q('#my-join-requests')?.textContent || ''), 'join: pending badge cleared after approval');
 }
 
+console.log('\n▶ v8: rules not published yet → actionable help instead of a raw error');
+{
+  const googleUser = {
+    uid: 'g2', email: 'late@example.com', displayName: 'เพื่อนสาย', photoURL: null,
+    providerData: [{ providerId: 'google.com' }]
+  };
+  window.localStorage.removeItem('fuji_member_session');
+  authStub.__emitAuth(googleUser);
+  await sleep(120);
+  await goto('#/trips');
+  await waitFor(() => q('#join-code-input'), { label: 'join card' });
+
+  // simulate the currently deployed rules: no joinRequests / publicProfiles yet
+  const created = (await import(pathToFileURL(path.join(outDir, 'members/join.js')).href));
+  fsdb.__deny('trips/t1/joinRequests');
+  fsdb.__deny('users/g2/joinRequests');
+  fsdb.__deny('publicProfiles');
+  q('#join-code-input').value = 'fuji23';
+  await click('#join-code-btn');
+  await waitFor(() => q('#confirm-ok'), { timeout: 6000, label: 'join confirm' });
+  await click('#confirm-ok');
+  await waitFor(() => q('#rules-copy'), { timeout: 8000, label: 'rules help sheet' }).catch(() => {});
+  const sheetText = window.document.body.textContent || '';
+  check(!!q('#rules-copy'), 'rules help: sheet opens when Firestore denies the write');
+  check(/Publish/i.test(sheetText), 'rules help: explains the Publish step');
+  check(/publicProfiles/.test(sheetText) && /joinRequests/.test(sheetText), 'rules help: names the missing collections');
+  check(!!q('#rules-open-console'), 'rules help: button to open the Firebase console');
+  check(!!q('#rules-ask-admin'), 'rules help: ready-made message for the trip admin');
+  check(!fsdb.__dump('trips/t1/joinRequests/g2'), 'rules help: nothing silently half-written');
+
+  // the member's own rules exist but the trip rules do not → keep the request in
+  // the member mirror so the app can still show "waiting for approval"
+  fsdb.__allowAll();
+  fsdb.__deny('trips/t1/joinRequests');
+  window.document.querySelector('.bottom-sheet')?.remove();
+  window.document.querySelector('.bottom-sheet-backdrop')?.remove();
+  await goto('#/trips');
+  await waitFor(() => q('#join-code-input'), { label: 'join card (mirror pass)' });
+  q('#join-code-input').value = 'fuji23';
+  await click('#join-code-btn');
+  await waitFor(() => q('#confirm-ok'), { timeout: 6000, label: 'join confirm mirror' });
+  await click('#confirm-ok');
+  await waitFor(() => fsdb.__dump('users/g2/joinRequests/g2') || fsdb.__dump('users/g2/joinRequests/t1'), { timeout: 6000, label: 'mirror write' }).catch(() => {});
+  check(!!fsdb.__dump('users/g2/joinRequests/g2') || !!fsdb.__dump('users/g2/joinRequests/t1'), 'rules help: request kept in the member mirror (status still visible)');
+  window.document.querySelector('.bottom-sheet')?.remove();
+  window.document.querySelector('.bottom-sheet-backdrop')?.remove();
+
+  // ... admin publishes the rules, member retries
+  fsdb.__allowAll();
+  window.document.querySelector('#rules-copy')?.closest('.bottom-sheet')?.remove();
+  window.document.querySelector('.bottom-sheet-backdrop')?.remove();
+  await goto('#/trips');
+  await waitFor(() => q('#join-code-input'), { label: 'join card again' });
+  q('#join-code-input').value = 'fuji23';
+  await click('#join-code-btn');
+  await waitFor(() => q('#confirm-ok'), { timeout: 6000, label: 'join confirm 2' });
+  await click('#confirm-ok');
+  await waitFor(() => fsdb.__dump('trips/t1/joinRequests/g2'), { timeout: 6000, label: 'join request after publish' }).catch(() => {});
+  check(!!fsdb.__dump('trips/t1/joinRequests/g2'), 'rules help: retry works once the rules are published');
+}
+
 console.log('\n▶ v7: admin shares the invite code from Settings');
 await goto('#/trip/t1/settings');
 await waitFor(() => q('#invite-code-value'), { label: 'invite code card' });
