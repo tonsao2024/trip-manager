@@ -214,6 +214,7 @@ export function resolveColorValue(value, ctx = {}) {
 /** Best-effort converter for color syntaxes only the browser understands. */
 export function makeCanvasNormalizer(win) {
   let ctx = null;
+  const SENTINEL = '#010203';
   return (cssColor) => {
     try {
       if (!ctx) {
@@ -221,15 +222,13 @@ export function makeCanvasNormalizer(win) {
         ctx = canvas.getContext('2d');
       }
       if (!ctx) return null;
-      ctx.fillStyle = '#000000';
+      // A value the browser rejects leaves fillStyle on the sentinel — never
+      // treat that as a successful conversion.
+      ctx.fillStyle = SENTINEL;
       ctx.fillStyle = cssColor;
-      const first = ctx.fillStyle;
-      ctx.fillStyle = '#ffffff';
-      ctx.fillStyle = cssColor;
-      const second = ctx.fillStyle;
-      if (first !== second) return null;                 // browser rejected the value
-      if (typeof first !== 'string') return null;
-      return first;
+      const value = ctx.fillStyle;
+      if (typeof value !== 'string' || value === SENTINEL) return null;
+      return value;
     } catch {
       return null;
     }
@@ -259,18 +258,18 @@ export function makeCanvasColorResolver(win) {
         ctx = canvas.getContext('2d', { willReadFrequently: true });
       }
       if (ctx) {
-        ctx.clearRect(0, 0, 1, 1);
-        ctx.fillStyle = key;
-        // Unsupported values leave fillStyle untouched ("#000000" set below).
-        ctx.fillStyle = '#010203';
+        // Probe: a value the browser rejects leaves fillStyle at the sentinel.
+        const SENTINEL = '#010203';
+        ctx.fillStyle = SENTINEL;
         ctx.fillStyle = key;
         const applied = ctx.fillStyle;
-        if (typeof applied === 'string' && applied !== '#000000' || applied === key) {
+        const accepted = typeof applied === 'string' && applied !== SENTINEL;
+        if (accepted) {
+          ctx.clearRect(0, 0, 1, 1);
+          ctx.fillStyle = key;
           ctx.fillRect(0, 0, 1, 1);
           const data = ctx.getImageData(0, 0, 1, 1).data;
-          const out = [data[0], data[1], data[2], data[3] / 255];
-          // A fully transparent pixel is a valid answer (color is transparent).
-          result = out;
+          result = [data[0], data[1], data[2], data[3] / 255];
         }
       }
     } catch {
@@ -279,6 +278,41 @@ export function makeCanvasColorResolver(win) {
     cache.set(key, result);
     return result;
   };
+}
+
+/** Blend a translucent color over white — what html2canvas would have painted. */
+function flattenOverWhite([r, g, b, a]) {
+  if (a >= 1) return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+  const mix = (c) => Math.round(c * a + 255 * (1 - a));
+  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+}
+
+/**
+ * A `backgroundColor` html2canvas can always parse.
+ * `getComputedStyle(body).backgroundColor` is often `color(srgb …)` in Chromium
+ * (that is how color-mix() serialises) and html2canvas throws on it, so resolve
+ * it through the canvas and fall back to white.
+ */
+export function resolveSafeBackgroundColor(el, win = globalThis.window) {
+  const fallback = 'rgb(255, 255, 255)';
+  if (!el || !win?.getComputedStyle) return fallback;
+  let raw = '';
+  try {
+    const computed = win.getComputedStyle(el);
+    raw = computed?.getPropertyValue?.('background-color') || computed?.backgroundColor || '';
+  } catch { return fallback; }
+  if (!raw || raw === 'transparent' || /rgba\(\s*0,\s*0,\s*0,\s*0\s*\)/.test(raw)) return fallback;
+  if (!NEEDS_FIX.test(raw)) {
+    const parsed = parseColor(raw);
+    if (parsed) return parsed[3] >= 1 ? toRgba(parsed) : flattenOverWhite(parsed);
+    return fallback;
+  }
+  const resolver = makeCanvasColorResolver(win);
+  const resolved = resolver(raw);
+  if (resolved) return resolved[3] >= 1 ? toRgba(resolved) : flattenOverWhite(resolved);
+  const normalized = makeCanvasNormalizer(win)(raw);
+  if (normalized && !NEEDS_FIX.test(normalized)) return normalized;
+  return fallback;
 }
 
 const ANY_COLOR_FN_RE = /(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(([^()]*(?:\([^()]*\)[^()]*)*)\)/gi;
@@ -306,31 +340,57 @@ export function rewriteColorFunctions(value, resolver, ctx = {}) {
 const COLOR_PROPS = [
   'color', 'background-color', 'background-image', 'border-top-color', 'border-right-color',
   'border-bottom-color', 'border-left-color', 'outline-color', 'box-shadow', 'text-decoration-color',
-  'caret-color', 'fill', 'stroke', 'stop-color', 'text-shadow', 'column-rule-color'
+  'caret-color', 'fill', 'stroke', 'stop-color', 'text-shadow', 'column-rule-color',
+  // html2canvas parses these too — they are the ones people forget
+  '-webkit-text-fill-color', '-webkit-text-stroke-color', '-webkit-text-stroke',
+  'text-emphasis-color', 'border-block-start-color', 'border-block-end-color',
+  'border-inline-start-color', 'border-inline-end-color', 'column-rule', 'outline'
 ];
 
-const NEEDS_FIX = /color-mix\(|oklch\(|oklab\(|\blab\(|\blch\(|\bcolor\(/i;
+const NEEDS_FIX = /color-mix\(|oklch\(|oklab\(|\blab\(|\blch\(|\bcolor\(|light-dark\(|color-contrast\(|device-cmyk\(/i;
+
+/** Properties with no sensible rgb() equivalent → just drop them. */
+const DROP_IF_UNRESOLVED = /shadow|background-image|filter|backdrop|mask|border-image/i;
+
+/**
+ * Values that are not plain colors and can never be converted: return `null` so
+ * the caller can fall back instead of handing html2canvas something it will choke on.
+ */
+function safeFallbackFor(prop, resolved) {
+  if (DROP_IF_UNRESOLVED.test(prop)) return prop === 'background-image' ? 'none' : 'none';
+  if (/color$/i.test(prop) || prop === 'color') return resolved || 'rgb(0, 0, 0)';
+  return resolved || 'rgb(0, 0, 0)';
+}
 
 /**
  * Replace every modern color function in `root`'s subtree with an rgb()/rgba()
- * equivalent, so html2canvas can parse the styles.
- * Returns a restore() function that puts the original inline styles back.
+ * equivalent so html2canvas 1.4.x can parse the styles.
+ *
+ * Guarantees: when this resolves, NO property of any element in the captured
+ * subtree (nor its ancestors, nor its ::before/::after) still contains
+ * `color()`, `color-mix()`, `oklch()`, … — values that cannot be resolved are
+ * degraded (shadow → none, gradient → none, color → current/black) instead of
+ * being left in place, because leaving them is exactly what makes the export fail.
+ *
+ * @returns {() => void} restore()
  */
 export function sanitizeColorsForExport(root, win = globalThis.window) {
   if (!root || !win?.getComputedStyle) return () => {};
   const normalize = makeCanvasNormalizer(win);
   const resolveCanvas = makeCanvasColorResolver(win);
-  const nodes = [root, ...root.querySelectorAll('*')];
   const restore = [];
 
-  const safeValue = (raw) => {
+  // The captured element AND its ancestors (body/html backgrounds are parsed by
+  // html2canvas even when only a card is captured).
+  const nodes = [root];
+  for (let parent = root.parentElement; parent; parent = parent.parentElement) nodes.push(parent);
+  nodes.push(...(root.querySelectorAll?.('*') || []));
+
+  const safeValue = (prop, raw) => {
     let out = resolveColorValue(raw, { normalize });
     if (out && NEEDS_FIX.test(out)) out = rewriteColorFunctions(out, resolveCanvas);
-    if (!out || NEEDS_FIX.test(out)) {
-      // Last resort: paint the whole value (works for gradients with modern stops).
-      const painted = rewriteColorFunctions(String(raw), resolveCanvas);
-      if (painted && !NEEDS_FIX.test(painted)) out = painted;
-    }
+    if (out && NEEDS_FIX.test(out)) out = resolveColorValue(out, { normalize });
+    if (!out || NEEDS_FIX.test(out)) return null;
     return out;
   };
 
@@ -339,27 +399,58 @@ export function sanitizeColorsForExport(root, win = globalThis.window) {
     try { computed = win.getComputedStyle(node); } catch { continue; }
     if (!computed) continue;
     for (const prop of COLOR_PROPS) {
-      const raw = computed.getPropertyValue(prop);
+      let raw = '';
+      try { raw = computed.getPropertyValue(prop) || ''; } catch { continue; }
       if (!raw || !NEEDS_FIX.test(raw)) continue;
-      const resolved = safeValue(raw);
-      if (!resolved || resolved === raw || NEEDS_FIX.test(resolved)) continue;
+      let resolved = safeValue(prop, raw);
+      if (!resolved) {
+        // Unresolvable → degrade to something plain rather than leaving a
+        // value html2canvas would throw on.
+        const base = safeValue('color', (() => { try { return computed.getPropertyValue('color'); } catch { return ''; } })() || '');
+        resolved = safeFallbackFor(prop, base);
+      }
+      if (!resolved || NEEDS_FIX.test(resolved)) continue;
       const previous = node.style.getPropertyValue(prop);
       const previousPriority = node.style.getPropertyPriority(prop);
       try {
         node.style.setProperty(prop, resolved, 'important');
         restore.push({ node, prop, previous, previousPriority });
       } catch { /* ignore */ }
+      // Shorthand/longhand pairs: html2canvas reads the longhand, keep them in sync.
+      if (prop === '-webkit-text-stroke') {
+        try {
+          node.style.setProperty('-webkit-text-stroke-color', resolved, 'important');
+          restore.push({ node, prop: '-webkit-text-stroke-color', previous: '', previousPriority: '' });
+        } catch { /* ignore */ }
+      }
     }
   }
 
-  // Pseudo elements (::before / ::after) can also carry modern colors and cannot
-  // be patched inline — neutralise them with one override sheet instead.
+  // Pseudo elements (::before / ::after) cannot be patched inline. They can still
+  // carry `color-mix()` / `color()` values, so hand them the parent's (already
+  // plain) colour and drop everything gradient/shadow-like for the capture.
   const sheet = win.document?.createElement?.('style');
-  try { sheet?.setAttribute?.('data-export-sanitizer', '1'); } catch { /* ignore */ }
-  sheet.textContent = `
-    ::before, ::after { background-image: none !important; box-shadow: none !important; text-shadow: none !important; }
-  `;
-  try { sheet && win.document.head?.appendChild(sheet); } catch { /* ignore */ }
+  if (sheet) {
+    try { sheet.setAttribute?.('data-export-sanitizer', '1'); } catch { /* ignore */ }
+    sheet.textContent = `
+      *, *::before, *::after {
+        -webkit-text-fill-color: currentColor !important;
+        -webkit-text-stroke-color: currentColor !important;
+        text-decoration-color: currentColor !important;
+        column-rule-color: currentColor !important;
+        outline-color: currentColor !important;
+        caret-color: currentColor !important;
+        text-emphasis-color: currentColor !important;
+      }
+      *::before, *::after {
+        background-image: none !important;
+        box-shadow: none !important;
+        text-shadow: none !important;
+        border-color: currentColor !important;
+      }
+    `;
+    try { win.document.head?.appendChild(sheet); } catch { /* ignore */ }
+  }
 
   return () => {
     try { sheet?.remove?.(); } catch { /* ignore */ }
@@ -370,4 +461,75 @@ export function sanitizeColorsForExport(root, win = globalThis.window) {
       } catch { /* ignore */ }
     }
   };
+}
+
+/**
+ * Last-resort palette for a retry after html2canvas *still* complained: repaint
+ * the subtree as flat cards (no gradients, no shadows, no filters) so nothing
+ * modern can survive, whatever the browser serialised.
+ */
+export function hardPlainPalette(root, win = globalThis.window) {
+  if (!root || !win?.getComputedStyle) return () => {};
+  const resolveCanvas = makeCanvasColorResolver(win);
+  const normalize = makeCanvasNormalizer(win);
+  const nodes = [root];
+  for (let parent = root.parentElement; parent; parent = parent.parentElement) nodes.push(parent);
+  nodes.push(...(root.querySelectorAll?.('*') || []));
+  const restore = [];
+  const set = (node, prop, value) => {
+    try {
+      restore.push({ node, prop, previous: node.style.getPropertyValue(prop), previousPriority: node.style.getPropertyPriority(prop) });
+      node.style.setProperty(prop, value, 'important');
+    } catch { /* ignore */ }
+  };
+  const plainColor = (raw, fallback) => {
+    let out = resolveColorValue(raw || '', { normalize });
+    if (out && NEEDS_FIX.test(out)) out = rewriteColorFunctions(out, resolveCanvas);
+    if (out && !NEEDS_FIX.test(out)) return out;
+    const viaCanvas = raw ? resolveCanvas(raw) : null;
+    if (viaCanvas) return toRgba(viaCanvas);
+    return fallback;
+  };
+  for (const node of nodes) {
+    let computed;
+    try { computed = win.getComputedStyle(node); } catch { continue; }
+    if (!computed) continue;
+    const get = (p) => { try { return computed.getPropertyValue(p) || ''; } catch { return ''; } };
+    set(node, 'background-image', 'none');
+    set(node, 'box-shadow', 'none');
+    set(node, 'text-shadow', 'none');
+    set(node, 'filter', 'none');
+    for (const prop of ['color', 'background-color', 'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color']) {
+      const raw = get(prop);
+      if (!raw) continue;
+      set(node, prop, plainColor(raw, prop === 'background-color' ? 'transparent' : 'rgb(30, 30, 30)'));
+    }
+  }
+  return () => {
+    for (const { node, prop, previous, previousPriority } of restore) {
+      try {
+        if (previous) node.style.setProperty(prop, previous, previousPriority || '');
+        else node.style.removeProperty(prop);
+      } catch { /* ignore */ }
+    }
+  };
+}
+
+/** Does anything in this subtree still carry a color html2canvas cannot read? */
+export function hasModernColors(root, win = globalThis.window) {
+  if (!root || !win?.getComputedStyle) return false;
+  const nodes = [root];
+  for (let parent = root.parentElement; parent; parent = parent.parentElement) nodes.push(parent);
+  nodes.push(...(root.querySelectorAll?.('*') || []));
+  for (const node of nodes) {
+    let computed;
+    try { computed = win.getComputedStyle(node); } catch { continue; }
+    if (!computed) continue;
+    for (const prop of COLOR_PROPS) {
+      let raw = '';
+      try { raw = computed.getPropertyValue(prop) || ''; } catch { continue; }
+      if (raw && NEEDS_FIX.test(raw)) return true;
+    }
+  }
+  return false;
 }

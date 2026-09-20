@@ -9,6 +9,7 @@ import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, limit, writeBatch, arrayUnion, arrayRemove
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { addMemberUidToTrip, removeMemberUidFromTrip } from '../trips/index.js';
+import { cachedRead, cacheInvalidate, cacheForget, seedFromPersist, persistSet, persistDelete } from '../utils/datacache.js';
 import { setMemberPin, publishMemberLookup, unpublishMemberLookup, normalizeUsername } from '../auth/memberAuth.js';
 
 export const MEMBER_ROLES = [
@@ -23,15 +24,34 @@ function autoId(prefix = 'm') {
   return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}${counter.toString(36)}`;
 }
 
-export async function listMembers(tripId) {
-  if (!db) throw new Error('DB not ready');
+/** Drop the cached member list (called by every member write + permissions). */
+export function invalidateMembers(tripId) {
+  cacheForget(`members:${tripId}`);
+  cacheForget(`joins:${tripId}`);
+  persistDelete(`members:${tripId}`);
+}
+
+async function loadMembersUncached(tripId) {
   const snap = await getDocs(collection(db, `trips/${tripId}/members`));
   const members = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   members.sort((a, b) => (a.order ?? 999) - (b.order ?? 999) || String(a.displayName || '').localeCompare(String(b.displayName || '')));
   return members;
 }
 
+export async function listMembers(tripId, { fresh = false } = {}) {
+  if (!db) throw new Error('DB not ready');
+  const key = `members:${tripId}`;
+  if (fresh) { cacheForget(key); persistDelete(key); }
+  else seedFromPersist(key);
+  const members = await cachedRead(key, () => loadMembersUncached(tripId), { maxAgeMs: 60 * 1000 });
+  persistSet(key, members);
+  return members;
+}
+
 export async function getMember(tripId, memberId) {
+  const cached = await listMembers(tripId).catch(() => null);
+  const hit = cached?.find(m => m.id === memberId);
+  if (hit) return hit;
   const snap = await getDoc(doc(db, `trips/${tripId}/members`, memberId));
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
@@ -67,7 +87,7 @@ function isFunctionUnavailable(err) {
  * Create a member.
  * @returns {{id:string, mode:'account'|'local', member:object}}
  */
-export async function createMember(tripId, data, { order = 999, onNotice } = {}) {
+async function createMemberInner(tripId, data, { order = 999, onNotice } = {}) {
   const displayName = (data.displayName || '').trim();
   const username = (data.username || '').trim();
   if (!displayName && !username) throw new Error('กรุณากรอกชื่อสมาชิก');
@@ -145,7 +165,7 @@ async function findMemberByUsername(tripId, username) {
   }
 }
 
-export async function updateMember(tripId, memberId, updates, { pin = null } = {}) {
+async function updateMemberInner(tripId, memberId, updates, { pin = null } = {}) {
   const payload = { ...updates };
   if (payload.displayName != null) payload.displayName = String(payload.displayName).trim() || 'Member';
   if (payload.username != null) payload.username = normalizeUsername(payload.username);
@@ -176,7 +196,7 @@ export async function updateMember(tripId, memberId, updates, { pin = null } = {
  * Delete a member. Expenses that reference the member are kept (history) but the
  * member disappears from pickers. Set `removeFromTrips` to also drop the uid array entry.
  */
-export async function deleteMember(tripId, memberId, { uid = null } = {}) {
+async function deleteMemberInner(tripId, memberId, { uid = null } = {}) {
   const docId = memberId;
   const member = await getMember(tripId, docId).catch(() => null);
   if (member?.username) await unpublishMemberLookup(member.username);
@@ -185,7 +205,7 @@ export async function deleteMember(tripId, memberId, { uid = null } = {}) {
   return true;
 }
 
-export async function reorderMembers(tripId, ids, userId) {
+async function reorderMembersInner(tripId, ids, userId) {
   const batch = writeBatch(db);
   ids.forEach((id, idx) => {
     batch.update(doc(db, `trips/${tripId}/members`, id), { order: idx, updatedBy: userId, updatedAt: serverTimestamp() });
@@ -224,4 +244,29 @@ export function mapFunctionError(err) {
   if (code.includes('already-exists')) return 'ชื่อผู้ใช้นี้ถูกใช้แล้ว';
   if (code.includes('not-found')) return 'ไม่พบ Cloud Function createMemberAccount — ต้อง deploy functions ก่อน';
   return msg || 'เพิ่มสมาชิกไม่สำเร็จ';
+}
+
+/* ---------------------------------------------------------------- *
+ * Public API — every write drops the cached member/join-request list
+ * so the members menu repaints instantly instead of re-reading.
+ * ---------------------------------------------------------------- */
+
+async function withMemberInvalidation(tripId, fn) {
+  try { return await fn(); } finally { invalidateMembers(tripId); }
+}
+
+export function createMember(tripId, data, options = {}) {
+  return withMemberInvalidation(tripId, () => createMemberInner(tripId, data, options));
+}
+
+export function updateMember(tripId, memberId, updates, options = {}) {
+  return withMemberInvalidation(tripId, () => updateMemberInner(tripId, memberId, updates, options));
+}
+
+export function deleteMember(tripId, memberId, options = {}) {
+  return withMemberInvalidation(tripId, () => deleteMemberInner(tripId, memberId, options));
+}
+
+export function reorderMembers(tripId, ids, userId) {
+  return withMemberInvalidation(tripId, () => reorderMembersInner(tripId, ids, userId));
 }

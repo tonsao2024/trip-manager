@@ -150,3 +150,35 @@ export function transactionBreakdown(statement) {
   if (!statement) return [];
   return (statement.items || []).filter(i => i.role === 'share');
 }
+
+/**
+ * "จ่ายคืนจากค่าอะไร" — the expense shares that make up one transfer.
+ *
+ * Lists the expenses the creditor paid for, restricted to the debtor's share, so
+ * a receipt can explain where the amount comes from (transfers are netted, so the
+ * list is an explanation, not a strict sum).
+ *
+ * @param {{from:string,to:string,amountMinor:number}} tx
+ * @param {Array} expenses
+ * @returns {Array<{expenseId:string,title:string,date:string,amountMinor:number,currency:string|null,method:string}>}
+ */
+export function transactionSources(tx, expenses = []) {
+  if (!tx) return [];
+  const rows = [];
+  for (const e of expenses) {
+    if (!e || (e.status || 'active') === 'voided') continue;
+    if (e.payerId !== tx.to) continue;
+    const share = (e.allocations || []).find(a => a.memberId === tx.from);
+    if (!share) continue;
+    rows.push({
+      expenseId: e.id,
+      title: e.title || '',
+      date: e.date || '',
+      amountMinor: share.amountMinor || 0,
+      currency: e.currency || null,
+      method: e.paymentMethod || 'cash',
+      estimated: Boolean(e.isEstimated)
+    });
+  }
+  return rows.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+}

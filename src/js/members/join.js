@@ -16,6 +16,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { normalizeInviteCode, isValidInviteCode } from '../utils/invite.js';
 import { isPermissionError } from '../utils/rulesHelper.js';
+import { cacheForget } from '../utils/datacache.js';
 
 /** Keep the Firebase code + cause so the UI can explain *why* it failed. */
 function rethrow(e, fallbackTh, fallbackEn = null) {
@@ -102,11 +103,23 @@ export async function requestToJoin(trip, user, { note = '' } = {}) {
   return request;
 }
 
+/**
+ * Pending join requests.
+ *
+ * Deliberately NOT cached: an admin waiting for somebody to tap "ขอเข้าร่วม" must
+ * see the request the moment the page opens. It is a single small read, and the
+ * members list beside it is still served from cache.
+ */
 export async function listJoinRequests(tripId) {
   if (!db) throw new Error('DB not ready');
   const snap = await getDocs(collection(db, 'trips', tripId, 'joinRequests'));
   const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   return rows.sort((a, b) => String(b.requestedAt?.seconds || 0).localeCompare(String(a.requestedAt?.seconds || 0)));
+}
+
+function invalidateJoins(tripId) {
+  cacheForget(`joins:${tripId}`);
+  cacheForget(`members:${tripId}`);
 }
 
 /** Requests the signed-in user sent (status shown on the trips page). */
@@ -126,6 +139,7 @@ export async function cancelJoinRequest(tripId, uid) {
   try {
     await deleteDoc(doc(db, 'trips', tripId, 'joinRequests', uid));
     await deleteDoc(doc(db, 'users', uid, 'joinRequests', tripId));
+    invalidateJoins(tripId);
   } catch (e) {
     console.warn('cancelJoinRequest failed', e?.code, e?.message);
     rethrow(e, 'ยกเลิกคำขอไม่สำเร็จ');
@@ -141,7 +155,9 @@ export async function approveJoinRequest(tripId, request, { role = 'member', per
   const uid = request.uid || request.id;
   if (!uid) throw new Error('คำขอไม่ถูกต้อง (ไม่มี uid)');
   try {
-    return await approveJoinRequestInner(tripId, uid, request, role, permissions);
+    const out = await approveJoinRequestInner(tripId, uid, request, role, permissions);
+    invalidateJoins(tripId);
+    return out;
   } catch (e) {
     rethrow(e, 'อนุมัติสมาชิกไม่สำเร็จ');
   }
@@ -197,6 +213,7 @@ export async function rejectJoinRequest(tripId, request, { reason = '' } = {}) {
     await setDoc(doc(db, 'users', uid, 'joinRequests', tripId), {
       ...request, tripId, uid, status: 'rejected', reason, updatedAt: serverTimestamp()
     }, { merge: true });
+    invalidateJoins(tripId);
   } catch (e) {
     console.warn('rejectJoinRequest failed', e?.code, e?.message);
     rethrow(e, 'ปฏิเสธคำขอไม่สำเร็จ');

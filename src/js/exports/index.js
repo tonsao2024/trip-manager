@@ -1,7 +1,12 @@
 // Export helpers — PNG / PDF / clipboard text.
-// html2canvas cannot parse modern color functions (color-mix, oklch, …), so every
-// export first swaps them for rgb()/rgba() equivalents via sanitizeColorsForExport().
-import { sanitizeColorsForExport } from '../utils/colors.js';
+//
+// html2canvas 1.4.x does not understand modern color syntax (color-mix, oklch,
+// and the `color(srgb …)` form Chromium computes them to), so every export:
+//   1. swaps computed colors for rgb()/rgba() (sanitizeColorsForExport),
+//   2. resolves the canvas background colour instead of passing a computed string,
+//   3. retries with a flat palette (hardPlainPalette) if html2canvas still complains.
+// Together those three steps remove the whole class of "ส่งออกรูปไม่สำเร็จ" errors.
+import { sanitizeColorsForExport, hardPlainPalette, resolveSafeBackgroundColor } from '../utils/colors.js';
 
 function downloadCanvas(canvas, filename) {
   const link = document.createElement('a');
@@ -13,19 +18,15 @@ function downloadCanvas(canvas, filename) {
   link.remove();
 }
 
-async function loadHtml2Canvas() {
-  const mod = await import('https://esm.sh/html2canvas@1.4.1');
-  return mod.default || mod;
-}
-
-function isOpaque(color) {
-  if (!color || color === 'transparent') return false;
-  const m = String(color).match(/rgba?\(([^)]+)\)/i);
-  if (!m) return true;
-  const parts = m[1].split(/[,\s/]+/).filter(Boolean);
-  if (parts.length < 4) return true;
-  const alpha = parts[3].endsWith('%') ? parseFloat(parts[3]) / 100 : parseFloat(parts[3]);
-  return !(alpha < 0.999);
+let html2canvasPromise = null;
+/** Imported once — a second tap on "PNG" must not wait for the module again. */
+function loadHtml2Canvas() {
+  if (!html2canvasPromise) {
+    html2canvasPromise = import('https://esm.sh/html2canvas@1.4.1')
+      .then(mod => mod.default || mod)
+      .catch((e) => { html2canvasPromise = null; throw e; });
+  }
+  return html2canvasPromise;
 }
 
 /** Swap the element into the monochrome "receipt" look for the capture. */
@@ -43,7 +44,8 @@ function applyFlatMode(el) {
  *   html2canvas has nothing modern to parse — the safest possible export.
  */
 export async function exportToPng(elementId, filename = 'export.png', options = {}) {
-  const el = document.getElementById(elementId);
+  let el = document.getElementById(elementId);
+  if (!el && options.fallbackSelector) el = document.querySelector(options.fallbackSelector);
   if (!el) throw new Error('ไม่พบเนื้อหาที่จะบันทึกเป็นรูป (element หายไป)');
 
   const restoreFlat = options.flat !== false ? applyFlatMode(el) : () => {};
@@ -54,33 +56,68 @@ export async function exportToPng(elementId, filename = 'export.png', options = 
   try {
     html2canvas = await loadHtml2Canvas();
   } catch (e) {
+    restoreFlat();
     throw new Error('โหลดตัวสร้างรูปไม่สำเร็จ (ตรวจสอบอินเทอร์เน็ต): ' + (e?.message || e));
   }
 
+  const readOptions = () => ({
+    scale: options.scale || 2,
+    useCORS: true,
+    allowTaint: false,
+    logging: false,
+    // NEVER hand html2canvas a computed color string: Chromium serialises
+    // color-mix() as `color(srgb …)` and html2canvas throws on it.
+    backgroundColor: resolveSafeBackgroundColor(document.body),
+    windowWidth: Math.max(el.scrollWidth, el.clientWidth, 320),
+    scrollX: 0,
+    scrollY: -window.scrollY
+  });
+
   const restore = sanitizeColorsForExport(el);
   try {
-    const bodyBg = getComputedStyle(document.body).backgroundColor;
-    const canvas = await html2canvas(el, {
-      scale: options.scale || 2,
-      useCORS: true,
-      allowTaint: false,
-      logging: false,
-      backgroundColor: options.backgroundColor !== undefined
-        ? options.backgroundColor
-        : (isOpaque(bodyBg) ? bodyBg : null),
-      windowWidth: Math.max(el.scrollWidth, el.clientWidth, 320),
-      scrollX: 0,
-      scrollY: -window.scrollY
-    });
+    const canvas = await html2canvas(el, readOptions());
     downloadCanvas(canvas, filename);
     return canvas;
   } catch (e) {
     const message = String(e?.message || e);
-    if (/unsupported color function/i.test(message)) {
-      // Should be unreachable now (flat mode + canvas resolver), so say what to do.
-      throw new Error('ส่งออกรูปไม่สำเร็จ: พบเฉดสีที่เบราว์เซอร์แปลงไม่ได้ — ลองใหม่ หรือใช้ปุ่ม "พิมพ์ / PDF" แทน');
+    if (!/unsupported color function|color function|parse color/i.test(message)) {
+      throw new Error('ส่งออกรูปไม่สำเร็จ: ' + message);
     }
-    throw new Error('ส่งออกรูปไม่สำเร็จ: ' + message);
+    // Retry once with the flat palette — this removes gradients, shadows and
+    // filters entirely, so no colour syntax can survive to break the capture.
+    const restoreHard = hardPlainPalette(el);
+    try {
+      const canvas = await html2canvas(el, readOptions());
+      downloadCanvas(canvas, filename);
+      return canvas;
+    } catch (e2) {
+      throw new Error('ส่งออกรูปไม่สำเร็จ: ' + (e2?.message || e2) + ' — ลองใหม่ หรือใช้ปุ่ม "พิมพ์ / PDF" แทน');
+    } finally {
+      restoreHard();
+    }
+  } finally {
+    restore();
+    restoreFlat();
+  }
+}
+
+/**
+ * Same pipeline as exportToPng but returns the canvas instead of downloading —
+ * used by the "share receipt" button (Web Share API needs a blob).
+ */
+export async function exportToPngToCanvas(elementId) {
+  const el = document.getElementById(elementId);
+  if (!el) throw new Error('ไม่พบเนื้อหาที่จะบันทึกเป็นรูป (element หายไป)');
+  const html2canvas = await loadHtml2Canvas();
+  const restoreFlat = applyFlatMode(el);
+  await new Promise(r => requestAnimationFrame(() => r()));
+  const restore = sanitizeColorsForExport(el);
+  try {
+    return await html2canvas(el, {
+      scale: 2, useCORS: true, allowTaint: false, logging: false,
+      backgroundColor: resolveSafeBackgroundColor(document.body),
+      windowWidth: Math.max(el.scrollWidth, el.clientWidth, 320)
+    });
   } finally {
     restore();
     restoreFlat();
@@ -102,7 +139,8 @@ export async function exportToPdf(elementId, filename = 'export.pdf', orientatio
   const restore = sanitizeColorsForExport(el);
   try {
     const canvas = await html2canvasMod(el, {
-      backgroundColor: '#ffffff', scale: 2, useCORS: true, logging: false,
+      backgroundColor: resolveSafeBackgroundColor(document.body, window),
+      scale: 2, useCORS: true, logging: false,
       windowWidth: Math.max(el.scrollWidth, el.clientWidth, 320)
     });
     const imgData = canvas.toDataURL('image/png');

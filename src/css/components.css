@@ -1593,3 +1593,42 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
   .receipt { padding: 14px 12px 12px; }
   .receipt-table { font-size: 11px; }
 }
+
+/* ------------------------------------------------------------------ *
+ * Route progress bar (v9.1) — a thin indicator while a menu reads data.
+ * Shown only when a navigation takes longer than ~140 ms, so cached
+ * (instant) menu switches never flash.
+ * ------------------------------------------------------------------ */
+.route-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  background: var(--gradient-primary, linear-gradient(90deg, #8bb89a, #6ea8fe));
+  opacity: 0;
+  pointer-events: none;
+  z-index: 9999;
+  border-radius: 0 3px 3px 0;
+  transition: opacity .15s ease;
+}
+.route-progress.is-active {
+  opacity: 1;
+  animation: route-progress-run 1.1s ease-in-out infinite;
+}
+.route-progress.is-done {
+  opacity: 0;
+  transform: scaleX(1);
+  transition: transform .18s ease, opacity .18s ease;
+  animation: none;
+}
+@keyframes route-progress-run {
+  0%   { transform: scaleX(0.05); }
+  50%  { transform: scaleX(0.7); }
+  100% { transform: scaleX(0.92); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .route-progress.is-active { animation: none; transform: scaleX(0.6); }
+}

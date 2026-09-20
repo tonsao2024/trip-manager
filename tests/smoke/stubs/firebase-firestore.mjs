@@ -12,6 +12,7 @@ export function __reset() { store.clear(); denyPaths = []; }
 let denyPaths = [];
 export function __deny(prefix) { denyPaths.push(prefix); }
 export function __allowAll() { denyPaths = []; }
+export function __allow(prefix) { denyPaths = denyPaths.filter(p => p !== prefix); }
 function denyCheck(path) {
   if (denyPaths.some(p => path.startsWith(p))) {
     const err = new Error('Missing or insufficient permissions.');
@@ -21,6 +22,22 @@ function denyCheck(path) {
 }
 export function __seed(path, data) { store.set(path, { ...data }); }
 export function __dump(path) { return store.get(path); }
+
+// --- simulated network: read latency + a counter, so the smoke test can prove
+// --- that switching menus does not cost a chain of round trips.
+let readLatencyMs = 0;
+const readCounts = new Map();
+export function __setReadLatency(ms) { readLatencyMs = Math.max(0, Number(ms) || 0); }
+export function __readStats() {
+  const byPath = Object.fromEntries([...readCounts.entries()].sort((a, b) => b[1] - a[1]));
+  return { total: [...readCounts.values()].reduce((n, v) => n + v, 0), byPath };
+}
+export function __resetReadStats() { readCounts.clear(); }
+function countRead(path) {
+  readCounts.set(path, (readCounts.get(path) || 0) + 1);
+  if (!readLatencyMs) return Promise.resolve();
+  return new Promise(r => setTimeout(r, readLatencyMs));
+}
 
 const segPath = (segs) => segs.filter(s => typeof s === 'string' && s.length).join('/');
 const isMarker = (v) => v && typeof v === 'object' && typeof v.__fsMarker === 'string';
@@ -133,6 +150,7 @@ function resolveCollectionPath(target) {
 export async function getDocs(target) {
   const path = resolveCollectionPath(target);
   denyCheck(path);
+  await countRead(path);
   const constraints = target.__type === 'query' ? target.constraints : [];
   let entries = childDocs(path);
   for (const c of constraints) {
@@ -157,6 +175,7 @@ export async function getDocs(target) {
 
 export async function getDoc(ref) {
   denyCheck(ref.path);
+  await countRead(ref.path);
   const data = store.get(ref.path);
   if (!data) {
     return { id: ref.id, ref, exists: () => false, data: () => undefined, get: () => undefined };

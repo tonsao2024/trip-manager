@@ -1,4 +1,6 @@
 import { db, serverTimestamp } from '../firebase.js';
+import { cachedRead, cacheInvalidate, cacheForget } from '../utils/datacache.js';
+import { invalidateExpensesCache } from '../expenses/index.js';
 import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, writeBatch, query, where, orderBy, limit, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { recalculateSchedule, detectOverlaps, validateItineraryItem } from '../utils/scheduling.js';
 import { dayjs } from '../utils/date.js';
@@ -83,8 +85,10 @@ export function buildEstimateExpensePayload(item, { trip = null, payerId = null,
  * Create / update / remove the estimated expense linked to an itinerary item.
  * This is what makes itinerary costs show up automatically in the expense book.
  */
-export async function syncItineraryExpense(tripId, item, options = {}) {
+async function syncItineraryExpenseInner(tripId, item, options = {}) {
   if (!db) return null;
+  // This writes into the expense book, so the cached expense list must go.
+  invalidateExpensesCache(tripId);
   const { userId, trip = null, members = [], remove = false } = options;
   const existing = await findLinkedExpense(tripId, item.id);
 
@@ -141,26 +145,34 @@ export function subscribeItinerary(tripId, day, callback) {
   return onSnapshot(q, snap => callback(snap.docs.map(mapDoc)), err => console.warn('subscribeItinerary error', err));
 }
 
-export async function fetchItinerary(tripId, dateStr = null) {
-  if (!db) throw new Error('DB not ready');
-  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout loading itinerary')), 12000));
-  const fetchPromise = (async () => {
-    try {
-      let q = query(collection(db, `trips/${tripId}/itineraryItems`), orderBy('order', 'asc'));
-      if (dateStr) q = query(collection(db, `trips/${tripId}/itineraryItems`), where('date', '==', dateStr), orderBy('order', 'asc'));
-      const snap = await getDocs(q);
-      return snap.docs.map(mapDoc);
-    } catch (e) {
-      if (e?.code === 'failed-precondition' || /index/i.test(e?.message || '')) {
-        const snap = await getDocs(collection(db, `trips/${tripId}/itineraryItems`));
-        let items = snap.docs.map(mapDoc);
-        if (dateStr) items = items.filter(i => i.date === dateStr);
-        return items.sort((a, b) => (a.order || 0) - (b.order || 0));
-      }
-      throw e;
+function invalidateItinerary(tripId) {
+  cacheForget(`itin:${tripId}`);
+}
+
+async function loadItineraryUncached(tripId) {
+  try {
+    const q = query(collection(db, `trips/${tripId}/itineraryItems`), orderBy('order', 'asc'));
+    const snap = await getDocs(q);
+    return snap.docs.map(mapDoc);
+  } catch (e) {
+    if (e?.code === 'failed-precondition' || /index/i.test(e?.message || '')) {
+      const snap = await getDocs(collection(db, `trips/${tripId}/itineraryItems`));
+      return snap.docs.map(mapDoc).sort((a, b) => (a.order || 0) - (b.order || 0));
     }
-  })();
-  return Promise.race([fetchPromise, timeout]);
+    throw e;
+  }
+}
+
+/**
+ * Itinerary items of a trip (optionally one day). Cached per trip with
+ * stale-while-revalidate so the itinerary menu opens without a round trip.
+ */
+export async function fetchItinerary(tripId, dateStr = null, { fresh = false } = {}) {
+  if (!db) throw new Error('DB not ready');
+  const key = `itin:${tripId}`;
+  if (fresh) cacheForget(key);
+  const items = await cachedRead(key, () => loadItineraryUncached(tripId), { maxAgeMs: 60 * 1000 });
+  return dateStr ? items.filter(i => i.date === dateStr) : items;
 }
 
 export async function getItineraryItem(tripId, itemId) {
@@ -173,7 +185,7 @@ export async function getItineraryItem(tripId, itemId) {
  * Create / update / delete
  * ------------------------------------------------------------------ */
 
-export async function addItineraryItem(tripId, data, userId) {
+async function addItineraryItemInner(tripId, data, userId) {
   const validation = validateItineraryItem(data);
   if (!validation.valid) throw new Error(validation.errors.join(', '));
   const existing = await fetchItinerary(tripId, data.date);
@@ -213,7 +225,7 @@ export async function addItineraryItem(tripId, data, userId) {
   return ref.id;
 }
 
-export async function updateItineraryItem(tripId, itemId, updates, userId) {
+async function updateItineraryItemInner(tripId, itemId, updates, userId) {
   const ref = doc(db, `trips/${tripId}/itineraryItems`, itemId);
   let version = updates.version;
   if (version == null) {
@@ -233,7 +245,7 @@ export async function updateItineraryItem(tripId, itemId, updates, userId) {
   });
 }
 
-export async function deleteItineraryItem(tripId, itemId) {
+async function deleteItineraryItemInner(tripId, itemId) {
   const item = { id: itemId };
   try {
     const snap = await getDoc(doc(db, `trips/${tripId}/itineraryItems`, itemId));
@@ -245,7 +257,7 @@ export async function deleteItineraryItem(tripId, itemId) {
 }
 
 /** Save (create or update) + sync the linked estimated expense in one call. */
-export async function saveItineraryItem(tripId, data, userId, itemId = null, { trip = null, members = [] } = {}) {
+async function saveItineraryItemInner(tripId, data, userId, itemId = null, { trip = null, members = [] } = {}) {
   let id = itemId;
   if (itemId) {
     await updateItineraryItem(tripId, itemId, {
@@ -272,7 +284,7 @@ export async function saveItineraryItem(tripId, data, userId, itemId = null, { t
   return { id, expenseId };
 }
 
-export async function batchUpdateSchedule(tripId, items, userId) {
+async function batchUpdateScheduleInner(tripId, items, userId) {
   const batch = writeBatch(db);
   for (const item of items) {
     const ref = doc(db, `trips/${tripId}/itineraryItems`, item.id);
@@ -290,7 +302,7 @@ export async function batchUpdateSchedule(tripId, items, userId) {
   await batch.commit();
 }
 
-export async function reorderItinerary(tripId, dateStr, newOrderIds, userId) {
+async function reorderItineraryInner(tripId, dateStr, newOrderIds, userId) {
   const items = await fetchItinerary(tripId, dateStr);
   const map = new Map(items.map(i => [i.id, i]));
   const reordered = newOrderIds.map((id, idx) => ({ ...map.get(id), order: idx })).filter(i => i.id);
@@ -300,7 +312,7 @@ export async function reorderItinerary(tripId, dateStr, newOrderIds, userId) {
   return { items: recalculated, overlaps };
 }
 
-export async function moveItemToDay(tripId, itemId, newDate, newOrder, userId) {
+async function moveItemToDayInner(tripId, itemId, newDate, newOrder, userId) {
   await updateItineraryItem(tripId, itemId, { date: newDate, order: newOrder }, userId);
 }
 
@@ -313,7 +325,7 @@ export function countEstimatedItems(items = []) {
  * Bulk create itinerary items (Excel/CSV/JSON import).
  * Handles >450 rows by committing in batches.
  */
-export async function bulkCreateItineraryItems(tripId, items, userId, { onProgress } = {}) {
+async function bulkCreateItineraryItemsInner(tripId, items, userId, { onProgress } = {}) {
   if (!items?.length) return { created: 0, expenseIds: [] };
   const { writeBatch } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
   let batch = writeBatch(db);
@@ -343,4 +355,51 @@ export async function bulkCreateItineraryItems(tripId, items, userId, { onProgre
   }
   if (n % 400 !== 0) await batch.commit();
   return { created, items: createdItems };
+}
+
+/* ---------------------------------------------------------------- *
+ * Public write API — every change drops the cached itinerary list.
+ * ---------------------------------------------------------------- */
+
+function withItineraryInvalidation(tripId, fn) {
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => { if (tripId) invalidateItinerary(tripId); });
+}
+
+export function addItineraryItem(tripId, data, userId) {
+  return withItineraryInvalidation(tripId, () => addItineraryItemInner(tripId, data, userId));
+}
+
+export function updateItineraryItem(tripId, itemId, updates, userId) {
+  return withItineraryInvalidation(tripId, () => updateItineraryItemInner(tripId, itemId, updates, userId));
+}
+
+export function deleteItineraryItem(tripId, itemId) {
+  return withItineraryInvalidation(tripId, () => deleteItineraryItemInner(tripId, itemId));
+}
+
+export function saveItineraryItem(tripId, data, userId, itemId = null, options = {}) {
+  return withItineraryInvalidation(tripId, () => saveItineraryItemInner(tripId, data, userId, itemId, options));
+}
+
+export function batchUpdateSchedule(tripId, items, userId) {
+  return withItineraryInvalidation(tripId, () => batchUpdateScheduleInner(tripId, items, userId));
+}
+
+export function reorderItinerary(tripId, dateStr, newOrderIds, userId) {
+  return withItineraryInvalidation(tripId, () => reorderItineraryInner(tripId, dateStr, newOrderIds, userId));
+}
+
+export function moveItemToDay(tripId, itemId, newDate, newOrder, userId) {
+  return withItineraryInvalidation(tripId, () => moveItemToDayInner(tripId, itemId, newDate, newOrder, userId));
+}
+
+export function bulkCreateItineraryItems(tripId, items, userId, options = {}) {
+  return withItineraryInvalidation(tripId, () => bulkCreateItineraryItemsInner(tripId, items, userId, options));
+}
+
+export function syncItineraryExpense(tripId, item, options = {}) {
+  // Moving estimate money must refresh both caches.
+  return withItineraryInvalidation(tripId, () => syncItineraryExpenseInner(tripId, item, options));
 }

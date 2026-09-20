@@ -5,7 +5,7 @@ import { renderFujiMascot, renderEmptyState } from './components/fuji.js';
 import { loginAdmin, logout, hasStepUpSession } from './auth/index.js';
 import { getMemberSession, clearMemberSession } from './auth/memberAuth.js';
 import { runSystemDiagnostics, formatDiagnosticsReport, DIAG } from './utils/diagnostics.js';
-import { listTrips, getTrip, createTrip, updateTrip, deleteTrip, duplicateTrip, uploadCoverImage, clearTripsCache, regenerateInviteCode } from './trips/index.js';
+import { listTrips, getTrip, createTrip, updateTrip, deleteTrip, duplicateTrip, uploadCoverImage, clearTripsCache, clearAllDataCache, regenerateInviteCode } from './trips/index.js';
 import {
   signInWithGoogle, completeRedirectSignIn, signUpEmailAccount, sendAccountPasswordReset,
   ensureUserProfile, findProfileByEmail
@@ -27,15 +27,15 @@ import {
 import { fetchSettlementData, recalculateAndSaveSettlement } from './settlement/index.js';
 import { listMembers, createMember, updateMember, deleteMember, countMemberReferences, mapFunctionError, MEMBER_ROLES } from './members/index.js';
 import { dayjs, getCurrentTimes, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay } from './utils/date.js';
-import { formatCurrency, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor } from './utils/currency.js';
-import { calculateSettlement, buildSettlementStatements } from './utils/settlement.js';
+import { formatCurrency, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate } from './utils/currency.js';
+import { calculateSettlement, buildSettlementStatements, transactionSources } from './utils/settlement.js';
 import { splitEqual } from './utils/split.js';
 import { escapeHtml } from './utils/sanitize.js';
 import { showBottomSheet, showModal } from './components/modal.js';
 import { confirmAction, promptAction } from './components/confirm.js';
 import { mountCountdown, computeCountdown, countdownHeadline } from './components/countdown.js';
 import { initReveal, countUp, confetti, celebrateFrom, restagger } from './components/effects.js';
-import { resolvePermissions } from './utils/permissions.js';
+import { resolvePermissions, clearPermissionsCache } from './utils/permissions.js';
 import { renderPageScene } from './components/scenes.js';
 import { listNotes, createNote, updateNote, deleteNote, NOTE_COLORS, noteColorHex } from './notes/index.js';
 import { googleMapsPlaceUrl, googleMapsDirectionsUrl, BASE_LAYERS, setMapLayer, getStoredLayerId } from './maps/index.js';
@@ -46,6 +46,7 @@ import {
 } from './utils/categories.js';
 import {
   loadTripCategories, saveCategory, deleteCategory, countCategoryUsage,
+  localCategoryPending, categoriesLoadDenied,
   CATEGORY_ICON_CHOICES, CATEGORY_COLOR_CHOICES
 } from './categories/index.js';
 import {
@@ -949,10 +950,51 @@ setTimeout(addHeaderControls, 100);
 
 refreshBtn?.addEventListener('click', () => {
   syncState.set('syncing');
-  toast.success(getLang() === 'th' ? 'รีเฟรชแล้ว' : 'Refreshed');
+  // A manual refresh must really go back to Firestore — drop the read cache first.
+  clearAllDataCache();
+  clearPermissionsCache();
+  toast.success(getLang() === 'th' ? 'รีเฟรชข้อมูลล่าสุดแล้ว' : 'Reloaded from the server');
   router.handle();
   setTimeout(() => syncState.set('online'), 300);
 });
+
+/* ---------------------------------------------------------------- *
+ * Route progress bar — instant feedback while a menu reads data.
+ * ---------------------------------------------------------------- */
+const routeProgress = (() => {
+  let bar = null;
+  let showTimer = null;
+  let hideTimer = null;
+  function el() {
+    if (bar?.isConnected) return bar;
+    bar = document.createElement('div');
+    bar.id = 'route-progress';
+    bar.className = 'route-progress';
+    bar.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(bar);
+    return bar;
+  }
+  return {
+    start() {
+      const node = el();
+      clearTimeout(showTimer);
+      clearTimeout(hideTimer);
+      node.classList.remove('is-done');
+      // Only appear when the navigation is slow enough to be noticeable.
+      showTimer = setTimeout(() => node.classList.add('is-active'), 140);
+    },
+    end() {
+      clearTimeout(showTimer);
+      const node = el();
+      node.classList.remove('is-active');
+      node.classList.add('is-done');
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => node.classList.remove('is-done'), 200);
+    }
+  };
+})();
+window.addEventListener('route:start', () => routeProgress.start());
+window.addEventListener('route:end', () => routeProgress.end());
 
 // --- Config ---
 function renderConfigNeeded() {
@@ -1782,6 +1824,17 @@ async function renderTripSelector() {
 
   const loadTripsForMenus = async () => tripsCache;
 
+  // A background refresh (SWR) can land while the cached list is on screen.
+  const onTripsUpdated = (e) => {
+    const fresh = e?.detail;
+    if (!Array.isArray(fresh) || !fresh.length) return;
+    if (JSON.stringify(fresh.map(t => [t.id, t.updatedAt?.seconds || t.updatedAt])) ===
+        JSON.stringify(tripsCache.map(t => [t.id, t.updatedAt?.seconds || t.updatedAt]))) return;
+    renderTripSelector();
+  };
+  window.addEventListener('trips:updated', onTripsUpdated);
+  document.addEventListener('routechange', () => window.removeEventListener('trips:updated', onTripsUpdated), { once: true });
+
   try {
     const trips = await listTrips(currentUser.uid, false);
     if (isStale(token)) return;
@@ -2109,25 +2162,28 @@ async function renderDashboard(params) {
   /* ---------------- Data sections (each guarded separately) ---------------- */
   let expenses = [], members = [], items = [];
 
-  // Trip-defined expense groups (used by the category breakdown + recent list).
-  try { await loadTripCategories(tripId); } catch (e) { console.warn(e); }
+  // Trip groups, money and the itinerary are independent — fetch them together
+  // (all three are served from cache on a revisit, so this is instant).
+  const [categoriesRes, dataRes, itemsRes] = await Promise.allSettled([
+    loadTripCategories(tripId),
+    fetchSettlementData(tripId),
+    fetchItinerary(tripId, null)
+  ]);
+  if (isStale(token)) return;
 
-  try {
-    const data = await fetchSettlementData(tripId);
-    if (isStale(token)) return;
-    expenses = data.expenses || [];
-    members = data.members || [];
-  } catch (e) {
-    console.error('dashboard expenses failed', e);
-    if (!isStale(token)) toast.error(th('โหลดข้อมูลค่าใช้จ่ายไม่สำเร็จ: ', 'Could not load expenses: ') + e.message);
+  if (categoriesRes.status === 'rejected') console.warn('dashboard categories failed', categoriesRes.reason);
+  if (dataRes.status === 'fulfilled') {
+    expenses = dataRes.value.expenses || [];
+    members = dataRes.value.members || [];
+  } else {
+    console.error('dashboard expenses failed', dataRes.reason);
+    toast.error(th('โหลดข้อมูลค่าใช้จ่ายไม่สำเร็จ: ', 'Could not load expenses: ') + (dataRes.reason?.message || ''));
   }
-
-  try {
-    items = await fetchItinerary(tripId, null);
-    if (isStale(token)) return;
+  if (itemsRes.status === 'fulfilled') {
+    items = itemsRes.value || [];
     items.sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.order || 0) - (b.order || 0));
-  } catch (e) {
-    console.error('dashboard itinerary failed', e);
+  } else {
+    console.error('dashboard itinerary failed', itemsRes.reason);
   }
 
   if (isStale(token)) return;
@@ -2148,11 +2204,21 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
   const th = (a, b) => (lang === 'th' ? a : b);
   if (isStale(token)) return;
   const fmt = (minor) => formatCurrency(minor || 0, currency);
-  const rate = Number(trip?.exchangeRateToTHB) || 1;
+  // The trip's own rate wins; otherwise fall back to the rate snapshotted on its
+  // expenses, so the baht line still appears for trips that never set one.
+  const rate = resolveTripThbRate(trip, expenses, currency);
   // Every amount also gets its Thai-baht equivalent when the trip isn't in THB.
   const thbTag = (minor) => {
     if (currency === 'THB') return '';
-    const v = toThbMinor(minor, currency, rate);
+    const v = toThbMinor(minor, currency, rate || 0);
+    return v == null ? '' : `<span class="thb-equiv">≈ ${formatCurrency(v, 'THB')}</span>`;
+  };
+  /** The same, for a row priced in its own currency (no double conversion). */
+  const expenseThbTag = (e) => {
+    const code = e.currency || currency;
+    if (code === 'THB') return '';
+    const usedRate = Number(e.thbRate) > 0 ? Number(e.thbRate) : (code === currency ? rate : 0);
+    const v = toThbMinor(e.netTotalMinor || 0, code, usedRate || 0);
     return v == null ? '' : `<span class="thb-equiv">≈ ${formatCurrency(v, 'THB')}</span>`;
   };
 
@@ -2189,9 +2255,12 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
     : (Number(trip?.budgetPerPerson) > 0 ? Number(trip.budgetPerPerson) * Math.max(1, members.length) : 0);
   const budgetEl = document.getElementById('kpi-budget');
   if (budget > 0) {
-    const left = budget - thbTotal;
+    // Budgets are entered in the trip currency; compare against the trip-currency
+    // total (they used to be compared against the baht total — wrong scale).
+    const spend = totalMinor;
+    const left = budget - spend;
     if (budgetEl) budgetEl.textContent = fmt(Math.max(0, left));
-    const pct = Math.min(100, Math.round((thbTotal / budget) * 100));
+    const pct = Math.min(100, Math.round((spend / budget) * 100));
     const bar = document.getElementById('kpi-budget-bar');
     if (bar) { bar.style.width = `${pct}%`; if (left < 0) bar.style.background = 'var(--danger)'; }
     setHtml('kpi-budget-sub', left >= 0
@@ -2396,7 +2465,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
         </span>
         <span class="text-right flex-shrink-0">
           <span class="block font-bold text-sm">${formatCurrency(e.netTotalMinor || 0, e.currency || currency)}</span>
-          ${thbTag(toThbMinor(e.netTotalMinor || 0, e.currency || currency, e.thbRate || rate))}
+          ${expenseThbTag(e)}
           ${e.isEstimated ? `<span class="badge badge-skipped text-[9px]">${th('ประมาณการ','est.')}</span>` : ''}
         </span>
       </button>`;
@@ -2417,14 +2486,14 @@ async function renderItinerary(params) {
   await loadTrip(tripId);
   if (isStale(token)) return;
 
-  // Trip-defined expense groups feed the "estimated cost" select in the add/edit
-  // sheet, so load them before the page (and any sheet) renders.
-  try { await loadTripCategories(tripId); } catch (e) { console.warn(e); }
-  if (isStale(token)) return;
-
   const trip = currentTrip;
   const currency = trip?.baseCurrency || 'THB';
-  const perms = await resolvePermissions(tripId, trip, currentUser.uid);
+  // Trip groups feed the "estimated cost" select in the add/edit sheet, so load
+  // them together with the permissions (one round trip, cached afterwards).
+  const [perms] = await Promise.all([
+    resolvePermissions(tripId, trip, currentUser.uid),
+    loadTripCategories(tripId).catch(e => console.warn(e))
+  ]);
   if (isStale(token)) return;
   const isAdmin = perms.isAdmin;
 
@@ -3375,13 +3444,16 @@ async function renderExpenses(params) {
   if (isStale(token)) return;
   const trip = currentTrip;
   const currency = trip?.baseCurrency || 'THB';
-  const perms = await resolvePermissions(tripId, trip, currentUser.uid);
+  // permissions, trip groups and the member list are independent — one round trip
+  const [perms, , membersRes] = await Promise.all([
+    resolvePermissions(tripId, trip, currentUser.uid),
+    loadTripCategories(tripId).catch(e => console.warn(e)),
+    listMembers(tripId).catch(e => { console.warn(e); return []; })
+  ]);
   if (isStale(token)) return;
   const isAdmin = perms.isAdmin;
 
-  let members = [];
-  try { await loadTripCategories(tripId); } catch (e) { console.warn(e); }
-  try { members = await listMembers(tripId); } catch (e) { console.warn(e); }
+  const members = membersRes || [];
   if (isStale(token)) return;
   const membersMap = Object.fromEntries(members.map(m => [m.id, m]));
 
@@ -3693,13 +3765,16 @@ async function renderExpenseAdd(params) {
   const editId = urlParams.get('id');
   const isEdit = !!editId;
 
-  let members = [];
-  let items = [];
+  // Groups / members / itinerary are independent reads (and cached) — fire them
+  // together so the form paints after one round trip, not three.
+  const [, membersRes, itemsRes] = await Promise.all([
+    loadTripCategories(tripId).catch(e => console.warn(e)),
+    listMembers(tripId).catch(e => { console.warn(e); return []; }),
+    fetchItinerary(tripId, null).catch(e => { console.warn(e); return []; })
+  ]);
+  let members = membersRes || [];
+  let items = itemsRes || [];
   let expense = null;
-  // Trip-defined expense groups must be in the registry before the form renders.
-  try { await loadTripCategories(tripId); } catch (e) { console.warn(e); }
-  try { members = await listMembers(tripId); } catch (e) { console.warn(e); }
-  try { items = await fetchItinerary(tripId, null); } catch (e) { console.warn(e); }
   if (isEdit) {
     try { expense = await getExpense(tripId, editId); }
     catch (e) { toast.error(e.message); location.hash = `#/trip/${tripId}/expenses`; return; }
@@ -4046,8 +4121,8 @@ async function renderSettlement(params) {
       </div>
 
       <div class="chip-row mb-4" id="settle-views">
-        <button class="chip chip-active" data-view="receipts">${icon('receipt-text', 'w-3.5 h-3.5')} ${th('ใบเสร็จรายคน','Per-person receipts')}</button>
-        <button class="chip" data-view="overview">${icon('scale', 'w-3.5 h-3.5')} ${th('ภาพรวม','Overview')}</button>
+        <button class="chip chip-active" data-view="overview">${icon('scale', 'w-3.5 h-3.5')} ${th('ภาพรวม','Overview')}</button>
+        <button class="chip" data-view="receipts">${icon('receipt-text', 'w-3.5 h-3.5')} ${th('ใบเสร็จรายคน','Per-person receipts')}</button>
       </div>
 
       <div id="settlement-content" class="space-y-4"><div class="skeleton h-32"></div></div>
@@ -4056,11 +4131,13 @@ async function renderSettlement(params) {
   queueIcons();
 
   let state = { expenses: [], members: [], membersMap: {}, statements: [], balances: [], transactions: [] };
-  let view = 'receipts';
+  let view = 'overview';   // ภาพรวมเป็นค่าเริ่มต้น (สลับเป็นใบเสร็จรายคนได้)
 
   const money = (minor) => formatCurrency(minor || 0, currency);
+  // Same rate resolution as the rest of the app (trip → expense snapshots → saved).
+  let thbRate = resolveTripThbRate(trip, [], currency);
   const thbOf = (minor) => {
-    const v = toThbMinor(minor, currency, trip?.exchangeRateToTHB);
+    const v = toThbMinor(minor, currency, thbRate);
     return v == null ? '' : formatCurrency(v, 'THB');
   };
   const thbTag = (minor) => currency === 'THB' ? '' : `<span class="thb-equiv">≈ ${thbOf(minor)}</span>`;
@@ -4083,7 +4160,7 @@ async function renderSettlement(params) {
     const shareItems = m.items.filter(i => i.role === 'share');
     const settled = m.netMinor > 0 && shareItems.length === 0;
     return `
-      <div class="receipt" data-receipt="${escapeHtml(m.memberId)}">
+      <div class="receipt" id="receipt-${escapeHtml(m.memberId)}" data-receipt="${escapeHtml(m.memberId)}">
         <div class="receipt-head">
           <div class="receipt-title">${escapeHtml(t('settlement'))}</div>
           <div class="receipt-sub">${escapeHtml(trip?.name || '')} • ${escapeHtml(trip?.startDate || '')} → ${escapeHtml(trip?.endDate || '')}</div>
@@ -4154,6 +4231,7 @@ async function renderSettlement(params) {
 
         <div class="btn-row mt-3 no-export">
           <button class="btn btn-secondary btn-sm" data-export-receipt="${escapeHtml(m.memberId)}">${icon('image', 'w-4 h-4')} ${th('PNG ใบเสร็จนี้','PNG this receipt')}</button>
+          <button class="btn btn-ghost btn-sm" data-share-receipt="${escapeHtml(m.memberId)}">${icon('share-2', 'w-4 h-4')} ${th('แชร์ให้เพื่อน','Share')}</button>
           <button class="btn btn-ghost btn-sm" data-copy-receipt="${escapeHtml(m.memberId)}">${icon('clipboard-copy', 'w-4 h-4')} ${th('คัดลอกข้อความ','Copy text')}</button>
         </div>
       </div>`;
@@ -4169,7 +4247,11 @@ async function renderSettlement(params) {
       <div class="space-y-3 stagger">${state.transactions.map(tx => {
         const from = state.membersMap[tx.from]; const to = state.membersMap[tx.to];
         const fromStatement = state.statements.find(x => x.memberId === tx.from);
-        const details = (fromStatement?.items || []).filter(i => i.role === 'share');
+        // The expenses the creditor paid that the debtor shares in — the answer to
+        // "จ่ายคืนจากค่าอะไร"; falls back to the member's own share list.
+        const details = transactionSources(tx, state.expenses);
+        const fallbackDetails = (fromStatement?.items || []).filter(i => i.role === 'share');
+        const sourceRows = details.length ? details : fallbackDetails;
         return `<div class="p-3 rounded-xl" style="background:var(--bg-secondary); border:1px solid var(--border);">
           <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-2 min-w-0">
@@ -4183,15 +4265,16 @@ async function renderSettlement(params) {
               ${thbTag(tx.amountMinor)}
             </div>
           </div>
-          ${details.length ? `<details class="mt-2">
-            <summary class="text-[11px] cursor-pointer" style="color:var(--text-secondary);">${th('ดูรายละเอียดที่ต้องจ่าย','What this payment covers')} (${details.length})</summary>
+          ${sourceRows.length ? `<details class="mt-2">
+            <summary class="text-[11px] cursor-pointer" style="color:var(--text-secondary);">${th('จ่ายคืนจากค่าอะไร','Which bills this settles')} (${sourceRows.length})</summary>
             <table class="receipt-table mt-2"><tbody>
-              ${details.map(i => {
-                const payer = state.membersMap[i.paidBy];
-                return `<tr><td>${escapeHtml(i.title)}<div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(i.date || '')} • ${th('จ่ายโดย','paid by')} ${escapeHtml(payer?.displayName || '')} (${methodLabel(i.method)})</div></td>
+              ${sourceRows.map(i => {
+                const payer = state.membersMap[i.paidBy] || to;
+                return `<tr><td>${escapeHtml(i.title)}${i.estimated ? ` <span class="badge badge-skipped text-[9px]">${th('ประมาณการ','est.')}</span>` : ''}<div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(i.date || '')} • ${th('จ่ายโดย','paid by')} ${escapeHtml(payer?.displayName || '')} (${methodLabel(i.method)})</div></td>
                   <td class="num">${money(i.amountMinor)}</td></tr>`;
               }).join('')}
             </tbody></table>
+            <p class="text-[10px] mt-2" style="color:var(--text-tertiary);">${th('ยอดโอนจริงถูกหักกลบกับรายการที่อีกฝ่ายจ่ายให้แล้ว จึงอาจไม่เท่ากับผลรวมข้างบน','The transfer is netted against what the other side already paid, so it may differ from the sum above.')}</p>
           </details>` : ''}
         </div>`;
       }).join('')}</div>
@@ -4242,17 +4325,65 @@ async function renderSettlement(params) {
       try {
         const { exportToPng } = await import('./exports/index.js');
         const statement = state.statements.find(x => x.memberId === id);
-        document.querySelectorAll('.no-export').forEach(x => { x.style.visibility = 'hidden'; });
-        await exportToPng(`receipt-${id}`, `settlement-${(statement?.displayName || id)}.png`);
+        if (!document.getElementById(`receipt-${id}`)) {
+          // The overview is on screen — render the receipts again before capturing.
+          view = 'receipts';
+          document.querySelectorAll('#settle-views .chip').forEach(c => c.classList.toggle('chip-active', c.dataset.view === 'receipts'));
+          renderView();
+        }
+        const hidden = [...document.querySelectorAll('.no-export')];
+        hidden.forEach(x => { x.style.visibility = 'hidden'; });
+        try {
+          await exportToPng(`receipt-${id}`, `settlement-${(statement?.displayName || id)}.png`);
+        } finally {
+          hidden.forEach(x => { x.style.visibility = ''; });
+        }
         tLoad.close();
         toast.success(lang === 'th' ? 'ส่งออกรูปใบเสร็จแล้ว' : 'Receipt image exported');
       } catch (e) {
         tLoad.close();
         toast.error(e.message);
-      } finally {
-        document.querySelectorAll('.no-export').forEach(x => { x.style.visibility = ''; });
       }
     }));
+    const receiptLines = (statement) => [
+      `${t('settlement')} — ${statement.displayName}`,
+      `${th('รับ (จ่ายไป)','Received')}: ${money(statement.paidMinor)}`,
+      `${th('หัก (ส่วนที่ต้องรับผิดชอบ)','Deducted')}: ${money(statement.owedMinor)}`,
+      `${th('คงเหลือ','Balance')}: ${money(statement.netMinor)}${thbOf(statement.netMinor) ? ` (≈ ${thbOf(statement.netMinor)})` : ''}`,
+      ...statement.items.map(i => `• ${i.role === 'paid' ? '↑' : '↓'} ${i.title} ${i.amountMinor / Math.pow(10, getCurrencyDecimals(currency))} ${currency}`)
+    ];
+
+    document.querySelectorAll('[data-share-receipt]').forEach(btn => btn.addEventListener('click', async () => {
+      const statement = state.statements.find(x => x.memberId === btn.dataset.shareReceipt);
+      if (!statement) return;
+      const text = receiptLines(statement).join('\n');
+      const tShare = toast.loading(th('กำลังเตรียมแชร์...', 'Preparing...'));
+      try {
+        // Share the PNG itself when the browser allows it, otherwise the text.
+        const { exportToPngToCanvas } = await import('./exports/index.js');
+        let file = null;
+        if (navigator.canShare && exportToPngToCanvas) {
+          try {
+            const canvas = await exportToPngToCanvas(`receipt-${statement.memberId}`);
+            const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+            if (blob) file = new (window.File || Blob)([blob], `settlement-${statement.displayName}.png`, { type: 'image/png' });
+          } catch (e) { console.warn('share image failed', e); }
+        }
+        tShare.close();
+        if (file && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], text, title: `${t('settlement')} — ${statement.displayName}` });
+          return;
+        }
+        if (navigator.share) { await navigator.share({ text }); return; }
+        await navigator.clipboard.writeText(text);
+        toast.success(th('คัดลอกข้อความใบเสร็จแล้ว', 'Receipt text copied'));
+      } catch (e) {
+        tShare.close();
+        if (e?.name !== 'AbortError') toast.error(th('แชร์ไม่สำเร็จ — คัดลอกข้อความแทน', 'Share failed — copied the text instead'));
+        try { await navigator.clipboard.writeText(text); } catch { /* ignore */ }
+      }
+    }));
+
     document.querySelectorAll('[data-copy-receipt]').forEach(btn => btn.addEventListener('click', async () => {
       const statement = state.statements.find(x => x.memberId === btn.dataset.copyReceipt);
       if (!statement) return;
@@ -4292,8 +4423,20 @@ async function renderSettlement(params) {
       const membersMap = Object.fromEntries(members.map(m => [m.id, m]));
       const { balances, transactions } = calculateSettlement(expenses, members);
       const statements = buildSettlementStatements(expenses, members);
+      thbRate = resolveTripThbRate(trip, expenses, currency);
       state = { expenses, members, membersMap, statements, balances, transactions };
       renderView();
+      // No rate anywhere → tell the user how to get the baht column.
+      if (currency !== 'THB' && !(thbRate > 0)) {
+        const box = document.getElementById('settlement-content');
+        if (box) {
+          const note = document.createElement('div');
+          note.className = 'card p-3 mb-3 text-xs no-export';
+          note.innerHTML = `${icon('banknote', 'w-3.5 h-3.5')} ${th('ยังไม่ได้ตั้งเรทแลกเปลี่ยน — ใส่ “เรทแลกเป็น THB” ที่หน้าตั้งค่า เพื่อให้ทุกรายการมีจำนวนเงินบาทกำกับ', 'No exchange rate yet — set “Rate to THB” in Settings to show baht next to every amount')}`;
+          box.prepend(note);
+          queueIcons();
+        }
+      }
     } catch (e) {
       console.error(e);
       content.innerHTML = `<div class="card p-5 text-center"><p class="text-sm font-semibold" style="color:var(--danger);">${escapeHtml(e.message)}</p><button id="settle-retry" class="btn btn-secondary btn-sm mt-3">${icon('refresh-cw', 'w-4 h-4')} ${lang==='th' ? 'ลองใหม่' : 'Retry'}</button></div>`;
@@ -4309,32 +4452,56 @@ async function renderSettlement(params) {
     renderView();
   }));
 
+  // The PNG/PDF buttons must always have something to capture, even if the user
+  // taps them before the table has finished rendering.
+  function ensureExportTarget(id) {
+    if (document.getElementById(id)) return document.getElementById(id);
+    if (!document.getElementById('settlement-content')) return null;
+    renderView();
+    return document.getElementById(id);
+  }
+  function hideNoExport() {
+    const list = [...document.querySelectorAll('.no-export')];
+    list.forEach(x => { x.style.visibility = 'hidden'; });
+    return list;
+  }
+
   bind('export-overview-png', 'click', async () => {
     const tLoad = toast.loading(lang === 'th' ? 'กำลังสร้างรูป...' : 'Creating image...');
+    let hidden = [];
     try {
       const { exportToPng } = await import('./exports/index.js');
       const target = view === 'overview' ? 'settle-overview' : 'settlement-content';
-      if (!document.getElementById(target)) { view = 'overview'; renderView(); }
-      document.querySelectorAll('.no-export').forEach(x => { x.style.visibility = 'hidden'; });
-      await exportToPng(document.getElementById(target) ? target : 'settlement-content', `settlement-overview-${tripId}.png`);
+      if (!ensureExportTarget(target)) throw new Error(th('ยังไม่มีข้อมูลให้ส่งออก — รอสักครู่แล้วลองใหม่', 'Nothing to export yet — wait a moment and retry'));
+      hidden = hideNoExport();
+      await exportToPng(target, `settlement-overview-${tripId}.png`);
       tLoad.close();
       toast.success(lang === 'th' ? 'ส่งออก PNG แล้ว' : 'PNG exported');
     } catch (e) {
       tLoad.close();
       toast.error(e.message);
     } finally {
-      document.querySelectorAll('.no-export').forEach(x => { x.style.visibility = ''; });
+      hidden.forEach(x => { x.style.visibility = ''; });
     }
   });
 
   bind('print-settle', 'click', async () => {
-    const { exportToPdf } = await import('./exports/index.js');
     const tLoad = toast.loading(lang === 'th' ? 'กำลังสร้าง PDF...' : 'Creating PDF...');
+    let hidden = [];
     try {
-      await exportToPdf('settlement-content', `settlement-${tripId}.pdf`);
+      const { exportToPdf } = await import('./exports/index.js');
+      const target = view === 'overview' ? 'settle-overview' : 'settlement-content';
+      if (!ensureExportTarget(target)) throw new Error(th('ยังไม่มีข้อมูลให้พิมพ์ — รอสักครู่แล้วลองใหม่', 'Nothing to print yet — wait a moment and retry'));
+      hidden = hideNoExport();
+      await exportToPdf(target, `settlement-${tripId}.pdf`);
       tLoad.close();
       toast.success(lang === 'th' ? 'สร้าง PDF แล้ว' : 'PDF created');
-    } catch (e) { tLoad.close(); toast.error(e.message); }
+    } catch (e) {
+      tLoad.close();
+      toast.error(e.message);
+    } finally {
+      hidden.forEach(x => { x.style.visibility = ''; });
+    }
   });
 
   document.getElementById('recalc-settle').addEventListener('click', async () => {
@@ -4375,6 +4542,7 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
           <p class="text-[11px] text-[var(--text-tertiary)]">${th('เพิ่ม/แก้ไข/ลบกลุ่มของทริปนี้ได้','Add, edit or delete groups for this trip')}</p>
         </div>
       </div>
+      <div id="category-note" class="hidden"></div>
       <div id="category-list" class="space-y-2"></div>
       <button id="category-add" class="btn btn-primary w-full">${icon('plus', 'w-4 h-4')} ${th('เพิ่มกลุ่มใหม่','Add a group')}</button>
     </div>
@@ -4385,8 +4553,20 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
     const box = sheet.sheet.querySelector('#category-list');
     if (!box) return;
     box.innerHTML = `<div class="skeleton h-10"></div>`;
-    await loadTripCategories(tripId, { silent: false });
+    // Never throws: if Firestore denies the collection (rules not published yet)
+    // the manager keeps working with the groups stored on this device.
+    await loadTripCategories(tripId, { silent: true });
     const rows = getAllExpenseCategories();
+    const offline = categoriesLoadDenied() || localCategoryPending(tripId);
+    const note = sheet.sheet.querySelector('#category-note');
+    if (note) {
+      note.className = offline ? 'text-[11px] p-2.5 rounded-xl mb-2' : 'hidden';
+      note.innerHTML = offline
+        ? `${icon('alert-triangle', 'w-3.5 h-3.5')} ${th('ยังไม่ได้ Publish firestore.rules — กลุ่มที่เพิ่ม/แก้ตอนนี้จะถูกเก็บไว้ในเครื่องนี้ก่อน แล้วค่อยซิงก์เมื่อกฎพร้อม', 'firestore.rules is not published yet — groups you add now are kept on this device and sync once the rules are live')}`
+        : '';
+      if (offline) note.style.background = 'var(--bg-secondary)';
+      queueIcons();
+    }
     box.innerHTML = rows.map(c => `
       <div class="diag-row" data-cat-row="${escapeHtml(c.id)}">
         <span class="row-icon" style="width:32px;height:32px;border-radius:10px;background:${escapeHtml(c.color || 'var(--primary)')}22;color:${escapeHtml(c.color || 'var(--primary)')};">
@@ -4417,8 +4597,13 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
       });
       if (!ok) return;
       try {
-        await deleteCategory(tripId, id);
-        toast.success(th('ลบกลุ่มแล้ว', 'Group deleted'));
+        const res = await deleteCategory(tripId, id);
+        if (res?.synced === false) {
+          toast.warning(th('ลบออกจากเครื่องนี้แล้ว — ยังไม่ได้ Publish firestore.rules',
+            'Removed on this device — firestore.rules is not published yet'));
+        } else {
+          toast.success(th('ลบกลุ่มแล้ว', 'Group deleted'));
+        }
         await renderList();
         await onSaved?.();
       } catch (e) { toast.error(e.message); }
@@ -4497,7 +4682,12 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
       try {
         const saved = await saveCategory(tripId, { th: thName, en: enName, icon: pick.icon, color: pick.color }, { id: id || null });
         tLoad.close();
-        toast.success(th('บันทึกกลุ่มแล้ว', 'Group saved'));
+        if (saved.synced === false) {
+          toast.warning(th('บันทึกไว้ในเครื่องนี้แล้ว — ยังไม่ได้ Publish firestore.rules จึงยังไม่ซิงก์ข้ามเครื่อง',
+            'Saved on this device — publish firestore.rules to sync it across devices'));
+        } else {
+          toast.success(th('บันทึกกลุ่มแล้ว', 'Group saved'));
+        }
         editor.close();
         await renderList();
         await onSaved?.(saved);
@@ -4525,7 +4715,7 @@ function openMemberForm(tripId, member = null, { onSaved } = {}) {
         <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon(isEdit ? 'user-cog' : 'user-plus', 'w-5 h-5')}</div>
         <div class="min-w-0">
           <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขสมาชิก','Edit member') : th('เพิ่มสมาชิก','Add member')}</h3>
-          <p class="text-[11px] text-[var(--text-secondary)]">${isEdit ? escapeHtml(m.displayName || '') : th('กรอกชื่อ และตั้ง PIN ถ้าต้องการให้ล็อกอินได้','Add a name — set a PIN to allow login')}</p>
+          <p class="text-[11px] text-[var(--text-secondary)]">${isEdit ? escapeHtml(m.displayName || '') : th('กรอกชื่อ แล้วให้สมาชิกเข้าสู่ระบบด้วยบัญชี Google/อีเมลของตัวเอง','Add a name — the member signs in with their own Google/email account')}</p>
         </div>
       </div>
       <form id="member-form" class="space-y-3">
@@ -4577,7 +4767,6 @@ function openMemberForm(tripId, member = null, { onSaved } = {}) {
     ev.preventDefault();
     const btn = document.getElementById('m-submit');
     btn.disabled = true;
-    const pendingCredentials = null;
     const tLoad = toast.loading(isEdit ? th('กำลังบันทึก...', 'Saving...') : th('กำลังเพิ่มสมาชิก...', 'Adding member...'));
     try {
       const payload = {
@@ -4607,22 +4796,6 @@ function openMemberForm(tripId, member = null, { onSaved } = {}) {
       sheet.close();
       confetti({ y: 150 });
       await onSaved?.();
-      // Offer the credentials only after the member is really saved + listed.
-      if (pendingCredentials) {
-        const { username: uname, pin: upin } = pendingCredentials;
-        confirmAction({
-          title: th('ส่งข้อมูลล็อกอินให้สมาชิก', 'Share these login details'),
-          message: th('แจ้งชื่อผู้ใช้และ PIN นี้ให้สมาชิกเพื่อเข้าสู่ระบบ', 'Give the member this username and PIN to sign in.'),
-          detail: `<b>${th('ชื่อผู้ใช้','Username')}:</b> ${escapeHtml(uname)}<br><b>PIN:</b> ${escapeHtml(upin)}`,
-          confirmText: th('คัดลอก','Copy'), cancelText: th('ปิด','Close'), icon: 'key-round'
-        }).then(ok => {
-          if (!ok) return;
-          const text = `${uname} / ${upin}`;
-          const copy = navigator.clipboard?.writeText?.(text);
-          if (copy?.then) copy.then(() => toast.success(th('คัดลอกแล้ว','Copied'))).catch(() => toast.info(text));
-          else toast.info(text);
-        });
-      }
     } catch (err) {
       tLoad.close();
       toast.error(err.message || mapFunctionError(err));
@@ -5387,14 +5560,16 @@ async function renderSettings(params) {
   const lang = getLang();
   const th = (a, b) => (lang === 'th' ? a : b);
   await loadTrip(tripId);
-  try { await loadTripCategories(tripId); } catch (e) { console.warn(e); }
   if (isStale(token)) return;
   const trip = currentTrip;
   const currentColor = localStorage.getItem('fuji_color_theme') || 'sage';
   const mode = getStoredMode();
 
   let perms = { isAdmin: false, role: 'member' };
-  try { perms = await resolvePermissions(tripId, trip, currentUser.uid); } catch {}
+  await Promise.all([
+    loadTripCategories(tripId).catch(e => console.warn(e)),
+    resolvePermissions(tripId, trip, currentUser.uid).then(p => { perms = p; }).catch(() => {})
+  ]);
   if (isStale(token)) return;
 
   const currencies = [

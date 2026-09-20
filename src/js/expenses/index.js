@@ -3,6 +3,7 @@ import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, 
 import { calculateNetTotal, getCurrencyDecimals, toMinor } from '../utils/currency.js';
 import { validateAllocations } from '../utils/split.js';
 import { normalizeCategory } from '../utils/categories.js';
+import { cachedRead, cacheInvalidate, cacheForget } from '../utils/datacache.js';
 
 export function subscribeExpenses(tripId, cb) {
   if (!db) return () => {};
@@ -13,8 +14,23 @@ export function subscribeExpenses(tripId, cb) {
   }, err => console.warn('subscribeExpenses error', err));
 }
 
+/** Every expense of the trip, cached per trip (stale-while-revalidate). */
+async function loadAllExpensesUncached(tripId) {
+  const snap = await getDocs(query(collection(db, `trips/${tripId}/expenses`), limit(500)));
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(e => e.status !== 'voided')
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+}
+
 export async function fetchExpenses(tripId, { filters = {}, pageSize = 20, lastDoc = null } = {}) {
   if (!db) throw new Error('DB not ready');
+  // No cursor → serve from the cached trip list, so switching to the expenses
+  // menu does not cost a round trip. Later pages still come from the server.
+  if (!lastDoc) {
+    const all = await fetchAllExpenses(tripId);
+    return { items: applyFilters(all, filters).slice(0, pageSize), lastDoc: null, fromCache: true };
+  }
   const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout loading expenses - check Firestore indexes')), 12000));
 
   const fetchPromise = (async () => {
@@ -54,13 +70,19 @@ function applyFilters(items, filters = {}) {
 }
 
 /** Every expense of the trip (used by exports / dashboard summaries). */
-export async function fetchAllExpenses(tripId, { max = 500 } = {}) {
+export async function fetchAllExpenses(tripId, { max = 500, fresh = false } = {}) {
   if (!db) throw new Error('DB not ready');
-  const snap = await getDocs(query(collection(db, `trips/${tripId}/expenses`), limit(max)));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(e => e.status !== 'voided');
+  const key = `exps:${tripId}`;
+  if (fresh) cacheForget(key);
+  return cachedRead(key, () => loadAllExpensesUncached(tripId), { maxAgeMs: 60 * 1000 }).then(list => (
+    max && list.length > max ? list.slice(0, max) : list
+  ));
 }
 
 export async function getExpense(tripId, expenseId) {
+  const cached = await fetchAllExpenses(tripId).catch(() => null);
+  const hit = cached?.find(e => e.id === expenseId);
+  if (hit) return hit;
   const snap = await getDoc(doc(db, `trips/${tripId}/expenses`, expenseId));
   if (!snap.exists()) throw new Error('ไม่พบรายการค่าใช้จ่ายนี้');
   return { id: snap.id, ...snap.data() };
@@ -139,6 +161,7 @@ export async function addExpense(tripId, data, userId) {
       await addDoc(collection(db, `trips/${tripId}/expenses/${ref.id}/lineItems`), line);
     }
   }
+  invalidateExpenses(tripId);
   return ref.id;
 }
 
@@ -179,7 +202,20 @@ export async function updateExpense(tripId, expenseId, updates, userId) {
   };
   delete payload._decimals;
   await updateDoc(ref, payload);
+  invalidateExpenses(tripId);
   return merged.netTotalMinor;
+}
+
+function invalidateExpenses(tripId) {
+  cacheForget(`exps:${tripId}`);
+}
+
+/**
+ * Drop the cached expense list for a trip. Used by the itinerary module too —
+ * saving a place can create/update/remove its linked estimate expense.
+ */
+export function invalidateExpensesCache(tripId) {
+  invalidateExpenses(tripId);
 }
 
 /** Soft delete — keeps history/audit intact (works with the current rules). */
@@ -190,6 +226,7 @@ export async function voidExpense(tripId, expenseId, userId) {
     updatedBy: userId,
     updatedAt: serverTimestamp()
   });
+  invalidateExpenses(tripId);
 }
 
 /**
@@ -206,6 +243,7 @@ export async function deleteExpense(tripId, expenseId, userId) {
   } catch {}
   try {
     await deleteDoc(ref);
+    invalidateExpenses(tripId);
     return 'deleted';
   } catch (e) {
     console.warn('[Expenses] hard delete blocked, voiding instead:', e?.code || e?.message);
@@ -254,6 +292,7 @@ export async function importExpensesFromJson(tripId, expenses, userId) {
     if (count % 400 === 0) await batch.commit();
   }
   await batch.commit();
+  invalidateExpenses(tripId);
   return expenses.length;
 }
 
@@ -305,5 +344,6 @@ export async function bulkCreateExpenses(tripId, expenses, userId, { onProgress 
     onProgress?.(n, expenses.length);
   }
   if (n % 400 !== 0) await batch.commit();
+  invalidateExpenses(tripId);
   return n;
 }

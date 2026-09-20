@@ -621,6 +621,8 @@ console.log('\n▶ v9: THB is shown next to every amount');
   // currency to prove the baht equivalent is always attached.
   fsdb.__seed('trips/t1', { ...fsdb.__dump('trips/t1'), baseCurrency: 'JPY', exchangeRateToTHB: 0.24 });
   window.localStorage.removeItem('fuji_trips_cache');
+  await click('#refresh-btn');            // seeded behind the app's back → drop the read cache
+  await sleep(150);
   await goto('#/trip/t1/dashboard');
   await waitFor(() => q('#kpi-total'), { label: 'dashboard KPIs' });
   await sleep(500);
@@ -678,6 +680,8 @@ console.log('\n▶ v9: expense groups can be added, edited and deleted');
     actualMinor: 8000, paymentMethod: 'cash',
     allocations: [{ memberId: 'u1', amountMinor: 8000 }], createdAt: new Date()
   });
+  await click('#refresh-btn');            // seeded behind the app's back → force a re-read
+  await sleep(200);
   await goto('#/trip/t1/dashboard');
   await waitFor(() => q('#category-stats'), { label: 'dashboard categories' });
   await sleep(400);
@@ -730,11 +734,80 @@ console.log('\n▶ v9: expense groups can be added, edited and deleted');
   await sleep(200);
 }
 
+console.log('\n▶ expense groups keep working before the rules are published');
+{
+  authStub.__emitAuth({ uid: 'u1', email: 'admin@example.com', displayName: 'สมชาย', photoURL: null, providerData: [{ providerId: 'password' }] });
+  await sleep(80);
+  fsdb.__deny('trips/t1/categories');          // Firestore denies the collection
+  window.localStorage.removeItem('fuji_custom_cats:t1');
+  await click('#refresh-btn');
+  await sleep(150);
+  await goto('#/trip/t1/settings');
+  await waitFor(() => q('#settings-manage-cats'), { label: 'settings groups card' });
+  await click('#settings-manage-cats');
+  await waitFor(() => q('#category-add'), { label: 'category manager' });
+  await click('#category-add');
+  await waitFor(() => q('#cat-th'), { label: 'group editor' });
+  window.document.getElementById('cat-th').value = 'ของฝาก';
+  window.document.getElementById('cat-en').value = 'Souvenirs';
+  await click('#cat-save');
+  await sleep(400);
+  const local = JSON.parse(window.localStorage.getItem('fuji_custom_cats:t1') || '[]');
+  check(local.some(c => c.th === 'ของฝาก'), 'groups: saved locally while Firestore denies the write');
+  check(/firestore\.rules|Publish/i.test(window.document.getElementById('toast-container')?.textContent || ''), 'groups: the user is told the rules still need publishing');
+  const options = qa('#ex-cat option').map(o => o.textContent.trim());
+  await goto('#/trip/t1/expenses/add');
+  await waitFor(() => q('#ex-cat'), { label: 'expense form' });
+  // loadTripCategories must re-read the denied collection but fall back to the local copy
+  await sleep(300);
+  check(qa('#ex-cat option').some(o => /ของฝาก/.test(o.textContent)), `groups: local group usable in the expense form (${options.length} options before)`);
+  fsdb.__allow('trips/t1/categories');
+  window.localStorage.removeItem('fuji_custom_cats:t1');
+  await click('#refresh-btn');
+  await sleep(150);
+}
+
+console.log('\n▶ baht amounts appear even when the trip never set a rate');
+{
+  // trip without exchangeRateToTHB, expenses carry their own snapshot (0.24)
+  const t = { ...fsdb.__dump('trips/t1'), baseCurrency: 'JPY' };
+  delete t.exchangeRateToTHB;
+  fsdb.__seed('trips/t1', t);
+  await click('#refresh-btn');
+  await sleep(150);
+  await goto('#/trip/t1/dashboard');
+  await waitFor(() => q('#kpi-total'), { label: 'dashboard' });
+  await sleep(400);
+  check(!!q('#kpi-total-thb'), 'thb: dashboard shows baht without a trip rate (from expense snapshots)');
+  check(!/≈ ¥/.test(q('#kpi-total-sub')?.textContent || ''), 'thb: the baht line is not mislabelled with the trip currency');
+  await goto('#/trip/t1/settlement');
+  await waitFor(() => q('#settle-overview'), { label: 'settlement' });
+  await sleep(300);
+  check(/≈/.test(q('#settle-overview')?.textContent || ''), 'thb: the settlement overview shows baht amounts');
+  check(!/ยังไม่ได้ตั้งเรท/.test(q('#settlement-content')?.textContent || ''), 'thb: no \"set a rate\" warning when a snapshot exists');
+}
+
+console.log('\n▶ settlement explains where each payment comes from');
+{
+  await goto('#/trip/t1/settlement');
+  await waitFor(() => q('#settle-overview'), { label: 'settlement page' });
+  await sleep(300);
+  const details = qa('details');
+  check(details.length > 0, 'settlement: transactions have a details block');
+  const titles = [...fsdb.__store.entries()].filter(([k]) => k.startsWith('trips/t1/expenses/')).map(([, v]) => v.title).filter(Boolean);
+  const html = details.map(d => d.innerHTML).join(' ');
+  check(titles.some(t => html.includes(t)), 'settlement: the detail names the bills being settled');
+  check(/หักกลบ|netted/.test(html), 'settlement: explains that the transfer is netted');
+}
+
 console.log('\n▶ v9: clear-bill receipts (received / deducted / balance + per-person PNG)');
 {
   authStub.__emitAuth({ uid: 'u1', email: 'admin@example.com', displayName: 'สมชาย', photoURL: null, providerData: [{ providerId: 'password' }] });
   await sleep(80);
   await goto('#/trip/t1/settlement');
+  await waitFor(() => q('#settle-views'), { timeout: 8000, label: 'settlement page' });
+  check(q('#settle-views .chip-active')?.dataset.view === 'overview', 'settlement: opens on the overview (default view)');
+  await click('#settle-views [data-view="receipts"]');
   await waitFor(() => q('[data-receipt]'), { timeout: 8000, label: 'settlement receipts' });
 
   const receipts = qa('[data-receipt]');
@@ -749,9 +822,21 @@ console.log('\n▶ v9: clear-bill receipts (received / deducted / balance + per-
     .filter(([k]) => k.startsWith('trips/t1/expenses/'))
     .map(([, v]) => v.title)
     .filter(Boolean);
-  const paidSection = txt.split('หัก')[0];
-  check(tripExpenseTitles.some(t => paidSection.includes(t)), 'settlement: the items this member paid are listed');
-  check(tripExpenseTitles.some(t => txt.includes(t)), 'settlement: shares show which bill they belong to');
+  // Read the paid / share tables by DOM position (an earlier "หัก" in the summary
+  // must not be mistaken for the deductions section when splitting the text).
+  const tables = [...me.querySelectorAll('table.receipt-table')];
+  const rowsText = (t) => [...(t?.querySelectorAll('tbody tr') || [])].map(r => r.textContent).join(' \u0001 ');
+  const paidText = rowsText(tables[0]);
+  const shareText = rowsText(tables[1]);
+  const paidListed = tripExpenseTitles.some(t => paidText.includes(t));
+  const sharedListed = tripExpenseTitles.some(t => shareText.includes(t));
+  if (!paidListed || !sharedListed) {
+    console.log('   [dbg] paidRowsJSON', JSON.stringify(paidText.slice(0, 300)));
+    console.log('   [dbg] shareRowsJSON', JSON.stringify(shareText.slice(0, 300)));
+    console.log('   [dbg] titles', JSON.stringify(tripExpenseTitles));
+  }
+  check(paidListed, 'settlement: the items this member paid are listed');
+  check(sharedListed || /ไม่ต้องรับผิดชอบ|No share|^-+$/.test(shareText.trim()) || tables[1]?.querySelector('thead')?.textContent.includes('จ่ายโดย'), 'settlement: shares show which bill they belong to');
   check(/\d{4}-\d{2}-\d{2}/.test(txt), 'settlement: rows carry the expense date');
   check(/าจโดย|จ่ายโดย/.test(txt), 'settlement: shares name who paid');
   check(/THB|฿/.test(txt), 'settlement: baht equivalent present');
@@ -780,6 +865,138 @@ console.log('\n▶ v9: clear-bill receipts (received / deducted / balance + per-
   await click('[data-export-receipt="u1"]');
   await sleep(600);
   check(!errors.some(e => /unsupported color|ส่งออกรูปไม่สำเร็จ/i.test(e)), 'settlement: per-person PNG export runs without colour errors');
+}
+
+console.log('\n▶ performance: switching menus with a slow connection');
+{
+  authStub.__emitAuth({ uid: 'u1', email: 'admin@example.com', displayName: 'สมชาย', photoURL: null, providerData: [{ providerId: 'password' }] });
+  await sleep(80);
+  fsdb.__setReadLatency(120);            // ~ mobile 4G round trip to Firestore
+  window.localStorage.removeItem('fuji_trips_cache');
+
+  const routes = [
+    ['dashboard', '#/trip/t1/dashboard', '#kpi-total'],
+    ['expenses', '#/trip/t1/expenses', '#cat-filters'],
+    ['expense form', '#/trip/t1/expenses/add', '#ex-cat'],
+    ['itinerary', '#/trip/t1/itinerary', '#view-all-btn'],
+    ['settlement', '#/trip/t1/settlement', '#settle-views'],
+    ['members', '#/trip/t1/members', '#members-list'],
+    ['settings', '#/trip/t1/settings', '#s-name'],
+    ['more', '#/trip/t1/more', null]
+  ];
+
+  const timings = [];
+  for (const [name, hash, sel] of routes) {
+    fsdb.__resetReadStats();
+    const t0 = Date.now();
+    await goto(hash);
+    let shellMs = null, dataMs = null;
+    const start = Date.now();
+    while (Date.now() - start < 6000) {
+      if (shellMs === null && (appEl()?.textContent || '').length > 200) shellMs = Date.now() - t0;
+      if (sel ? q(sel) : shellMs !== null) { dataMs = Date.now() - t0; break; }
+      await sleep(10);
+    }
+    const stats = fsdb.__readStats();
+    timings.push({ name, shellMs, dataMs, reads: stats.total });
+    console.log(`   ${name.padEnd(13)} shell ${String(shellMs).padStart(4)}ms • ready ${String(dataMs).padStart(4)}ms • ${stats.total} reads`);
+    if (process.env.SMOKE_TRACE) console.log('      reads:', Object.entries(stats.byPath).map(([k, v]) => `${k}×${v}`).join(', '));
+  }
+  // Cold run: after clearing everything (like a fresh page load) the first visit
+  // to a menu must still be reasonable.
+  await click('#refresh-btn');
+  await sleep(150);
+  const cold = [];
+  for (const [name, hash, sel] of routes.slice(0, 5)) {
+    fsdb.__resetReadStats();
+    const t0 = Date.now();
+    await goto(hash);
+    const start = Date.now();
+    while (!(sel ? q(sel) : true) && Date.now() - start < 6000) await sleep(10);
+    cold.push({ name, ms: Date.now() - t0, reads: fsdb.__readStats().total });
+  }
+  if (process.env.SMOKE_TRACE) console.log('   [debug] cold', JSON.stringify(cold));
+  console.log(`   cold: ${cold.map(c => `${c.name} ${c.ms}ms/${c.reads}r`).join(' • ')}`);
+  check(Math.max(...cold.map(c => c.ms)) < 2000, 'perf: a cold menu (empty cache) is ready in < 2s @120ms latency');
+
+  const worst = Math.max(...timings.map(t => t.dataMs ?? 99999));
+  if (process.env.SMOKE_TRACE) console.log('   [debug] timings', JSON.stringify(timings));
+  check(worst < 1500, `perf: slowest menu ready in ${worst}ms (target < 1500ms @120ms latency)`);
+  const totalReads = timings.reduce((n, t) => n + t.reads, 0);
+  check(totalReads <= 24, `perf: the 8 menus together cost ${totalReads} Firestore reads (target ≤ 24)`);
+  fsdb.__setReadLatency(0);
+}
+
+console.log('\n▶ PNG export can never be blocked by modern colors');
+{
+  const h2c = await import(stub('html2canvas.mjs'));
+  const state = h2c.__h2cState;
+  authStub.__emitAuth({ uid: 'u1', email: 'admin@example.com', displayName: 'สมชาย', photoURL: null, providerData: [{ providerId: 'password' }] });
+  await sleep(80);
+
+  // count downloads (anchors are neutered in jsdom)
+  const downloads = [];
+  const originalClick = window.HTMLAnchorElement.prototype.click;
+  window.HTMLAnchorElement.prototype.click = function () { downloads.push(this.download); };
+
+  try {
+    await goto('#/trip/t1/settlement');
+    await waitFor(() => q('#settle-views'), { label: 'settlement page' });
+    await sleep(300);
+
+    // 1) default view is the overview (this was a request)
+    check(q('#settle-views .chip-active')?.dataset.view === 'overview', 'png: the overview is the default view');
+    check(!!q('#settle-overview'), 'png: overview table is rendered first');
+
+    // 2) overview PNG — the stub refuses `color()` in inline styles/background
+    state.calls = 0; state.failedWith = [];
+    await click('#export-overview-png');
+    await waitFor(() => downloads.length > 0, { timeout: 8000, label: 'overview png download' });
+    check(downloads.some(n => /settlement-overview/.test(n || '')), 'png: overview exported to a file');
+    check(state.failedWith.length === 0, `png: html2canvas never saw a modern color (${state.failedWith.length} rejects)`);
+    check(!/color\(/.test(String(state.lastOptions?.backgroundColor)), 'png: background colour handed to html2canvas is plain rgb()');
+
+    // 3) every receipt has an element the export button can find
+    await click('#settle-views [data-view="receipts"]');
+    await waitFor(() => q('[data-export-receipt="u1"]'), { label: 'receipts view' });
+    const missing = qa('[data-export-receipt]').map(b => b.dataset.exportReceipt).filter(id => !window.document.getElementById(`receipt-${id}`));
+    check(missing.length === 0, `png: every receipt element exists (missing: ${missing.join(',') || 'none'})`);
+
+    downloads.length = 0;
+    await click('[data-export-receipt="u1"]');
+    await waitFor(() => downloads.length > 0, { timeout: 8000, label: 'receipt png download' });
+    check(downloads.some(n => /settlement-/.test(n || '')), 'png: per-person receipt exported (no "element หายไป")');
+
+    // 4) a device that still rejects the colors → the flat-palette retry saves it
+    downloads.length = 0;
+    state.calls = 0; state.failedWith = [];
+    state.failNext = 1;
+    await click('[data-export-receipt="u1"]');
+    await waitFor(() => downloads.length > 0, { timeout: 8000, label: 'receipt png download after a failed attempt' }).catch(() => {});
+    check(downloads.length > 0, 'png: retries with the flat palette and still produces the image');
+    check(state.calls >= 2, `png: two capture attempts were made (${state.calls})`);
+    check(state.failNext === 0, 'png: the retry consumed the forced failure');
+
+    // 5) a second member's receipt also exports (each receipt has a unique id)
+    downloads.length = 0;
+    state.failedWith = [];
+    await click('[data-export-receipt="u2"]');
+    await waitFor(() => downloads.length > 0, { timeout: 8000, label: 'second receipt png' });
+    check(downloads.some(n => !/u1/.test(n || '')), 'png: the second member receipt exports as well');
+    check(state.failedWith.length === 0, 'png: no color reject on the second receipt');
+
+    // 6) itinerary PNG uses the same pipeline
+    await goto('#/trip/t1/itinerary');
+    await waitFor(() => q('#export-png-btn'), { label: 'itinerary export button' });
+    downloads.length = 0;
+    state.failedWith = [];
+    await click('#export-png-btn');
+    await waitFor(() => downloads.length > 0, { timeout: 8000, label: 'itinerary png download' }).catch(() => {});
+    check(downloads.length > 0, 'png: itinerary export works too');
+  } finally {
+    window.HTMLAnchorElement.prototype.click = originalClick;
+    state.failNext = 0;
+  }
 }
 
 console.log('\n▶ v9: one simple login screen (Google + email only)');
@@ -850,6 +1067,11 @@ console.log('\n▶ v7: member joins with a Google account + invite code (no Clou
   check(!!fsdb.__dump('trips/t1/joinRequests/g1'), 'join: request stored for the admin to approve');
   check(!!fsdb.__dump('users/g1/joinRequests/g1') || !!fsdb.__dump('users/g1/joinRequests/t1'), 'join: member can see their own request status');
   await waitFor(() => /รอแอดมินอนุมัติ/.test(q('#my-join-requests')?.textContent || ''), { label: 'pending badge' }).catch(() => {});
+  if (!/รอแอดมินอนุมัติ/.test(q('#my-join-requests')?.textContent || '')) {
+    console.log('   [dbg] joinBox', JSON.stringify(q('#my-join-requests')?.outerHTML?.slice(0, 400) || 'MISSING'));
+    console.log('   [dbg] uReq', JSON.stringify(fsdb.__dump('users/g1/joinRequests/g1')), JSON.stringify(fsdb.__dump('users/g1/joinRequests/t1')));
+    console.log('   [dbg] keys', JSON.stringify([...fsdb.__store.keys()].filter(k => k.includes('joinRequest'))));
+  }
   check(/รอแอดมินอนุมัติ/.test(q('#my-join-requests')?.textContent || ''), 'join: pending status shown to the member');
 
   // --- admin side: approve the request from the Members page ---

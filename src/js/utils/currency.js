@@ -93,3 +93,39 @@ export function effectiveThbRate(expense, trip) {
   const tripRate = Number(trip?.exchangeRateToTHB);
   return tripRate > 0 ? tripRate : 0;
 }
+
+/**
+ * The THB rate to use for a trip.
+ *
+ * Priority: the trip's own rate → the median snapshot saved on its expenses
+ * (`thbRate`) → the rate stored in the browser for this currency. Returns 0 when
+ * nothing is known, so callers can tell "no rate" apart from "1:1".
+ *
+ * @param {object|null} trip
+ * @param {Array<{thbRate?:number, currency?:string}>} [expenses]
+ * @param {string} [currency] defaults to trip.baseCurrency
+ */
+export function resolveTripThbRate(trip, expenses = [], currency = null) {
+  const code = currency || trip?.baseCurrency || 'THB';
+  if (!code || code === 'THB') return 1;
+  const explicit = Number(trip?.exchangeRateToTHB);
+  if (explicit > 0) return explicit;
+  const rates = (expenses || [])
+    .filter(e => !e?.currency || e.currency === code)
+    .map(e => Number(e?.thbRate))
+    .filter(r => r > 0)
+    .sort((a, b) => a - b);
+  if (rates.length) return rates[Math.floor(rates.length / 2)];
+  try {
+    const stored = Number(JSON.parse(localStorage.getItem(`fuji_rate_${code}`) || '0'));
+    if (stored > 0) return stored;
+  } catch { /* ignore */ }
+  return 0;
+}
+
+/** Remember a rate so the next trip in the same currency can use it. */
+export function rememberThbRate(currency, rate) {
+  const r = Number(rate);
+  if (!currency || currency === 'THB' || !(r > 0)) return;
+  try { localStorage.setItem(`fuji_rate_${currency}`, String(r)); } catch { /* ignore */ }
+}
