@@ -13,6 +13,21 @@ export class Router {
     this.handle();
   }
 
+  /**
+   * Route handlers are async; awaiting them lets the UI show progress and lets
+   * the next navigation cancel the previous render (render tokens).
+   */
+  async run(handler, params) {
+    window.dispatchEvent(new CustomEvent('route:start'));
+    try {
+      await handler(params);
+    } catch (e) {
+      console.error('route handler failed', e);
+    } finally {
+      window.dispatchEvent(new CustomEvent('route:end'));
+    }
+  }
+
   handle() {
     let hash = location.hash || this.defaultRoute;
     if (!hash.startsWith('#')) hash = '#' + hash;
@@ -32,7 +47,7 @@ export class Router {
             if (res === false) return;
           }
           this.current = fallback;
-          fallback.handler(fallback.params);
+          this.run(fallback.handler, fallback.params);
           return;
         }
       }
@@ -44,7 +59,7 @@ export class Router {
       if (res === false) return;
     }
     this.current = matched;
-    matched.handler(matched.params);
+    this.run(matched.handler, matched.params);
   }
 
   match(path) {

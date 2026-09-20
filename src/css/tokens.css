@@ -93,7 +93,7 @@
   --radius-full: 9999px;
 
   --font-sans: "Plus Jakarta Sans", "Noto Sans Thai", system-ui, -apple-system, sans-serif;
-  --font-display: "Fraunces", "Plus Jakarta Sans", serif;
+  --font-display: "Fraunces", "Plus Jakarta Sans", "Noto Sans Thai", serif;
   --font-mono: ui-monospace, "SF Mono", "Geist Mono", monospace;
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;

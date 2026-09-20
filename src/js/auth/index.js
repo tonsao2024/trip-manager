@@ -42,7 +42,10 @@ export async function loginMember(username, pin, tripId, remember = true) {
     const cred = await signInWithCustomToken(auth, token);
     return cred.user;
   } catch (error) {
-    console.error('loginMember error:', error);
+    // Expected on projects where functions were never deployed (the app falls back
+    // to local username + PIN auth) — a warning, not an error.
+    const expected = /internal|unavailable|not-found|unimplemented|failed-precondition/i.test(String(error?.code || '') + String(error?.message || ''));
+    (expected ? console.warn : console.error)('loginMember error:', error);
     // Handle function errors
     if (error.code === 'functions/not-found') {
       throw new Error('Cloud Function loginWithUsernamePin ไม่พบ - ต้อง deploy functions ก่อน');

@@ -1,29 +1,70 @@
 import { db, storage, serverTimestamp, isStorageAvailable } from '../firebase.js';
-import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, query, where, limit } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, query, where, limit, arrayUnion, arrayRemove } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { compressImage } from '../utils/helpers.js';
+import { generateInviteCode } from '../utils/invite.js';
+import { cachedRead, cacheInvalidate, cacheForget, cacheClear, seedFromPersist, persistSet, persistDelete } from '../utils/datacache.js';
 
 const TRIPS_CACHE_KEY = 'fuji_trips_cache';
 const CACHE_TTL = 10 * 60 * 1000;
 
-function getCachedTrips() {
+/**
+ * Cached trip list.
+ * `uid` makes the cache user-scoped: signing in with another account in the same
+ * browser must never show the previous account's trips.
+ */
+function getCachedTrips(uid = null) {
   try {
     const cached = localStorage.getItem(TRIPS_CACHE_KEY);
     if (!cached) return null;
-    const { data, timestamp } = JSON.parse(cached);
+    const { data, timestamp, uid: cachedUid } = JSON.parse(cached);
+    if (uid && cachedUid !== uid) return null;   // per-account cache (legacy entries are ignored)
     if (Date.now() - timestamp > CACHE_TTL) return null;
     return data;
   } catch { return null; }
 }
 
-function setCachedTrips(trips) {
+function setCachedTrips(trips, uid = null) {
   try {
-    localStorage.setItem(TRIPS_CACHE_KEY, JSON.stringify({ data: trips, timestamp: Date.now() }));
+    localStorage.setItem(TRIPS_CACHE_KEY, JSON.stringify({ data: trips, timestamp: Date.now(), uid: uid || undefined }));
   } catch {}
 }
 
-function clearTripsCache() {
+function getCachedTripsTimestamp() {
+  try {
+    const cached = localStorage.getItem(TRIPS_CACHE_KEY);
+    return cached ? JSON.parse(cached).timestamp : 0;
+  } catch { return 0; }
+}
+
+let tripsRefreshPromise = null;
+/** Silent re-read of the trip list (used when the cached list is still shown). */
+function refreshTripsInBackground(userId, isSuperAdmin) {
+  if (tripsRefreshPromise) return tripsRefreshPromise;
+  tripsRefreshPromise = fetchTripsFromServer(userId, isSuperAdmin)
+    .then((trips) => {
+      setCachedTrips(trips || [], userId);
+      window.dispatchEvent(new CustomEvent('trips:updated', { detail: trips || [] }));
+      return trips;
+    })
+    .catch((e) => { console.warn('background trip refresh failed', e?.message || e); return null; })
+    .finally(() => { tripsRefreshPromise = null; });
+  return tripsRefreshPromise;
+}
+
+function clearTripsCacheInternal() {
   try { localStorage.removeItem(TRIPS_CACHE_KEY); } catch {}
+}
+
+/** Trip docs live in memory too — menus used to fetch them on every tap. */
+const TRIP_TTL = 5 * 60 * 1000;
+const tripKey = (tripId) => `trip:${tripId}`;
+function invalidateTrip(tripId) {
+  cacheForget('trip:');
+  cacheForget(`cats:${tripId}`);
+  persistDelete('trip:');
+  persistDelete(`cats:${tripId}`);
+  clearTripsCacheInternal();
 }
 
 function blobToDataURL(blob) {
@@ -35,11 +76,23 @@ function blobToDataURL(blob) {
   });
 }
 
-export async function listTrips(userId, isSuperAdmin = false) {
+/**
+ * The trips of this account.
+ *
+ * When a cached list exists it is returned immediately (the trips menu is the
+ * first screen after login) and refreshed in the background, so a slow Firestore
+ * query can never hold the screen for up to 3 × 10 s timeouts.
+ */
+export async function listTrips(userId, isSuperAdmin = false, { maxAgeMs = 2 * 60 * 1000 } = {}) {
   if (!db) throw new Error('DB not ready - Firebase not configured');
   if (!userId) throw new Error('User not authenticated');
-  
-  const cached = getCachedTrips();
+
+  const cached = getCachedTrips(userId);
+  if (cached?.length) {
+    const age = Date.now() - (getCachedTripsTimestamp() || 0);
+    if (age > maxAgeMs) refreshTripsInBackground(userId, isSuperAdmin);
+    return cached;
+  }
   
   const tryQuery = async (q, label) => {
     try {
@@ -48,7 +101,7 @@ export async function listTrips(userId, isSuperAdmin = false) {
       );
       const snap = await Promise.race([getDocs(q), timeoutPromise]);
       const trips = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (trips.length) setCachedTrips(trips);
+      if (trips.length) setCachedTrips(trips, userId);
       return trips;
     } catch (e) {
       console.warn(`listTrips ${label} failed:`, e.message, e.code);
@@ -56,6 +109,26 @@ export async function listTrips(userId, isSuperAdmin = false) {
     }
   };
   
+  return fetchTripsFromServer(userId, isSuperAdmin);
+}
+
+async function fetchTripsFromServer(userId, isSuperAdmin = false) {
+  const cached = getCachedTrips(userId);
+  const tryQuery = async (q, label) => {
+    try {
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout ${label} - check Firestore rules & indexes`)), 10000)
+      );
+      const snap = await Promise.race([getDocs(q), timeoutPromise]);
+      const trips = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (trips.length) setCachedTrips(trips, userId);
+      return trips;
+    } catch (e) {
+      console.warn(`listTrips ${label} failed:`, e.message, e.code);
+      throw e;
+    }
+  };
+
   // Try 1: array-contains
   try {
     const q = query(collection(db, 'trips'), where('memberUids', 'array-contains', userId), limit(30));
@@ -90,12 +163,63 @@ export async function listTrips(userId, isSuperAdmin = false) {
   throw new Error('ไม่มีสิทธิ์เข้าถึง - ต้อง deploy Firestore Rules ใหม่ที่ Firebase Console > Firestore > Rules > วาง firestore.rules > Publish');
 }
 
-export async function getTrip(tripId) {
+/** New code for a trip that was created before invite codes existed, or to revoke one. */
+export async function regenerateInviteCode(tripId) {
+  if (!db) throw new Error('DB not ready');
+  const code = generateInviteCode();
+  await updateDoc(doc(db, 'trips', tripId), { inviteCode: code, inviteEnabled: true, updatedAt: serverTimestamp() });
+  invalidateTrip(tripId);
+  return code;
+}
+
+export async function setInviteEnabled(tripId, enabled) {
+  if (!db) throw new Error('DB not ready');
+  await updateDoc(doc(db, 'trips', tripId), { inviteEnabled: Boolean(enabled), updatedAt: serverTimestamp() });
+}
+
+/** Trip lookup by invite code (used by the join page). */
+export async function findTripByInviteCode(code) {
+  if (!db) throw new Error('DB not ready');
+  const snap = await getDocs(query(collection(db, 'trips'), where('inviteCode', '==', code), limit(1)));
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() };
+}
+
+async function fetchTrip(tripId) {
   if (!db) throw new Error('DB not ready');
   const ref = doc(db, 'trips', tripId);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error('Trip not found');
-  return { id: snap.id, ...snap.data() };
+  try {
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw new Error('Trip not found');
+    return { id: snap.id, ...snap.data() };
+  } catch (e) {
+    // Members who signed in with a username + PIN but without a Firebase Auth
+    // token (Cloud Functions missing) fall back to the locally cached trip.
+    const cached = getCachedTrips()?.find(t => t.id === tripId);
+    if (cached && (e.code === 'permission-denied' || /permission/i.test(e.message || ''))) {
+      console.warn('getTrip permission-denied → using cached trip', tripId);
+      return cached;
+    }
+    throw e;
+  }
+}
+
+/**
+ * Read one trip. Served from the stale-while-revalidate cache so switching menus
+ * is instant; every trip write clears the entry.
+ * @param {string} tripId
+ * @param {{fresh?: boolean}} [options] `fresh` forces a server read (pull-to-refresh)
+ */
+export async function getTrip(tripId, { fresh = false } = {}) {
+  if (!tripId) throw new Error('Missing trip id');
+  const key = tripKey(tripId);
+  if (fresh) { cacheForget(key); persistDelete(key); }
+  // After a reload the last known trip paints instantly and refreshes behind.
+  else seedFromPersist(key);
+  const trip = await cachedRead(key, () => fetchTrip(tripId), { maxAgeMs: TRIP_TTL });
+  persistSet(key, trip);
+  return trip;
 }
 
 export async function uploadCoverImage(tripId, fileOrBlob, userId) {
@@ -182,6 +306,9 @@ export async function createTrip(data, userId) {
     themeColor: data.themeColor || '#8bb89a',
     status: 'draft',
     memberUids: [userId],
+    // Members join by typing this code; the admin approves the request.
+    inviteCode: generateInviteCode(),
+    inviteEnabled: true,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     createdBy: userId
@@ -219,7 +346,7 @@ export async function createTrip(data, userId) {
       }
     }
     
-    clearTripsCache();
+    clearTripsCacheInternal();
     return ref.id;
   } catch (e) {
     console.error('createTrip error:', e);
@@ -234,5 +361,133 @@ export async function updateTrip(tripId, updates) {
   if (!db) throw new Error('DB not ready');
   const ref = doc(db, 'trips', tripId);
   await updateDoc(ref, { ...updates, updatedAt: serverTimestamp() });
-  clearTripsCache();
+  invalidateTrip(tripId);
 }
+
+
+/* ------------------------------------------------------------------ *
+ * Edit / duplicate / delete
+ * ------------------------------------------------------------------ */
+
+const TRIP_SUBCOLLECTIONS = [
+  'itineraryItems', 'expenses', 'members', 'documents', 'categories',
+  'cards', 'exchangeRates', 'settings', 'imports', 'activityLogs',
+  'notes', 'joinRequests', 'settlements', 'comments', 'activity'
+];
+
+/**
+ * Delete a trip plus its sub-collection documents.
+ * Sub-collection cleanup is best-effort: the trip doc is removed even if some
+ * nested documents cannot be deleted with the currently deployed rules.
+ */
+export async function deleteTrip(tripId, { onProgress } = {}) {
+  if (!db) throw new Error('DB not ready');
+  if (!tripId) throw new Error('Missing trip id');
+  const warnings = [];
+
+  for (const sub of TRIP_SUBCOLLECTIONS) {
+    try {
+      onProgress?.(sub);
+      const snap = await getDocs(query(collection(db, `trips/${tripId}/${sub}`), limit(300)));
+      if (snap.empty) continue;
+      let batch = writeBatch(db);
+      let n = 0;
+      for (const d of snap.docs) {
+        // Nested line items under expenses
+        if (sub === 'expenses') {
+          try {
+            const lines = await getDocs(collection(db, `trips/${tripId}/expenses/${d.id}/lineItems`));
+            for (const l of lines.docs) { try { await deleteDoc(l.ref); } catch {} }
+          } catch {}
+        }
+        batch.delete(d.ref);
+        n++;
+        if (n % 400 === 0) { await batch.commit(); batch = writeBatch(db); }
+      }
+      if (n % 400 !== 0) await batch.commit();
+    } catch (e) {
+      console.warn(`[Trips] cleanup of ${sub} failed:`, e?.code || e?.message);
+      warnings.push(sub);
+    }
+  }
+
+  cacheClear();
+
+  try {
+    await deleteDoc(doc(db, 'trips', tripId));
+  } catch (e) {
+    if (e?.code === 'permission-denied') {
+      throw new Error('ไม่มีสิทธิ์ลบทริปนี้ — ต้อง deploy Firestore Rules ใหม่ (ให้ trip admin ลบได้)');
+    }
+    throw e;
+  }
+  clearTripsCacheInternal();
+  return { warnings };
+}
+
+/** Copy a trip's settings + itinerary into a brand new trip. */
+export async function duplicateTrip(sourceTrip, userId, { nameSuffix = ' (สำเนา)' } = {}) {
+  if (!db) throw new Error('DB not ready');
+  if (!sourceTrip?.id) throw new Error('ไม่พบทริปต้นฉบับ');
+  const newId = await createTrip({
+    name: `${sourceTrip.name || 'Trip'}${nameSuffix}`,
+    description: sourceTrip.description || '',
+    country: sourceTrip.country || '',
+    city: sourceTrip.city || '',
+    startDate: sourceTrip.startDate,
+    endDate: sourceTrip.endDate,
+    timezone: sourceTrip.timezone || 'Asia/Bangkok',
+    baseCurrency: sourceTrip.baseCurrency || 'THB',
+    coverImage: sourceTrip.coverImage || '',
+    themeColor: sourceTrip.themeColor || '#8bb89a',
+    creatorName: 'Admin'
+  }, userId);
+
+  // Copy members (without login accounts) so splitting keeps working
+  try {
+    const members = await getDocs(collection(db, `trips/${sourceTrip.id}/members`));
+    for (const m of members.docs) {
+      const { ...data } = m.data();
+      await setDoc(doc(db, `trips/${newId}/members`, m.id), data, { merge: true });
+    }
+  } catch (e) { console.warn('copy members failed', e?.message); }
+
+  // Copy itinerary items
+  try {
+    const items = await getDocs(collection(db, `trips/${sourceTrip.id}/itineraryItems`));
+    let batch = writeBatch(db);
+    let n = 0;
+    for (const it of items.docs) {
+      const data = { ...it.data() };
+      const ref = doc(collection(db, `trips/${newId}/itineraryItems`));
+      batch.set(ref, { ...data, createdBy: userId, updatedBy: userId, version: 1 });
+      n++;
+      if (n % 400 === 0) { await batch.commit(); batch = writeBatch(db); }
+    }
+    if (n % 400 !== 0) await batch.commit();
+  } catch (e) { console.warn('copy itinerary failed', e?.message); }
+
+  clearTripsCacheInternal();
+  return newId;
+}
+
+function invalidateAfterWrite(tripId) {
+  if (tripId) invalidateTrip(tripId); else cacheClear();
+}
+
+export async function addMemberUidToTrip(tripId, uid) {
+  if (!db) return;
+  try { await updateDoc(doc(db, 'trips', tripId), { memberUids: arrayUnion(uid), updatedAt: serverTimestamp() }); } catch (e) { console.warn('addMemberUid failed', e?.message); }
+  invalidateAfterWrite(tripId);
+}
+
+export async function removeMemberUidFromTrip(tripId, uid) {
+  if (!db) return;
+  try { await updateDoc(doc(db, 'trips', tripId), { memberUids: arrayRemove(uid), updatedAt: serverTimestamp() }); } catch (e) { console.warn('removeMemberUid failed', e?.message); }
+  invalidateAfterWrite(tripId);
+}
+
+export function clearTripsCache() { clearTripsCacheInternal(); cacheForget('trip:'); }
+
+/** Drop every cached read (the header Refresh button uses this). */
+export function clearAllDataCache() { cacheClear(); clearTripsCacheInternal(); }

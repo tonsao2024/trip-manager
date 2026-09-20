@@ -7,3 +7,5 @@ dist/
 *.log
 .DS_Store
 src/js/firebase.local.js
+tests/smoke/.build/
+tests/browser/out/

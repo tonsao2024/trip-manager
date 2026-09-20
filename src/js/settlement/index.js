@@ -1,35 +1,23 @@
 import { db, serverTimestamp } from '../firebase.js';
 import { collection, doc, getDocs, addDoc, query, where, limit } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { calculateSettlement } from '../utils/settlement.js';
+import { fetchAllExpenses } from '../expenses/index.js';
+import { listMembers } from '../members/index.js';
 
-export async function fetchSettlementData(tripId) {
+/**
+ * Everything the settlement page needs.
+ *
+ * Served from the shared expense/member caches (both stale-while-revalidate), so
+ * the settlement menu costs zero round trips once the trip has been opened. The
+ * two queries run in parallel the first time.
+ */
+export async function fetchSettlementData(tripId, { fresh = false } = {}) {
   if (!db) throw new Error('DB not ready');
-  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout loading settlement data - check indexes')), 12000));
-  const fetchPromise = (async () => {
-    try {
-      // Simple queries without composite indexes - filter client-side
-      const expSnap = await getDocs(query(collection(db, `trips/${tripId}/expenses`), limit(100)));
-      const memSnap = await getDocs(collection(db, `trips/${tripId}/members`));
-      let expenses = expSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      // Filter voided client-side
-      expenses = expenses.filter(e => e.status !== 'voided');
-      const members = memSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      return { expenses, members };
-    } catch (e) {
-      console.warn('fetchSettlementData failed', e);
-      if (e.message.includes('index') || e.code === 'failed-precondition') {
-        // Fallback without limit
-        const expSnap = await getDocs(collection(db, `trips/${tripId}/expenses`));
-        const memSnap = await getDocs(collection(db, `trips/${tripId}/members`));
-        let expenses = expSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        expenses = expenses.filter(e => e.status !== 'voided');
-        const members = memSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        return { expenses, members };
-      }
-      throw e;
-    }
-  })();
-  return Promise.race([fetchPromise, timeout]);
+  const [expenses, members] = await Promise.all([
+    fetchAllExpenses(tripId, { fresh }),
+    listMembers(tripId, { fresh })
+  ]);
+  return { expenses: expenses.filter(e => e.status !== 'voided'), members };
 }
 
 export async function recalculateAndSaveSettlement(tripId, userId) {
