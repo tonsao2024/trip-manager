@@ -870,6 +870,12 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 .kpi-icon svg { width: 17px; height: 17px; }
 .kpi-label { font-size: 11px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; color: var(--text-tertiary); }
 .kpi-value { font-size: 22px; font-weight: 700; margin-top: 4px; font-family: var(--font-display); line-height: 1.15; }
+/* Phones: the amount has to fit the tile (¥29,955,000 used to spill out) */
+@media (max-width: 640px) {
+  .kpi-value { font-size: clamp(17px, 5.4vw, 22px); overflow-wrap: anywhere; }
+  .kpi-mini b { font-size: clamp(15px, 4.6vw, 17px); overflow-wrap: anywhere; }
+  .kpi-tile, .kpi-mini { min-width: 0; }
+}
 .kpi-sub { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; font-size: 11px; color: var(--text-secondary); }
 @media (min-width: 768px) { .kpi-value { font-size: 24px; } }
 
@@ -1377,20 +1383,26 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 
 /* ---------------- Mobile usability ---------------- */
 @media (max-width: 640px) {
-  /* Toolbars wrap into a tappable grid instead of scrolling off-screen */
-  .btn-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
+  /* Toolbars stay on ONE row and scroll horizontally: a wall of buttons used to
+     push the actual content (the map, the list) below the fold on a phone. */
+  .btn-row, .chip-row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
     gap: 8px;
-    overflow: visible;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 6px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
-  .btn-row .btn { width: 100%; min-height: 44px; justify-content: center; flex-shrink: 1; }
-  .btn-row .btn-sm { min-height: 42px; }
+  .btn-row::-webkit-scrollbar, .chip-row::-webkit-scrollbar { display: none; }
+  .btn-row .btn, .chip-row .chip { flex: 0 0 auto; scroll-snap-align: start; min-height: 42px; }
+  .btn-row .btn { justify-content: center; }
+  .btn-row .btn-sm { min-height: 40px; }
   .ps-actions .btn { min-height: 40px; }
-
-  /* Filter chips wrap; only date chips scroll horizontally */
-  .chip-row { flex-wrap: wrap; overflow: visible; padding-bottom: 2px; }
-  .chip-row .chip { flex: 1 1 auto; justify-content: center; min-height: 42px; }
+  .chip-row .chip { min-height: 40px; }
   .chip-row-scroll { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
   .chip-row-scroll .chip { flex: 0 0 auto; min-height: 38px; scroll-snap-align: start; }
 
@@ -1400,18 +1412,31 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
   .note-card { min-height: 124px; }
 }
 
-/* Horizontal fade hint for scrollable chip rows */
+/* Horizontal fade hint for scrollable rows (chips + toolbars) */
 .chip-row-scroll { position: relative; }
-.chip-row-scroll::after {
+.btn-row, .chip-row { position: relative; }
+.btn-row::after, .chip-row::after, .chip-row-scroll::after {
   content: '';
   position: sticky;
   right: 0;
+  flex: none;            /* inside a scrolling flex row it must never shrink to 0 */
   width: 26px;
   margin-left: -26px;
   background: linear-gradient(to right, transparent, var(--bg));
   pointer-events: none;
 }
-@media (min-width: 641px) { .chip-row-scroll::after { display: none; } }
+@media (min-width: 641px) { .btn-row::after, .chip-row::after, .chip-row-scroll::after { display: none; } }
+/* On a phone the toolbars scroll sideways — show it, so a half-visible button
+   reads as "swipe for more" instead of a broken layout. */
+@media (max-width: 640px) {
+  .btn-row::after, .chip-row::after, .chip-row-scroll::after {
+    width: 34px;
+    margin-left: -34px;
+    background:
+      linear-gradient(to right, transparent, var(--bg) 62%),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='12' viewBox='0 0 8 12'%3E%3Cpath d='M2 1l4.5 5L2 11' fill='none' stroke='%234b5563' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 5px center;
+  }
+}
 
 
 /* ------------------------------------------------------------------
@@ -2047,3 +2072,52 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 
 /* Day header line on a single-day exported sheet */
 .itin-sheet-dayline { font-size: 13px; font-weight: 700; color: #2563eb; margin: -2px 0 6px; }
+
+/* ============================================================
+   v12 — phone layout (iPhone Pro Max / SE)
+   The header used to be wider than a phone screen, which made
+   mobile browsers widen the layout viewport and zoom the whole
+   page out: the right edge of every screen was cut off.
+   ============================================================ */
+
+/* Nothing may ever be wider than the phone itself. `clip` (not hidden) keeps
+   position: sticky working while stopping a stray wide element from turning
+   into a sideways-scrolling page. */
+html, body { max-width: 100%; overflow-x: clip; }
+
+@media (max-width: 520px) {
+  /* Header: compact controls, the trip name may truncate but never push the row */
+  #app-header > div { min-width: 0; }
+  #app-header .flex.items-center.gap-3 { gap: 6px; min-width: 0; }
+  #logo-link { flex: 0 1 auto; min-width: 0; }
+  #logo-link > span:last-child { min-width: 0; }
+  #logo-link .block, #header-subtitle {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30vw;
+  }
+  #header-controls { gap: 2px; }
+  #header-controls .btn,
+  #refresh-btn {
+    width: 34px !important; min-width: 34px !important;
+    height: 34px !important; min-height: 34px !important; padding: 0 !important;
+  }
+  #user-menu { margin-left: 0 !important; }
+  #user-avatar-btn { width: 36px !important; height: 36px !important; font-size: 12px !important; }
+
+  /* Comfortable tap targets on a phone (the icon buttons were 32px) */
+  .icon-btn { width: 38px; height: 38px; border-radius: 12px; }
+  .icon-btn svg { width: 17px; height: 17px; }
+  .comment-del { width: 26px; height: 26px; }
+}
+
+/* Long unbreakable text (a member's email, a username, a long place name) used
+   to run past the card edge and under the buttons — "ชื่อ user แสดงไม่ครบ".
+   These containers may wrap anywhere and may shrink. */
+.meta-line, .diag-row, .member-row, .expense-row, .comment-head, .activity-row { min-width: 0; }
+.card, .member-row, .expense-row, .expense-card, .diag-row, .receipt, .itin-card, .note-card {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .card, .member-row, .expense-row, .expense-card, .diag-row, .receipt, .itin-card { min-width: 0; }
+  /* Cards are the scroll container's content: never let one push the page wide */
+  .card > *, .member-row > *, .expense-card > * { min-width: 0; }
+}

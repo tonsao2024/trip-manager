@@ -597,10 +597,12 @@ await click('#confirm-ok');
 await sleep(300);
 check(![...fsdb.__store.values()].some(n => n?.title === 'จองรถไฟ 07:10'), 'notes: delete removes the note');
 
-console.log('\n▶ v5: mobile toolbar layout');
+console.log('\n▶ v5/v12: mobile layout (toolbars, chips, viewport)');
 const css = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8').replace(/\s+/g, ' ');
-check(/@media \(max-width: 640px\) \{ .*\.btn-row \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(138px, 1fr\)\)/.test(css) || /\.btn-row \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(138px, 1fr\)\); gap: 8px; overflow: visible; \}/.test(css), 'mobile: toolbar buttons wrap into a tap-friendly grid');
-check(/\.chip-row \{ flex-wrap: wrap; overflow: visible;/.test(css), 'mobile: filter chips wrap instead of scrolling off-screen');
+// v12: toolbars and chips keep ONE row and scroll sideways. Wrapping them into
+// 3-4 rows pushed the real content below the fold on a phone.
+check(/\.btn-row, \.chip-row \{ display: flex; flex-wrap: nowrap;/.test(css), 'mobile: toolbars stay on one row so the content below is reachable');
+check(/\.btn-row \.btn, \.chip-row \.chip \{ flex: 0 0 auto;/.test(css), 'mobile: the buttons of a scrolling toolbar keep a tappable size');
 check(/\.bottom-nav-item \{ flex: 1 1 0; min-width: 0;/.test(css), 'mobile: bottom nav items share the width evenly');
 
 console.log('\n▶ v5: PNG export survives color-mix()');
@@ -1517,6 +1519,33 @@ console.log('\n▶ v11: ใบเสร็จ — เลือกดูราย
   await goto('#/trip/t1/settlement');
   await waitFor(() => q('#settle-overview'), { label: 'settlement again' });
   check(q('#settle-views .chip-active')?.dataset.view === 'overview', 'receipt: the page still opens on ภาพรวม');
+}
+
+console.log('\n▶ v12: จอเล็ก (iPhone) — header ไม่ดันจอ และชื่อยาวไม่ทำจอล้น');
+{
+  const cssRaw = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8');
+  const css = cssRaw.replace(/\s+/g, ' ');
+
+  // 1) The page can never become wider than the phone: that is what made mobile
+  //    browsers zoom out (\"หน้าจอแสดงผลไม่สมบูรณ์\", right edge cut off).
+  check(/html, body \{ max-width: 100%; overflow-x: clip; \}/.test(css),
+    'phone: the page can never be wider than the screen (no zoom-out, no cut-off edge)');
+  check(/@media \(max-width: 520px\)[\s\S]{0,400}#app-header \.flex\.items-center\.gap-3 \{ gap: 6px; min-width: 0; \}/.test(css),
+    'phone: the header row shrinks instead of pushing the layout wider');
+
+  // 2) The avatar stands in for the name: the block is hidden on phones and the
+  //    full name/email stays available as a tooltip (and as text on desktop).
+  const authStubX = await import(stub('firebase-auth.mjs'));
+  authStubX.__emitAuth({ uid: 'u1', email: 'somchai.wattanakul@example.com', displayName: 'สมชาย วัฒนากุล ยาวมาก ๆ', photoURL: null });
+  await sleep(120);
+  const nameEl = q('#user-display-name');
+  check(!!nameEl, 'phone: the header keeps a name element for wide screens');
+  check(nameEl?.classList.contains('hidden') && nameEl?.classList.contains('md:flex'),
+    'phone: the name is hidden on small screens and shown from md up');
+  check(!nameEl?.classList.contains('flex') || nameEl?.classList.contains('md:flex'),
+    'phone: the name block is not forced visible on phones');
+  check(String(nameEl?.title || '').includes('สมชาย'), 'phone: the full name is kept as a tooltip on the avatar row');
+  check(!!q('#user-avatar-btn'), 'phone: the avatar button is still there');
 }
 
 console.log('\n▶ delete the whole trip (UI)');

@@ -350,7 +350,18 @@ open tests/runner.html              # same suites + scheduling (needs CDN access
 # Full app smoke test: real DOM (jsdom), stubbed Firebase, every route + CRUD flow
 npm install --no-save jsdom dayjs xlsx
 node tests/smoke/run.mjs
+
+# Real Chromium checks (PNG export + phone layout)
+npm install --no-save puppeteer-core @sparticuz/chromium tailwindcss@3 html2canvas jspdf dayjs
+node tests/browser/export-check.mjs     # export pipeline renders the real PNGs
+node tests/browser/mobile-check.mjs     # iPhone 16/14 Pro Max + SE + desktop layout
 ```
+
+`tests/browser/mobile-check.mjs` renders every route (and a few overlays) at phone sizes and
+fails when a screen is wider than the phone — on mobile that makes the browser zoom the whole
+page out, which is what "หน้าจอแสดงผลไม่สมบูรณ์" looks like — when a toolbar grows into several
+rows, or when a long name/email spills out of its card. Screenshots land in
+`tests/browser/out/mobile/` so the result can be eyeballed.
 
 `tests/smoke/` copies `src/js` into `tests/smoke/.build/` and rewrites only the CDN import
 specifiers (Firebase → in-memory stub, dayjs/xlsx → npm packages, Leaflet/Sortable → stubs),

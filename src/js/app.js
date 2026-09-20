@@ -636,10 +636,14 @@ function updateUserDisplay(user) {
     if (user) {
       nameText.textContent = user.displayName || user.email?.split('@')[0] || 'User';
       emailText.textContent = user.email || user.uid?.slice(0,8) || '';
-      nameEl.classList.remove('hidden');
-      nameEl.classList.add('md:flex');
+      // Phones show the avatar only: a truncated name + email in the header used
+      // to widen the layout viewport, which zoomed the whole page out and cut
+      // off the right edge of every screen.
+      nameEl.classList.add('hidden', 'md:flex');
+      nameEl.title = `${nameText.textContent}${emailText.textContent ? ` • ${emailText.textContent}` : ''}`;
     } else {
       nameEl.classList.add('hidden');
+      nameEl.classList.remove('md:flex');
     }
   }
 }
