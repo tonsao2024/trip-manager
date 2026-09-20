@@ -6,11 +6,15 @@ import { testScheduling } from './unit/scheduling.test.js';
 import { testSplit } from './unit/split.test.js';
 import { testSettlement } from './unit/settlement.test.js';
 import { testCurrency } from './unit/currency.test.js';
+import { testCountdown } from './unit/countdown.test.js';
+import { testExcel } from './unit/excel.test.js';
 try {
   testScheduling();
   testSplit();
   testSettlement();
   testCurrency();
+  testCountdown();
+  testExcel();
   document.body.innerHTML += '<p style="color:green">All tests passed! Check console for details</p>';
 } catch (e) {
   document.body.innerHTML += `<p style="color:red">Failed: ${e.message}</p><pre>${e.stack}</pre>`;

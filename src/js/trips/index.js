@@ -1,5 +1,5 @@
 import { db, storage, serverTimestamp, isStorageAvailable } from '../firebase.js';
-import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, query, where, limit } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, query, where, limit, arrayUnion, arrayRemove } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { compressImage } from '../utils/helpers.js';
 
@@ -22,7 +22,7 @@ function setCachedTrips(trips) {
   } catch {}
 }
 
-function clearTripsCache() {
+function clearTripsCacheInternal() {
   try { localStorage.removeItem(TRIPS_CACHE_KEY); } catch {}
 }
 
@@ -219,7 +219,7 @@ export async function createTrip(data, userId) {
       }
     }
     
-    clearTripsCache();
+    clearTripsCacheInternal();
     return ref.id;
   } catch (e) {
     console.error('createTrip error:', e);
@@ -234,5 +234,121 @@ export async function updateTrip(tripId, updates) {
   if (!db) throw new Error('DB not ready');
   const ref = doc(db, 'trips', tripId);
   await updateDoc(ref, { ...updates, updatedAt: serverTimestamp() });
-  clearTripsCache();
+  clearTripsCacheInternal();
 }
+
+
+/* ------------------------------------------------------------------ *
+ * Edit / duplicate / delete
+ * ------------------------------------------------------------------ */
+
+const TRIP_SUBCOLLECTIONS = [
+  'itineraryItems', 'expenses', 'members', 'documents', 'categories',
+  'cards', 'exchangeRates', 'settings', 'imports', 'activityLogs'
+];
+
+/**
+ * Delete a trip plus its sub-collection documents.
+ * Sub-collection cleanup is best-effort: the trip doc is removed even if some
+ * nested documents cannot be deleted with the currently deployed rules.
+ */
+export async function deleteTrip(tripId, { onProgress } = {}) {
+  if (!db) throw new Error('DB not ready');
+  if (!tripId) throw new Error('Missing trip id');
+  const warnings = [];
+
+  for (const sub of TRIP_SUBCOLLECTIONS) {
+    try {
+      onProgress?.(sub);
+      const snap = await getDocs(query(collection(db, `trips/${tripId}/${sub}`), limit(300)));
+      if (snap.empty) continue;
+      let batch = writeBatch(db);
+      let n = 0;
+      for (const d of snap.docs) {
+        // Nested line items under expenses
+        if (sub === 'expenses') {
+          try {
+            const lines = await getDocs(collection(db, `trips/${tripId}/expenses/${d.id}/lineItems`));
+            for (const l of lines.docs) { try { await deleteDoc(l.ref); } catch {} }
+          } catch {}
+        }
+        batch.delete(d.ref);
+        n++;
+        if (n % 400 === 0) { await batch.commit(); batch = writeBatch(db); }
+      }
+      if (n % 400 !== 0) await batch.commit();
+    } catch (e) {
+      console.warn(`[Trips] cleanup of ${sub} failed:`, e?.code || e?.message);
+      warnings.push(sub);
+    }
+  }
+
+  try {
+    await deleteDoc(doc(db, 'trips', tripId));
+  } catch (e) {
+    if (e?.code === 'permission-denied') {
+      throw new Error('ไม่มีสิทธิ์ลบทริปนี้ — ต้อง deploy Firestore Rules ใหม่ (ให้ trip admin ลบได้)');
+    }
+    throw e;
+  }
+  clearTripsCacheInternal();
+  return { warnings };
+}
+
+/** Copy a trip's settings + itinerary into a brand new trip. */
+export async function duplicateTrip(sourceTrip, userId, { nameSuffix = ' (สำเนา)' } = {}) {
+  if (!db) throw new Error('DB not ready');
+  if (!sourceTrip?.id) throw new Error('ไม่พบทริปต้นฉบับ');
+  const newId = await createTrip({
+    name: `${sourceTrip.name || 'Trip'}${nameSuffix}`,
+    description: sourceTrip.description || '',
+    country: sourceTrip.country || '',
+    city: sourceTrip.city || '',
+    startDate: sourceTrip.startDate,
+    endDate: sourceTrip.endDate,
+    timezone: sourceTrip.timezone || 'Asia/Bangkok',
+    baseCurrency: sourceTrip.baseCurrency || 'THB',
+    coverImage: sourceTrip.coverImage || '',
+    themeColor: sourceTrip.themeColor || '#8bb89a',
+    creatorName: 'Admin'
+  }, userId);
+
+  // Copy members (without login accounts) so splitting keeps working
+  try {
+    const members = await getDocs(collection(db, `trips/${sourceTrip.id}/members`));
+    for (const m of members.docs) {
+      const { ...data } = m.data();
+      await setDoc(doc(db, `trips/${newId}/members`, m.id), data, { merge: true });
+    }
+  } catch (e) { console.warn('copy members failed', e?.message); }
+
+  // Copy itinerary items
+  try {
+    const items = await getDocs(collection(db, `trips/${sourceTrip.id}/itineraryItems`));
+    let batch = writeBatch(db);
+    let n = 0;
+    for (const it of items.docs) {
+      const data = { ...it.data() };
+      const ref = doc(collection(db, `trips/${newId}/itineraryItems`));
+      batch.set(ref, { ...data, createdBy: userId, updatedBy: userId, version: 1 });
+      n++;
+      if (n % 400 === 0) { await batch.commit(); batch = writeBatch(db); }
+    }
+    if (n % 400 !== 0) await batch.commit();
+  } catch (e) { console.warn('copy itinerary failed', e?.message); }
+
+  clearTripsCacheInternal();
+  return newId;
+}
+
+export async function addMemberUidToTrip(tripId, uid) {
+  if (!db) return;
+  try { await updateDoc(doc(db, 'trips', tripId), { memberUids: arrayUnion(uid), updatedAt: serverTimestamp() }); } catch (e) { console.warn('addMemberUid failed', e?.message); }
+}
+
+export async function removeMemberUidFromTrip(tripId, uid) {
+  if (!db) return;
+  try { await updateDoc(doc(db, 'trips', tripId), { memberUids: arrayRemove(uid), updatedAt: serverTimestamp() }); } catch (e) { console.warn('removeMemberUid failed', e?.message); }
+}
+
+export function clearTripsCache() { clearTripsCacheInternal(); }

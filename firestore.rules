@@ -24,12 +24,16 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.role;
     }
 
+    function hasMemberDoc(tripId) {
+      return exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
+    }
+
     function isTripAdmin(tripId) {
-      return isSuperAdmin() || (isTripMember(tripId) && getMemberRole(tripId) in ['trip_admin', 'super_admin']);
+      return isSuperAdmin() || (isTripMember(tripId) && hasMemberDoc(tripId) && getMemberRole(tripId) in ['trip_admin', 'super_admin']);
     }
 
     function hasPermission(tripId, perm) {
-      return isTripAdmin(tripId) || (isTripMember(tripId) && get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.permissions[perm] == true);
+      return isTripAdmin(tripId) || (isTripMember(tripId) && hasMemberDoc(tripId) && get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.permissions[perm] == true);
     }
 
     // Users collection - only self or super admin
@@ -63,7 +67,10 @@ service cloud.firestore {
         request.auth.uid in resource.data.memberUids ||
         request.resource.data.memberUids.hasAny([request.auth.uid])
       );
-      allow delete: if isSuperAdmin() || (isAuthenticated() && resource.data.createdBy == request.auth.uid);
+      // Creator, super admin or a trip admin may delete the trip
+      allow delete: if isSuperAdmin()
+        || (isAuthenticated() && resource.data.createdBy == request.auth.uid)
+        || (isAuthenticated() && isTripAdmin(tripId));
 
       // Members - permissive to avoid permission errors
       match /members/{memberId} {
@@ -87,12 +94,12 @@ service cloud.firestore {
         allow delete: if isAuthenticated();
       }
 
-      // Expenses - permissive
+      // Expenses - permissive (v4: deletion allowed so items can truly be removed)
       match /expenses/{expenseId} {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated();
         allow update: if isAuthenticated();
-        allow delete: if false;
+        allow delete: if isAuthenticated();
 
         match /lineItems/{lineItemId} {
           allow read: if isAuthenticated();

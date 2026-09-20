@@ -162,20 +162,47 @@ firebase emulators:start --only firestore,auth,functions,storage
 ## Acceptance Checklist
 
 - Admin/Member login with persistence, no raw PIN stored
-- Multi-trip isolation via tripId
-- Itinerary read-only default, edit mode with drag-drop, smart scheduling recalc, overlap warning
-- Countdown + 15min notification (banner/toast)
+- Multi-trip isolation via tripId; trips can be **edited (dates/details) and deleted** by admins
+- Every record is editable + deletable: itinerary places, expenses, members, documents, trips
+- Itinerary add/edit form with coordinates, photo, notes and an optional **estimated cost**
+  (amount, currency, category, who paid, who shares) that is **auto-aggregated into the expense book**
+- Place photos render as a **fixed 16:9 rounded thumbnail on the right** of each itinerary card
+- Map never re-inits a live container (`LoadedMap` WeakMap registry) — adding coordinates keeps the map alive
+- **Animated countdown**: a runner sprints towards Mt. Fuji, getting closer (and faster) as the start date nears
+- Single-page **dashboard**: hero, countdown scene, 4 KPI tiles, today/up-next, spend by category,
+  estimate-vs-actual, member paid/share board, recent expenses
+- Smart scheduling recalc, overlap warning, drag-drop reorder in edit mode
 - Timezone correct BKK/TYO/Trip
-- Map with numbered markers per day, polyline (not real routing), dark mode tile
+- Map with numbered day-coloured markers + polyline, CARTO→OSM→Esri tile fallback, dark mode tile
 - Expense from itinerary, service/card fee, net preview
 - Split equal/unequal/percent/shares/itemized, sum matches, remainder distributed
 - Settlement minimal transactions, copy LINE, export PNG/PDF
+- **Excel import/export for itinerary + expenses (templates, bilingual headers) — trip admins only**
 - Import template CSV/XLSX/JSON with validation
-- Dark/Light mode persisted
+- Dark/Light mode persisted, 12 themes + gradient themes
 - Security rules block cross-trip access
 - No PWA elements
 - GitHub Pages deployable
-- Modern clean UI, mobile-first, bottom nav, FAB
+- Animated, mobile-first UI: bottom nav, FAB, scroll reveal, confetti, count-up KPIs
+
+## Tests
+
+```
+# Pure logic suites (no browser, no network):
+node tests/node-runner.mjs          # settlement, split, currency, countdown, Excel helpers
+
+# Browser suites:
+open tests/runner.html              # same suites + scheduling (needs CDN access)
+
+# Full app smoke test: real DOM (jsdom), stubbed Firebase, every route + CRUD flow
+npm install --no-save jsdom dayjs xlsx
+node tests/smoke/run.mjs
+```
+
+`tests/smoke/` copies `src/js` into `tests/smoke/.build/` and rewrites only the CDN import
+specifiers (Firebase → in-memory stub, dayjs/xlsx → npm packages, Leaflet/Sortable → stubs),
+so the real application code runs end-to-end: dashboard, countdown, map refresh, estimate →
+expense sync, member/document/expense CRUD, Excel round-trip, permissions and trip deletion.
 
 ## Performance
 
