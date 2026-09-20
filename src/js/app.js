@@ -3,6 +3,7 @@ import { Router } from './router.js';
 import { toast } from './components/toast.js';
 import { renderFujiMascot, renderEmptyState } from './components/fuji.js';
 import { loginAdmin, loginMember, logout, hasStepUpSession } from './auth/index.js';
+import { memberLogin, saveMemberSession, getMemberSession, clearMemberSession, normalizeUsername } from './auth/memberAuth.js';
 import { listTrips, getTrip, createTrip, updateTrip, deleteTrip, duplicateTrip, uploadCoverImage, clearTripsCache } from './trips/index.js';
 import { fetchItinerary, saveItineraryItem, deleteItineraryItem, reorderItinerary, getItineraryItem, syncItineraryExpense, findLinkedExpense } from './itinerary/index.js';
 import {
@@ -21,6 +22,9 @@ import { confirmAction, promptAction } from './components/confirm.js';
 import { mountCountdown, computeCountdown, countdownHeadline } from './components/countdown.js';
 import { initReveal, countUp, confetti, celebrateFrom, restagger } from './components/effects.js';
 import { resolvePermissions } from './utils/permissions.js';
+import { renderPageScene } from './components/scenes.js';
+import { listNotes, createNote, updateNote, deleteNote, NOTE_COLORS, noteColorHex } from './notes/index.js';
+import { googleMapsPlaceUrl, googleMapsDirectionsUrl, BASE_LAYERS, setMapLayer, getStoredLayerId } from './maps/index.js';
 import {
   EXPENSE_CATEGORIES, CATEGORY_ICONS, categoryLabel, categoryIcon, categoryColor,
   ITINERARY_CATEGORIES, ITINERARY_STATUSES, normalizeCategory
@@ -116,9 +120,12 @@ const ICON_ALIASES = {
 
 function renderIcons() {
   if (!window.lucide) return;
+  const signature = document.querySelectorAll('i[data-lucide]').length;
+  if (!signature) return;
   try { lucide.createIcons(); } catch (e) { console.warn('createIcons', e); }
   const leftovers = Array.from(document.querySelectorAll('i[data-lucide]'));
   if (!leftovers.length) return;
+  // Safety: from here on we only touch unresolved <i> elements.
   // Second pass: try aliases for names missing in this lucide version
   let retried = false;
   leftovers.forEach(el => {
@@ -140,10 +147,24 @@ function queueIcons() {
   iconsQueued = true;
   requestAnimationFrame(() => { iconsQueued = false; renderIcons(); });
 }
+// Lucide replaces <i data-lucide> with <svg data-lucide>. Those finished nodes must
+// never be re-created (that was the "icons flicker non-stop" bug), and a re-render
+// must be skipped entirely when nothing is left to convert.
+function hasPendingIcons() {
+  return !!document.querySelector('i[data-lucide]');
+}
 // Auto-render icons for ALL dynamic content (lists, sheets, async renders)
+let iconObserverQueued = false;
 try {
-  new MutationObserver(() => {
-    if (document.querySelector('i[data-lucide]')) queueIcons();
+  new MutationObserver((records) => {
+    if (iconObserverQueued) return;
+    // Only react when <i data-lucide> nodes were actually added — text/timer
+    // updates must never trigger an icon pass (that caused flicker + CPU churn).
+    const added = records.some(r => [...r.addedNodes].some(n =>
+      n.nodeType === 1 && (n.matches?.('i[data-lucide]') || n.querySelector?.('i[data-lucide]'))));
+    if (!added) return;
+    iconObserverQueued = true;
+    requestAnimationFrame(() => { iconObserverQueued = false; renderIcons(); });
   }).observe(document.body, { childList: true, subtree: true });
 } catch (e) { console.warn('icon observer failed', e); }
 
@@ -165,8 +186,10 @@ function updateClocks() {
   const times = getCurrentTimes();
   const bkk = document.getElementById('clock-bkk');
   const tokyo = document.getElementById('clock-tokyo');
-  if (bkk) bkk.textContent = `BKK ${times.bangkok.format('HH:mm')}`;
-  if (tokyo) tokyo.textContent = `TYO ${times.tokyo.format('HH:mm')}`;
+  const bkkText = `BKK ${times.bangkok.format('HH:mm')}`;
+  const tokyoText = `TYO ${times.tokyo.format('HH:mm')}`;
+  if (bkk && bkk.textContent !== bkkText) bkk.textContent = bkkText;
+  if (tokyo && tokyo.textContent !== tokyoText) tokyo.textContent = tokyoText;
 }
 updateClocks();
 setInterval(updateClocks, 60000);
@@ -455,6 +478,7 @@ let authReady = false;
 let pendingAuthRoute = null;
 
 async function doLogout() {
+  clearMemberSession();
   // Centralized logout: always clears state and returns to the login screen,
   // even if Firebase signOut() has a network hiccup.
   const tLoad = toast.loading(getLang() === 'th' ? 'กำลังออกจากระบบ...' : 'Signing out...');
@@ -553,6 +577,59 @@ function openUserSheet(user) {
   });
 }
 
+
+/**
+ * Members who signed in with a username + PIN (no Cloud Functions) are kept in
+ * localStorage — restore the UI state from that session when there is no
+ * Firebase Auth user.
+ */
+function applyMemberSession(session) {
+  if (!session?.memberId) return false;
+  currentUser = {
+    uid: session.memberId,
+    displayName: session.displayName || session.username || 'Member',
+    email: '',
+    photoURL: session.photoURL || null,
+    isMemberSession: true
+  };
+  currentTripId = session.tripId || currentTripId;
+  if (currentTripId) { try { localStorage.setItem('fuji_current_trip', currentTripId); } catch {} }
+  authReady = true;
+  return true;
+}
+
+/**
+ * Members signed in with a username + PIN have no Firebase Auth token when the
+ * Cloud Functions are unavailable, so Firestore rules treat them as guests.
+ * Tell them what that means instead of showing mysterious errors.
+ */
+function renderMemberSessionNotice(on) {
+  const box = document.getElementById('member-session-notice');
+  if (!box) return;
+  if (!on) { box.hidden = true; return; }
+  const th = (a, b) => (getLang() === 'th' ? a : b);
+  const textEl = document.getElementById('member-session-notice-text');
+  if (textEl) {
+    textEl.textContent = th(
+      'โหมดสมาชิก (ไม่ใช้ Cloud Functions): เข้าสู่ระบบสำเร็จ — ข้อมูลจะแสดงจากที่บันทึกไว้ในเครื่องนี้ ถ้าต้องการซิงก์ข้อมูลให้ deploy Cloud Functions',
+      'Member mode (no Cloud Functions): you are signed in — data is read from what is cached on this device. Deploy the Cloud Functions for full sync.'
+    );
+  }
+  box.hidden = false;
+  document.getElementById('member-session-notice-close')?.addEventListener('click', () => { box.hidden = true; });
+  queueIcons();
+}
+
+function renderMemberSessionUi(session) {
+  const label = (session.displayName || session.username || 'M')[0]?.toUpperCase() || 'M';
+  if (session.photoURL) userAvatarBtn.innerHTML = `<img src="${escapeHtml(session.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">`;
+  else userAvatarBtn.textContent = label;
+  userAvatarBtn.onclick = () => openUserSheet(currentUser);
+  updateUserDisplay(currentUser);
+  renderDesktopNav();
+  updateBottomNav();
+}
+
 if (!isFirebaseConfigured) {
   setTimeout(() => renderConfigNeeded(), 50);
 } else if (auth) {
@@ -562,6 +639,7 @@ if (!isFirebaseConfigured) {
     authReady = true;
     currentUser = user;
     if (user) {
+      renderMemberSessionNotice(false);
       const initial = (user.displayName || user.email || '?')[0].toUpperCase();
       userAvatarBtn.textContent = initial;
       if (user.photoURL) {
@@ -582,6 +660,16 @@ if (!isFirebaseConfigured) {
       } else if (location.hash.includes('login')) {
         location.hash = '#/trips';
       }
+    } else if (applyMemberSession(getMemberSession())) {
+      // Signed in as a member via username + PIN (works without Cloud Functions)
+      const session = getMemberSession();
+      renderMemberSessionUi(session);
+      renderMemberSessionNotice(true);
+      if (!location.hash || location.hash === '#' || location.hash.includes('login')) {
+        if (pendingAuthRoute) { const target = pendingAuthRoute; pendingAuthRoute = null; location.hash = target; }
+        else location.hash = '#/trips';
+      }
+      router.handle();
     } else {
       currentTrip = null;
       currentTripId = null;
@@ -597,6 +685,20 @@ if (!isFirebaseConfigured) {
   });
 } else {
   authReady = true;
+}
+
+// No Firebase Auth session? Restore the local member session (username + PIN).
+if (isFirebaseConfigured && !currentUser) {
+  const session = getMemberSession();
+  if (session) {
+    applyMemberSession(session);
+    setTimeout(() => {
+      renderMemberSessionUi(session);
+      renderMemberSessionNotice(true);
+      if (location.hash.includes('login')) location.hash = '#/trips';
+      else router.handle();
+    }, 60);
+  }
 }
 
 function themeSwatchHtml(th, current) {
@@ -900,10 +1002,48 @@ function renderLogin() {
     queueIcons();
     const tLoad = toast.loading(lang==='th' ? 'กำลังตรวจสอบ...' : 'Checking...');
     try {
-      await loginMember(document.getElementById('member-user').value.trim(), document.getElementById('member-pin').value, document.getElementById('member-trip').value.trim() || null, document.getElementById('member-remember').checked);
+      const username = document.getElementById('member-user').value.trim();
+      const pin = document.getElementById('member-pin').value;
+      const tripHint = document.getElementById('member-trip').value.trim() || null;
+      const remember = document.getElementById('member-remember').checked;
+      let signedIn = false;
+      // Preferred: Cloud Function (creates a real Firebase Auth session)
+      try {
+        if (typeof loginMember === 'function') {
+          await loginMember(username, pin, tripHint, remember);
+          signedIn = true;
+        }
+      } catch (fnErr) {
+        const code = String(fnErr?.code || '') + ' ' + String(fnErr?.message || '');
+        const usable = /internal|unavailable|not-found|unimplemented|failed-precondition|Functions|functions\//i.test(code);
+        if (!usable) throw fnErr;   // wrong PIN / unknown user → real error
+        console.warn('[Login] Cloud Function unavailable → local PIN login', fnErr?.message);
+      }
+      if (!signedIn) {
+        const res = await memberLogin(username, pin, tripHint, remember);
+        const m = res.member || {};
+        saveMemberSession({
+          tripId: res.tripId, memberId: res.memberId, username,
+          displayName: m.displayName, photoURL: m.photoURL, color: m.color, role: m.role,
+          remember
+        });
+        currentUser = {
+          uid: res.memberId,
+          displayName: m.displayName || username,
+          email: '',
+          photoURL: m.photoURL || null,
+          isMemberSession: true
+        };
+        currentTrip = null;
+        currentTripId = res.tripId;
+        try { localStorage.setItem('fuji_current_trip', res.tripId); } catch {}
+        authReady = true;
+        renderMemberSessionNotice(true);
+      }
       tLoad.close();
       toast.success(lang==='th' ? 'ยินดีต้อนรับ!' : 'Welcome!');
       location.hash = '#/trips';
+      setTimeout(() => router.handle(), 30);
     } catch (err) {
       tLoad.close();
       toast.error(err.message || 'Login failed');
@@ -1375,14 +1515,10 @@ async function renderTripSelector() {
 
   appEl.innerHTML = `
     <div class="page-enter">
-      <div class="flex flex-wrap items-center justify-between gap-4 mb-8">
-        <div>
-          <h1 class="page-title text-3xl font-bold tracking-tight"><span class="title-icon">${icon('compass', 'w-5 h-5')}</span> ${t('selectTrip')}</h1>
-          <p class="text-sm text-[var(--text-secondary)] mt-2">${lang==='th' ? 'เลือกทริปของคุณ หรือสร้างทริปใหม่' : 'Select your trip or create a new one'}</p>
-        </div>
-        <div class="btn-row">
-          <button id="create-trip-btn" class="btn btn-primary">${icon('plus', 'w-4 h-4')} ${t('createTrip')}</button>
-        </div>
+      <div class="mb-7">
+        ${renderPageScene('trips', { lang, title: `${icon('compass', 'w-5 h-5')} ${t('selectTrip')}`,
+          subtitle: lang === 'th' ? 'เลือกทริปที่อยากจัดการ หรือสร้างทริปใหม่' : 'Pick a trip to manage, or create a new one',
+          actions: `<button id="create-trip-btn" class="btn btn-primary">${icon('plus', 'w-4 h-4')} ${t('createTrip')}</button>` })}
       </div>
       <div id="trip-grid" class="grid md:grid-cols-2 lg:grid-cols-3 gap-5"></div>
     </div>
@@ -1610,7 +1746,10 @@ async function renderDashboard(params) {
       <div class="card p-4 md:p-5">
         <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
           <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('timer', 'w-4 h-4')}</span> ${t('countdown')} • ${th('วิ่งไปหาฟูจิ','Run to Fuji')}</h3>
-          <div id="live-since" class="text-[11px] text-[var(--text-tertiary)]"></div>
+          <div id="live-since" class="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1.5">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="w-3 h-3" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            <span data-live-label></span>
+          </div>
         </div>
         <div id="countdown-scene"></div>
       </div>
@@ -1718,19 +1857,25 @@ async function renderDashboard(params) {
     startDate: trip?.startDate, endDate: trip?.endDate, createdAt: trip?.createdAt, lang
   });
   document.addEventListener('routechange', () => cd.destroy(), { once: true });
-  const liveEl = document.getElementById('live-since');
+  // Live "time left" text. Written once per minute as plain text — rebuilding the
+  // markup (and re-running Lucide) every second made the icons flicker non-stop.
   const tickLive = () => {
     const node = document.getElementById('live-since');
-    if (!node) return;
+    if (!node) return false;
     const c = computeCountdown({ startDate: trip?.startDate, endDate: trip?.endDate, createdAt: trip?.createdAt, now: new Date() });
-    node.innerHTML = c.phase === 'before'
-      ? `${icon('clock', 'w-3 h-3 inline')} ${th('เหลืออีก','Left')} ${c.days}${th(' วัน ',' d ')}${String(c.hours).padStart(2,'0')}:${String(c.minutes).padStart(2,'0')}`
+    const label = c.phase === 'before'
+      ? `${th('เหลืออีก','Left')} ${c.days}${th(' วัน ',' d ')}${String(c.hours).padStart(2,'0')}:${String(c.minutes).padStart(2,'0')}`
       : countdownHeadline(c, lang);
-    queueIcons();
+    const target = node.querySelector('[data-live-label]') || node;
+    if (target.dataset.label !== label) {
+      target.dataset.label = label;
+      target.textContent = label;
+    }
+    return true;
   };
   tickLive();
-  const liveTimer = setInterval(tickLive, 1000);
-  setTimeout(() => { if (!document.getElementById('live-since')) clearInterval(liveTimer); }, 180000);
+  const liveTimer = setInterval(() => { if (!tickLive()) clearInterval(liveTimer); }, 30000);
+  document.addEventListener('routechange', () => clearInterval(liveTimer), { once: true });
 
   // Trip progress (independent of Firestore too)
   try {
@@ -2034,8 +2179,12 @@ async function renderItinerary(params) {
 
   appEl.innerHTML = `
     <div class="page-enter">
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <h1 class="page-title text-2xl font-bold"><span class="title-icon">${icon('map-pinned', 'w-5 h-5')}</span> ${t('itinerary')}</h1>
+      <div class="mb-5">
+        ${renderPageScene('itinerary', {
+          lang,
+          title: `${icon('map-pinned', 'w-5 h-5')} ${t('itinerary')}`,
+          subtitle: th('วางแผนสถานที่ • ประมาณการค่าใช้จ่าย • ลากสลับลำดับได้','Plan places • estimate costs • drag to reorder')
+        })}
         <div class="btn-row">
           <button id="view-all-btn" class="btn btn-secondary btn-sm">${icon('calendar-days', 'w-4 h-4')} <span id="view-all-label">${th('ดูทั้งหมด','View all')}</span></button>
           <button id="toggle-map-btn" class="btn btn-primary btn-sm">${icon('map', 'w-4 h-4')} ${th('แผนที่','Map')}</button>
@@ -2051,6 +2200,11 @@ async function renderItinerary(params) {
       <div id="map-card" class="card p-3 mb-5">
         <div id="map-wrap" class="relative rounded-2xl overflow-hidden" style="border:1px solid var(--border);">
           <div id="map" class="map-frame w-full" style="height:min(46vh, 420px);"></div>
+          <div class="map-toolbar" id="map-layer-bar">
+            <button class="map-tool-btn" data-layer="map">${icon('map', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</button>
+            <button class="map-tool-btn" data-layer="satellite">${icon('satellite', 'w-3.5 h-3.5')} ${th('ดาวเทียม','Satellite')}</button>
+            <button class="map-tool-btn" data-layer="terrain">${icon('mountain', 'w-3.5 h-3.5')} ${th('ภูมิประเทศ','Terrain')}</button>
+          </div>
           <div id="map-status" class="map-status"><span class="skeleton" style="width:26px;height:26px;border-radius:50%;"></span> <span>${th('กำลังโหลดแผนที่...','Loading map...')}</span></div>
           <div id="map-empty" class="map-status hidden"><div class="text-center px-4">
             <div class="row-icon mx-auto mb-2" style="width:40px;height:40px;">${icon('map-pin', 'w-5 h-5')}</div>
@@ -2058,7 +2212,7 @@ async function renderItinerary(params) {
           </div></div>
         </div>
         <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
-          <p class="text-[10px] text-[var(--text-tertiary)] flex items-center gap-1">${icon('info', 'w-3 h-3')} ${th('OpenStreetMap / CARTO — ไม่ต้องใช้ API key • เส้นประคือลำดับที่ไป (ไม่ใช่เส้นทางจริง)','OpenStreetMap / CARTO — no API key • dashed line = visit order (not real routing)')}</p>
+          <p class="text-[10px] text-[var(--text-tertiary)] flex items-center gap-1">${icon('info', 'w-3 h-3')} ${th('ไม่ต้องใช้ API key • เส้นประ = ลำดับที่ไป • กดปุ่มนำทางบนการ์ดเพื่อเปิด Google Maps','No API key needed • dashed line = visit order • tap 🧭 on a card to open Google Maps')}</p>
           <div class="flex items-center gap-2">
             <span id="map-count" class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:var(--bg-secondary);">0 ${th('หมุด','pins')}</span>
             <button id="map-fit-btn" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:2px 8px;">${icon('maximize', 'w-3 h-3')} ${th('พอดีจอ','Fit')}</button>
@@ -2066,7 +2220,19 @@ async function renderItinerary(params) {
         </div>
       </div>
 
-      <div id="date-chips" class="chip-row mb-4"></div>
+      <div class="card p-4 mb-5">
+        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <h3 class="font-bold flex items-center gap-2 text-sm">
+            <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--warning-light);color:var(--warning);">${icon('sticky-note', 'w-4 h-4')}</span>
+            ${th('โน้ตติดเตือนความจำ','Sticky notes')}
+            <span id="notes-count" class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:var(--bg-secondary);">0</span>
+          </h3>
+          <button id="add-note-btn" class="btn btn-secondary btn-sm">${icon('plus', 'w-4 h-4')} ${th('เพิ่มโน้ต','Add note')}</button>
+        </div>
+        <div id="notes-board" class="notes-board"></div>
+      </div>
+
+      <div id="date-chips" class="chip-row chip-row-scroll mb-4"></div>
       <div id="itinerary-list" class="space-y-3 stagger"></div>
     </div>
   `;
@@ -2211,6 +2377,190 @@ async function renderItinerary(params) {
   document.addEventListener('themechange', onThemeChange);
   document.addEventListener('routechange', () => document.removeEventListener('themechange', onThemeChange), { once: true });
 
+  /* ---------------------- base map switcher (map/satellite/terrain) ---------------------- */
+  function paintLayerButtons() {
+    const active = getStoredLayerId();
+    document.querySelectorAll('#map-layer-bar [data-layer]').forEach(btn => {
+      btn.classList.toggle('is-active', btn.dataset.layer === active);
+    });
+  }
+  document.querySelectorAll('#map-layer-bar [data-layer]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const layerId = btn.dataset.layer;
+      const { setMapLayer } = await import('./maps/index.js');
+      const ok = setMapLayer('map', layerId);
+      if (!ok) {
+        // Map not created yet → remember the choice and (re)build it
+        await refreshMap(visibleItems, { forceRecreate: true });
+      }
+      paintLayerButtons();
+      const def = BASE_LAYERS.find(l => l.id === layerId);
+      toast.success(lang === 'th' ? `แสดงแบบ${def?.name || layerId}` : `${def?.en || layerId} view`);
+    });
+  });
+  paintLayerButtons();
+
+  /* ---------------------- sticky notes (post-it board) ---------------------- */
+  let notes = [];
+  let notesLoaded = false;
+
+  function noteCardHtml(n, idx) {
+    const color = noteColorHex(n.color);
+    return `
+      <div class="note-card" data-note="${n.id}" style="background:${color}; animation-delay:${Math.min(idx * 45, 400)}ms">
+        <div class="note-pin">${icon('pin', 'w-3 h-3')}</div>
+        ${n.title ? `<div class="note-title">${escapeHtml(n.title)}</div>` : ''}
+        <div class="note-body">${escapeHtml(n.body || '')}</div>
+        <div class="note-meta">
+          <span class="note-tag">${icon('calendar', 'w-2.5 h-2.5')} ${n.createdAt?.seconds ? dayjs(n.createdAt.seconds * 1000).format('D MMM') : dayjs().format('D MMM')}</span>
+          <span class="note-actions">
+            <button data-note-act="edit" data-id="${n.id}" title="${t('edit')}">${icon('pencil', 'w-3 h-3')}</button>
+            <button data-note-act="delete" data-id="${n.id}" title="${t('delete')}">${icon('trash-2', 'w-3 h-3')}</button>
+          </span>
+        </div>
+      </div>`;
+  }
+
+  function renderNotes() {
+    const board = document.getElementById('notes-board');
+    if (!board) return;
+    setText('notes-count', String(notes.length));
+    if (!notesLoaded) {
+      board.innerHTML = `<div class="skeleton" style="height:132px;border-radius:12px;"></div><div class="skeleton" style="height:132px;border-radius:12px;"></div>`;
+      return;
+    }
+    if (!notes.length) {
+      board.innerHTML = `
+        <div class="notes-empty" style="grid-column:1/-1;">
+          <div class="row-icon mx-auto mb-2" style="width:38px;height:38px;background:var(--warning-light);color:var(--warning);">${icon('sticky-note', 'w-4 h-4')}</div>
+          <p class="text-xs font-semibold">${th('ยังไม่มีโน้ต','No notes yet')}</p>
+          <p class="text-[11px] text-[var(--text-secondary)] mt-1">${th('จดเรื่องสำคัญ เช่น ต้องจองรถไฟ เบอร์โทรที่พัก รหัสบุ๊กกิ้ง','Jot down reminders: train booking, hotel phone, booking code…')}</p>
+          <button id="empty-add-note" class="btn btn-primary btn-sm mt-3">${icon('plus', 'w-4 h-4')} ${th('เพิ่มโน้ตแรก','Add first note')}</button>
+        </div>`;
+      bind('empty-add-note', 'click', () => openNoteForm(null));
+      queueIcons();
+      return;
+    }
+    const sorted = [...notes].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    board.innerHTML = sorted.map((n, idx) => noteCardHtml(n, idx)).join('');
+    board.querySelectorAll('[data-note-act]').forEach(btn => btn.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const note = notes.find(x => x.id === btn.dataset.id);
+      if (!note) return;
+      if (btn.dataset.noteAct === 'edit') openNoteForm(note);
+      else {
+        const ok = await confirmAction({
+          title: th('ลบโน้ตนี้?', 'Delete this note?'),
+          message: note.title || note.body?.slice(0, 60) || '',
+          confirmText: t('delete'), danger: true, icon: 'trash-2'
+        });
+        if (!ok) return;
+        try {
+          await deleteNote(tripId, note.id);
+          toast.success(th('ลบโน้ตแล้ว', 'Note deleted'));
+          await loadNotes();
+        } catch (e) { toast.error(e.message); }
+      }
+    }));
+    queueIcons();
+  }
+
+  async function loadNotes() {
+    try {
+      notes = await listNotes(tripId);
+      notesLoaded = true;
+    } catch (e) {
+      console.warn('notes load failed', e);
+      notesLoaded = true;
+      notes = [];
+    }
+    if (isStale(token)) return;
+    renderNotes();
+  }
+
+  function openNoteForm(note = null) {
+    const isEdit = !!note;
+    const n = note || {};
+    const sheet = showBottomSheet(`
+      <div class="space-y-3">
+        <div class="flex items-center gap-3">
+          <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--warning-light);color:var(--warning);">${icon('sticky-note', 'w-5 h-5')}</div>
+          <div>
+            <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขโน้ต','Edit note') : th('เพิ่มโน้ต','New note')}</h3>
+            <p class="text-[11px] text-[var(--text-secondary)]">${th('ข้อความสำคัญที่อยากเห็นทุกครั้งที่เปิดแผน','A reminder you want to see on the itinerary')}</p>
+          </div>
+        </div>
+        <form id="note-form" class="space-y-3">
+          <div class="input-group"><label class="input-label">${icon('type', 'w-3.5 h-3.5')} ${th('หัวข้อ','Title')}</label><input id="note-title" class="input" autocomplete="off" value="${escapeHtml(n.title || '')}" placeholder="${th('เช่น ต้องจองรถไฟ 7:00','e.g. Book 7:00 train')}"></div>
+          <div class="input-group"><label class="input-label">${icon('align-left', 'w-3.5 h-3.5')} ${th('รายละเอียด','Details')}</label><textarea id="note-body" class="input" style="min-height:96px;" placeholder="${th('รหัสจอง เบอร์โทร ที่อยู่…','Booking code, phone, address…')}">${escapeHtml(n.body || '')}</textarea></div>
+          <div class="input-group">
+            <label class="input-label">${icon('palette', 'w-3.5 h-3.5')} ${th('สีโพสอิท','Paper color')}</label>
+            <div class="flex gap-2 flex-wrap" id="note-colors">
+              ${NOTE_COLORS.map(c => `<button type="button" class="chip ${((n.color || 'yellow') === c.id) ? 'chip-active' : ''}" data-color="${c.id}" style="${(n.color || 'yellow') === c.id ? '' : `background:${c.color};color:#3b3527;border-color:transparent;`}">${c.label}</button>`).join('')}
+            </div>
+          </div>
+          <label class="flex items-center gap-2 text-sm cursor-pointer"><input id="note-pinned" type="checkbox" class="accent-[var(--primary)] w-4 h-4" ${n.pinned ? 'checked' : ''}> ${th('ปักหมุดไว้บนสุด','Pin to top')}</label>
+          <div class="flex gap-2">
+            <button type="submit" id="note-submit" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${t('save')}</button>
+            ${isEdit ? `<button type="button" id="note-delete" class="btn" style="background:var(--danger-bg);color:var(--danger);border:1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
+          </div>
+        </form>
+      </div>
+    `);
+    queueIcons();
+
+    let color = n.color || 'yellow';
+    sheet.sheet.querySelectorAll('#note-colors .chip').forEach(btn => btn.addEventListener('click', () => {
+      color = btn.dataset.color;
+      sheet.sheet.querySelectorAll('#note-colors .chip').forEach(b => {
+        const active = b.dataset.color === color;
+        b.classList.toggle('chip-active', active);
+        b.style.background = active ? '' : noteColorHex(b.dataset.color);
+        b.style.color = active ? '' : '#3b3527';
+        b.style.borderColor = active ? '' : 'transparent';
+      });
+    }));
+
+    bind('note-delete', 'click', async () => {
+      sheet.close();
+      const ok = await confirmAction({ title: th('ลบโน้ตนี้?', 'Delete this note?'), confirmText: t('delete'), danger: true, icon: 'trash-2' });
+      if (!ok) return;
+      try { await deleteNote(tripId, n.id); toast.success(th('ลบโน้ตแล้ว','Note deleted')); await loadNotes(); }
+      catch (e) { toast.error(e.message); }
+    });
+
+    document.getElementById('note-form').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const btn = document.getElementById('note-submit');
+      btn.disabled = true;
+      const payload = {
+        title: document.getElementById('note-title').value.trim(),
+        body: document.getElementById('note-body').value.trim(),
+        color,
+        pinned: document.getElementById('note-pinned').checked
+      };
+      if (!payload.title && !payload.body) {
+        toast.error(th('กรอกหัวข้อหรือรายละเอียดก่อน','Add a title or details'));
+        btn.disabled = false;
+        return;
+      }
+      try {
+        if (isEdit) await updateNote(tripId, n.id, payload, currentUser.uid);
+        else await createNote(tripId, payload, currentUser.uid);
+        sheet.close();
+        toast.success(isEdit ? th('บันทึกโน้ตแล้ว','Note saved') : th('เพิ่มโน้ตแล้ว','Note added'));
+        confetti({ y: 140, count: 14 });
+        await loadNotes();
+      } catch (e) {
+        toast.error(e.message);
+        btn.disabled = false;
+      }
+    });
+  }
+
+  bind('add-note-btn', 'click', () => openNoteForm(null));
+  loadNotes();
+
   /* ------------------------- list rendering ------------------------- */
   function itemCardHtml(it, idx, { draggable = false } = {}) {
     const estimateMinor = Number(it.estimateAmount) > 0
@@ -2236,6 +2586,7 @@ async function renderItinerary(params) {
                 <span class="badge badge-planned text-[10px]">${icon(categoryIcon(it.category), 'w-2.5 h-2.5')} ${escapeHtml(categoryLabel(it.category || 'general', lang))}</span>
               </div>
               ${it.address ? `<p class="meta-line mt-1">${icon('map-pin', 'w-3 h-3')} <span class="truncate">${escapeHtml(it.address)}</span></p>` : ''}
+              ${(it.coordinates || it.address || it.googleMapsUrl) ? `<a class="nav-link-btn mt-1.5" href="${escapeHtml(googleMapsPlaceUrl(it))}" target="_blank" rel="noopener">${icon('navigation', 'w-3 h-3')} ${th('นำทาง Google Maps','Navigate')}</a>` : ''}
               ${it.coordinates ? `<p class="meta-line mt-0.5 text-[var(--text-tertiary)]">${icon('crosshair', 'w-3 h-3')} ${escapeHtml(it.coordinates)}</p>` : ''}
               ${estimateMinor ? `
                 <div class="estimate-line">
@@ -2247,6 +2598,7 @@ async function renderItinerary(params) {
             </div>
           </div>
           <div class="itin-actions">
+            ${(it.coordinates || it.address || it.googleMapsUrl) ? `<button class="icon-btn" data-act="navigate" data-id="${it.id}" title="${th('นำทางด้วย Google Maps','Navigate with Google Maps')}" style="color:var(--primary-strong);">${icon('navigation', 'w-3.5 h-3.5')}</button>` : ''}
             ${it.coordinates ? `<button class="icon-btn" data-act="locate" data-id="${it.id}" title="${th('ดูบนแผนที่','Show on map')}">${icon('crosshair', 'w-3.5 h-3.5')}</button>` : ''}
             <button class="icon-btn" data-act="status" data-id="${it.id}" title="${th('เปลี่ยนสถานะ','Change status')}">${icon('circle-check', 'w-3.5 h-3.5')}</button>
             <button class="icon-btn" data-act="edit" data-id="${it.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
@@ -2310,6 +2662,14 @@ async function renderItinerary(params) {
         e.stopPropagation();
         const item = visibleItems.find(i => i.id === btn.dataset.id);
         if (!item) return;
+        if (btn.dataset.act === 'navigate') {
+          const url = googleMapsDirectionsUrl(item) || googleMapsPlaceUrl(item);
+          if (url) {
+            window.open(url, '_blank', 'noopener');
+            toast.info(th('เปิด Google Maps เพื่อนำทาง','Opening Google Maps for directions'));
+          }
+          return;
+        }
         if (btn.dataset.act === 'edit') openItemForm(item, item.date);
         if (btn.dataset.act === 'delete') await removeItem(item);
         if (btn.dataset.act === 'status') await changeStatus(item);
@@ -2776,7 +3136,8 @@ async function renderExpenses(params) {
   appEl.innerHTML = `
     <div class="page-enter">
       <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <h1 class="page-title text-2xl font-bold"><span class="title-icon">${icon('wallet', 'w-5 h-5')}</span> ${t('expenses')}</h1>
+        ${renderPageScene('expenses', { lang, title: `${icon('wallet', 'w-5 h-5')} ${t('expenses')}`,
+          subtitle: th('บันทึกค่าใช้จ่าย • หารเท่ากัน/ไม่เท่ากัน • ประมาณการจากแผน','Log expenses • split equally or custom • estimates from the plan') })}
         <div class="btn-row">
           ${isAdmin ? `
           <button id="exp-excel-btn" class="btn btn-secondary btn-sm">${icon('file-spreadsheet', 'w-4 h-4')} Excel</button>
@@ -3084,7 +3445,8 @@ async function renderExpenseAdd(params) {
   appEl.innerHTML = `
     <div class="page-enter max-w-[720px] mx-auto">
       <div class="flex items-center justify-between gap-2 mb-5">
-        <h1 class="page-title text-2xl font-bold"><span class="title-icon">${icon('receipt', 'w-5 h-5')}</span> ${isEdit ? th('แก้ไขค่าใช้จ่าย','Edit expense') : t('addExpense')}</h1>
+        ${renderPageScene('expenses', { lang, title: `${icon('receipt', 'w-5 h-5')} ${isEdit ? th('แก้ไขค่าใช้จ่าย','Edit expense') : t('addExpense')}`,
+          subtitle: th('กรอกยอด ผู้จ่าย และคนที่ร่วมหาร','Enter the amount, who paid and who shares it') })}
         <button id="exp-back" class="btn btn-ghost btn-sm">${icon('arrow-left', 'w-4 h-4')} ${th('กลับ','Back')}</button>
       </div>
       <form id="expense-form" class="space-y-5 card card-accent p-6">
@@ -3379,12 +3741,16 @@ async function renderExpenseAdd(params) {
 
 async function renderSettlement(params) {
   const tripId = params.tripId;
+  const token = beginRender();
   await loadTrip(tripId);
+  if (isStale(token)) return;
   const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
   appEl.innerHTML = `
     <div class="page-enter">
       <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <h1 class="page-title text-2xl font-bold"><span class="title-icon">${icon('hand-coins', 'w-5 h-5')}</span> ${t('settlement')}</h1>
+        ${renderPageScene('settlement', { lang, title: `${icon('hand-coins', 'w-5 h-5')} ${t('settlement')}`,
+          subtitle: th('คำนวณว่าใครต้องจ่ายคืนใคร กี่บาท (จำนวนครั้งน้อยที่สุด)','Who owes whom, with the fewest transfers') })}
         <button id="recalc-settle" class="btn btn-primary btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${lang==='th' ? 'คำนวณใหม่' : 'Recalculate'}</button>
       </div>
       <div id="settlement-content" class="space-y-4"><div class="skeleton h-32"></div></div>
@@ -3513,9 +3879,9 @@ function openMemberForm(tripId, member = null, { onSaved } = {}) {
         <div class="input-group"><label class="input-label">${icon('user', 'w-3.5 h-3.5')} ${th('ชื่อที่แสดง','Display name')} *</label><input id="m-name" class="input" required autocomplete="off" value="${escapeHtml(m.displayName || '')}" placeholder="${th('เช่น นุ่น','e.g. Nun')}"></div>
         <div class="input-group"><label class="input-label">${icon('at-sign', 'w-3.5 h-3.5')} ${th('ชื่อผู้ใช้ (สำหรับล็อกอิน)','Username (for login)')}</label><input id="m-user" class="input" autocomplete="off" value="${escapeHtml(m.username || '')}" placeholder="fuji_user"></div>
         <div class="input-group">
-          <label class="input-label">${icon('lock-keyhole', 'w-3.5 h-3.5')} PIN ${isEdit ? th('(เว้นว่าง = ไม่เปลี่ยน)','(blank = unchanged)') : ''}</label>
+          <label class="input-label">${icon('lock-keyhole', 'w-3.5 h-3.5')} PIN ${isEdit ? th('(เว้นว่าง = ไม่เปลี่ยน)','(blank = keep current)') : ''}</label>
           <input id="m-pin" class="input" type="password" inputmode="numeric" autocomplete="new-password" placeholder="••••">
-          <p class="input-hint">${th('ถ้าไม่ตั้ง PIN หรือ Cloud Functions ยังไม่พร้อม ระบบจะเพิ่มสมาชิกแบบไม่ใช้ล็อกอิน (ยังหารค่าใช้จ่ายได้)','Without a PIN (or when Cloud Functions are unavailable) the member is added without login — expense splitting still works.')}</p>
+          <p class="input-hint">${th('ตั้ง PIN 4-12 ตัวเพื่อให้สมาชิกเข้าสู่ระบบด้วยชื่อผู้ใช้ + PIN ได้ (ทำงานได้แม้ไม่ได้ deploy Cloud Functions)','Set a 4-12 digit PIN so the member can sign in with username + PIN (works even without Cloud Functions).')}</p>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div class="input-group"><label class="input-label">${icon('shield', 'w-3.5 h-3.5')} ${th('บทบาท','Role')}</label>
@@ -3543,17 +3909,32 @@ function openMemberForm(tripId, member = null, { onSaved } = {}) {
           <button type="submit" id="m-submit" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${isEdit ? t('save') : t('add')}</button>
           ${isEdit ? `<button type="button" id="m-delete" class="btn" style="background:var(--danger-bg);color:var(--danger);border:1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
         </div>
-        ${isEdit && isLocalOnly ? `<p class="input-hint">${icon('info', 'w-3 h-3 inline')} ${th('สมาชิกนี้ยังไม่มีบัญชีล็อกอิน (สร้างตอน Cloud Functions ไม่พร้อม)','This member has no login account yet (created while Cloud Functions were unavailable).')}</p>` : ''}
+        ${isEdit ? `
+          <div class="p-3 rounded-xl text-[11px] flex items-start gap-2" style="background:var(--bg-secondary); border:1px solid var(--border);">
+            ${icon('info', 'w-3.5 h-3.5 mt-0.5')}
+            <span>${m.loginReady
+              ? th('สมาชิกนี้เข้าสู่ระบบได้ด้วยชื่อผู้ใช้ + PIN แล้ว — ใส่ PIN ใหม่ถ้าต้องการรีเซ็ต','This member can sign in with username + PIN. Enter a new PIN to reset it.')
+              : th('ยังเข้าสู่ระบบไม่ได้ — ตั้งชื่อผู้ใช้และ PIN ด้านบนเพื่อเปิดการเข้าสู่ระบบ','Login is not enabled yet — set a username and PIN above to turn it on.')}</span>
+          </div>` : ''}
+        ${isEdit ? `<button type="button" id="m-regen-pin" class="btn btn-secondary btn-sm w-full">${icon('refresh-cw', 'w-4 h-4')} ${th('สุ่ม PIN ใหม่','Generate new PIN')}</button>` : ''}
       </form>
     </div>
   `);
   queueIcons();
   setTimeout(() => addPasswordToggle('m-pin'), 10);
 
+  bind('m-regen-pin', 'click', () => {
+    const pin = String(Math.floor(1000 + Math.random() * 9000));
+    const input = document.getElementById('m-pin');
+    if (input) { input.value = pin; input.type = 'text'; }
+    toast.info(th(`PIN ใหม่: ${pin}`, `New PIN: ${pin}`));
+  });
+
   document.getElementById('member-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const btn = document.getElementById('m-submit');
     btn.disabled = true;
+    let pendingCredentials = null;
     const tLoad = toast.loading(isEdit ? th('กำลังบันทึก...', 'Saving...') : th('กำลังเพิ่มสมาชิก...', 'Adding member...'));
     try {
       const payload = {
@@ -3571,21 +3952,40 @@ function openMemberForm(tripId, member = null, { onSaved } = {}) {
       const pin = document.getElementById('m-pin').value;
       if (isEdit) {
         if (document.getElementById('m-status')) payload.status = document.getElementById('m-status').value;
-        await updateMember(tripId, m.id, payload);
+        await updateMember(tripId, m.id, payload, { pin: pin || null });
         tLoad.close();
-        toast.success(th('บันทึกแล้ว', 'Saved'));
+        toast.success(pin
+          ? th('บันทึกแล้ว • ตั้ง PIN ใหม่เรียบร้อย', 'Saved • new PIN set')
+          : th('บันทึกแล้ว', 'Saved'));
       } else {
-        const res = await createMember(tripId, { ...payload, pin }, {
+        const res = await createMember(tripId, { ...payload, pin, createdBy: currentUser?.uid }, {
           onNotice: (msg) => toast.warning(msg)
         });
         tLoad.close();
-        toast.success(res.mode === 'account'
-          ? th('สร้างสมาชิกพร้อมบัญชีล็อกอินแล้ว', 'Member created with login')
-          : th('เพิ่มสมาชิกแล้ว (ไม่ใช้ล็อกอิน)', 'Member added (no login)'));
+        pendingCredentials = res.mode === 'pin' ? { username: payload.username, pin } : null;
+        toast.success(res.mode === 'pin'
+          ? th('เพิ่มสมาชิกแล้ว • ล็อกอินด้วยชื่อผู้ใช้ + PIN ได้เลย', 'Member added • can sign in with username + PIN')
+          : th('เพิ่มสมาชิกแล้ว (ยังไม่เปิดล็อกอิน)', 'Member added (login not enabled)'));
       }
       sheet.close();
       confetti({ y: 150 });
       await onSaved?.();
+      // Offer the credentials only after the member is really saved + listed.
+      if (pendingCredentials) {
+        const { username: uname, pin: upin } = pendingCredentials;
+        confirmAction({
+          title: th('ส่งข้อมูลล็อกอินให้สมาชิก', 'Share these login details'),
+          message: th('แจ้งชื่อผู้ใช้และ PIN นี้ให้สมาชิกเพื่อเข้าสู่ระบบ', 'Give the member this username and PIN to sign in.'),
+          detail: `<b>${th('ชื่อผู้ใช้','Username')}:</b> ${escapeHtml(uname)}<br><b>PIN:</b> ${escapeHtml(upin)}`,
+          confirmText: th('คัดลอก','Copy'), cancelText: th('ปิด','Close'), icon: 'key-round'
+        }).then(ok => {
+          if (!ok) return;
+          const text = `${uname} / ${upin}`;
+          const copy = navigator.clipboard?.writeText?.(text);
+          if (copy?.then) copy.then(() => toast.success(th('คัดลอกแล้ว','Copied'))).catch(() => toast.info(text));
+          else toast.info(text);
+        });
+      }
     } catch (err) {
       tLoad.close();
       toast.error(err.message || mapFunctionError(err));
@@ -3646,8 +4046,8 @@ async function renderMembers(params) {
     <div class="page-enter">
       <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div>
-          <h1 class="page-title text-2xl font-bold"><span class="title-icon">${icon('users', 'w-5 h-5')}</span> ${t('members')}</h1>
-          <p class="text-xs text-[var(--text-secondary)] mt-1">${th('บทบาทของคุณ','Your role')}: <b>${escapeHtml(perms.role)}</b></p>
+          ${renderPageScene('members', { lang, title: `${icon('users', 'w-5 h-5')} ${t('members')}`,
+            subtitle: `${th('บทบาทของคุณ','Your role')}: <b>${escapeHtml(perms.role)}</b> • ${th('ตั้งชื่อผู้ใช้ + PIN ให้สมาชิกเข้าสู่ระบบได้','set a username + PIN so members can sign in')}` })}
         </div>
         <button id="add-member-btn" class="btn btn-primary btn-sm">${icon('user-plus', 'w-4 h-4')} ${th('เพิ่มสมาชิก','Add member')}</button>
       </div>
@@ -3750,7 +4150,8 @@ async function renderDocuments(params) {
   appEl.innerHTML = `
     <div class="page-enter">
       <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <h1 class="page-title text-2xl font-bold"><span class="title-icon">${icon('folder', 'w-5 h-5')}</span> ${th('เอกสารสำคัญ','Documents')}</h1>
+        ${renderPageScene('documents', { lang, title: `${icon('folder', 'w-5 h-5')} ${th('เอกสารสำคัญ','Documents')}`,
+          subtitle: th('พาสปอร์ต ตั๋ว โรงแรม ประกัน — เก็บไว้เปิดดูได้ทุกที่','Passports, tickets, hotel and insurance in one place') })}
         <button id="add-doc-btn" class="btn btn-primary btn-sm">${icon('plus', 'w-4 h-4')} ${th('เพิ่มเอกสาร','Add document')}</button>
       </div>
       <div class="chip-row mb-4" id="doc-filters">
@@ -3960,7 +4361,8 @@ async function renderImportExport(params) {
   appEl.innerHTML = `
     <div class="page-enter max-w-[760px] mx-auto space-y-5">
       <div class="flex items-center justify-between gap-2">
-        <h1 class="page-title text-2xl font-bold"><span class="title-icon">${icon('package', 'w-5 h-5')}</span> ${t('importExport')}</h1>
+        ${renderPageScene('import', { lang, title: `${icon('package', 'w-5 h-5')} ${t('importExport')}`,
+          subtitle: th('เทมเพลต Excel • นำเข้า/ส่งออกแผนและค่าใช้จ่าย (แอดมิน)','Excel templates • import & export itinerary and expenses (admin)') })}
         <span class="badge ${isAdmin ? 'badge-completed' : 'badge-planned'}">${icon(isAdmin ? 'shield-check' : 'eye', 'w-3 h-3')} ${isAdmin ? th('ผู้ดูแลทริป','Admin') : th('สมาชิก','Member')}</span>
       </div>
 
@@ -4242,7 +4644,8 @@ async function renderSettings(params) {
   appEl.innerHTML = `
     <div class="page-enter max-w-[720px] mx-auto space-y-5">
       <div class="flex items-center justify-between gap-2">
-        <h1 class="page-title text-2xl font-bold"><span class="title-icon">${icon('settings', 'w-5 h-5')}</span> ${t('settings')}</h1>
+        ${renderPageScene('settings', { lang, title: `${icon('settings', 'w-5 h-5')} ${t('settings')}`,
+          subtitle: th('แก้ไขข้อมูลทริป งบประมาณ ธีม และโหมดการแสดงผล','Trip details, budget, theme and appearance') })}
         <span class="badge ${perms.isAdmin ? 'badge-completed' : 'badge-planned'}">${icon(perms.isAdmin ? 'shield-check' : 'eye', 'w-3 h-3')} ${escapeHtml(perms.role)}</span>
       </div>
 
@@ -4495,7 +4898,8 @@ function renderMore(params) {
   ];
   appEl.innerHTML = `
     <div class="page-enter max-w-[640px] mx-auto space-y-4">
-      <h1 class="page-title text-2xl font-bold"><span class="title-icon">${icon('more-horizontal', 'w-5 h-5')}</span> ${t('more')}</h1>
+      ${renderPageScene('map', { lang, title: `${icon('more-horizontal', 'w-5 h-5')} ${t('more')}`,
+        subtitle: lang === 'th' ? 'เมนูอื่น ๆ ของทริปนี้' : 'Everything else in this trip' })}
       <div class="grid gap-3 stagger">
         ${menuItems.map(m => `
           <a href="${m.href}" class="card card-hover p-4 flex items-center justify-between gap-3 group" style="text-decoration:none; color:inherit; ${m.highlight ? 'border-color: color-mix(in srgb, var(--primary-raw) 45%, var(--border));' : ''}">

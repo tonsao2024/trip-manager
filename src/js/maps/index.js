@@ -7,29 +7,68 @@
 //  • Auto invalidateSize on resize / when the container becomes visible.
 // Provider order: CARTO (light: Voyager / dark: Dark Matter) → OpenStreetMap → Esri World Street Map
 
-const TILE_PROVIDERS = [
+// Base maps the user can switch between (keyless, all CORS-friendly)
+export const BASE_LAYERS = [
   {
-    name: 'CARTO',
+    id: 'map',
+    name: 'แผนที่',
+    en: 'Map',
+    icon: 'map',
     light: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
     dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
     attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
     maxZoom: 20
   },
   {
-    name: 'OpenStreetMap',
-    light: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; OpenStreetMap contributors',
-    maxZoom: 19
+    id: 'satellite',
+    name: 'ดาวเทียม',
+    en: 'Satellite',
+    icon: 'satellite',
+    light: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    dark: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics',
+    maxZoom: 19,
+    labels: {
+      light: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+      dark: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'
+    }
   },
   {
-    name: 'Esri',
-    light: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-    dark: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Tiles &copy; Esri',
-    maxZoom: 19
+    id: 'terrain',
+    name: 'ภูมิประเทศ',
+    en: 'Terrain',
+    icon: 'mountain',
+    light: 'https://tile.opentopomap.org/{z}/{x}/{y}.png',
+    dark: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; OpenTopoMap (CC-BY-SA) &copy; OpenStreetMap contributors',
+    maxZoom: 17
   }
 ];
+
+// Legacy fallback chain kept for the automatic "tiles are failing" switch
+const TILE_PROVIDERS = [
+  { name: 'CARTO', ...BASE_LAYERS[0] },
+  { name: 'OpenStreetMap', ...BASE_LAYERS[0], light: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', dark: BASE_LAYERS[0].dark, maxZoom: 19 },
+  { name: 'Esri', ...BASE_LAYERS[1] }
+];
+
+export const MAP_LAYER_STORAGE_KEY = 'fuji_map_layer';
+
+export function getStoredLayerId() {
+  try {
+    const id = localStorage.getItem(MAP_LAYER_STORAGE_KEY);
+    if (id && BASE_LAYERS.some(l => l.id === id)) return id;
+  } catch {}
+  return 'map';
+}
+
+export function setStoredLayerId(id) {
+  try { localStorage.setItem(MAP_LAYER_STORAGE_KEY, id); } catch {}
+}
+
+export function getLayerDef(id) {
+  return BASE_LAYERS.find(l => l.id === id) || BASE_LAYERS[0];
+}
 
 const FUJI_CENTER = [35.3606, 138.7274];
 
@@ -78,22 +117,53 @@ function isDarkTheme() {
   return document.documentElement.getAttribute('data-theme') === 'dark';
 }
 
-function addTileLayerWithFallback(map, L, providerIndex = 0, entry = null) {
-  const provider = TILE_PROVIDERS[Math.min(providerIndex, TILE_PROVIDERS.length - 1)];
+function buildTileLayer(map, L, def, entry, { withFallback = true } = {}) {
   const dark = isDarkTheme();
-  const url = dark ? provider.dark : provider.light;
   let failedTiles = 0;
   let switched = false;
 
-  const layer = L.tileLayer(url, {
-    attribution: provider.attribution,
-    maxZoom: provider.maxZoom,
-    subdomains: provider.name === 'OpenStreetMap' ? 'abc' : 'abcd',
+  const layer = L.tileLayer(dark ? def.dark : def.light, {
+    attribution: def.attribution,
+    maxZoom: def.maxZoom || 19,
+    subdomains: 'abcd',
     crossOrigin: true,
     errorTileUrl: '',
-    detectRetina: true
+    detectRetina: false
   });
 
+  if (withFallback) {
+    layer.on('tileerror', () => {
+      failedTiles++;
+      if (failedTiles >= 4 && !switched && def.id === 'map') {
+        switched = true;
+        console.warn('[Maps] Tiles failing on CARTO, falling back to OpenStreetMap');
+        try { map.removeLayer(layer); } catch {}
+        addTileLayerWithFallback(map, L, 1, entry);
+      }
+    });
+  }
+
+  layer.addTo(map);
+  layer.bringToBack?.();
+
+  // Satellite imagery needs a labels overlay to stay readable
+  if (def.labels) {
+    const labels = L.tileLayer(dark ? def.labels.dark : def.labels.light, {
+      maxZoom: def.maxZoom || 19, subdomains: 'abcd', crossOrigin: true, opacity: 0.9, pane: 'overlayPane'
+    });
+    labels.addTo(map);
+    if (entry) entry.labels = labels;
+  }
+  return layer;
+}
+
+function addTileLayerWithFallback(map, L, providerIndex = 0, entry = null) {
+  const provider = TILE_PROVIDERS[Math.min(providerIndex, TILE_PROVIDERS.length - 1)];
+  const def = { ...provider, id: provider.name.toLowerCase(), maxZoom: provider.maxZoom };
+  const layer = buildTileLayer(map, L, def, entry, { withFallback: false });
+
+  let failedTiles = 0;
+  let switched = false;
   layer.on('tileerror', () => {
     failedTiles++;
     // If many tiles fail on this provider, switch to the next one automatically
@@ -107,9 +177,54 @@ function addTileLayerWithFallback(map, L, providerIndex = 0, entry = null) {
 
   layer.addTo(map);
   if (entry) entry.tile = layer;
-  // Keep tile layer behind markers
   layer.bringToBack?.();
   return layer;
+}
+
+/** Swap the base map (แผนที่ / ดาวเทียม / ภูมิประเทศ) without touching markers. */
+export function setMapLayer(containerId, layerId, L = null) {
+  const el = document.getElementById(containerId) || CONTAINER_IDS.get(containerId);
+  if (!el) return false;
+  const entry = MAP_REGISTRY.get(el);
+  if (!entry?.map) return false;
+  const lib = L || entry.L || window.L;
+  if (!lib) return false;
+
+  const def = getLayerDef(layerId);
+  try { if (entry.tile) entry.map.removeLayer(entry.tile); } catch {}
+  try { if (entry.labels) { entry.map.removeLayer(entry.labels); entry.labels = null; } } catch {}
+  entry.tile = buildTileLayer(entry.map, lib, def, entry, { withFallback: def.id === 'map' });
+  entry.layerId = def.id;
+  setStoredLayerId(def.id);
+  return true;
+}
+
+export function getMapLayer(containerId) {
+  const el = document.getElementById(containerId) || CONTAINER_IDS.get(containerId);
+  const entry = el ? MAP_REGISTRY.get(el) : null;
+  return entry?.layerId || getStoredLayerId();
+}
+
+/* --------------------------- Google Maps links --------------------------- */
+
+/** Universal Google Maps directions link (works on mobile app + desktop). */
+export function googleMapsDirectionsUrl(item) {
+  const pos = getItemLatLng(item);
+  const query = pos ? `${pos.lat},${pos.lng}` : (item?.address || item?.title || '');
+  if (!query) return '';
+  const label = item?.title ? `&destination_place_id=&travelmode=driving` : '';
+  if (pos) return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(query + (item?.title ? ` (${item.title})` : ''))}${label}`;
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(query)}`;
+}
+
+/** Search / "open in maps" link for a place. */
+export function googleMapsPlaceUrl(item) {
+  const pos = getItemLatLng(item);
+  if (pos) return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${pos.lat},${pos.lng}`)}`;
+  const q = item?.googleMapsUrl || item?.address || item?.title || '';
+  if (!q) return '';
+  if (/^https?:\/\//i.test(q)) return q;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
 }
 
 function destroyEntry(el, entry) {
@@ -196,7 +311,10 @@ export async function initMap(containerId, options = {}) {
   MAP_REGISTRY.set(el, entry);
   CONTAINER_IDS.set(containerId, el);
 
-  addTileLayerWithFallback(map, L, 0, entry);
+  const layerId = options.layerId || getStoredLayerId();
+  const def = getLayerDef(layerId);
+  entry.layerId = def.id;
+  entry.tile = buildTileLayer(map, L, def, entry, { withFallback: def.id === 'map' });
 
   // Attribution styling so it blends with the theme
   const attr = map.attributionControl?.getContainer?.();
@@ -240,7 +358,10 @@ export function refreshMapTheme(map, L) {
   } catch {}
   const el = map.getContainer?.();
   const entry = el ? MAP_REGISTRY.get(el) : null;
-  addTileLayerWithFallback(map, L, 0, entry);
+  const layerId = options.layerId || getStoredLayerId();
+  const def = getLayerDef(layerId);
+  entry.layerId = def.id;
+  entry.tile = buildTileLayer(map, L, def, entry, { withFallback: def.id === 'map' });
 }
 
 function parseCoord(value) {

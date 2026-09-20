@@ -93,9 +93,20 @@ export async function listTrips(userId, isSuperAdmin = false) {
 export async function getTrip(tripId) {
   if (!db) throw new Error('DB not ready');
   const ref = doc(db, 'trips', tripId);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error('Trip not found');
-  return { id: snap.id, ...snap.data() };
+  try {
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw new Error('Trip not found');
+    return { id: snap.id, ...snap.data() };
+  } catch (e) {
+    // Members who signed in with a username + PIN but without a Firebase Auth
+    // token (Cloud Functions missing) fall back to the locally cached trip.
+    const cached = getCachedTrips()?.find(t => t.id === tripId);
+    if (cached && (e.code === 'permission-denied' || /permission/i.test(e.message || ''))) {
+      console.warn('getTrip permission-denied → using cached trip', tripId);
+      return cached;
+    }
+    throw e;
+  }
 }
 
 export async function uploadCoverImage(tripId, fileOrBlob, userId) {

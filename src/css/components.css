@@ -1137,3 +1137,278 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 /* Bump animation for updated elements */
 .bump { animation: bumpOnce 0.5s cubic-bezier(0.16,1,0.3,1); }
 .pulse-once { animation: ringPulse 0.9s ease-out; }
+
+/* ==================================================================
+ * v5 — page scenes (animated menu illustrations), mobile-friendly
+ * toolbars, sticky notes board, map layer switcher
+ * ================================================================== */
+
+/* ---------------- Page scene header ---------------- */
+.page-scene {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  border-radius: var(--radius-xl, 22px);
+  background:
+    linear-gradient(120deg,
+      color-mix(in srgb, var(--grad-1) 14%, var(--surface)) 0%,
+      color-mix(in srgb, var(--grad-2) 9%, var(--surface)) 62%,
+      var(--surface) 100%);
+  border: 1px solid color-mix(in srgb, var(--grad-1) 24%, var(--border));
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
+  animation: fadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ps-copy { flex: 1 1 auto; min-width: 0; }
+.ps-copy .page-title { font-size: 22px; }
+.ps-sub { font-size: 12px; color: var(--text-secondary); margin-top: 3px; line-height: 1.45; }
+.ps-actions { margin-top: 10px; }
+.ps-art {
+  flex: 0 0 auto;
+  width: clamp(112px, 34%, 236px);
+  aspect-ratio: 232 / 84;
+  opacity: 0.98;
+}
+.ps-art svg { display: block; width: 100%; height: 100%; overflow: visible; }
+@media (max-width: 480px) {
+  .page-scene { padding: 12px 13px; gap: 8px; }
+  .ps-copy .page-title { font-size: 19px; }
+  .ps-art { width: clamp(96px, 40%, 150px); }
+}
+
+/* --- shared scene parts --- */
+.ps-ground { stroke: color-mix(in srgb, var(--grad-1) 45%, var(--border)); stroke-width: 2; fill: none; }
+.ps-sun-slow { fill: color-mix(in srgb, var(--grad-1) 55%, #fff); animation: psPulse 6s ease-in-out infinite; }
+.ps-bob { animation: psBob 2.4s ease-in-out infinite; }
+.ps-head { fill: color-mix(in srgb, var(--grad-2) 45%, #fff); }
+.ps-body { fill: var(--primary-strong); }
+.ps-pack { fill: var(--grad-2); }
+.ps-cap { fill: var(--grad-1); }
+.ps-leg, .ps-arm, .ps-stick { stroke: var(--primary-strong); stroke-width: 4; stroke-linecap: round; }
+.ps-stick { stroke-width: 2; opacity: 0.7; }
+
+/* --- itinerary: hiker on a trail --- */
+.ps-trail { stroke: color-mix(in srgb, var(--grad-2) 45%, var(--border)); stroke-width: 2.5; fill: none; stroke-dasharray: 3 8; stroke-linecap: round; animation: psDash 1.6s linear infinite; }
+.ps-hiker { animation: psHike 9s ease-in-out infinite alternate; }
+.ps-hiker .ps-leg-a { animation: psStep 0.9s ease-in-out infinite; transform-origin: 44px 61px; }
+.ps-hiker .ps-leg-b { animation: psStep 0.9s ease-in-out infinite reverse; transform-origin: 46px 61px; }
+.ps-hiker .ps-arm { animation: psStep 0.9s ease-in-out infinite reverse; transform-origin: 50px 48px; }
+.ps-pin { animation: psPinDrop 3.6s cubic-bezier(0.16, 1, 0.3, 1) infinite; transform-origin: 104px 38px; }
+.ps-pin path { fill: var(--grad-1); }
+
+/* --- expenses: wallet + coins --- */
+.ps-wallet rect { fill: var(--primary-strong); }
+.ps-wallet .ps-wallet-flap { fill: var(--grad-1); }
+.ps-wallet .ps-wallet-btn { fill: #fff; opacity: 0.85; }
+.ps-wallet { animation: psBob 2.6s ease-in-out infinite; }
+.ps-receipt { stroke: #fff; stroke-width: 2.2; stroke-linecap: round; opacity: 0.7; }
+.ps-receipt-2 { opacity: 0.45; animation: psDash 1.4s linear infinite; stroke-dasharray: 3 4; }
+.ps-coin circle { fill: var(--grad-2); }
+.ps-coin text { font-size: 9px; font-weight: 700; fill: #fff; text-anchor: middle; }
+.ps-coin-1 { animation: psCoinDrop 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.ps-coin-2 { animation: psCoinDrop 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite 0.35s; }
+.ps-coin-3 { animation: psCoinDrop 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite 0.7s; }
+.ps-tag rect { fill: none; stroke: color-mix(in srgb, var(--grad-1) 50%, var(--border)); stroke-width: 2; }
+.ps-tag path { stroke: color-mix(in srgb, var(--grad-1) 60%, var(--text-tertiary)); stroke-width: 2; stroke-linecap: round; }
+
+/* --- members: little group waving --- */
+.ps-p-head { fill: color-mix(in srgb, var(--grad-2) 40%, #fff); }
+.ps-p-body { fill: var(--primary-strong); }
+.ps-person-2 .ps-p-head { fill: var(--grad-1); }
+.ps-person-2 .ps-p-body { fill: var(--grad-2); }
+.ps-person-3 .ps-p-head { fill: color-mix(in srgb, var(--grad-1) 35%, #fff); }
+.ps-person-3 .ps-p-body { fill: color-mix(in srgb, var(--primary-strong) 75%, var(--grad-2)); }
+.ps-person { transform-origin: center bottom; animation: psBob 2.8s ease-in-out infinite; }
+.ps-person-2 { animation-delay: 0.25s; }
+.ps-person-3 { animation-delay: 0.5s; }
+.ps-p-arm { stroke: var(--primary-strong); stroke-width: 3.4; stroke-linecap: round; }
+.ps-person-2 .ps-p-arm, .ps-person-3 .ps-p-arm { stroke: color-mix(in srgb, var(--grad-2) 70%, #fff); }
+.ps-arm-a { animation: psWave 1.6s ease-in-out infinite; transform-origin: 100% 100%; }
+.ps-arm-b { animation: psWave 1.6s ease-in-out infinite reverse; transform-origin: 0% 100%; }
+.ps-heart { fill: #f472b6; animation: psPop 2.8s ease-in-out infinite; transform-origin: 180px 34px; }
+.ps-heart-2 { animation-delay: 0.6s; transform-origin: 203px 48px; }
+
+/* --- documents --- */
+.ps-paper rect { fill: var(--surface); stroke: color-mix(in srgb, var(--grad-1) 45%, var(--border)); stroke-width: 1.6; }
+.ps-paper path { stroke: color-mix(in srgb, var(--grad-1) 55%, var(--text-tertiary)); stroke-width: 1.8; stroke-linecap: round; }
+.ps-paper-1 { animation: psFloat 4.4s ease-in-out infinite; }
+.ps-paper-2 { animation: psFloat 4.4s ease-in-out infinite 0.8s; }
+.ps-folder-back { fill: var(--grad-2); }
+.ps-folder-front { fill: var(--grad-1); }
+.ps-stamp { fill: #f59e0b; animation: psPop 2.6s ease-in-out infinite; transform-origin: 150px 30px; }
+.ps-stamp-check { stroke: #fff; stroke-width: 2; fill: none; stroke-linecap: round; }
+
+/* --- settlement --- */
+.ps-avatar circle { fill: var(--primary-strong); }
+.ps-avatar-b circle { fill: var(--grad-2); }
+.ps-avatar .ps-face { fill: #fff; }
+.ps-smile { stroke: #fff; fill: none; stroke-width: 1.6; stroke-linecap: round; }
+.ps-avatar-a { animation: psBob 3s ease-in-out infinite; }
+.ps-avatar-b { animation: psBob 3s ease-in-out infinite 0.5s; }
+.ps-arrow { stroke: color-mix(in srgb, var(--grad-1) 60%, var(--border)); stroke-width: 2.4; stroke-linecap: round; stroke-dasharray: 4 5; animation: psDash 1.2s linear infinite; }
+.ps-arrow-2 { animation-direction: reverse; }
+.ps-coin-fly { animation: psCoinFly 3.2s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+.ps-coin-fly circle { fill: var(--grad-2); }
+.ps-coin-fly text { font-size: 10px; font-weight: 700; fill: #fff; text-anchor: middle; }
+.ps-balance { stroke: color-mix(in srgb, var(--grad-2) 45%, var(--border)); stroke-width: 2.4; stroke-linecap: round; }
+.ps-glow-balance { animation: psPulse 3s ease-in-out infinite; }
+
+/* --- import / export --- */
+.ps-box-body { fill: var(--grad-2); }
+.ps-box-lid { fill: var(--grad-1); }
+.ps-box-line { stroke: rgba(255, 255, 255, 0.45); stroke-width: 2; }
+.ps-in-sheet rect, .ps-out-sheet rect { fill: var(--surface); stroke: color-mix(in srgb, var(--grad-1) 45%, var(--border)); stroke-width: 1.6; }
+.ps-in-sheet path, .ps-out-sheet path { stroke: color-mix(in srgb, var(--grad-1) 55%, var(--text-tertiary)); stroke-width: 1.8; stroke-linecap: round; }
+.ps-in-sheet { animation: psDropIn 3.2s ease-in-out infinite; }
+.ps-out-sheet { animation: psLiftOut 3.2s ease-in-out infinite; }
+.ps-in-arrow, .ps-out-arrow { stroke: var(--primary-strong); stroke-width: 3; stroke-linecap: round; }
+.ps-in-arrow { animation: psArrowDown 1.6s ease-in-out infinite; }
+.ps-out-arrow { animation: psArrowUp 1.6s ease-in-out infinite; }
+
+/* --- settings --- */
+.ps-palette path { fill: var(--grad-1); }
+.ps-dot { fill: #fff; opacity: 0.9; }
+.ps-gear { fill: var(--grad-2); transform-origin: 192px 52px; animation: psSpin 14s linear infinite; }
+.ps-gear-hole { fill: var(--surface); }
+
+/* --- trips list --- */
+.ps-plane { fill: var(--primary-strong); animation: psPlane 11s linear infinite; }
+.ps-plane-wing { fill: color-mix(in srgb, var(--grad-2) 80%, #fff); }
+.ps-cloud { fill: color-mix(in srgb, #fff 70%, var(--grad-1)); animation: psCloudMove 14s linear infinite; }
+.ps-suitcase rect { fill: var(--grad-1); }
+.ps-suitcase .ps-handle { stroke: var(--primary-strong); stroke-width: 3.4; fill: none; }
+.ps-suitcase .ps-strap { stroke: rgba(255, 255, 255, 0.5); stroke-width: 2.4; }
+.ps-suitcase .ps-lock { fill: #fff; opacity: 0.9; }
+
+/* --- map scene --- */
+.ps-route { stroke: color-mix(in srgb, var(--grad-2) 55%, var(--border)); stroke-width: 2.5; fill: none; stroke-dasharray: 4 8; stroke-linecap: round; animation: psDash 1.8s linear infinite; }
+.ps-pin { animation: psPinDrop 3.4s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.ps-pin-a path { fill: var(--grad-1); }
+.ps-pin-b path { fill: var(--grad-2); }
+.ps-pin-a { transform-origin: 56px 34px; }
+.ps-pin-b { transform-origin: 196px 18px; animation-delay: 1.1s; }
+
+/* ---------------- Sticky notes board (post-it) ---------------- */
+.notes-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  padding: 4px 2px 6px;
+}
+.note-card {
+  position: relative;
+  min-height: 132px;
+  padding: 14px 14px 34px;
+  border-radius: 4px 14px 14px 4px;
+  color: #3b3527;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
+  transform: rotate(var(--note-tilt, -1.2deg));
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+  overflow: hidden;
+  cursor: pointer;
+  animation: psNoteIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+.note-card:nth-child(even) { --note-tilt: 1.4deg; }
+.note-card:nth-child(3n) { --note-tilt: -0.6deg; }
+.note-card:hover { transform: rotate(0deg) translateY(-3px) scale(1.02); box-shadow: 0 12px 22px rgba(0, 0, 0, 0.18); z-index: 2; }
+.note-card::before {
+  content: '';
+  position: absolute; top: -6px; left: 50%; transform: translateX(-50%) rotate(-2deg);
+  width: 46px; height: 14px; border-radius: 3px;
+  background: color-mix(in srgb, #ffffff 55%, transparent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.note-title { font-weight: 800; font-size: 13.5px; line-height: 1.35; font-family: var(--font-display); }
+.note-body { font-size: 12.5px; line-height: 1.5; margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.note-meta { position: absolute; bottom: 8px; left: 14px; right: 12px; display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 10px; opacity: 0.72; }
+.note-tag { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; }
+.note-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s ease; }
+.note-card:hover .note-actions, .note-card:focus-within .note-actions { opacity: 1; }
+.note-actions button { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; background: rgba(255, 255, 255, 0.65); border: 0; color: #4b4232; cursor: pointer; }
+.note-actions button:hover { background: #fff; }
+.note-actions svg { width: 13px; height: 13px; }
+.note-pin { position: absolute; top: 6px; right: 8px; opacity: 0.85; }
+.note-pin svg { width: 13px; height: 13px; }
+.notes-empty { border: 1.5px dashed color-mix(in srgb, var(--grad-1) 40%, var(--border)); border-radius: var(--radius-lg); padding: 18px; text-align: center; }
+[data-theme="dark"] .note-card { color: #241f18; }
+
+/* ---------------- Map layer switcher + navigation buttons ---------------- */
+.map-toolbar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.map-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  color: var(--text);
+  border: 1.5px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.2s ease, color 0.2s ease;
+  min-height: 34px;
+}
+.map-tool-btn:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--primary-raw) 45%, var(--border)); }
+.map-tool-btn.is-active { background: var(--gradient-primary); color: #fff; border-color: transparent; }
+.map-tool-btn svg { width: 14px; height: 14px; }
+.leaflet-control-attribution { font-size: 9px !important; }
+.nav-link-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-weight: 700; font-size: 12px; color: var(--primary-strong);
+  text-decoration: none; padding: 4px 8px; border-radius: 9px;
+  background: var(--primary-light);
+}
+.nav-link-btn:hover { text-decoration: underline; }
+.nav-link-btn svg { width: 13px; height: 13px; }
+
+/* ---------------- Mobile usability ---------------- */
+@media (max-width: 640px) {
+  /* Toolbars wrap into a tappable grid instead of scrolling off-screen */
+  .btn-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
+    gap: 8px;
+    overflow: visible;
+  }
+  .btn-row .btn { width: 100%; min-height: 44px; justify-content: center; flex-shrink: 1; }
+  .btn-row .btn-sm { min-height: 42px; }
+  .ps-actions .btn { min-height: 40px; }
+
+  /* Filter chips wrap; only date chips scroll horizontally */
+  .chip-row { flex-wrap: wrap; overflow: visible; padding-bottom: 2px; }
+  .chip-row .chip { flex: 1 1 auto; justify-content: center; min-height: 42px; }
+  .chip-row-scroll { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+  .chip-row-scroll .chip { flex: 0 0 auto; min-height: 38px; scroll-snap-align: start; }
+
+  .bottom-nav-item { flex: 1 1 0; min-width: 0; padding: 6px 2px; font-size: 9.5px; letter-spacing: 0; }
+  .bottom-nav-item i, .bottom-nav-item svg { width: 21px; height: 21px; }
+  .notes-board { grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 10px; }
+  .note-card { min-height: 124px; }
+}
+
+/* Horizontal fade hint for scrollable chip rows */
+.chip-row-scroll { position: relative; }
+.chip-row-scroll::after {
+  content: '';
+  position: sticky;
+  right: 0;
+  width: 26px;
+  margin-left: -26px;
+  background: linear-gradient(to right, transparent, var(--bg));
+  pointer-events: none;
+}
+@media (min-width: 641px) { .chip-row-scroll::after { display: none; } }

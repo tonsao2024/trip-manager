@@ -185,6 +185,30 @@ firebase emulators:start --only firestore,auth,functions,storage
 - GitHub Pages deployable
 - Animated, mobile-first UI: bottom nav, FAB, scroll reveal, confetti, count-up KPIs
 
+### v5 fixes
+
+- **Member accounts work without Cloud Functions**: PINs are hashed in the browser
+  (PBKDF2-SHA256, 100k iterations) and published to `publicMemberLogins/{username}`; adding a
+  member no longer shows “Cloud Functions ไม่พร้อม”, and members sign in with username + PIN
+  using `src/js/auth/memberAuth.js` (30-day local session). The Cloud Function is tried first and
+  only mirrored silently, so deploying it later upgrades members to real Firebase Auth sessions.
+- **PNG/PDF export**: `src/js/utils/colors.js` rewrites `color-mix()`/`oklch()` into `rgb()/rgba()`
+  around the html2canvas capture (`sanitizeColorsForExport`) and restores the DOM afterwards —
+  fixes *“Attempting to parse an unsupported color function 'color'”*.
+- **No dashboard icon flicker**: the live clock ticks every 30 s and only updates text nodes
+  (`[data-live-label]`); the clock icon is static and the Lucide observer only reacts to icons that
+  are actually added.
+- **Animated page scenes** (`src/js/components/scenes.js`): every menu (itinerary, expenses,
+  settlement, members, documents, import, settings, trips, map) gets a light CSS illustration in the
+  same spirit as the Fuji countdown.
+- **Map layers**: street / satellite (Esri World Imagery + place labels) / terrain, remembered in
+  `fuji_map_layer`; every place has a Google Maps button and inline “open in maps” link
+  (`maps/dir/?api=1&destination=lat,lng` for navigation).
+- **Post-it notes on the itinerary**: `src/js/notes/index.js` + `trips/{tripId}/notes` — 6 paper
+  colours, pin, edit/delete, stored in Firestore.
+- **Mobile sub-menus**: `.btn-row` becomes a 2-column grid and chip rows wrap on ≤640 px screens, so
+  nothing scrolls off-screen.
+
 ## Tests
 
 ```

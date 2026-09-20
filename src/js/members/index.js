@@ -1,12 +1,15 @@
 // Members — list / create / update / delete.
-// Creating a member first tries the `createMemberAccount` Cloud Function (username + PIN login).
-// If Functions are not deployed (the classic "internal" error) it falls back to writing the
-// member document straight to Firestore so the group can still split expenses.
+// Member accounts are created entirely in the browser: the PIN is hashed with
+// PBKDF2-SHA256 and stored on the member document, plus a public username → trip
+// lookup so the login page can find the member without Cloud Functions.
+// (The old `createMemberAccount` function returned "internal" on projects where
+// functions were never deployed — login then broke completely.)
 import { db, functions, serverTimestamp } from '../firebase.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, limit, writeBatch, arrayUnion, arrayRemove
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { addMemberUidToTrip, removeMemberUidFromTrip } from '../trips/index.js';
+import { setMemberPin, publishMemberLookup, unpublishMemberLookup, normalizeUsername } from '../auth/memberAuth.js';
 
 export const MEMBER_ROLES = [
   { id: 'trip_admin', th: 'ผู้ดูแลทริป', en: 'Trip admin', icon: 'shield-check' },
@@ -72,63 +75,101 @@ export async function createMember(tripId, data, { order = 999, onNotice } = {})
     throw new Error('ชื่อผู้ใช้ต้องเป็น a-z 0-9 _ . - และยาว 3-32 ตัวอักษร');
   }
   if (data.pin && (data.pin.length < 4 || data.pin.length > 12)) throw new Error('PIN ต้อง 4-12 ตัวอักษร');
+  if (username) {
+    const existing = await findMemberByUsername(tripId, username);
+    if (existing) throw new Error('ชื่อผู้ใช้นี้ถูกใช้แล้วในทริปนี้ — ลองชื่ออื่น');
+  }
 
-  // 1) Preferred path — Cloud Function creates a real login account
-  if (functions && data.pin) {
+  /* 1) Local-first: create the member document and store the hashed PIN on it.
+   *    This always works (no Cloud Functions required) and enables member login. */
+  const id = autoId('mb');
+  const payload = buildMemberDoc({ ...data, order });
+  const canLogin = Boolean(username && data.pin);
+  await setDoc(doc(db, `trips/${tripId}/members`, id), {
+    uid: id,
+    ...payload,
+    authType: 'pin',
+    loginReady: canLogin,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    createdBy: data.createdBy || null
+  });
+  await addMemberUidToTrip(tripId, id);
+
+  if (canLogin) {
+    try {
+      await setMemberPin(tripId, id, data.pin);
+      await publishMemberLookup(username, tripId, id);
+    } catch (e) {
+      console.warn('[Members] PIN setup failed:', e?.message);
+      onNotice?.(e.message || 'ตั้ง PIN ไม่สำเร็จ — แก้ไขสมาชิกเพื่อตั้ง PIN อีกครั้ง');
+      return { id, mode: 'local', member: { id, uid: id, ...payload, loginReady: false } };
+    }
+  }
+
+  /* 2) Optional: if Cloud Functions are deployed, also mirror a real Auth account
+   *    so the member can sign in with Firebase Auth (nice-to-have, never required). */
+  if (canLogin && functions) {
     try {
       const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
       const fn = httpsCallable(functions, 'createMemberAccount');
       const res = await fn({
-        tripId,
-        username,
-        pin: data.pin,
-        displayName,
+        tripId, username, pin: data.pin, displayName,
         role: data.role || 'member',
         photoURL: data.photoURL || null,
         color: data.color || '#8bb89a',
         permissions: data.permissions || undefined
       });
-      const uid = res?.data?.memberUid;
-      if (uid) {
-        try {
-          await updateDoc(doc(db, `trips/${tripId}/members`, uid), {
-            order,
-            photoURL: data.photoURL || '',
-            updatedAt: serverTimestamp()
-          });
-        } catch {}
-        const member = await getMember(tripId, uid);
-        return { id: uid, mode: 'account', member };
+      if (res?.data?.memberUid) {
+        await updateDoc(doc(db, `trips/${tripId}/members`, id), { authUid: res.data.memberUid, authType: 'pin+auth' }).catch(() => {});
       }
     } catch (err) {
-      console.warn('[Members] createMemberAccount failed → local fallback:', err?.code || err?.message);
-      if (/already-exists|username taken|ซ้ำ/i.test(String(err?.code || '') + String(err?.message || ''))) {
-        throw new Error('ชื่อผู้ใช้นี้ถูกใช้แล้ว — ลองชื่ออื่น');
-      }
-      if (!isFunctionUnavailable(err)) throw new Error(mapFunctionError(err));
-      onNotice?.('ไม่สามารถสร้างบัญชีล็อกอินได้ (Cloud Functions ไม่พร้อม) — เพิ่มสมาชิกแบบไม่ใช้ล็อกอินให้แล้ว');
+      // Silent by design: the local account already works, so the user sees no error.
+      console.warn('[Members] optional Cloud Function mirror skipped:', err?.code || err?.message);
     }
   }
 
-  // 2) Fallback — plain member document (no login), still usable for splitting
-  const id = autoId('mb');
-  const payload = buildMemberDoc({ ...data, order });
-  await setDoc(doc(db, `trips/${tripId}/members`, id), {
-    uid: id,
-    ...payload,
-    authType: 'local',
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
-  });
-  await addMemberUidToTrip(tripId, id);
-  return { id, mode: 'local', member: { id, uid: id, ...payload } };
+  return { id, mode: canLogin ? 'pin' : 'local', member: { id, uid: id, ...payload } };
 }
 
-export async function updateMember(tripId, memberId, updates) {
+/** Is this username already used inside the trip? */
+async function findMemberByUsername(tripId, username) {
+  const norm = normalizeUsername(username);
+  if (!norm) return null;
+  try {
+    const snap = await getDocs(query(collection(db, `trips/${tripId}/members`), where('username', '==', norm), limit(1)));
+    return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
+  } catch (e) {
+    console.warn('[Members] username check failed', e?.code || e?.message);
+    return null;
+  }
+}
+
+export async function updateMember(tripId, memberId, updates, { pin = null } = {}) {
   const payload = { ...updates };
   if (payload.displayName != null) payload.displayName = String(payload.displayName).trim() || 'Member';
-  if (payload.username != null) payload.username = String(payload.username).trim().toLowerCase();
+  if (payload.username != null) payload.username = normalizeUsername(payload.username);
+
+  const previous = await getMember(tripId, memberId).catch(() => null);
+
   await updateDoc(doc(db, `trips/${tripId}/members`, memberId), { ...payload, updatedAt: serverTimestamp() });
+
+  // Username changed → move the login lookup to the new name
+  const newUsername = payload.username;
+  if (newUsername && previous?.username && previous.username !== newUsername) {
+    await unpublishMemberLookup(previous.username);
+    try { await publishMemberLookup(newUsername, tripId, memberId); } catch (e) { console.warn('[Members] lookup move failed', e?.message); }
+  }
+
+  // New PIN supplied → re-hash and (re)enable login
+  if (pin) {
+    if (pin.length < 4 || pin.length > 12) throw new Error('PIN ต้อง 4-12 ตัวอักษร');
+    const username = newUsername || previous?.username;
+    if (!username) throw new Error('ต้องมีชื่อผู้ใช้ก่อนจึงจะตั้ง PIN ได้');
+    await setMemberPin(tripId, memberId, pin);
+    await publishMemberLookup(username, tripId, memberId);
+  }
+  return true;
 }
 
 /**
@@ -137,6 +178,8 @@ export async function updateMember(tripId, memberId, updates) {
  */
 export async function deleteMember(tripId, memberId, { uid = null } = {}) {
   const docId = memberId;
+  const member = await getMember(tripId, docId).catch(() => null);
+  if (member?.username) await unpublishMemberLookup(member.username);
   await deleteDoc(doc(db, `trips/${tripId}/members`, docId));
   await removeMemberUidFromTrip(tripId, uid || docId);
   return true;

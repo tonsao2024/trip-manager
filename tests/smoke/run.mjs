@@ -46,6 +46,11 @@ for (const key of ['window', 'document', 'location', 'navigator', 'localStorage'
 try { delete window.requestIdleCallback; } catch {}
 try { delete globalThis.requestIdleCallback; } catch {}
 window.lucide = { createIcons() {} };
+// jsdom ships a crypto object without SubtleCrypto; real browsers have it over https.
+if (!window.crypto?.subtle && globalThis.crypto?.subtle) {
+  Object.defineProperty(window, 'crypto', { value: globalThis.crypto, configurable: true });
+}
+if (!globalThis.crypto?.subtle) console.warn('[smoke] no WebCrypto available — member PIN tests will be skipped');
 define('lucide', window.lucide);
 window.scrollTo = () => {};
 window.print = () => {};
@@ -256,7 +261,7 @@ await waitFor(() => (fsdb.__dump('trips/t1/members/new-member-uid') || Object.ke
 const createdMember = [...fsdb.__store.entries()].find(([k, v]) => k.startsWith('trips/t1/members/') && v.displayName === 'เคน');
 check(!!createdMember, 'members: add member persists (no internal error)');
 check(!errors.some(e => e.includes('internal')), 'members: no "internal" error surfaced');
-await sleep(150);
+await sleep(400);
 check(text$().includes('เคน'), 'members: new member appears in the list');
 
 console.log('\n▶ documents (add + edit + delete)');
@@ -486,7 +491,158 @@ await click('#view-all-btn');
 await waitFor(() => text$().includes('Lake Kawaguchi'), { timeout: 5000, label: 'imported place on the itinerary' }).catch(() => {});
 check(text$().includes('Lake Kawaguchi'), 'import: imported place shows on the itinerary page');
 
+console.log('\n▶ v5: animated page scenes on every menu');
+const scenePages = [
+  ['#/trips', 'trips'], ['#/trip/t1/dashboard', null], ['#/trip/t1/itinerary', 'itinerary'],
+  ['#/trip/t1/expenses', 'expenses'], ['#/trip/t1/members', 'members'],
+  ['#/trip/t1/documents', 'documents'], ['#/trip/t1/import', 'import'],
+  ['#/trip/t1/settings', 'settings'], ['#/trip/t1/settlement', 'settlement'],
+  ['#/trip/t1/more', 'map']
+];
+for (const [hash, kind] of scenePages) {
+  if (kind === null) continue;             // dashboard has its own hero + countdown scene
+  await goto(hash);
+  await waitFor(() => q('.page-scene') || text$().length > 40, { label: `scene on ${hash}` }).catch(() => {});
+  const scene = q('.page-scene');
+  check(!!scene, `scene: ${kind} page shows an animated illustration`);
+  if (scene) check(scene.querySelectorAll('.ps-art svg *').length > 2, `scene: ${kind} illustration has animated parts`);
+}
+
+console.log('\n▶ v5: dashboard does not re-render icons every second');
+await goto('#/trip/t1/dashboard');
+await waitFor(() => q('#live-since [data-live-label]'), { label: 'live clock' });
+const liveLabel1 = q('#live-since [data-live-label]').textContent;
+const iconNodesBefore = qa('#live-since svg').length;
+await sleep(3200);  // was 1s before → would have rebuilt markup ~3 times
+check(q('#live-since [data-live-label]').textContent === liveLabel1, 'dashboard: countdown text is stable between minute ticks');
+check(qa('#live-since svg').length === iconNodesBefore, 'dashboard: clock icon is not re-created (no flicker)');
+const observerSource = fs.readFileSync(path.join(root, 'src/js/app.js'), 'utf8');
+check(/setInterval\(\(\) => \{ if \(!tickLive\(\)\) clearInterval\(liveTimer\); \}, 30000\)/.test(observerSource), 'dashboard: live tick runs every 30s, not every second');
+
+console.log('\n▶ v5: map layers (street / satellite / terrain)');
+await goto('#/trip/t1/itinerary');
+await waitFor(() => q('#view-all-btn'), { label: 'itinerary shell' });
+await click('#view-all-btn');
+await waitFor(() => q('#map-layer-bar [data-layer="satellite"]'), { label: 'layer bar' });
+const leafletStub = await import(stub('leaflet.mjs'));
+await waitFor(() => leafletStub.__created.tileLayers.length > 0, { label: 'tile layer created' }).catch(() => {});
+check(leafletStub.__created.tileLayers.length > 0, 'map: base tiles created');
+await click('#map-layer-bar [data-layer="satellite"]');
+await sleep(250);
+const satelliteUrls = leafletStub.__created.tileLayers.slice(-3).map(t => t.__url);
+check(satelliteUrls.some(u => /World_Imagery/.test(u || '')), `map: satellite layer uses Esri imagery (got ${String(satelliteUrls.join(' | ')).slice(0, 90)})`);
+check(satelliteUrls.some(u => /World_Boundaries_and_Places/.test(u || '')), 'map: satellite imagery adds a place-labels overlay');
+check(q('#map-layer-bar [data-layer="satellite"]').classList.contains('is-active'), 'map: satellite button marked active');
+await click('#map-layer-bar [data-layer="terrain"]');
+await sleep(250);
+check(/opentopomap|Topo_Map/.test(leafletStub.__lastTileUrl()?.__url || ''), 'map: terrain layer switches');
+await click('#map-layer-bar [data-layer="map"]');
+await sleep(250);
+check(/cartocdn/.test(leafletStub.__lastTileUrl()?.__url || ''), 'map: back to the street map layer');
+
+console.log('\n▶ v5: Google Maps navigation links');
+const gmaps = await import(pathToFileURL(path.join(outDir, 'maps/index.js')).href);
+const dirUrl = gmaps.googleMapsDirectionsUrl({ title: 'ทะเลสาบคาวากุจิ', coordinates: '35.5171,138.7519' });
+check(/google\.com\/maps\/dir\/.*destination=/.test(dirUrl), 'google maps: directions URL for a place with coordinates');
+const placeUrl = gmaps.googleMapsPlaceUrl({ title: 'ราเมง', address: 'Fujiyoshida, Yamanashi' });
+check(/google\.com\/maps\/search\/\?api=1&query=/.test(placeUrl) && placeUrl.includes('Fujiyoshida'), 'google maps: search URL falls back to the address');
+const navBtn = q('.itin-card [data-act="navigate"]');
+check(!!navBtn, 'google maps: navigate button on the itinerary card');
+check(!!q('.itin-card a.nav-link-btn[href*="google.com/maps"]'), 'google maps: inline "open in maps" link on the card');
+
+console.log('\n▶ v5: sticky notes board');
+await goto('#/trip/t1/itinerary');
+await waitFor(() => q('#add-note-btn'), { label: 'notes board' });
+check(!!q('#notes-board'), 'notes: post-it board rendered');
+await click('#add-note-btn');
+await waitFor(() => q('#note-form'), { label: 'note form' });
+window.document.getElementById('note-title').value = 'จองรถไฟ 7:00';
+window.document.getElementById('note-body').value = 'JR Tokyo → Otsuki / รหัส KAWAGUCHIKO-2291';
+const blueChip = q('#note-colors [data-color="blue"]');
+if (blueChip) blueChip.click();
+submit(q('#note-form'));
+await waitFor(() => [...fsdb.__store.values()].some(n => n?.title === 'จองรถไฟ 7:00'), { label: 'note saved' }).catch(() => {});
+const savedNote = [...fsdb.__store.entries()].find(([, v]) => v?.title === 'จองรถไฟ 7:00');
+check(!!savedNote, 'notes: note persists in Firestore');
+check(savedNote?.[1]?.color === 'blue', 'notes: chosen paper color saved');
+await sleep(250);
+await waitFor(() => q('.note-card'), { label: 'note card' }).catch(() => {});
+check(!!q('.note-card'), 'notes: note shows as a post-it card');
+check(!!q('.note-card [data-note-act="edit"]') && !!q('.note-card [data-note-act="delete"]'), 'notes: edit + delete on the post-it');
+await click('.note-card [data-note-act="edit"]');
+await waitFor(() => q('#note-form'), { label: 'note edit form' });
+window.document.getElementById('note-title').value = 'จองรถไฟ 07:10';
+submit(q('#note-form'));
+await waitFor(() => [...fsdb.__store.values()].some(n => n?.title === 'จองรถไฟ 07:10'), { label: 'note updated' }).catch(() => {});
+check([...fsdb.__store.values()].some(n => n?.title === 'จองรถไฟ 07:10'), 'notes: edit saves changes');
+await sleep(250);
+await click('.note-card [data-note-act="delete"]');
+await waitFor(() => q('#confirm-ok'), { label: 'note delete confirm' });
+await click('#confirm-ok');
+await sleep(300);
+check(![...fsdb.__store.values()].some(n => n?.title === 'จองรถไฟ 07:10'), 'notes: delete removes the note');
+
+console.log('\n▶ v5: mobile toolbar layout');
+const css = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8').replace(/\s+/g, ' ');
+check(/@media \(max-width: 640px\) \{ .*\.btn-row \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(138px, 1fr\)\)/.test(css) || /\.btn-row \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(138px, 1fr\)\); gap: 8px; overflow: visible; \}/.test(css), 'mobile: toolbar buttons wrap into a tap-friendly grid');
+check(/\.chip-row \{ flex-wrap: wrap; overflow: visible;/.test(css), 'mobile: filter chips wrap instead of scrolling off-screen');
+check(/\.bottom-nav-item \{ flex: 1 1 0; min-width: 0;/.test(css), 'mobile: bottom nav items share the width evenly');
+
+console.log('\n▶ v5: PNG export survives color-mix()');
+const colorsMod = await import(pathToFileURL(path.join(outDir, 'utils/colors.js')).href);
+check(colorsMod.resolveColorValue('color-mix(in srgb, #8bb89a 30%, transparent)').startsWith('rgba('), 'png: color-mix with transparent resolves to rgba()');
+check(colorsMod.resolveColorValue('color-mix(in srgb, var(--primary-raw) 30%, var(--border))') === 'color-mix(in srgb, var(--primary-raw) 30%, var(--border))', 'png: var()-based values left for the browser to resolve');
+const mixed = colorsMod.resolveColorValue('linear-gradient(135deg, color-mix(in srgb, #000 20%, #fff) 0%, color-mix(in srgb, #8bb89a 60%, #ffffff))');
+check(!/color-mix\(/.test(mixed), 'png: gradients with nested color-mix() are fully rewritten');
+check(/^rgb/.test(colorsMod.resolveColorValue('oklch(70% 0.1 150)', { normalize: () => 'rgb(120, 190, 150)' })), 'png: oklch() normalized through the canvas fallback');
+const exportsSrc = fs.readFileSync(path.join(root, 'src/js/exports/index.js'), 'utf8');
+check(/sanitizeColorsForExport/.test(exportsSrc), 'png: export sanitizes colors before html2canvas runs');
+
+console.log('\n▶ v5: member login without Cloud Functions');
+const authSrc = fs.readFileSync(path.join(root, 'src/js/members/index.js'), 'utf8');
+check(/setMemberPin/.test(authSrc) && /publishMemberLookup/.test(authSrc), 'members: PIN is hashed + published for login without Cloud Functions');
+check(!/onNotice\?\.\('ไม่สามารถสร้างบัญชีล็อกอินได้/.test(authSrc), 'members: no more "Cloud Functions unavailable" warning path');
+const authStub2 = await import(stub('firebase-auth.mjs'));
+authStub2.__emitAuth(null);   // become a member without a Firebase session
+await sleep(80);
+await goto('#/login');
+await waitFor(() => q('#member-form'), { label: 'login page' });
+const memberUser = q('#member-user');
+const memberPin = q('#member-pin');
+const memberTrip = q('#member-trip');
+if (memberUser && memberPin) {
+  // seed a member with a PBKDF2 PIN, exactly what createMember writes
+  const saltArr = new Uint8Array(16).fill(7);
+  const saltHex = [...saltArr].map(b => b.toString(16).padStart(2, '0')).join('');
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode('2468'), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: saltArr, iterations: 100000 }, key, 256);
+  const pinHash = [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('');
+  fsdb.__seed('trips/t1/members/u2', {
+    ...(fsdb.__dump('trips/t1/members/u2') || {}),
+    username: 'nun', pinHash, pinSalt: saltHex, pinIterations: 100000, loginReady: true, status: 'active'
+  });
+  fsdb.__seed('publicMemberLogins/nun', { username: 'nun', tripId: 't1', memberId: 'u2' });
+  memberUser.value = 'nun';
+  memberPin.value = '2468';
+  if (memberTrip) memberTrip.value = 't1';
+  submit(q('#member-form'));
+  await sleep(400);
+  await waitFor(() => /#\/trips/.test(window.location.hash) || text$().includes('ทริปฟูจิ'), { timeout: 6000, label: 'member login' }).catch(() => {});
+  check(/trips/.test(window.location.hash), 'login: member signs in with username + PIN (no Cloud Functions)');
+  const session = JSON.parse(window.localStorage.getItem('fuji_member_session') || 'null');
+  check(session?.memberId === 'u2' && session?.tripId === 't1', 'login: member session stored');
+  check(text$().includes('ทริปฟูจิ'), 'login: member lands on their trip list');
+  const notice = window.document.getElementById('member-session-notice');
+  check(!!notice && notice.hidden === false && /Cloud Functions|ผู้ใช้|PIN/.test(notice.textContent), 'login: local member mode notice is shown');
+} else {
+  check(false, 'login: member form present');
+}
+
 console.log('\n▶ delete the whole trip (UI)');
+// leave the member session so the admin flow runs with a "logged out" auth state
+window.localStorage.removeItem('fuji_member_session');
+authStub.__emitAuth({ uid: 'u1', email: 'admin@test.com', displayName: 'สมชาย', photoURL: null });
+await sleep(120);
 await goto('#/trip/t1/settings');
 await waitFor(() => q('#del-trip'), { label: 'settings danger zone' });
 await click('#del-trip');
@@ -495,6 +651,7 @@ await click('#confirm-ok');
 await sleep(500);
 check(!fsdb.__store.has('trips/t1'), 'trip: deleted from Firestore');
 check(![...fsdb.__store.keys()].some(k => k.startsWith('trips/t1/')), 'trip: sub-collections deleted with it (rules allow admin delete)');
+
 
 console.log('\n▶ error log');
 // "Trip not found" is expected here: a queued navigation can land on the trip

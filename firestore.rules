@@ -47,6 +47,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Public username → trip/member lookup used by the login page so members can
+    // sign in with a username + PIN even when Cloud Functions are not deployed.
+    // Only a mapping is stored here (no PIN, no secrets).
+    match /publicMemberLogins/{username} {
+      allow get: if true;                       // login screen resolves the username
+      allow list: if request.auth != null;      // no anonymous enumeration
+      allow create, update: if request.auth != null;
+      allow delete: if request.auth != null;
+    }
+
     // Trips - permissive for free tier, prevent permission errors
     match /trips/{tripId} {
       // Allow read if member, admin, creator, or memberUids contains uid - also allow list for authenticated to avoid permission denied
@@ -162,6 +172,14 @@ service cloud.firestore {
 
       // Documents - permissive
       match /documents/{docId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        allow update: if isAuthenticated();
+        allow delete: if isAuthenticated();
+      }
+
+      // Sticky notes (post-it board on the itinerary page)
+      match /notes/{noteId} {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated();
         allow update: if isAuthenticated();

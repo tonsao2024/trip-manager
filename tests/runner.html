@@ -8,6 +8,7 @@ import { testSettlement } from './unit/settlement.test.js';
 import { testCurrency } from './unit/currency.test.js';
 import { testCountdown } from './unit/countdown.test.js';
 import { testExcel } from './unit/excel.test.js';
+import { testColors } from './unit/colors.test.js';
 try {
   testScheduling();
   testSplit();
@@ -15,6 +16,7 @@ try {
   testCurrency();
   testCountdown();
   testExcel();
+  testColors();
   document.body.innerHTML += '<p style="color:green">All tests passed! Check console for details</p>';
 } catch (e) {
   document.body.innerHTML += `<p style="color:red">Failed: ${e.message}</p><pre>${e.stack}</pre>`;
