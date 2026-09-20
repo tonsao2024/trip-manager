@@ -1,12 +1,20 @@
 // Export helpers — PNG / PDF / clipboard text.
 //
-// html2canvas 1.4.x does not understand modern color syntax (color-mix, oklch,
-// and the `color(srgb …)` form Chromium computes them to), so every export:
-//   1. swaps computed colors for rgb()/rgba() (sanitizeColorsForExport),
-//   2. resolves the canvas background colour instead of passing a computed string,
-//   3. retries with a flat palette (hardPlainPalette) if html2canvas still complains.
-// Together those three steps remove the whole class of "ส่งออกรูปไม่สำเร็จ" errors.
-import { sanitizeColorsForExport, hardPlainPalette, resolveSafeBackgroundColor } from '../utils/colors.js';
+// html2canvas 1.4.x cannot parse modern colour syntax: Chromium serialises every
+// `color-mix()` / `oklch()` value as `color(srgb …)`, and the parser then throws
+//   "Attempting to parse an unsupported color function \"color\""
+// which is exactly the error users kept seeing. The fix has three layers:
+//
+//   1. buildPlainClone()  — render a deep clone whose computed styles are written
+//      inline with plain rgb()/rgba() colours. html2canvas reads values WE
+//      produced, so no stylesheet (or custom property) can leak a modern colour.
+//   2. sanitizeColorsForExport() + a plain background colour, used for the
+//      fallback path that captures the live element.
+//   3. hardPlainPalette() — last-resort flat repaint if a device still objects.
+import {
+  sanitizeColorsForExport, hardPlainPalette, resolveSafeBackgroundColor,
+  buildPlainClone, findModernColors, injectPlainPseudoSheet
+} from '../utils/colors.js';
 
 function downloadCanvas(canvas, filename) {
   const link = document.createElement('a');
@@ -35,114 +43,162 @@ function applyFlatMode(el) {
   return () => el.classList.remove('export-flat');
 }
 
-/**
- * Render an element to a PNG file download.
- * @param {string} elementId
- * @param {string} filename
- * @param {{scale?:number, backgroundColor?:string|null, flat?:boolean}} [options]
- *   `flat` (default true for receipts) repaints the subtree in plain colours so
- *   html2canvas has nothing modern to parse — the safest possible export.
- */
-export async function exportToPng(elementId, filename = 'export.png', options = {}) {
-  let el = document.getElementById(elementId);
-  if (!el && options.fallbackSelector) el = document.querySelector(options.fallbackSelector);
-  if (!el) throw new Error('ไม่พบเนื้อหาที่จะบันทึกเป็นรูป (element หายไป)');
+const nextFrame = () => new Promise((resolve) => {
+  if (typeof requestAnimationFrame !== 'function') return setTimeout(resolve, 16);
+  requestAnimationFrame(() => requestAnimationFrame(resolve));
+});
 
-  const restoreFlat = options.flat !== false ? applyFlatMode(el) : () => {};
-  // Let the browser apply the flat styles before html2canvas reads them.
-  await new Promise(r => requestAnimationFrame(() => r()));
-
-  let html2canvas;
+/** Wait (briefly) for web fonts so Thai text is not captured with a fallback face. */
+async function fontsReady() {
   try {
-    html2canvas = await loadHtml2Canvas();
-  } catch (e) {
-    restoreFlat();
-    throw new Error('โหลดตัวสร้างรูปไม่สำเร็จ (ตรวจสอบอินเทอร์เน็ต): ' + (e?.message || e));
-  }
+    if (document.fonts?.ready) await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 800))]);
+  } catch { /* ignore */ }
+}
 
-  const readOptions = () => ({
+function baseOptions(el, options = {}) {
+  return {
     scale: options.scale || 2,
     useCORS: true,
     allowTaint: false,
     logging: false,
-    // NEVER hand html2canvas a computed color string: Chromium serialises
+    // NEVER hand html2canvas a computed colour string: Chromium serialises
     // color-mix() as `color(srgb …)` and html2canvas throws on it.
     backgroundColor: resolveSafeBackgroundColor(document.body),
-    windowWidth: Math.max(el.scrollWidth, el.clientWidth, 320),
+    windowWidth: Math.max(el.scrollWidth || 0, el.clientWidth || 0, 320) + 24,
+    windowHeight: Math.max(el.scrollHeight || 0, el.clientHeight || 0, 200) + 24,
     scrollX: 0,
-    scrollY: -window.scrollY
-  });
+    scrollY: 0
+  };
+}
 
-  const restore = sanitizeColorsForExport(el);
+function resolveTarget(elementId, options = {}) {
+  let el = typeof elementId === 'string' ? document.getElementById(elementId) : elementId;
+  if (!el && options.fallbackSelector) el = document.querySelector(options.fallbackSelector);
+  return el;
+}
+
+/**
+ * Run the layered pipeline on one element and return the canvas.
+ * Order: plain clone → sanitised live element → flat palette on the live element.
+ */
+async function renderToCanvas(el, options = {}) {
+  const html2canvas = await loadHtml2Canvas();
+  const warnings = [];
+  let useFlat = options.flat !== false;
+  const restoreFlat = useFlat ? applyFlatMode(el) : () => {};
+
   try {
-    const canvas = await html2canvas(el, readOptions());
-    downloadCanvas(canvas, filename);
-    return canvas;
-  } catch (e) {
-    const message = String(e?.message || e);
-    if (!/unsupported color function|color function|parse color/i.test(message)) {
-      throw new Error('ส่งออกรูปไม่สำเร็จ: ' + message);
+    await fontsReady();
+    await nextFrame();
+
+    // --- attempt 1: the plain clone (bullet-proof against modern colours) ---
+    const plain = buildPlainClone(el);
+    if (plain) {
+      // The clone is inline-styled, but ::before/::after still come from CSS.
+      const sheet = injectPlainPseudoSheet();
+      try {
+        const leftovers = findModernColors(plain.node);
+        if (!leftovers.length) {
+          const canvas = await html2canvas(plain.node, baseOptions(plain.node, options));
+          return canvas;
+        }
+        warnings.push(`clone still had ${leftovers.length} modern colour(s): ${leftovers.slice(0, 3).join(', ')}`);
+      } catch (e) {
+        warnings.push(`clone capture failed: ${e?.message || e}`);
+      } finally {
+        try { sheet?.remove?.(); } catch { /* ignore */ }
+        plain.cleanup();
+      }
     }
-    // Retry once with the flat palette — this removes gradients, shadows and
-    // filters entirely, so no colour syntax can survive to break the capture.
+
+    // --- attempt 2: the live element, colours sanitised in place ---
+    const restore = sanitizeColorsForExport(el);
+    try {
+      const canvas = await html2canvas(el, baseOptions(el, options));
+      return canvas;
+    } catch (e) {
+      warnings.push(`sanitised capture failed: ${e?.message || e}`);
+    } finally {
+      restore();
+    }
+
+    // --- attempt 3: flat palette (no gradients, shadows or filters at all) ---
     const restoreHard = hardPlainPalette(el);
     try {
-      const canvas = await html2canvas(el, readOptions());
-      downloadCanvas(canvas, filename);
-      return canvas;
+      return await html2canvas(el, baseOptions(el, options));
     } catch (e2) {
-      throw new Error('ส่งออกรูปไม่สำเร็จ: ' + (e2?.message || e2) + ' — ลองใหม่ หรือใช้ปุ่ม "พิมพ์ / PDF" แทน');
+      warnings.push(`flat palette failed: ${e2?.message || e2}`);
+      const err = new Error(`${warnings.join(' | ')}`);
+      err.warnings = warnings;
+      throw err;
     } finally {
       restoreHard();
     }
   } finally {
-    restore();
     restoreFlat();
   }
 }
 
 /**
- * Same pipeline as exportToPng but returns the canvas instead of downloading —
- * used by the "share receipt" button (Web Share API needs a blob).
+ * Render an element to a PNG file download.
+ * @param {string} elementId
+ * @param {string} filename
+ * @param {{scale?:number, flat?:boolean, fallbackSelector?:string}} [options]
+ *   `flat` repaints the subtree in plain colours before the capture — the safest
+ *   possible export (default on).
  */
-export async function exportToPngToCanvas(elementId) {
-  const el = document.getElementById(elementId);
+export async function exportToPng(elementId, filename = 'export.png', options = {}) {
+  const el = resolveTarget(elementId, options);
   if (!el) throw new Error('ไม่พบเนื้อหาที่จะบันทึกเป็นรูป (element หายไป)');
-  const html2canvas = await loadHtml2Canvas();
-  const restoreFlat = applyFlatMode(el);
-  await new Promise(r => requestAnimationFrame(() => r()));
-  const restore = sanitizeColorsForExport(el);
+  let canvas;
   try {
-    return await html2canvas(el, {
-      scale: 2, useCORS: true, allowTaint: false, logging: false,
-      backgroundColor: resolveSafeBackgroundColor(document.body),
-      windowWidth: Math.max(el.scrollWidth, el.clientWidth, 320)
-    });
-  } finally {
-    restore();
-    restoreFlat();
+    canvas = await renderToCanvas(el, options);
+  } catch (e) {
+    throw new Error(`ส่งออกรูปไม่สำเร็จ: ${e.message} — ลองใหม่ หรือใช้ปุ่ม "พิมพ์ / PDF" แทน`);
+  }
+  downloadCanvas(canvas, filename);
+  return canvas;
+}
+
+/**
+ * Same pipeline as exportToPng but returns the canvas instead of downloading —
+ * used by the "share receipt" button and by the itinerary export (which embeds
+ * the captured map).
+ */
+export async function exportToPngToCanvas(elementId, options = {}) {
+  const el = resolveTarget(elementId, options);
+  if (!el) throw new Error('ไม่พบเนื้อหาที่จะบันทึกเป็นรูป (element หายไป)');
+  return renderToCanvas(el, options);
+}
+
+/** PNG data-URL of an element (used to embed the map inside another export). */
+export async function elementToPngDataUrl(elementId, options = {}) {
+  const el = resolveTarget(elementId, options);
+  if (!el) return null;
+  try {
+    const canvas = await renderToCanvas(el, { flat: false, scale: options.scale || 2, ...options });
+    return canvas?.toDataURL ? canvas.toDataURL('image/png') : null;
+  } catch (e) {
+    console.warn('elementToPngDataUrl failed', e?.message || e);
+    return null;
   }
 }
 
 export async function exportToPdf(elementId, filename = 'export.pdf', orientation = 'portrait') {
-  const el = document.getElementById(elementId);
+  const el = resolveTarget(elementId);
   if (!el) throw new Error('ไม่พบเนื้อหาที่จะบันทึกเป็น PDF (element หายไป)');
 
-  const [html2canvasMod, jspdfMod] = await Promise.all([
+  const [html2canvas, jspdfMod] = await Promise.all([
     loadHtml2Canvas(),
     import('https://esm.sh/jspdf@2.5.2')
   ]);
   const { jsPDF } = jspdfMod;
 
   const restoreFlat = applyFlatMode(el);
-  await new Promise(r => requestAnimationFrame(() => r()));
+  await nextFrame();
   const restore = sanitizeColorsForExport(el);
   try {
-    const canvas = await html2canvasMod(el, {
-      backgroundColor: resolveSafeBackgroundColor(document.body, window),
-      scale: 2, useCORS: true, logging: false,
-      windowWidth: Math.max(el.scrollWidth, el.clientWidth, 320)
-    });
+    const canvas = await html2canvas(el, baseOptions(el));
     const imgData = canvas.toDataURL('image/png');
     const pdf = new jsPDF({ orientation, unit: 'px', format: [canvas.width, canvas.height] });
     pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);

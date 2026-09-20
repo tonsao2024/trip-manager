@@ -830,11 +830,6 @@ console.log('\n▶ v9: clear-bill receipts (received / deducted / balance + per-
   const shareText = rowsText(tables[1]);
   const paidListed = tripExpenseTitles.some(t => paidText.includes(t));
   const sharedListed = tripExpenseTitles.some(t => shareText.includes(t));
-  if (!paidListed || !sharedListed) {
-    console.log('   [dbg] paidRowsJSON', JSON.stringify(paidText.slice(0, 300)));
-    console.log('   [dbg] shareRowsJSON', JSON.stringify(shareText.slice(0, 300)));
-    console.log('   [dbg] titles', JSON.stringify(tripExpenseTitles));
-  }
   check(paidListed, 'settlement: the items this member paid are listed');
   check(sharedListed || /ไม่ต้องรับผิดชอบ|No share|^-+$/.test(shareText.trim()) || tables[1]?.querySelector('thead')?.textContent.includes('จ่ายโดย'), 'settlement: shares show which bill they belong to');
   check(/\d{4}-\d{2}-\d{2}/.test(txt), 'settlement: rows carry the expense date');
@@ -990,13 +985,201 @@ console.log('\n▶ PNG export can never be blocked by modern colors');
     await waitFor(() => q('#export-png-btn'), { label: 'itinerary export button' });
     downloads.length = 0;
     state.failedWith = [];
+    state.lastElement = null;
     await click('#export-png-btn');
     await waitFor(() => downloads.length > 0, { timeout: 8000, label: 'itinerary png download' }).catch(() => {});
     check(downloads.length > 0, 'png: itinerary export works too');
+    check(/^itinerary-/.test(String(downloads[downloads.length - 1])), `png: the itinerary file is named after the trip (${downloads[downloads.length - 1]})`);
+    check(!!state.lastElement?.closest?.('[data-export-clone]'), 'png: the capture ran on the plain-style clone (not the live DOM)');
   } finally {
     window.HTMLAnchorElement.prototype.click = originalClick;
     state.failNext = 0;
   }
+}
+
+console.log('\n▶ v10: receipt photo is optional and never blocks saving');
+{
+  await goto('#/trip/t1/expenses/add');
+  await waitFor(() => q('#ex-title'), { label: 'expense form' });
+  window.document.getElementById('ex-title').value = 'มื้อเช้าฮาจิบัง';
+  window.document.getElementById('ex-subtotal').value = '1200';
+  check(!!q('#ex-receipt-file') && !!q('#ex-receipt-preview'), 'receipt photo: the form offers an upload with a preview');
+  check(q('#ex-receipt-preview').classList.contains('hidden'), 'receipt photo: no preview before a photo is chosen');
+  // Attach a file the way a phone would (jsdom cannot rasterise it — the app must cope).
+  try {
+    const file = new window.File([new Uint8Array([137, 80, 78, 71])], 'slip.png', { type: 'image/png' });
+    const input = window.document.getElementById('ex-receipt-file');
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    input.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await sleep(200);
+    check(!q('#ex-receipt-preview').classList.contains('hidden'), 'receipt photo: the chosen photo is previewed');
+  } catch (e) {
+    console.log('   [note] could not attach a file in jsdom:', e.message);
+  }
+  submit(q('#expense-form'));
+  await waitFor(() => [...fsdb.__store.values()].some(e => e?.title === 'มื้อเช้าฮาจิบัง'), { timeout: 6000, label: 'expense saved with a photo' }).catch(() => {});
+  check([...fsdb.__store.values()].some(e => e?.title === 'มื้อเช้าฮาจิบัง'), 'receipt photo: the expense is saved even when the image cannot be processed');
+}
+
+console.log('\n▶ v10: itinerary page (days left, map right) + full-plan PNG');
+{
+  const h2c = await import(stub('html2canvas.mjs'));
+  const state = h2c.__h2cState;
+  const downloads = [];
+  const originalClick = window.HTMLAnchorElement.prototype.click;
+  window.HTMLAnchorElement.prototype.click = function () { downloads.push(this.download); };
+  try {
+    // t1 is the JPY trip from the baht block — keep it that way on purpose.
+    authStub.__emitAuth({ uid: 'u1', email: 'admin@example.com', displayName: 'สมชาย', photoURL: null, providerData: [{ providerId: 'password' }] });
+    await sleep(60);
+    await goto('#/trip/t1/itinerary');
+    await waitFor(() => q('#itin-layout'), { label: 'itinerary layout' });
+    await sleep(300);
+
+    // --- layout: map on the right, days on the left ---
+    check(!!q('.itin-col-days #date-chips') && !!q('.itin-col-days #itinerary-list'), 'layout: days and chips sit in the left column');
+    check(!!q('.itin-col-map #map') && !!q('.itin-col-map #map-card'), 'layout: the map sits in the right column');
+    const css = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8');
+    check(/\.itin-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(/.test(css), 'layout: two columns on desktop');
+    check(/@media \(max-width: 1023px\)[\s\S]{0,220}\.itin-col-map\s*\{[^}]*order:\s*-1/.test(css), 'layout: phones collapse to one column with the map on top');
+    check(/\.itin-col-map\s*\{[^}]*position:\s*sticky/.test(css), 'layout: the map stays visible while scrolling the days');
+
+    // --- export: one PNG with the map + every day + details ---
+    downloads.length = 0;
+    state.failedWith = [];
+    await click('#export-png-btn');
+    await waitFor(() => downloads.length > 0, { timeout: 9000, label: 'plan png download' });
+    check(downloads.some(n => /^itinerary-/.test(String(n))), 'plan png: exported as one file');
+    const sheet = q('#itinerary-export-sheet');
+    check(!!sheet, 'plan png: the export sheet was built');
+    check(!!sheet?.querySelector('.itin-sheet-map'), 'plan png: the image contains a map block');
+    check(!!sheet?.querySelector('.itin-sheet-map img, .itin-sheet-map svg.schematic, .itin-sheet-map .itin-sheet-empty'), 'plan png: the map is a captured image, a sketch or an explicit note');
+    const daySections = sheet ? [...sheet.querySelectorAll('.itin-sheet-day')] : [];
+    check(daySections.length >= 1, `plan png: every day has its own section (${daySections.length})`);
+    const sheetText = sheet?.textContent || '';
+    const titles = [...fsdb.__store.entries()]
+      .filter(([k]) => k.startsWith('trips/t1/itineraryItems/'))
+      .map(([, v]) => v.title).filter(Boolean);
+    check(titles.some(t => sheetText.includes(t)), 'plan png: the places of the plan are listed with their details');
+    check(/THB|฿/.test(sheetText), 'plan png: amounts carry the baht equivalent');
+    check(/itin-sheet-status/.test(sheet?.innerHTML || ''), 'plan png: each item shows its status');
+    check(state.failedWith.length === 0, `plan png: no colour reject while rendering the plan (${state.failedWith.length})`);
+  } finally {
+    window.HTMLAnchorElement.prototype.click = originalClick;
+  }
+}
+
+console.log('\n▶ v10: dashboard shows the baht amount of the remaining budget');
+{
+  const t = { ...fsdb.__dump('trips/t1'), baseCurrency: 'JPY', budgetTotal: 5000000 };
+  fsdb.__seed('trips/t1', t);
+  await click('#refresh-btn').catch(() => {});
+  await sleep(120);
+  await goto('#/trip/t1/dashboard');
+  await waitFor(() => q('#kpi-budget'), { label: 'budget kpi' });
+  await sleep(400);
+  check(!!q('#kpi-budget-thb'), 'dashboard: งบคงเหลือ shows the baht equivalent');
+  check(/฿/.test(q('#kpi-budget-thb')?.textContent || ''), 'dashboard: the baht line uses the ฿ symbol');
+  check(q('#kpi-budget-thb')?.className.includes('thb-equiv--strong'), 'dashboard: baht amounts are styled to stand out');
+}
+
+console.log('\n▶ v10: credit card name on an expense + per-card summary');
+{
+  await goto('#/trip/t1/expenses/add');
+  await waitFor(() => q('#ex-title'), { label: 'expense form' });
+  window.document.getElementById('ex-title').value = 'มื้อค่ำท่องเที่ยว';
+  window.document.getElementById('ex-subtotal').value = '4000';
+  const pay = window.document.getElementById('ex-payment');
+  check(!!q('#ex-card-group') && q('#ex-card-group').classList.contains('hidden'), 'cards: the card field is hidden while paying cash');
+  pay.value = 'card';
+  pay.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await sleep(60);
+  check(!q('#ex-card-group').classList.contains('hidden'), 'cards: choosing บัตรเครดิต reveals the card field');
+  check(!!q('#ex-card-list'), 'cards: previously used cards are offered as suggestions');
+  window.document.getElementById('ex-card').value = 'KBank Visa ••4321';
+  check(!!q('#ex-receipt-file'), 'receipt photo: the expense form offers a photo upload');
+  submit(q('#expense-form'));
+  await waitFor(() => [...fsdb.__store.values()].some(e => e?.title === 'มื้อค่ำท่องเที่ยว'), { timeout: 6000, label: 'expense with card' }).catch(() => {});
+  const saved = [...fsdb.__store.values()].find(e => e?.title === 'มื้อค่ำท่องเที่ยว');
+  check(!!saved, 'cards: the expense was saved');
+  check(saved?.cardName === 'KBank Visa ••4321', `cards: the card name is stored on the expense (${saved?.cardName || 'missing'})`);
+  check(saved?.paymentMethod === 'card', 'cards: the payment method stays บัตรเครดิต');
+  check((window.localStorage.getItem('fuji_cards:t1') || '').includes('KBank Visa'), 'cards: the card is remembered for the next expense');
+
+  await goto('#/trip/t1/settlement');
+  await waitFor(() => q('#settle-overview'), { label: 'settlement' });
+  await sleep(350);
+  const overview = q('#settle-overview')?.textContent || '';
+  check(/สรุปบัตรเครดิต|Credit card summary/.test(overview), 'cards: the settlement has a card summary block');
+  check(overview.includes('KBank Visa'), 'cards: the summary names the card');
+  check(!!q('.card-summary-tile'), 'cards: each card gets its own tile');
+}
+
+console.log('\n▶ v10: per-person receipts are colour-coded and the overview is the default');
+{
+  await goto('#/trip/t1/settlement');
+  await waitFor(() => q('#settle-views'), { label: 'settlement page' });
+  await sleep(300);
+  check(q('#settle-views .chip-active')?.dataset.view === 'overview', 'receipt: opens on ภาพรวม (not per person)');
+  check(!q('#receipt-u1'), 'receipt: no per-person receipt is mounted first');
+
+  await click('#settle-views [data-view="receipts"]');
+  await waitFor(() => q('#receipt-u1'), { label: 'receipt card' });
+  const sections = [...q('#receipt-u1').querySelectorAll('[data-receipt-section]')].map(el => el.dataset.receiptSection);
+  check(sections.join(',') === 'received,deduct,balance', `receipt: three clearly separated sections (${sections.join(',')})`);
+  check(!!q('#receipt-u1 .rcpt-block--recv') && !!q('#receipt-u1 .rcpt-block--deduct') && !!q('#receipt-u1 .rcpt-block--balance'), 'receipt: each section has its own colour');
+  check(!!q('#receipt-u1 .rcpt-chip--cash, #receipt-u1 .rcpt-chip--card, #receipt-u1 .rcpt-chip--transfer'), 'receipt: payment methods appear as coloured chips');
+  check(!!q('#receipt-u1 .rcpt-sum-total'), 'receipt: the balance is boxed at the bottom');
+  check(/รับ[\s\S]*หัก[\s\S]*คงเหลือ/.test(q('#receipt-u1')?.textContent || ''), 'receipt: รับ → หัก → คงเหลือ in order');
+  const css = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8');
+  check(/\.export-flat \.receipt \.rcpt-block--recv \.rcpt-block-head/.test(css), 'receipt: the colours survive the PNG export (export-flat overrides)');
+}
+
+console.log('\n▶ v10: sticky notes fold away when empty and can be filed as done');
+{
+  await goto('#/trip/t1/itinerary');
+  await waitFor(() => q('#notes-board'), { label: 'notes board' });
+  await sleep(400);
+
+  // 0) create a note (an earlier block deletes the one it made)
+  check(!q('#notes-collapsed')?.classList.contains('hidden'), 'notes: with no notes the card is folded away (no empty box)');
+  await click('#add-note-btn');
+  await waitFor(() => q('#note-form'), { label: 'note form' });
+  window.document.getElementById('note-title').value = 'ซื้อตั๋วรถไฟ 07:00';
+  window.document.getElementById('note-body').value = 'JR Tokyo → Otsuki';
+  submit(q('#note-form'));
+  await waitFor(() => q('.note-card'), { timeout: 6000, label: 'note card' }).catch(() => {});
+  await sleep(200);
+
+  // 1) a note exists → the board is visible, the folded line is not
+  const hasNote = !!q('.note-card');
+  check(hasNote, 'notes: an existing note is shown on the board');
+  check(q('#notes-collapsed')?.classList.contains('hidden'), 'notes: the folded line is hidden while notes exist');
+  check(!!q('.note-card [data-note-act="done"]'), 'notes: every note can be filed as done');
+
+  // 2) file it away → it moves to "เก็บแล้ว" and can be brought back
+  const noteId = q('.note-card')?.dataset.note;
+  await click('.note-card [data-note-act="done"]');
+  await sleep(250);
+  check(!!q('#notes-done-wrap') && !q('#notes-done-wrap').classList.contains('hidden'), 'notes: the "เก็บแล้ว" section appears');
+  check(/เก็บแล้ว/.test(q('#notes-done-toggle')?.textContent || ''), 'notes: the section is labelled เก็บแล้ว');
+  await click('#notes-done-toggle');
+  await sleep(150);
+  check(!!q(`#notes-done-board [data-note="${noteId}"]`), 'notes: the filed note is listed under เก็บแล้ว');
+  await click(`#notes-done-board [data-note="${noteId}"] [data-note-act="restore"]`);
+  await sleep(250);
+  check(!!q(`#notes-board [data-note="${noteId}"]`), 'notes: a filed note can be brought back (no data loss)');
+
+  // 3) delete the last note → the whole section folds into one slim line
+  await click(`#notes-board [data-note="${noteId}"] [data-note-act="delete"]`);
+  await waitFor(() => q('#confirm-ok'), { label: 'delete confirm' });
+  await click('#confirm-ok');
+  await waitFor(() => !q('.note-card'), { timeout: 6000, label: 'note removed' }).catch(() => {});
+  await sleep(250);
+  check(!q('.note-card'), `notes: the note is gone (${qa('.note-card').length} cards left)`);
+  check(!q('#notes-collapsed')?.classList.contains('hidden'), 'notes: with no notes the section is folded (not a big empty box)');
+  check(q('#notes-board-wrap')?.classList.contains('hidden'), 'notes: the empty board is hidden');
+  check(/ยังไม่มีโน้ต/.test(q('#notes-collapsed')?.textContent || ''), 'notes: the folded line explains how to add one');
 }
 
 console.log('\n▶ v9: one simple login screen (Google + email only)');
@@ -1067,11 +1250,6 @@ console.log('\n▶ v7: member joins with a Google account + invite code (no Clou
   check(!!fsdb.__dump('trips/t1/joinRequests/g1'), 'join: request stored for the admin to approve');
   check(!!fsdb.__dump('users/g1/joinRequests/g1') || !!fsdb.__dump('users/g1/joinRequests/t1'), 'join: member can see their own request status');
   await waitFor(() => /รอแอดมินอนุมัติ/.test(q('#my-join-requests')?.textContent || ''), { label: 'pending badge' }).catch(() => {});
-  if (!/รอแอดมินอนุมัติ/.test(q('#my-join-requests')?.textContent || '')) {
-    console.log('   [dbg] joinBox', JSON.stringify(q('#my-join-requests')?.outerHTML?.slice(0, 400) || 'MISSING'));
-    console.log('   [dbg] uReq', JSON.stringify(fsdb.__dump('users/g1/joinRequests/g1')), JSON.stringify(fsdb.__dump('users/g1/joinRequests/t1')));
-    console.log('   [dbg] keys', JSON.stringify([...fsdb.__store.keys()].filter(k => k.includes('joinRequest'))));
-  }
   check(/รอแอดมินอนุมัติ/.test(q('#my-join-requests')?.textContent || ''), 'join: pending status shown to the member');
 
   // --- admin side: approve the request from the Members page ---

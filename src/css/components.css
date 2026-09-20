@@ -1503,6 +1503,23 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 }
 .thb-equiv.block { display: flex; justify-content: flex-end; }
 
+/* Baht amounts must be easy to spot on the dashboard (a request) */
+.thb-equiv--strong {
+  font-size: 12px;
+  font-weight: 800;
+  color: #0f766e;
+  background: #ccfbf1;
+  border: 1px solid #5eead4;
+  border-radius: 999px;
+  padding: 2px 9px;
+  margin-top: 4px;
+  letter-spacing: .01em;
+}
+[data-theme="dark"] .thb-equiv--strong { color: #5eead4; background: rgba(13, 148, 136, .18); border-color: rgba(94, 234, 212, .45); }
+.kpi-tile .thb-equiv--strong { font-size: 12.5px; }
+.export-flat .thb-equiv--strong { color: #0f766e !important; background: #ccfbf1 !important; border-color: #5eead4 !important; }
+.export-flat .rcpt-chip--card, .export-flat .rcpt-card { color: #6d28d9 !important; }
+
 /* ------------------------------------------------------------------
    Flat export mode — receipts/reports print in one plain palette so canvas
    exporters never meet a modern color function. No gradients, no shadows.
@@ -1632,3 +1649,179 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 @media (prefers-reduced-motion: reduce) {
   .route-progress.is-active { animation: none; transform: scaleX(0.6); }
 }
+
+/* ------------------------------------------------------------------ *
+ * Itinerary layout (v10): days on the left, map pinned on the right so
+ * both are visible at once. Phones get a single column with the map on top.
+ * ------------------------------------------------------------------ */
+.itin-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 40%);
+  gap: 18px;
+  align-items: start;
+}
+.itin-layout.map-hidden { grid-template-columns: minmax(0, 1fr); }
+.itin-col-days { min-width: 0; }
+.itin-col-map { min-width: 0; align-self: start; position: sticky; top: 10px; }
+@media (min-width: 1024px) {
+  .itin-col-map #map { height: min(74vh, 680px) !important; }
+}
+@media (max-width: 1023px) {
+  .itin-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .itin-col-map { order: -1; position: static; }
+  .itin-col-map #map { height: min(40vh, 320px) !important; }
+}
+
+/* ------------------------------------------------------------------ *
+ * Export sheet (itinerary PNG): built off-screen, briefly shown while the
+ * image is generated. Plain hex colours only — never var()/color-mix().
+ * ------------------------------------------------------------------ */
+.export-sheet-wrap { position: fixed; left: -20000px; top: 0; width: 1040px; background: #ffffff; z-index: 0; }
+.export-sheet-wrap.is-capturing {
+  left: 0; right: 0; top: 0; width: auto; max-height: 100vh; overflow: hidden;
+  z-index: 99999; box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.62);
+}
+.itin-sheet { width: 1040px; max-width: 100%; background: #ffffff; color: #111827; padding: 26px 28px 20px; box-sizing: border-box; font-family: var(--font-display), system-ui, sans-serif; }
+.itin-sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 22px; border-bottom: 3px solid #2563eb; padding-bottom: 14px; }
+.itin-sheet-kicker { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: #2563eb; font-weight: 800; }
+.itin-sheet h1 { font-size: 26px; font-weight: 800; margin: 5px 0 7px; color: #111827; }
+.itin-sheet-meta { font-size: 12px; color: #4b5563; display: flex; gap: 6px 14px; flex-wrap: wrap; }
+.itin-sheet-meta b { color: #111827; }
+.itin-sheet-stats { display: grid; gap: 8px; min-width: 220px; }
+.itin-sheet-stat { border: 1px solid #e5e7eb; border-radius: 12px; padding: 8px 11px; background: #f9fafb; }
+.itin-sheet-stat span { font-size: 10px; color: #6b7280; display: block; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.itin-sheet-stat b { font-size: 17px; color: #111827; }
+.itin-sheet-stat i { display: block; font-style: normal; font-size: 11px; font-weight: 700; color: #047857; }
+.itin-sheet-map { margin: 16px 0 4px; border: 1px solid #e5e7eb; border-radius: 14px; overflow: hidden; background: #f3f4f6; }
+.itin-sheet-map img, .itin-sheet-map svg.schematic { width: 100%; display: block; }
+.itin-sheet-map-inner { position: relative; }
+.itin-sheet-pin-label {
+  position: absolute; transform: translate(22px, -50%);
+  font-size: 12.5px; font-weight: 600; color: #374151; white-space: nowrap;
+  max-width: 34%; overflow: hidden; text-overflow: ellipsis;
+}
+.itin-sheet-pin-label.is-flipped { transform: translate(calc(-100% - 22px), -50%); }
+.itin-sheet-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 9px 12px; border-top: 1px solid #e5e7eb; background: #ffffff; }
+.itin-sheet-legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #374151; font-weight: 600; }
+.itin-sheet-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
+.itin-sheet-day { margin-top: 16px; border: 1px solid #e5e7eb; border-radius: 14px; overflow: hidden; page-break-inside: avoid; }
+.itin-sheet-day-head { display: flex; align-items: center; gap: 10px; padding: 9px 14px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
+.itin-sheet-day-num { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; color: #ffffff; font-weight: 800; font-size: 13px; }
+.itin-sheet-day-title { font-weight: 800; font-size: 14px; color: #111827; }
+.itin-sheet-day-sub { font-size: 11px; color: #6b7280; margin-left: auto; font-weight: 700; }
+.itin-sheet-table { width: 100%; border-collapse: collapse; }
+.itin-sheet-table th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-weight: 800; }
+.itin-sheet-table td { padding: 9px 12px; border-bottom: 1px dashed #e5e7eb; font-size: 12px; vertical-align: top; color: #1f2937; }
+.itin-sheet-table tr:last-child td { border-bottom: 0; }
+.itin-sheet-table td.num, .itin-sheet-table th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.itin-sheet-item-title { font-weight: 800; font-size: 12.5px; color: #111827; }
+.itin-sheet-item-meta { font-size: 10.5px; color: #6b7280; margin-top: 3px; display: flex; gap: 4px 10px; flex-wrap: wrap; }
+.itin-sheet-note { font-size: 11px; color: #374151; margin-top: 5px; background: #fffbeb; border-left: 3px solid #f59e0b; padding: 5px 8px; border-radius: 4px; white-space: pre-wrap; }
+.itin-sheet-est { color: #047857; font-weight: 800; }
+.itin-sheet-est i { display: block; font-style: normal; color: #059669; font-size: 10px; font-weight: 700; }
+.itin-sheet-status { display: inline-block; font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 8px; border: 1px solid #d1d5db; color: #374151; background: #ffffff; }
+.itin-sheet-foot { margin-top: 14px; padding-top: 10px; border-top: 1px dashed #e5e7eb; display: flex; justify-content: space-between; font-size: 10px; color: #9ca3af; }
+.itin-sheet-empty { padding: 26px 16px; text-align: center; font-size: 12px; color: #6b7280; }
+
+/* ------------------------------------------------------------------ *
+ * Receipt sections (v10) — colour-coded so รับ / หัก / คงเหลือ are obvious.
+ * Plain hex colours only, and every colour is repeated under .export-flat so
+ * the PNG export keeps the same look.
+ * ------------------------------------------------------------------ */
+.rcpt-block { border-radius: 14px; border: 1px solid #e5e7eb; overflow: hidden; margin-top: 14px; background: #ffffff; }
+.rcpt-block-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; font-weight: 800; font-size: 12px; }
+.rcpt-block-icon { width: 26px; height: 26px; border-radius: 9px; display: grid; place-items: center; color: #ffffff; flex-shrink: 0; }
+.rcpt-block-title { min-width: 0; }
+.rcpt-block-total { margin-left: auto; font-size: 13px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rcpt-block-total i { display: block; font-style: normal; font-size: 10px; font-weight: 700; opacity: .85; }
+.rcpt-block-body { padding: 10px 12px 12px; }
+.rcpt-block--recv { border-color: #a7f3d0; }
+.rcpt-block--recv .rcpt-block-head { background: #ecfdf5; color: #065f46; }
+.rcpt-block--recv .rcpt-block-icon { background: #059669; }
+.rcpt-block--deduct { border-color: #fecdd3; }
+.rcpt-block--deduct .rcpt-block-head { background: #fff1f2; color: #9f1239; }
+.rcpt-block--deduct .rcpt-block-icon { background: #e11d48; }
+.rcpt-block--balance { border-color: #bfdbfe; }
+.rcpt-block--balance .rcpt-block-head { background: #eff6ff; color: #1e40af; }
+.rcpt-block--balance .rcpt-block-icon { background: #2563eb; }
+.rcpt-item-title { font-weight: 700; }
+.rcpt-item-sub { font-size: 10px; color: #6b7280; margin-top: 2px; }
+.rcpt-flag { display: inline-flex; align-items: center; gap: 3px; font-size: 9.5px; font-weight: 700; color: #0369a1; background: #e0f2fe; border-radius: 999px; padding: 1px 6px; }
+.rcpt-card { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; color: #6d28d9; margin-top: 3px; }
+.rcpt-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 7px; border: 1px solid transparent; }
+.rcpt-chip--cash { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+.rcpt-chip--card { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
+.rcpt-chip--transfer { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.rcpt-methods { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.rcpt-method { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; padding: 4px 8px; border-radius: 10px; background: #f9fafb; border: 1px solid #e5e7eb; }
+.rcpt-cards { margin-top: 10px; border: 1px dashed #ddd6fe; background: #faf5ff; border-radius: 12px; padding: 8px 10px; }
+.rcpt-cards-title { font-size: 10.5px; font-weight: 800; color: #5b21b6; display: flex; align-items: center; gap: 5px; margin-bottom: 5px; }
+.rcpt-card-row { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; padding: 2px 0; color: #4c1d95; }
+.rcpt-card-row i { font-style: normal; font-size: 10px; color: #7c3aed; }
+.rcpt-block-total-line { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-size: 12px; font-weight: 700; }
+.rcpt-sum { display: grid; gap: 6px; }
+.rcpt-sum-row { display: flex; justify-content: space-between; font-size: 12px; color: #374151; }
+.rcpt-sum-total { display: flex; justify-content: space-between; align-items: center; font-size: 15px; font-weight: 800; border-radius: 12px; padding: 9px 12px; margin-top: 2px; }
+.rcpt-sum-total.is-positive { background: #ecfdf5; color: #047857; }
+.rcpt-sum-total.is-negative { background: #fff1f2; color: #be123c; }
+.rcpt-sum-note { font-size: 10.5px; color: #6b7280; }
+@media (max-width: 640px) {
+  .rcpt-block-head { font-size: 11px; }
+  .rcpt-block-total { font-size: 12px; }
+}
+
+/* Card summary on the settlement page */
+.card-summary-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.card-summary-tile { border: 1px solid #ddd6fe; background: #faf5ff; border-radius: 14px; padding: 10px 12px; }
+.card-summary-name { font-size: 12px; font-weight: 800; color: #5b21b6; display: flex; align-items: center; gap: 6px; }
+.card-summary-amount { font-size: 17px; font-weight: 800; color: #4c1d95; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.card-summary-meta { font-size: 10.5px; color: #7c3aed; margin-top: 2px; }
+.card-summary-thb { font-size: 11px; font-weight: 700; color: #047857; }
+
+/* Export-flat keeps the receipt colours (see .export-flat above) */
+.export-flat .receipt .rcpt-block { background: #ffffff !important; }
+.export-flat .receipt .rcpt-block--recv { border-color: #a7f3d0 !important; }
+.export-flat .receipt .rcpt-block--deduct { border-color: #fecdd3 !important; }
+.export-flat .receipt .rcpt-block--balance { border-color: #bfdbfe !important; }
+.export-flat .receipt .rcpt-block--recv .rcpt-block-head { background: #ecfdf5 !important; color: #065f46 !important; }
+.export-flat .receipt .rcpt-block--deduct .rcpt-block-head { background: #fff1f2 !important; color: #9f1239 !important; }
+.export-flat .receipt .rcpt-block--balance .rcpt-block-head { background: #eff6ff !important; color: #1e40af !important; }
+.export-flat .receipt .rcpt-block-icon { color: #ffffff !important; }
+.export-flat .receipt .rcpt-block--recv .rcpt-block-icon { background: #059669 !important; }
+.export-flat .receipt .rcpt-block--deduct .rcpt-block-icon { background: #e11d48 !important; }
+.export-flat .receipt .rcpt-block--balance .rcpt-block-icon { background: #2563eb !important; }
+.export-flat .receipt .rcpt-chip--cash { background: #ecfdf5 !important; color: #047857 !important; border-color: #a7f3d0 !important; }
+.export-flat .receipt .rcpt-chip--card { background: #f5f3ff !important; color: #6d28d9 !important; border-color: #ddd6fe !important; }
+.export-flat .receipt .rcpt-chip--transfer { background: #eff6ff !important; color: #1d4ed8 !important; border-color: #bfdbfe !important; }
+.export-flat .receipt .rcpt-flag { background: #e0f2fe !important; color: #0369a1 !important; }
+.export-flat .receipt .rcpt-cards { background: #faf5ff !important; border-color: #ddd6fe !important; }
+.export-flat .receipt .rcpt-cards-title, .export-flat .receipt .rcpt-card-row { color: #5b21b6 !important; }
+.export-flat .receipt .rcpt-card { color: #6d28d9 !important; }
+.export-flat .receipt .rcpt-sum-total.is-positive { background: #ecfdf5 !important; color: #047857 !important; }
+.export-flat .receipt .rcpt-sum-total.is-negative { background: #fff1f2 !important; color: #be123c !important; }
+.export-flat .receipt .rcpt-positive, .export-flat .receipt .receipt-positive { color: #047857 !important; }
+.export-flat .receipt .receipt-negative { color: #b91c1c !important; }
+
+/* Receipt photo on expense rows + the upload field in the editor */
+.expense-receipt-thumb { margin-top: 8px; width: 100%; max-width: 260px; border-radius: 12px; border: 1px solid #e5e7eb; display: block; }
+.receipt-upload { display: grid; gap: 8px; }
+.receipt-upload-preview { border: 1px dashed var(--border); border-radius: 14px; padding: 6px; background: var(--bg-secondary); }
+.receipt-upload-preview img { width: 100%; max-height: 260px; object-fit: contain; border-radius: 10px; display: block; }
+.receipt-upload .hidden { display: none; }
+
+/* Notes: folded state, done/archived cards (v10) */
+.notes-collapsed {
+  display: flex; align-items: center; gap: 8px; margin-top: 10px;
+  padding: 8px 10px; border-radius: 12px; border: 1px dashed var(--border);
+  background: var(--bg-secondary); color: var(--text-secondary); font-size: 11.5px;
+}
+.notes-collapsed svg { color: var(--warning); flex-shrink: 0; }
+.note-card--done { opacity: .82; filter: saturate(.55); }
+.note-flag {
+  position: absolute; top: 6px; left: 10px; display: inline-flex; align-items: center; gap: 3px;
+  font-size: 9px; font-weight: 800; color: #7c5b12; background: rgba(255, 255, 255, 0.6);
+  border-radius: 999px; padding: 1px 6px;
+}
+.notes-board--done { opacity: .92; }
+.note-actions button[data-note-act="done"]:hover { background: #dcfce7; }
+.note-actions button[data-note-act="restore"]:hover { background: #dbeafe; }

@@ -111,9 +111,15 @@ function buildPayload(data) {
     baseCurrency: data.baseCurrency || 'THB',
     convertedMinor: data.convertedMinor ?? data.netTotalMinor,
     paymentMethod: data.paymentMethod || 'cash',
+    // Which card was used — the settlement groups spending per card.
+    cardName: String(data.cardName || '').trim(),
     cardId: data.cardId || null,
     itineraryItemId: data.itineraryItemId || null,
     receiptUrl: data.receiptUrl || '',
+    // Optional receipt photo (Storage URL or an inlined data-URL image).
+    receiptImage: data.receiptImage || '',
+    receiptStorage: data.receiptStorage || '',
+    receiptNames: data.receiptNames || [],
     status: data.status || 'active',
     isEstimated: !!data.isEstimated,
     estimatedMinor: data.isEstimated ? (data.netTotalMinor || 0) : 0,

@@ -25,10 +25,11 @@ import {
   voidExpense, getExpense, exportExpensesToJson, sumExpenses
 } from './expenses/index.js';
 import { fetchSettlementData, recalculateAndSaveSettlement } from './settlement/index.js';
+
 import { listMembers, createMember, updateMember, deleteMember, countMemberReferences, mapFunctionError, MEMBER_ROLES } from './members/index.js';
 import { dayjs, getCurrentTimes, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay } from './utils/date.js';
 import { formatCurrency, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate } from './utils/currency.js';
-import { calculateSettlement, buildSettlementStatements, transactionSources } from './utils/settlement.js';
+import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary } from './utils/settlement.js';
 import { splitEqual } from './utils/split.js';
 import { escapeHtml } from './utils/sanitize.js';
 import { showBottomSheet, showModal } from './components/modal.js';
@@ -37,7 +38,7 @@ import { mountCountdown, computeCountdown, countdownHeadline } from './component
 import { initReveal, countUp, confetti, celebrateFrom, restagger } from './components/effects.js';
 import { resolvePermissions, clearPermissionsCache } from './utils/permissions.js';
 import { renderPageScene } from './components/scenes.js';
-import { listNotes, createNote, updateNote, deleteNote, NOTE_COLORS, noteColorHex } from './notes/index.js';
+import { listNotes, createNote, updateNote, deleteNote, NOTE_COLORS, noteColorHex, setNoteArchived, localArchivedIds } from './notes/index.js';
 import { googleMapsPlaceUrl, googleMapsDirectionsUrl, BASE_LAYERS, setMapLayer, getStoredLayerId } from './maps/index.js';
 import {
   EXPENSE_CATEGORIES, CATEGORY_ICONS, categoryLabel, categoryIcon, categoryColor,
@@ -55,6 +56,8 @@ import {
   ITINERARY_COLUMNS, EXPENSE_COLUMNS, itineraryItemToRow, expenseToRow
 } from './utils/excel.js';
 import { parseCoordinates, getInitials, compressImage } from './utils/helpers.js';
+import { suggestCards, rememberCard, uploadReceiptImage } from './utils/cards.js';
+import { schematicMap, parseLatLng } from './exports/itineraryMap.js';
 import { t, setLang, getLang } from './utils/i18n.js';
 
 const appEl = document.getElementById('app');
@@ -2222,6 +2225,13 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
     return v == null ? '' : `<span class="thb-equiv">≈ ${formatCurrency(v, 'THB')}</span>`;
   };
 
+  /** Baht equivalent of an amount in the trip currency ('' when THB/no rate). */
+  const thbOfBudget = (minor) => {
+    if (currency === 'THB') return '';
+    const v = toThbMinor(minor, currency, rate || 0);
+    return v == null ? '' : formatCurrency(v, 'THB');
+  };
+
   const actualMinor = sumExpenses(expenses, { estimatedOnly: false });
   const estimatedMinor = sumExpenses(expenses, { estimatedOnly: true });
   const totalMinor = actualMinor + estimatedMinor;
@@ -2237,7 +2247,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
     if (!tag) {
       const span = document.createElement('div');
       span.id = 'kpi-total-thb';
-      span.className = 'thb-equiv';
+      span.className = 'thb-equiv thb-equiv--strong';
       span.textContent = label;
       totalEl.insertAdjacentElement('afterend', span);
     } else tag.textContent = label;
@@ -2254,6 +2264,21 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
     ? Number(trip.budgetTotal)
     : (Number(trip?.budgetPerPerson) > 0 ? Number(trip.budgetPerPerson) * Math.max(1, members.length) : 0);
   const budgetEl = document.getElementById('kpi-budget');
+  /** The baht line under a KPI — shown even when the trip never set a rate. */
+  const setKpiThb = (hostEl, id, label) => {
+    if (!hostEl) return;
+    const shown = /^\s*[฿]|THB/.test(label || '') || currency === 'THB';
+    const existing = document.getElementById(id);
+    if (!label || shown) { existing?.remove(); return; }
+    if (existing) existing.textContent = label;
+    else {
+      const span = document.createElement('div');
+      span.id = id;
+      span.className = 'thb-equiv thb-equiv--strong';
+      span.textContent = label;
+      hostEl.insertAdjacentElement('afterend', span);
+    }
+  };
   if (budget > 0) {
     // Budgets are entered in the trip currency; compare against the trip-currency
     // total (they used to be compared against the baht total — wrong scale).
@@ -2263,9 +2288,12 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
     const pct = Math.min(100, Math.round((spend / budget) * 100));
     const bar = document.getElementById('kpi-budget-bar');
     if (bar) { bar.style.width = `${pct}%`; if (left < 0) bar.style.background = 'var(--danger)'; }
+    // งบคงเหลือต้องเห็นเป็นเงินบาทด้วย (แม้ทริปไม่ตั้งเรต) — a request.
+    const leftThb = toThbMinor(Math.max(0, left), currency, rate || 0);
+    setKpiThb(budgetEl, 'kpi-budget-thb', leftThb == null ? '' : `≈ ${formatCurrency(leftThb, 'THB')}`);
     setHtml('kpi-budget-sub', left >= 0
-      ? `${th('ใช้ไป','Used')} ${pct}% • ${th('งบ','budget')} ${fmt(budget)}`
-      : `<span style="color:var(--danger);">${th('เกินงบ','Over budget')} ${fmt(-left)}</span>`);
+      ? `${th('ใช้ไป','Used')} ${pct}% • ${th('งบ','budget')} ${fmt(budget)}${budget !== totalMinor && thbOfBudget(budget) ? ` (≈ ${thbOfBudget(budget)})` : ''}`
+      : `<span style="color:var(--danger);">${th('เกินงบ','Over budget')} ${fmt(-left)}${thbOfBudget(-left) ? ` (≈ ${thbOfBudget(-left)})` : ''}</span>`);
   } else {
     if (budgetEl) budgetEl.textContent = '—';
     setHtml('kpi-budget-sub', `<button id="kpi-set-budget" class="link-btn">${icon('plus', 'w-3 h-3')} ${th('ตั้งงบประมาณ','Set budget')}</button>`);
@@ -2291,7 +2319,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
       else {
         const span = document.createElement('div');
         span.id = 'kpi-balance-thb';
-        span.className = 'thb-equiv';
+        span.className = 'thb-equiv thb-equiv--strong';
         span.textContent = label;
         balEl.insertAdjacentElement('afterend', span);
       }
@@ -2520,43 +2548,66 @@ async function renderItinerary(params) {
         </div>
       </div>
 
-      <div id="map-card" class="card p-3 mb-5">
-        <div id="map-wrap" class="relative rounded-2xl overflow-hidden" style="border:1px solid var(--border);">
-          <div id="map" class="map-frame w-full" style="height:min(46vh, 420px);"></div>
-          <div class="map-toolbar" id="map-layer-bar">
-            <button class="map-tool-btn" data-layer="map">${icon('map', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</button>
-            <button class="map-tool-btn" data-layer="satellite">${icon('satellite', 'w-3.5 h-3.5')} ${th('ดาวเทียม','Satellite')}</button>
-            <button class="map-tool-btn" data-layer="terrain">${icon('mountain', 'w-3.5 h-3.5')} ${th('ภูมิประเทศ','Terrain')}</button>
-          </div>
-          <div id="map-status" class="map-status"><span class="skeleton" style="width:26px;height:26px;border-radius:50%;"></span> <span>${th('กำลังโหลดแผนที่...','Loading map...')}</span></div>
-          <div id="map-empty" class="map-status hidden"><div class="text-center px-4">
-            <div class="row-icon mx-auto mb-2" style="width:40px;height:40px;">${icon('map-pin', 'w-5 h-5')}</div>
-            <p class="text-xs text-[var(--text-secondary)]">${th('เพิ่มพิกัด (lat,lng) ให้สถานที่ เพื่อให้แสดงหมุดบนแผนที่','Add coordinates (lat,lng) to a place to see it here')}</p>
-          </div></div>
-        </div>
-        <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
-          <p class="text-[10px] text-[var(--text-tertiary)] flex items-center gap-1">${icon('info', 'w-3 h-3')} ${th('ไม่ต้องใช้ API key • เส้นประ = ลำดับที่ไป • กดปุ่มนำทางบนการ์ดเพื่อเปิด Google Maps','No API key needed • dashed line = visit order • tap 🧭 on a card to open Google Maps')}</p>
-          <div class="flex items-center gap-2">
-            <span id="map-count" class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:var(--bg-secondary);">0 ${th('หมุด','pins')}</span>
-            <button id="map-fit-btn" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:2px 8px;">${icon('maximize', 'w-3 h-3')} ${th('พอดีจอ','Fit')}</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="card p-4 mb-5">
-        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+      <div id="itin-layout" class="itin-layout">
+        <div class="itin-col-days">
+      <div class="card p-4 mb-5" id="notes-card">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
           <h3 class="font-bold flex items-center gap-2 text-sm">
             <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--warning-light);color:var(--warning);">${icon('sticky-note', 'w-4 h-4')}</span>
             ${th('โน้ตติดเตือนความจำ','Sticky notes')}
             <span id="notes-count" class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:var(--bg-secondary);">0</span>
           </h3>
-          <button id="add-note-btn" class="btn btn-secondary btn-sm">${icon('plus', 'w-4 h-4')} ${th('เพิ่มโน้ต','Add note')}</button>
+          <div class="btn-row">
+            <button id="notes-toggle-btn" class="btn btn-ghost btn-sm hidden" title="${th('ย่อ/ขยาย','Collapse / expand')}">${icon('chevron-up', 'w-4 h-4')}</button>
+            <button id="add-note-btn" class="btn btn-secondary btn-sm">${icon('plus', 'w-4 h-4')} ${th('เพิ่มโน้ต','Add note')}</button>
+          </div>
         </div>
-        <div id="notes-board" class="notes-board"></div>
+        <!-- No notes yet → the whole section stays folded into one slim line. -->
+        <div id="notes-collapsed" class="notes-collapsed hidden">
+          ${icon('sticky-note', 'w-4 h-4')}
+          <span>${th('ยังไม่มีโน้ต — กด “เพิ่มโน้ต” เพื่อจดเรื่องที่ต้องจำ (จองรถไฟ เบอร์ที่พัก รหัสบุ๊กกิ้ง)','No notes yet — tap “Add note” for reminders (train booking, hotel phone, booking code)')}</span>
+        </div>
+        <div id="notes-board-wrap" class="hidden">
+          <div id="notes-board" class="notes-board mt-3"></div>
+          <div id="notes-done-wrap" class="hidden mt-3">
+            <button id="notes-done-toggle" class="link-btn text-[11px]"></button>
+            <div id="notes-done-board" class="notes-board notes-board--done mt-2 hidden"></div>
+          </div>
+        </div>
       </div>
 
-      <div id="date-chips" class="chip-row chip-row-scroll mb-4"></div>
-      <div id="itinerary-list" class="space-y-3 stagger"></div>
+        <div id="date-chips" class="chip-row chip-row-scroll mb-4"></div>
+        <div id="itinerary-list" class="space-y-3 stagger"></div>
+        </div>
+
+        <aside class="itin-col-map">
+          <div id="map-card" class="card p-3 mb-5">
+            <div id="map-wrap" class="relative rounded-2xl overflow-hidden" style="border:1px solid var(--border);">
+              <div id="map" class="map-frame w-full" style="height:min(46vh, 420px);"></div>
+              <div class="map-toolbar" id="map-layer-bar">
+                <button class="map-tool-btn" data-layer="map">${icon('map', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</button>
+                <button class="map-tool-btn" data-layer="satellite">${icon('satellite', 'w-3.5 h-3.5')} ${th('ดาวเทียม','Satellite')}</button>
+                <button class="map-tool-btn" data-layer="terrain">${icon('mountain', 'w-3.5 h-3.5')} ${th('ภูมิประเทศ','Terrain')}</button>
+              </div>
+              <div id="map-status" class="map-status"><span class="skeleton" style="width:26px;height:26px;border-radius:50%;"></span> <span>${th('กำลังโหลดแผนที่...','Loading map...')}</span></div>
+              <div id="map-empty" class="map-status hidden"><div class="text-center px-4">
+                <div class="row-icon mx-auto mb-2" style="width:40px;height:40px;">${icon('map-pin', 'w-5 h-5')}</div>
+                <p class="text-xs text-[var(--text-secondary)]">${th('เพิ่มพิกัด (lat,lng) ให้สถานที่ เพื่อให้แสดงหมุดบนแผนที่','Add coordinates (lat,lng) to a place to see it here')}</p>
+              </div></div>
+            </div>
+            <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
+              <p class="text-[10px] text-[var(--text-tertiary)] flex items-center gap-1">${icon('info', 'w-3 h-3')} ${th('ไม่ต้องใช้ API key • เส้นประ = ลำดับที่ไป • กดปุ่มนำทางบนการ์ดเพื่อเปิด Google Maps','No API key needed • dashed line = visit order • tap 🧭 on a card to open Google Maps')}</p>
+              <div class="flex items-center gap-2">
+                <span id="map-count" class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:var(--bg-secondary);">0 ${th('หมุด','pins')}</span>
+                <button id="map-fit-btn" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:2px 8px;">${icon('maximize', 'w-3 h-3')} ${th('พอดีจอ','Fit')}</button>
+              </div>
+            </div>
+          </div>
+
+        </aside>
+      </div>
+
+      <div id="itinerary-export-wrap" class="export-sheet-wrap" aria-hidden="true"></div>
     </div>
   `;
   queueIcons();
@@ -2613,6 +2664,7 @@ async function renderItinerary(params) {
     const card = document.getElementById('map-card');
     const btn = document.getElementById('toggle-map-btn');
     card?.classList.toggle('hidden', !mapVisible);
+    document.getElementById('itin-layout')?.classList.toggle('map-hidden', !mapVisible);
     if (btn) btn.className = mapVisible ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
     if (mapVisible) {
       setTimeout(async () => {
@@ -2629,15 +2681,7 @@ async function renderItinerary(params) {
     await refreshMap(visibleItems, { fit: true });
   });
 
-  bind('export-png-btn', 'click', async () => {
-    const tLoad = toast.loading(th('กำลังส่งออก PNG...', 'Exporting PNG...'));
-    try {
-      const { exportToPng } = await import('./exports/index.js');
-      await exportToPng('itinerary-list', `itinerary-${tripId}.png`);
-      tLoad.close();
-      toast.success(th('ส่งออก PNG แล้ว', 'PNG exported'));
-    } catch (e) { tLoad.close(); toast.error(e.message); }
-  });
+  bind('export-png-btn', 'click', () => exportItineraryPng());
 
   function mapStatus(state, message) {
     const statusEl = document.getElementById('map-status');
@@ -2727,16 +2771,25 @@ async function renderItinerary(params) {
   let notes = [];
   let notesLoaded = false;
 
-  function noteCardHtml(n, idx) {
+  const archivedIds = () => new Set(localArchivedIds(tripId));
+  const isArchivedNote = (n) => Boolean(n.archived) || archivedIds().has(n.id);
+  let notesFolded = false;      // user collapsed the board
+  let doneOpen = false;         // "เก็บแล้ว" list expanded
+
+  function noteCardHtml(n, idx, { archived = false } = {}) {
     const color = noteColorHex(n.color);
     return `
-      <div class="note-card" data-note="${n.id}" style="background:${color}; animation-delay:${Math.min(idx * 45, 400)}ms">
-        <div class="note-pin">${icon('pin', 'w-3 h-3')}</div>
+      <div class="note-card ${archived ? 'note-card--done' : ''}" data-note="${n.id}" style="background:${color}; animation-delay:${Math.min(idx * 45, 400)}ms">
+        <div class="note-pin">${icon(archived ? 'archive' : 'pin', 'w-3 h-3')}</div>
+        ${n.pinned && !archived ? `<div class="note-flag">${icon('pin', 'w-3 h-3')} ${th('ปักหมุด','pinned')}</div>` : ''}
         ${n.title ? `<div class="note-title">${escapeHtml(n.title)}</div>` : ''}
         <div class="note-body">${escapeHtml(n.body || '')}</div>
         <div class="note-meta">
           <span class="note-tag">${icon('calendar', 'w-2.5 h-2.5')} ${n.createdAt?.seconds ? dayjs(n.createdAt.seconds * 1000).format('D MMM') : dayjs().format('D MMM')}</span>
           <span class="note-actions">
+            ${archived
+              ? `<button data-note-act="restore" data-id="${n.id}" title="${th('นำกลับมา','Bring back')}">${icon('undo-2', 'w-3 h-3')}</button>`
+              : `<button data-note-act="done" data-id="${n.id}" title="${th('ทำเสร็จแล้ว — เก็บไว้','Done — file it away')}">${icon('check', 'w-3 h-3')}</button>`}
             <button data-note-act="edit" data-id="${n.id}" title="${t('edit')}">${icon('pencil', 'w-3 h-3')}</button>
             <button data-note-act="delete" data-id="${n.id}" title="${t('delete')}">${icon('trash-2', 'w-3 h-3')}</button>
           </span>
@@ -2744,34 +2797,69 @@ async function renderItinerary(params) {
       </div>`;
   }
 
+  /** Notes board: hidden while there is nothing to show, archive folded away. */
   function renderNotes() {
     const board = document.getElementById('notes-board');
     if (!board) return;
-    setText('notes-count', String(notes.length));
+    const active = notes.filter(n => !isArchivedNote(n));
+    const done = notes.filter(n => isArchivedNote(n));
+    setText('notes-count', String(active.length));
+
+    const collapsedEl = document.getElementById('notes-collapsed');
+    const wrapEl = document.getElementById('notes-board-wrap');
+    const toggleBtn = document.getElementById('notes-toggle-btn');
+    const doneWrap = document.getElementById('notes-done-wrap');
+    const doneBoard = document.getElementById('notes-done-board');
+    const doneToggle = document.getElementById('notes-done-toggle');
+
+    // Nothing to show at all → fold the card into a single line (a request).
+    const nothingToShow = notesLoaded && notes.length === 0;
+    collapsedEl?.classList.toggle('hidden', !nothingToShow);
+    wrapEl?.classList.toggle('hidden', nothingToShow || notesFolded);
+    toggleBtn?.classList.toggle('hidden', nothingToShow || !notes.length);
+    if (toggleBtn) toggleBtn.innerHTML = icon(notesFolded ? 'chevron-down' : 'chevron-up', 'w-4 h-4');
+    if (nothingToShow || notesFolded) {
+      // Drop the cards from the DOM as well — a folded section must not keep
+      // stale notes around (they used to linger after the last one was deleted).
+      board.innerHTML = '';
+      if (doneBoard) doneBoard.innerHTML = '';
+      doneWrap?.classList.add('hidden');
+      return;
+    }
+
     if (!notesLoaded) {
       board.innerHTML = `<div class="skeleton" style="height:132px;border-radius:12px;"></div><div class="skeleton" style="height:132px;border-radius:12px;"></div>`;
       return;
     }
-    if (!notes.length) {
+
+    if (!active.length) {
       board.innerHTML = `
         <div class="notes-empty" style="grid-column:1/-1;">
-          <div class="row-icon mx-auto mb-2" style="width:38px;height:38px;background:var(--warning-light);color:var(--warning);">${icon('sticky-note', 'w-4 h-4')}</div>
-          <p class="text-xs font-semibold">${th('ยังไม่มีโน้ต','No notes yet')}</p>
-          <p class="text-[11px] text-[var(--text-secondary)] mt-1">${th('จดเรื่องสำคัญ เช่น ต้องจองรถไฟ เบอร์โทรที่พัก รหัสบุ๊กกิ้ง','Jot down reminders: train booking, hotel phone, booking code…')}</p>
-          <button id="empty-add-note" class="btn btn-primary btn-sm mt-3">${icon('plus', 'w-4 h-4')} ${th('เพิ่มโน้ตแรก','Add first note')}</button>
+          <div class="row-icon mx-auto mb-2" style="width:38px;height:38px;background:var(--warning-light);color:var(--warning);">${icon('party-popper', 'w-4 h-4')}</div>
+          <p class="text-xs font-semibold">${th('ไม่มีโน้ตค้างแล้ว','Nothing left to do')}</p>
+          <p class="text-[11px] text-[var(--text-secondary)] mt-1">${th('โน้ตที่เก็บไว้ยังอยู่ใน “เก็บแล้ว” ด้านล่าง กดนำกลับมาได้ทุกเมื่อ','Filed notes stay under “Done” below — bring any of them back any time')}</p>
         </div>`;
-      bind('empty-add-note', 'click', () => openNoteForm(null));
-      queueIcons();
-      return;
+    } else {
+      const sorted = [...active].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      board.innerHTML = sorted.map((n, idx) => noteCardHtml(n, idx)).join('');
     }
-    const sorted = [...notes].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-    board.innerHTML = sorted.map((n, idx) => noteCardHtml(n, idx)).join('');
-    board.querySelectorAll('[data-note-act]').forEach(btn => btn.addEventListener('click', async (ev) => {
+
+    // --- archived ("เก็บแล้ว") section ---
+    doneWrap?.classList.toggle('hidden', !done.length);
+    if (doneToggle) doneToggle.innerHTML = `${icon('archive', 'w-3.5 h-3.5')} ${th('เก็บแล้ว','Done')} (${done.length}) ${doneOpen ? '▲' : '▼'}`;
+    doneBoard?.classList.toggle('hidden', !doneOpen);
+    if (doneBoard && done.length) {
+      doneBoard.innerHTML = done.map((n, idx) => noteCardHtml(n, idx, { archived: true })).join('');
+    }
+
+    const allCards = [...document.querySelectorAll('#notes-board [data-note-act], #notes-done-board [data-note-act]')];
+    allCards.forEach(btn => btn.addEventListener('click', async (ev) => {
       ev.stopPropagation();
       const note = notes.find(x => x.id === btn.dataset.id);
       if (!note) return;
-      if (btn.dataset.noteAct === 'edit') openNoteForm(note);
-      else {
+      const act = btn.dataset.noteAct;
+      if (act === 'edit') return openNoteForm(note);
+      if (act === 'delete') {
         const ok = await confirmAction({
           title: th('ลบโน้ตนี้?', 'Delete this note?'),
           message: note.title || note.body?.slice(0, 60) || '',
@@ -2783,10 +2871,25 @@ async function renderItinerary(params) {
           toast.success(th('ลบโน้ตแล้ว', 'Note deleted'));
           await loadNotes();
         } catch (e) { toast.error(e.message); }
+        return;
       }
+      // done / restore — never destructive: it can always be brought back.
+      const archived = act === 'done';
+      try {
+        const res = await setNoteArchived(tripId, note.id, archived, currentUser.uid);
+        note.archived = archived;
+        toast.success(archived
+          ? th('เก็บโน้ตแล้ว — กด “เก็บแล้ว” เพื่อนำกลับมาได้','Filed away — bring it back from “Done”')
+          : th('นำโน้ตกลับมาแล้ว','Note restored'));
+        if (!res.synced) toast.info(th('เก็บไว้ในเครื่องนี้ (ยังไม่ได้ Publish firestore.rules)','Kept on this device (firestore.rules not published yet)'));
+        renderNotes();
+      } catch (e) { toast.error(e.message); }
     }));
     queueIcons();
   }
+
+  bind('notes-toggle-btn', 'click', () => { notesFolded = !notesFolded; renderNotes(); });
+  bind('notes-done-toggle', 'click', () => { doneOpen = !doneOpen; renderNotes(); });
 
   async function loadNotes() {
     try {
@@ -2883,6 +2986,183 @@ async function renderItinerary(params) {
 
   bind('add-note-btn', 'click', () => openNoteForm(null));
   loadNotes();
+
+  /* ------------------------- itinerary PNG export ------------------------- */
+  // One image with everything: header, the map (real tiles when available,
+  // otherwise a schematic), the day legend and every item of every day.
+  const STATUS_TONE = {
+    planned: '#2563eb', current: '#d97706', completed: '#059669', skipped: '#6b7280', cancelled: '#dc2626'
+  };
+  // Rate for the baht lines in the exported sheet: trip rate → expense snapshots.
+  let exportThbRate = resolveTripThbRate(trip, [], currency);
+  const fmtThbOf = (minor) => {
+    const v = toThbMinor(minor, currency, exportThbRate || 0);
+    return v == null || currency === 'THB' ? '' : formatCurrency(v, 'THB');
+  };
+  /** Estimated cost of an itinerary item, expressed in the trip currency. */
+  const estTripMinor = (it) => {
+    const amount = Number(it.estimateAmount) || 0;
+    if (amount <= 0) return 0;
+    const code = it.estimateCurrency || currency;
+    const minor = toMinor(amount, getCurrencyDecimals(code));
+    if (code === currency) return minor;
+    const codeRate = resolveTripThbRate(trip, [], code);
+    if (!codeRate || !exportThbRate) return 0;
+    return Math.round((minor * codeRate) / exportThbRate);
+  };
+  const statusLabel = (it) => {
+    const def = ITINERARY_STATUSES.find(st => st.id === (it.status || 'planned'));
+    return def ? (lang === 'th' ? def.th : def.en) : (it.status || 'planned');
+  };
+
+  /** The printable sheet that becomes the PNG. */
+  function itinerarySheetHtml(ordered, mapDataUrl) {
+    const tripDaysList = tripDays.length ? tripDays.map(d => dayjs(d).format('YYYY-MM-DD')) : [];
+    const daysSet = new Set([...tripDaysList, ...ordered.map(i => i.date).filter(Boolean)]);
+    const days = [...daysSet].sort();
+    const located = ordered
+      .map(i => ({ title: i.title || '', date: i.date || '', ...(parseLatLng(i.coordinates) || {}) }))
+      .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+
+    const estTotal = ordered.reduce((sum, it) => sum + estTripMinor(it), 0);
+    const actualTotal = ordered.filter(it => it.expenseId).reduce((sum, it) => sum + estTripMinor(it), 0);
+
+    let mapBlock;
+    if (mapDataUrl) {
+      mapBlock = `<img src="${mapDataUrl}" alt="map">`;
+    } else if (located.length) {
+      const { svg, html } = schematicMap(located, { dayColors });
+      mapBlock = `<div class="itin-sheet-map-inner">${svg}${html}</div>`;
+    } else {
+      mapBlock = `<div class="itin-sheet-empty">${th('ยังไม่มีพิกัดในแผนนี้ — เพิ่มพิกัด (lat,lng) ให้สถานที่เพื่อให้มีแผนที่ในรูป', 'No coordinates yet — add (lat,lng) to a place to include a map in the image')}</div>`;
+    }
+
+    const legend = located.length ? '' : '';
+    const legendItems = days.map((d, i) => `
+      <span><i class="itin-sheet-dot" style="background:${dayColors[d] || '#2563eb'};"></i>${th('วันที่','Day')} ${i + 1} • ${dayjs(d).format('DD MMM')}${dayColors[d] ? '' : ''}</span>`).join('');
+
+    const daySections = days.map((day, dayIdx) => {
+      const dayItems = ordered.filter(it => (it.date || '') === day);
+      const dayEst = dayItems.reduce((sum, it) => sum + estTripMinor(it), 0);
+      const rows = dayItems.map((it, idx) => {
+        const est = estTripMinor(it);
+        const thb = est ? fmtThbOf(est) : '';
+        const meta = [
+          `${formatTime(it.startAt, trip?.timezone)} – ${formatTime(it.endAt, trip?.timezone)}`,
+          formatDuration(it.durationMinutes),
+          categoryLabel(it.category || 'general', lang),
+          it.travelToNextMinutes > 0 ? `${th('เดินทางต่อ','travel')} ${it.travelToNextMinutes} ${th('นาที','min')}` : '',
+          it.address ? it.address : '',
+          it.coordinates ? `${th('พิกัด','coord')} ${it.coordinates}` : ''
+        ].filter(Boolean).map(escapeHtml).join(' • ');
+        return `
+          <tr>
+            <td style="width:34px;color:#6b7280;font-weight:700;">${idx + 1}</td>
+            <td>
+              <div class="itin-sheet-item-title">${escapeHtml(it.title || '')}</div>
+              <div class="itin-sheet-item-meta">${meta}</div>
+              ${it.notes ? `<div class="itin-sheet-note">${escapeHtml(it.notes)}</div>` : ''}
+            </td>
+            <td style="width:88px;"><span class="itin-sheet-status">${escapeHtml(statusLabel(it))}</span></td>
+            <td class="num" style="width:112px;">${est ? `<span class="itin-sheet-est">${formatCurrency(est, currency)}${thb ? `<i>≈ ${thb}</i>` : ''}</span>` : '<span style="color:#9ca3af;">—</span>'}</td>
+          </tr>`;
+      }).join('');
+      return `
+        <section class="itin-sheet-day">
+          <div class="itin-sheet-day-head">
+            <div class="itin-sheet-day-num" style="background:${dayColors[day] || '#2563eb'};">${dayIdx + 1}</div>
+            <div class="itin-sheet-day-title">${escapeHtml(formatDate(day, lang, trip?.timezone) || day)}</div>
+            <div class="itin-sheet-day-sub">${dayItems.length} ${th('ที่','places')}${dayEst ? ` • ${formatCurrency(dayEst, currency)}` : ''}</div>
+          </div>
+          ${dayItems.length ? `
+          <table class="itin-sheet-table">
+            <thead><tr>
+              <th></th><th>${th('สถานที่ / รายละเอียด','Place / details')}</th><th>${th('สถานะ','Status')}</th><th class="num">${th('ประมาณการ','Estimated')}</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>` : `<div class="itin-sheet-empty">${th('วันนี้ยังไม่มีแผน','No plans for this day yet')}</div>`}
+        </section>`;
+    }).join('');
+
+    return `
+      <div id="itinerary-export-sheet" class="itin-sheet">
+        <header class="itin-sheet-head">
+          <div>
+            <div class="itin-sheet-kicker">${th('แผนการเดินทาง','Itinerary')}</div>
+            <h1>${escapeHtml(trip?.name || '')}</h1>
+            <div class="itin-sheet-meta">
+              <span>${icon('calendar-days', 'w-3.5 h-3.5')} <b>${escapeHtml(trip?.startDate || '')}</b> → <b>${escapeHtml(trip?.endDate || '')}</b></span>
+              <span>${icon('map-pinned', 'w-3.5 h-3.5')} <b>${ordered.length}</b> ${th('ที่','places')}</span>
+              <span>${icon('users', 'w-3.5 h-3.5')} <b>${members.length}</b> ${th('คน','people')}</span>
+              <span>${icon('wallet', 'w-3.5 h-3.5')} <b>${escapeHtml(currency)}</b></span>
+            </div>
+          </div>
+          <div class="itin-sheet-stats">
+            <div class="itin-sheet-stat">
+              <span>${th('ประมาณการรวม','Estimated total')}</span>
+              <b>${formatCurrency(estTotal, currency)}</b>
+              ${fmtThbOf(estTotal) ? `<i>≈ ${fmtThbOf(estTotal)}</i>` : ''}
+            </div>
+            <div class="itin-sheet-stat">
+              <span>${th('ผูกกับค่าใช้จ่ายแล้ว','Linked to expenses')}</span>
+              <b>${formatCurrency(actualTotal, currency)}</b>
+              ${fmtThbOf(actualTotal) ? `<i>≈ ${fmtThbOf(actualTotal)}</i>` : ''}
+            </div>
+          </div>
+        </header>
+
+        <section class="itin-sheet-map">
+          ${mapBlock}
+          <div class="itin-sheet-legend">${legendItems}${legend}</div>
+        </section>
+
+        ${daySections || `<div class="itin-sheet-empty">${th('ยังไม่มีแผนในทริปนี้','No itinerary items yet')}</div>`}
+
+        <footer class="itin-sheet-foot">
+          <span>${escapeHtml(trip?.name || '')} • ${th('สร้างเมื่อ','generated')} ${dayjs().format('D MMM YYYY HH:mm')}</span>
+          <span>${th('แผนการเดินทางทั้งหมด','Full itinerary')} • ${ordered.length} ${th('รายการ','items')}</span>
+        </footer>
+      </div>`;
+  }
+
+  async function exportItineraryPng() {
+    const wrap = document.getElementById('itinerary-export-wrap');
+    if (!wrap) return;
+    const tLoad = toast.loading(th('กำลังสร้างรูปแผนการเดินทาง…', 'Building the itinerary image…'));
+    try {
+      const { elementToPngDataUrl, exportToPng } = await import('./exports/index.js');
+      // Expenses carry the rate snapshots used for the ≈ THB lines (cached read).
+      const expenseList = await fetchAllExpenses(tripId).catch(() => []) || [];
+      exportThbRate = resolveTripThbRate(trip, expenseList, currency);
+      const all = await fetchItinerary(tripId, null).catch(() => visibleItems) || [];
+      const ordered = [...all].sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.order || 0) - (b.order || 0));
+
+      // The live map is captured first (real tiles), schematic SVG as fallback.
+      let mapDataUrl = null;
+      const mapEl = document.getElementById('map');
+      if (mapVisible && mapEl?.querySelector('.leaflet-tile')) {
+        mapDataUrl = await elementToPngDataUrl('map', { flat: false, scale: 2 });
+      }
+
+      wrap.innerHTML = itinerarySheetHtml(ordered, mapDataUrl);
+      await Promise.all([...wrap.querySelectorAll('img')].map(img => {
+        try { return img.decode ? img.decode().catch(() => {}) : Promise.resolve(); } catch { return Promise.resolve(); }
+      }));
+      wrap.classList.add('is-capturing');
+      const safeName = String(trip?.name || tripId).replace(/[\\/:*?"<>|\s]+/g, '-').slice(0, 40);
+      await exportToPng('itinerary-export-sheet', `itinerary-${safeName}-${dayjs().format('YYYYMMDD')}.png`, { flat: false, scale: 2 });
+      tLoad.close();
+      toast.success(th('ส่งออกรูปแผนการเดินทางแล้ว', 'Itinerary image exported'));
+      confetti({ y: 150, count: 14 });
+    } catch (e) {
+      tLoad.close();
+      toast.error(e?.message || String(e));
+    } finally {
+      // The sheet stays off-screen so the result can be inspected (and so a
+      // retry does not have to rebuild the map capture).
+      wrap.classList.remove('is-capturing');
+    }
+  }
 
   /* ------------------------- list rendering ------------------------- */
   function itemCardHtml(it, idx, { draggable = false } = {}) {
@@ -3552,6 +3832,8 @@ async function renderExpenses(params) {
     const catLabel = categoryLabel(e.category || 'general', lang);
     const payer = membersMap[e.payerId]?.displayName || '';
     const participants = (e.allocations || []).filter(a => a.amountMinor > 0).length;
+    const method = e.paymentMethod === 'card' ? 'card' : e.paymentMethod === 'transfer' ? 'transfer' : 'cash';
+    const methodText = method === 'card' ? th('บัตรเครดิต','Card') : method === 'transfer' ? th('โอนเงิน','Transfer') : th('เงินสด','Cash');
     return `
       <div class="expense-card card card-hover" data-expense="${e.id}">
         <div class="row-icon" style="width:44px;height:44px;border-radius:14px;background:color-mix(in srgb, ${categoryColor(e.category)} 16%, transparent);color:${categoryColor(e.category)};">
@@ -3574,8 +3856,11 @@ async function renderExpenses(params) {
             <span class="meta-line">${icon('calendar', 'w-3 h-3')} ${escapeHtml(e.date || '')}</span>
             ${payer ? `<span class="meta-line">${icon('user', 'w-3 h-3')} ${escapeHtml(payer)}</span>` : ''}
             ${participants ? `<span class="meta-line">${icon('split', 'w-3 h-3')} ${participants} ${th('คน','pax')}</span>` : ''}
+            <span class="rcpt-chip rcpt-chip--${method}">${icon(method === 'card' ? 'credit-card' : method === 'transfer' ? 'arrow-left-right' : 'banknote', 'w-2.5 h-2.5')} ${methodText}</span>
+            ${e.cardName ? `<span class="rcpt-chip rcpt-chip--card" title="${th('บัตรเครดิต','Card')}">${icon('credit-card', 'w-2.5 h-2.5')} ${escapeHtml(e.cardName)}</span>` : ''}
           </div>
           ${e.description ? `<p class="text-[11px] text-[var(--text-secondary)] mt-1 line-clamp-2">${escapeHtml(e.description)}</p>` : ''}
+          ${e.receiptImage ? `<img class="expense-receipt-thumb" src="${escapeHtml(e.receiptImage)}" alt="${th('รูปใบเสร็จ','Receipt photo')}" loading="lazy">` : ''}
         </div>
         <div class="expense-actions">
           <button class="icon-btn" data-act="edit" data-id="${e.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
@@ -3888,8 +4173,31 @@ async function renderExpenseAdd(params) {
               <option value="transfer" ${e.paymentMethod === 'transfer' ? 'selected' : ''}>${th('โอนเงิน','Transfer')}</option>
             </select>
           </div>
-          <div class="input-group"><label class="input-label">${icon('link', 'w-3.5 h-3.5')} ${th('ลิงก์ใบเสร็จ','Receipt URL')}</label><input id="ex-receipt" class="input" placeholder="https://..." value="${escapeHtml(e.receiptUrl || '')}"></div>
+          <div class="input-group" id="ex-card-group">
+            <label class="input-label">${icon('credit-card', 'w-3.5 h-3.5')} ${th('ชื่อบัตรเครดิต','Card name')}</label>
+            <input id="ex-card" class="input" list="ex-card-list" autocomplete="off" placeholder="${th('เช่น KBank Visa ••4321','e.g. KBank Visa ••4321')}" value="${escapeHtml(e.cardName || '')}">
+            <datalist id="ex-card-list">
+              ${suggestCards(tripId).map(c => `<option value="${escapeHtml(c)}"></option>`).join('')}
+            </datalist>
+            <p class="input-hint">${th('ใส่ชื่อบัตรไว้ เพื่อสรุปได้ว่าค่าใช้จ่ายอยู่บัตรไหน','Name the card so the summary can group spending per card')}</p>
+          </div>
         </div>
+
+        <div class="input-group">
+          <label class="input-label">${icon('image-plus', 'w-3.5 h-3.5')} ${th('รูปใบเสร็จ (ไม่บังคับ)','Receipt photo (optional)')}</label>
+          <div class="receipt-upload">
+            <div id="ex-receipt-preview" class="receipt-upload-preview ${e.receiptImage ? '' : 'hidden'}">
+              ${e.receiptImage ? `<img src="${escapeHtml(e.receiptImage)}" alt="receipt">` : ''}
+            </div>
+            <div class="btn-row">
+              <label class="btn btn-secondary btn-sm" for="ex-receipt-file">${icon('upload', 'w-4 h-4')} ${th('เลือกรูป','Choose photo')}</label>
+              <input id="ex-receipt-file" type="file" accept="image/*" class="hidden">
+              <button type="button" id="ex-receipt-clear" class="btn btn-ghost btn-sm ${e.receiptImage ? '' : 'hidden'}">${icon('trash-2', 'w-4 h-4')} ${th('ลบรูป','Remove')}</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="input-group"><label class="input-label">${icon('link', 'w-3.5 h-3.5')} ${th('ลิงก์ใบเสร็จ','Receipt URL')}</label><input id="ex-receipt" class="input" placeholder="https://..." value="${escapeHtml(e.receiptUrl || '')}"></div>
 
         <div class="input-group"><label class="input-label">${icon('align-left', 'w-3.5 h-3.5')} ${th('รายละเอียด','Description')}</label><textarea id="ex-desc" class="input" style="min-height:70px;">${escapeHtml(e.description || '')}</textarea></div>
 
@@ -3915,6 +4223,54 @@ async function renderExpenseAdd(params) {
       }
     }
   }));
+
+  /* ---- payment method → card name field ---- */
+  const paymentSel = document.getElementById('ex-payment');
+  const cardGroup = document.getElementById('ex-card-group');
+  const cardInput = document.getElementById('ex-card');
+  const syncCardField = () => {
+    const isCard = paymentSel?.value === 'card';
+    cardGroup?.classList.toggle('hidden', !isCard);
+    if (!isCard && cardInput) cardInput.value = '';
+  };
+  paymentSel?.addEventListener('change', syncCardField);
+  syncCardField();
+
+  /* ---- receipt photo (optional): preview now, upload on save ---- */
+  let pendingReceiptFile = null;
+  let receiptCleared = false;
+  const receiptFileInput = document.getElementById('ex-receipt-file');
+  const receiptPreview = document.getElementById('ex-receipt-preview');
+  const receiptClearBtn = document.getElementById('ex-receipt-clear');
+
+  const setReceiptPreview = (src) => {
+    if (!receiptPreview) return;
+    receiptPreview.innerHTML = src ? `<img src="${src}" alt="receipt">` : '';
+    receiptPreview.classList.toggle('hidden', !src);
+    receiptClearBtn?.classList.toggle('hidden', !src);
+  };
+
+  receiptFileInput?.addEventListener('change', async () => {
+    const file = receiptFileInput.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error(th('เลือกไฟล์รูปภาพเท่านั้น','Pick an image file')); return; }
+    if (file.size > 12 * 1024 * 1024) { toast.error(th('รูปใหญ่เกินไป (สูงสุด 12MB)','Image too large (max 12MB)')); return; }
+    pendingReceiptFile = file;
+    receiptCleared = false;
+    try {
+      const reader = new FileReader();
+      reader.onload = () => setReceiptPreview(String(reader.result));
+      reader.readAsDataURL(file);
+    } catch { setReceiptPreview(''); }
+    toast.success(th('แนบรูปแล้ว — จะอัปโหลดตอนบันทึก','Attached — it uploads when you save'));
+  });
+
+  bind('ex-receipt-clear', 'click', () => {
+    pendingReceiptFile = null;
+    receiptCleared = true;
+    if (receiptFileInput) receiptFileInput.value = '';
+    setReceiptPreview('');
+  });
 
   let selectedPayer = e.payerId || members[0]?.id || currentUser.uid;
   let selectedShare = new Set(members.filter(m => {
@@ -4075,16 +4431,38 @@ async function renderExpenseAdd(params) {
         payerId: selectedPayer,
         allocations,
         paymentMethod: document.getElementById('ex-payment').value,
+        cardName: document.getElementById('ex-payment').value === 'card'
+          ? (document.getElementById('ex-card')?.value || '').trim()
+          : '',
         receiptUrl: document.getElementById('ex-receipt').value.trim(),
         itineraryItemId: document.getElementById('ex-itinerary').value || null,
         status: 'active',
         source: e.source || 'manual'
       };
       if (!payload.title) throw new Error(th('กรุณากรอกชื่อรายการ', 'Title is required'));
+      let savedId = editId;
       if (isEdit) {
         await updateExpense(tripId, editId, payload, currentUser.uid);
       } else {
-        await addExpense(tripId, payload, currentUser.uid);
+        savedId = await addExpense(tripId, payload, currentUser.uid);
+      }
+
+      // Card name → remember locally so the next expense can pick it from a list.
+      if (payload.cardName) rememberCard(tripId, payload.cardName);
+
+      // Receipt photo: uploaded after save (needs the expense id) and stored on
+      // the document. Storage when available, inlined image otherwise.
+      if (pendingReceiptFile && savedId) {
+        toast.loading(th('กำลังอัปโหลดรูปใบเสร็จ…','Uploading receipt photo…'));
+        const res = await uploadReceiptImage(tripId, savedId, pendingReceiptFile);
+        if (res.url) {
+          await updateExpense(tripId, savedId, { receiptImage: res.url, receiptStorage: res.storage }, currentUser.uid);
+          if (res.storage === 'inline') toast.info(th('เก็บรูปไว้ในเอกสารของทริปนี้','Photo stored inside the trip document'));
+        } else {
+          toast.warning(th('อัปโหลดรูปไม่สำเร็จ — บันทึกค่าใช้จ่ายไว้แล้ว','Photo upload failed — the expense was still saved'));
+        }
+      } else if (isEdit && receiptCleared) {
+        await updateExpense(tripId, savedId, { receiptImage: '', receiptStorage: 'none' }, currentUser.uid);
       }
       tLoad.close();
       toast.success(isEdit ? th('บันทึกการแก้ไขแล้ว', 'Saved') : th('บันทึกค่าใช้จ่ายแล้ว', 'Expense saved'));
@@ -4153,12 +4531,30 @@ async function renderSettlement(params) {
       </div>`;
   }
 
+  /** Paid rows grouped by credit card (so a receipt shows which card was used). */
+  function cardTotals(items) {
+    const rows = new Map();
+    for (const i of items) {
+      if (i.method !== 'card' || !i.cardName) continue;
+      const key = String(i.cardName).trim();
+      const row = rows.get(key) || { card: key, totalMinor: 0, count: 0 };
+      row.totalMinor += i.amountMinor || 0;
+      row.count += 1;
+      rows.set(key, row);
+    }
+    return [...rows.values()].sort((a, b) => b.totalMinor - a.totalMinor);
+  }
+
   function receiptHtml(m) {
     const isMe = m.memberId === currentUser.uid;
     const methods = ['cash', 'card', 'transfer'].filter(k => m.paidByMethod[k] > 0);
     const paidItems = m.items.filter(i => i.role === 'paid');
     const shareItems = m.items.filter(i => i.role === 'share');
     const settled = m.netMinor > 0 && shareItems.length === 0;
+    const cards = cardTotals(paidItems);
+    const chip = (k) => `<span class="rcpt-chip rcpt-chip--${k}">${icon(methodIcon(k), 'w-3 h-3')} ${methodLabel(k)}</span>`;
+    const positive = m.netMinor >= 0;
+
     return `
       <div class="receipt" id="receipt-${escapeHtml(m.memberId)}" data-receipt="${escapeHtml(m.memberId)}">
         <div class="receipt-head">
@@ -4170,59 +4566,95 @@ async function renderSettlement(params) {
           </div>
         </div>
 
-        <div class="receipt-section-title">${icon('arrow-down-circle', 'w-3.5 h-3.5')} ${th('รับ — เงินที่จ่ายไป','Received — money this member paid')}</div>
-        <table class="receipt-table">
-          <thead><tr>
-            <th>${th('รายการ','Item')}</th><th>${th('วิธี','Method')}</th><th class="num">${th('จำนวน','Amount')}</th>
-          </tr></thead>
-          <tbody>
-            ${paidItems.length ? paidItems.map(i => `
-              <tr>
-                <td>${escapeHtml(i.title)}${i.estimated ? ` <span class="badge badge-skipped text-[9px]">${th('ประมาณการ','est.')}</span>` : ''}<div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(i.date || '')}</div></td>
-                <td>${icon(methodIcon(i.method), 'w-3 h-3')} ${methodLabel(i.method)}</td>
-                <td class="num">${money(i.amountMinor)}${currency !== 'THB' && thbOf(i.amountMinor) ? `<div class="thb-equiv block">≈ ${thbOf(i.amountMinor)}</div>` : ''}</td>
-              </tr>`).join('')
-              : `<tr><td colspan="3" class="text-[var(--text-tertiary)]">${th('ยังไม่ได้จ่ายรายการใด','No payments recorded')}</td></tr>`}
-          </tbody>
-        </table>
-        <div class="receipt-line muted">
-          <span>${th('แยกตามวิธีจ่าย','By payment method')}</span>
-          <span>${methods.length ? methods.map(k => `${methodLabel(k)} ${money(m.paidByMethod[k])}`).join(' • ') : '—'}</span>
-        </div>
-        <div class="receipt-line"><span>${th('รวมรับ (จ่ายจริง)','Total paid')}</span><span class="font-bold">${money(m.paidMinor)} ${thbTag(m.paidMinor)}</span></div>
-
-        <div class="receipt-section-title">${icon('arrow-up-circle', 'w-3.5 h-3.5')} ${th('หัก — ส่วนที่ต้องรับผิดชอบ','Deductions — this member\'s share')}</div>
-        <table class="receipt-table">
-          <thead><tr>
-            <th>${th('รายการ','Item')}</th><th>${th('จ่ายโดย','Paid by')}</th><th class="num">${th('ส่วนของฉัน','My share')}</th>
-          </tr></thead>
-          <tbody>
-            ${shareItems.length ? shareItems.map(i => {
-              const payer = state.membersMap[i.paidBy];
-              return `
-              <tr>
-                <td>${escapeHtml(i.title)}${i.estimated ? ` <span class="badge badge-skipped text-[9px]">${th('ประมาณการ','est.')}</span>` : ''}<div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(i.date || '')} • ${methodLabel(i.method)}</div></td>
-                <td>${escapeHtml(payer?.displayName || '—')}</td>
-                <td class="num">${money(i.amountMinor)}${currency !== 'THB' && thbOf(i.amountMinor) ? `<div class="thb-equiv block">≈ ${thbOf(i.amountMinor)}</div>` : ''}</td>
-              </tr>`;
-            }).join('')
-              : `<tr><td colspan="3" class="text-[var(--text-tertiary)]">${th('ไม่มีส่วนที่ต้องรับผิดชอบ','No shares')}</td></tr>`}
-          </tbody>
-        </table>
-        <div class="receipt-line"><span>${th('รวมหัก (ส่วนที่ต้องรับผิดชอบ)','Total share')}</span><span class="font-bold">${money(m.owedMinor)} ${thbTag(m.owedMinor)}</span></div>
-
-        <div class="receipt-totals">
-          <div class="receipt-line"><span>${th('รับ','Received')}</span><span>${money(m.paidMinor)}</span></div>
-          <div class="receipt-line"><span>${th('หัก','Deducted')}</span><span>− ${money(m.owedMinor)}</span></div>
-          <div class="receipt-line total">
-            <span>${th('คงเหลือ','Balance')}</span>
-            <span class="${m.netMinor >= 0 ? 'receipt-positive' : 'receipt-negative'}">${m.netMinor >= 0 ? '+' : '−'}${money(Math.abs(m.netMinor))}</span>
+        <!-- 1) รับ — money this member actually paid (green block) -->
+        <section class="rcpt-block rcpt-block--recv" data-receipt-section="received">
+          <div class="rcpt-block-head">
+            <span class="rcpt-block-icon">${icon('arrow-down-circle', 'w-4 h-4')}</span>
+            <span class="rcpt-block-title">${th('รับ — เงินที่จ่ายไป','Received — money this member paid')}</span>
+            <span class="rcpt-block-total">${money(m.paidMinor)}${currency !== 'THB' && thbOf(m.paidMinor) ? `<i>≈ ${thbOf(m.paidMinor)}</i>` : ''}</span>
           </div>
-          ${m.netMinor >= 0
-            ? `<div class="receipt-line muted">${th('จะได้รับคืนจากเพื่อนในทริป','Gets this back from the group')}</div>`
-            : `<div class="receipt-line muted">${th('ต้องจ่ายคืนให้เพื่อนในทริป','Owes this to the group')}</div>`}
-          ${currency !== 'THB' && thbOf(m.netMinor) ? `<div class="receipt-line muted">${th('คิดเป็นเงินไทย','In Thai baht')}: ${thbOf(Math.abs(m.netMinor))}</div>` : ''}
-        </div>
+          <div class="rcpt-block-body">
+            <table class="receipt-table">
+              <thead><tr>
+                <th>${th('รายการ','Item')}</th><th>${th('วิธี','Method')}</th><th class="num">${th('จำนวน','Amount')}</th>
+              </tr></thead>
+              <tbody>
+                ${paidItems.length ? paidItems.map(i => `
+                  <tr>
+                    <td>
+                      <span class="rcpt-item-title">${escapeHtml(i.title)}</span>
+                      ${i.estimated ? ` <span class="badge badge-skipped text-[9px]">${th('ประมาณการ','est.')}</span>` : ''}
+                      ${i.hasReceipt ? ` <span class="rcpt-flag">${icon('paperclip', 'w-3 h-3')} ${th('มีใบเสร็จ','receipt')}</span>` : ''}
+                      <div class="rcpt-item-sub">${escapeHtml(i.date || '')}</div>
+                    </td>
+                    <td>${chip(i.method)}${i.cardName ? `<div class="rcpt-card">${icon('credit-card', 'w-3 h-3')} ${escapeHtml(i.cardName)}</div>` : ''}</td>
+                    <td class="num">${money(i.amountMinor)}${currency !== 'THB' && thbOf(i.amountMinor) ? `<div class="thb-equiv block">≈ ${thbOf(i.amountMinor)}</div>` : ''}</td>
+                  </tr>`).join('')
+                  : `<tr><td colspan="3" class="text-[var(--text-tertiary)]">${th('ยังไม่ได้จ่ายรายการใด','No payments recorded')}</td></tr>`}
+              </tbody>
+            </table>
+            ${methods.length ? `<div class="rcpt-methods">${methods.map(k => `<span class="rcpt-method">${chip(k)} <b>${money(m.paidByMethod[k])}</b></span>`).join('')}</div>` : ''}
+            ${cards.length ? `<div class="rcpt-cards">
+              <div class="rcpt-cards-title">${icon('credit-card', 'w-3.5 h-3.5')} ${th('บัตรที่ใช้จ่าย','Cards used')}</div>
+              ${cards.map(c => `<div class="rcpt-card-row"><span>${escapeHtml(c.card)} <i>${c.count} ${th('รายการ','items')}</i></span><b>${money(c.totalMinor)}</b></div>`).join('')}
+            </div>` : ''}
+            <div class="rcpt-block-total-line"><span>${th('รวมรับ (จ่ายจริง)','Total paid')}</span><b>${money(m.paidMinor)} ${thbTag(m.paidMinor)}</b></div>
+          </div>
+        </section>
+
+        <!-- 2) หัก — this member's share of everything (rose block) -->
+        <section class="rcpt-block rcpt-block--deduct" data-receipt-section="deduct">
+          <div class="rcpt-block-head">
+            <span class="rcpt-block-icon">${icon('arrow-up-circle', 'w-4 h-4')}</span>
+            <span class="rcpt-block-title">${th('หัก — ส่วนที่ต้องรับผิดชอบ','Deductions — this member\'s share')}</span>
+            <span class="rcpt-block-total">${money(m.owedMinor)}${currency !== 'THB' && thbOf(m.owedMinor) ? `<i>≈ ${thbOf(m.owedMinor)}</i>` : ''}</span>
+          </div>
+          <div class="rcpt-block-body">
+            <table class="receipt-table">
+              <thead><tr>
+                <th>${th('รายการ','Item')}</th><th>${th('จ่ายโดย','Paid by')}</th><th class="num">${th('ส่วนของฉัน','My share')}</th>
+              </tr></thead>
+              <tbody>
+                ${shareItems.length ? shareItems.map(i => {
+                  const payer = state.membersMap[i.paidBy];
+                  return `
+                  <tr>
+                    <td>
+                      <span class="rcpt-item-title">${escapeHtml(i.title)}</span>
+                      ${i.estimated ? ` <span class="badge badge-skipped text-[9px]">${th('ประมาณการ','est.')}</span>` : ''}
+                      <div class="rcpt-item-sub">${escapeHtml(i.date || '')} • ${methodLabel(i.method)}${i.cardName ? ` • ${escapeHtml(i.cardName)}` : ''}</div>
+                    </td>
+                    <td>${escapeHtml(payer?.displayName || '—')}</td>
+                    <td class="num">${money(i.amountMinor)}${currency !== 'THB' && thbOf(i.amountMinor) ? `<div class="thb-equiv block">≈ ${thbOf(i.amountMinor)}</div>` : ''}</td>
+                  </tr>`;
+                }).join('')
+                  : `<tr><td colspan="3" class="text-[var(--text-tertiary)]">${th('ไม่มีส่วนที่ต้องรับผิดชอบ','No shares')}</td></tr>`}
+              </tbody>
+            </table>
+            <div class="rcpt-block-total-line"><span>${th('รวมหัก (ส่วนที่ต้องรับผิดชอบ)','Total share')}</span><b>${money(m.owedMinor)} ${thbTag(m.owedMinor)}</b></div>
+          </div>
+        </section>
+
+        <!-- 3) คงเหลือ — the answer, blue block -->
+        <section class="rcpt-block rcpt-block--balance" data-receipt-section="balance">
+          <div class="rcpt-block-head">
+            <span class="rcpt-block-icon">${icon('scale', 'w-4 h-4')}</span>
+            <span class="rcpt-block-title">${th('คงเหลือ — สรุปสุดท้าย','Balance — the bottom line')}</span>
+          </div>
+          <div class="rcpt-block-body">
+            <div class="rcpt-sum">
+              <div class="rcpt-sum-row"><span>${th('รับ','Received')}</span><b>${money(m.paidMinor)}</b></div>
+              <div class="rcpt-sum-row"><span>${th('หัก','Deducted')}</span><b>− ${money(m.owedMinor)}</b></div>
+              <div class="rcpt-sum-total ${positive ? 'is-positive' : 'is-negative'}">
+                <span>${th('คงเหลือ','Balance')}</span>
+                <b>${positive ? '+' : '−'}${money(Math.abs(m.netMinor))}</b>
+              </div>
+              <div class="rcpt-sum-note">${positive
+                ? th('จะได้รับคืนจากเพื่อนในทริป','Gets this back from the group')
+                : th('ต้องจ่ายคืนให้เพื่อนในทริป','Owes this to the group')}${currency !== 'THB' && thbOf(m.netMinor) ? ` • ${th('คิดเป็นเงินไทย','in THB')} ${thbOf(Math.abs(m.netMinor))}` : ''}</div>
+            </div>
+          </div>
+        </section>
 
         <div class="receipt-foot">
           ${settled ? `<span class="receipt-stamp">${icon('check-circle-2', 'w-3 h-3')} ${th('เคลียร์ครบแล้ว','Fully settled')}</span><br>` : ''}
@@ -4281,6 +4713,33 @@ async function renderSettlement(params) {
     </div>`;
   }
 
+  /** "ค่าใช้จ่ายเกิดขึ้นในบัตรไหนบ้าง" — totals per credit card. */
+  function cardsSummaryHtml() {
+    const cards = cardSummary(state.expenses, state.membersMap);
+    if (!cards.length) {
+      return `<div class="mt-4 p-3 rounded-xl text-[11px] flex items-center gap-2" style="background:var(--bg-secondary); color:var(--text-secondary);">
+        ${icon('credit-card', 'w-3.5 h-3.5')} ${th('ยังไม่มีรายการที่ระบุชื่อบัตรเครดิต — เพิ่มชื่อบัตรตอนบันทึกค่าใช้จ่าย แล้วสรุปบัตรจะขึ้นที่นี่','No expenses name a credit card yet — add the card name when saving an expense and the summary appears here')}
+      </div>`;
+    }
+    const total = cards.reduce((sum, c) => sum + c.totalMinor, 0);
+    return `
+      <div class="mt-5">
+        <h4 class="font-bold text-sm mb-3 flex items-center gap-2">${icon('credit-card', 'w-4 h-4')} ${th('สรุปบัตรเครดิต','Credit card summary')}
+          <span class="badge badge-planned text-[10px]">${cards.length}</span>
+        </h4>
+        <div class="card-summary-grid">
+          ${cards.map(c => `
+            <div class="card-summary-tile">
+              <div class="card-summary-name">${icon('credit-card', 'w-3.5 h-3.5')} ${escapeHtml(c.card)}</div>
+              <div class="card-summary-amount">${money(c.totalMinor)}</div>
+              ${currency !== 'THB' && thbOf(c.totalMinor) ? `<div class="card-summary-thb">≈ ${thbOf(c.totalMinor)}</div>` : ''}
+              <div class="card-summary-meta">${c.count} ${th('รายการ','items')}${c.estimatedMinor ? ` • ${th('ประมาณการ','est.')} ${money(c.estimatedMinor)}` : ''}${c.holders.length ? ` • ${escapeHtml(c.holders.join(', '))}` : ''}</div>
+            </div>`).join('')}
+        </div>
+        <div class="receipt-line muted mt-2"><span>${th('รวมทุกบัตร','All cards')}</span><span>${money(total)} ${thbTag(total)}</span></div>
+      </div>`;
+  }
+
   function overviewHtml() {
     const totalPaid = state.statements.reduce((s, m) => s + m.paidMinor, 0);
     const byMethod = state.statements.reduce((acc, m) => {
@@ -4314,6 +4773,7 @@ async function renderSettlement(params) {
           </tbody>
         </table>
         <div class="receipt-line muted"><span>${th('ยอดรวมทุกคน','Everyone together')}</span><span>${money(state.statements.reduce((s, m) => s + m.netMinor, 0))}</span></div>
+        ${cardsSummaryHtml()}
       </div>
       ${transactionsHtml()}`;
   }

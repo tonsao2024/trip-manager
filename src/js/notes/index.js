@@ -62,3 +62,46 @@ export async function deleteNote(tripId, noteId) {
   if (!db) throw new Error('DB not ready');
   await deleteDoc(doc(db, `trips/${tripId}/notes/${noteId}`));
 }
+
+/* ------------------------------------------------------------------ *
+ * "เก็บโน้ต" (done / archived) — keeps the board tidy but never loses a note.
+ * The flag lives on the document; if Firestore refuses the write (rules not
+ * published yet) the note id is remembered on this device instead, so the
+ * button always works and can always be undone.
+ * ------------------------------------------------------------------ */
+const ARCHIVE_KEY = (tripId) => `fuji_notes_archived:${tripId}`;
+
+/** Note ids archived locally (fallback when the write was denied). */
+export function localArchivedIds(tripId) {
+  try {
+    const raw = localStorage.getItem(ARCHIVE_KEY(tripId));
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch { return []; }
+}
+
+function setLocalArchived(tripId, noteId, archived) {
+  try {
+    const list = new Set(localArchivedIds(tripId));
+    if (archived) list.add(noteId); else list.delete(noteId);
+    localStorage.setItem(ARCHIVE_KEY(tripId), JSON.stringify([...list]));
+  } catch { /* ignore */ }
+}
+
+/**
+ * Hide a note as done (or bring it back).
+ * @returns {Promise<{synced: boolean}>} synced=false → kept on this device only
+ */
+export async function setNoteArchived(tripId, noteId, archived = true, uid = null) {
+  const payload = { archived: !!archived, archivedAt: archived ? serverTimestamp() : null, updatedBy: uid, updatedAt: serverTimestamp() };
+  try {
+    if (!db) throw new Error('DB not ready');
+    await updateDoc(doc(db, `trips/${tripId}/notes/${noteId}`), payload);
+    setLocalArchived(tripId, noteId, false);   // the document is the source of truth now
+    return { synced: true };
+  } catch (e) {
+    console.warn('setNoteArchived failed (keeping it local)', e?.code || e?.message);
+    setLocalArchived(tripId, noteId, !!archived);
+    return { synced: false };
+  }
+}

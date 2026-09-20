@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Export harness — real browser check</title>
+<link rel="stylesheet" href="/src/css/tokens.css">
+<link rel="stylesheet" href="/src/css/components.css">
+<style>
+  /* Stand-ins for the app's own utility classes (the app loads Tailwind from a
+     CDN; the harness only needs the handful used by receipts/sheets). */
+  .card { background: var(--bg-card, #fff); border: 1px solid var(--border); border-radius: 16px; padding: 16px; }
+  .font-bold { font-weight: 800; }
+  .text-\[11px\] { font-size: 11px; }
+  .text-\[10px\] { font-size: 10px; }
+  .text-\[var\(--text-tertiary\)\] { color: var(--text-tertiary); }
+  .badge { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); }
+  .receipt-grid { display: grid; gap: 12px; }
+  body { padding: 24px; background: var(--bg); font-family: var(--font-display), system-ui, sans-serif; }
+  .harness-note { max-width: 900px; margin: 0 auto 16px; font-size: 12px; color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<p class="harness-note">
+  หน้าเทสต์นี้เรนเดอร์ใบเสร็จ/แผนการเดินทางด้วย CSS จริงของแอป แล้วเรียก pipeline ส่งออก PNG ตัวจริง
+  (src/js/exports/index.js) ด้วย html2canvas ของจริง — ใช้ตรวจว่าสีแบบ color-mix()/oklch() ส่งออกได้จริงในเบราว์เซอร์
+</p>
+
+<div id="stage">
+  <!-- 1) per-person receipt (the redesigned colour-coded one) -->
+  <div class="receipt-grid">
+    <div class="receipt" id="receipt-u1" data-receipt="u1">
+      <div class="receipt-head">
+        <div class="receipt-title">เคลียร์บิล</div>
+        <div class="receipt-sub">ทริปฟูจิ 2027 • 2026-10-10 → 2026-10-14</div>
+        <div class="receipt-meta">
+          <span><b>สมาชิก:</b> สมชาย (คุณ)</span>
+          <span><b>สกุล:</b> JPY • 1 JPY = 0.24 THB</span>
+        </div>
+      </div>
+
+      <section class="rcpt-block rcpt-block--recv" data-receipt-section="received">
+        <div class="rcpt-block-head">
+          <span class="rcpt-block-icon">▼</span>
+          <span class="rcpt-block-title">รับ — เงินที่จ่ายไป</span>
+          <span class="rcpt-block-total">¥12,900<i>≈ ฿3,096.00</i></span>
+        </div>
+        <div class="rcpt-block-body">
+          <table class="receipt-table">
+            <thead><tr><th>รายการ</th><th>วิธี</th><th class="num">จำนวน</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><span class="rcpt-item-title">โรงแรมฟูจิวิว</span> <span class="rcpt-flag">มีใบเสร็จ</span>
+                  <div class="rcpt-item-sub">2026-10-10</div></td>
+                <td><span class="rcpt-chip rcpt-chip--card">บัตรเครดิต</span>
+                  <div class="rcpt-card">KBank Visa ••4321</div></td>
+                <td class="num">¥9,900<div class="thb-equiv block">≈ ฿2,376.00</div></td>
+              </tr>
+              <tr>
+                <td><span class="rcpt-item-title">ค่าตั๋วรถบัส</span>
+                  <div class="rcpt-item-sub">2026-10-11</div></td>
+                <td><span class="rcpt-chip rcpt-chip--cash">เงินสด</span></td>
+                <td class="num">¥3,000<div class="thb-equiv block">≈ ฿720.00</div></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="rcpt-methods">
+            <span class="rcpt-method"><span class="rcpt-chip rcpt-chip--card">บัตรเครดิต</span> <b>¥9,900</b></span>
+            <span class="rcpt-method"><span class="rcpt-chip rcpt-chip--cash">เงินสด</span> <b>¥3,000</b></span>
+          </div>
+          <div class="rcpt-cards">
+            <div class="rcpt-cards-title">บัตรที่ใช้จ่าย</div>
+            <div class="rcpt-card-row"><span>KBank Visa ••4321 <i>1 รายการ</i></span><b>¥9,900</b></div>
+          </div>
+          <div class="rcpt-block-total-line"><span>รวมรับ (จ่ายจริง)</span><b>¥12,900 <span class="thb-equiv">≈ ฿3,096.00</span></b></div>
+        </div>
+      </section>
+
+      <section class="rcpt-block rcpt-block--deduct" data-receipt-section="deduct">
+        <div class="rcpt-block-head">
+          <span class="rcpt-block-icon">▲</span>
+          <span class="rcpt-block-title">หัก — ส่วนที่ต้องรับผิดชอบ</span>
+          <span class="rcpt-block-total">¥6,450<i>≈ ฿1,548.00</i></span>
+        </div>
+        <div class="rcpt-block-body">
+          <table class="receipt-table">
+            <thead><tr><th>รายการ</th><th>จ่ายโดย</th><th class="num">ส่วนของฉัน</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><span class="rcpt-item-title">โรงแรมฟูจิวิว</span>
+                  <div class="rcpt-item-sub">2026-10-10 • บัตรเครดิต • KBank Visa ••4321</div></td>
+                <td>นุ่น</td>
+                <td class="num">¥4,950<div class="thb-equiv block">≈ ฿1,188.00</div></td>
+              </tr>
+              <tr>
+                <td><span class="rcpt-item-title">ราเมงฮาจิบัง</span>
+                  <div class="rcpt-item-sub">2026-10-11 • เงินสด</div></td>
+                <td>นุ่น</td>
+                <td class="num">¥1,500<div class="thb-equiv block">≈ ฿360.00</div></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="rcpt-block-total-line"><span>รวมหัก (ส่วนที่ต้องรับผิดชอบ)</span><b>¥6,450 <span class="thb-equiv">≈ ฿1,548.00</span></b></div>
+        </div>
+      </section>
+
+      <section class="rcpt-block rcpt-block--balance" data-receipt-section="balance">
+        <div class="rcpt-block-head">
+          <span class="rcpt-block-icon">＝</span>
+          <span class="rcpt-block-title">คงเหลือ — สรุปสุดท้าย</span>
+        </div>
+        <div class="rcpt-block-body">
+          <div class="rcpt-sum">
+            <div class="rcpt-sum-row"><span>รับ</span><b>¥12,900</b></div>
+            <div class="rcpt-sum-row"><span>หัก</span><b>− ¥6,450</b></div>
+            <div class="rcpt-sum-total is-positive"><span>คงเหลือ</span><b>+¥6,450</b></div>
+            <div class="rcpt-sum-note">จะได้รับคืนจากเพื่อนในทริป • คิดเป็นเงินไทย ฿1,548.00</div>
+          </div>
+        </div>
+      </section>
+
+      <div class="receipt-foot">ออกโดย Fuji Planner • 20/9/2569 15:04:00</div>
+    </div>
+  </div>
+
+  <!-- 2) itinerary export sheet (map + every day) -->
+  <div class="itin-sheet" id="itinerary-export-sheet">
+    <header class="itin-sheet-head">
+      <div>
+        <div class="itin-sheet-kicker">แผนการเดินทาง</div>
+        <h1>ทริปฟูจิ 2027</h1>
+        <div class="itin-sheet-meta">
+          <span><b>2026-10-10</b> → <b>2026-10-14</b></span>
+          <span><b>4</b> ที่</span>
+          <span><b>2</b> คน</span>
+          <span><b>JPY</b></span>
+        </div>
+      </div>
+      <div class="itin-sheet-stats">
+        <div class="itin-sheet-stat"><span>ประมาณการรวม</span><b>¥5,000</b><i>≈ ฿1,200.00</i></div>
+        <div class="itin-sheet-stat"><span>ผูกกับค่าใช้จ่ายแล้ว</span><b>¥2,500</b><i>≈ ฿600.00</i></div>
+      </div>
+    </header>
+
+    <section class="itin-sheet-map">
+      <div id="map-slot" class="itin-sheet-map-inner"></div>
+      <div class="itin-sheet-legend">
+        <span><i class="itin-sheet-dot" style="background:#2563eb;"></i>วันที่ 1 • 10 Oct</span>
+        <span><i class="itin-sheet-dot" style="background:#e11d48;"></i>วันที่ 2 • 11 Oct</span>
+        <span><i class="itin-sheet-dot" style="background:#059669;"></i>วันที่ 3 • 12 Oct</span>
+      </div>
+    </section>
+
+    <section class="itin-sheet-day">
+      <div class="itin-sheet-day-head">
+        <div class="itin-sheet-day-num" style="background:#2563eb;">1</div>
+        <div class="itin-sheet-day-title">10 ต.ค. 2026</div>
+        <div class="itin-sheet-day-sub">2 ที่ • ¥5,000</div>
+      </div>
+      <table class="itin-sheet-table">
+        <thead><tr><th></th><th>สถานที่ / รายละเอียด</th><th>สถานะ</th><th class="num">ประมาณการ</th></tr></thead>
+        <tbody>
+          <tr>
+            <td style="width:34px;color:#6b7280;font-weight:700;">1</td>
+            <td>
+              <div class="itin-sheet-item-title">ทะเลสาบคาวากุจิ</div>
+              <div class="itin-sheet-item-meta">09:00 – 11:00 • 2 ชม. • ท่องเที่ยว • Kawaguchiko, Yamanashi • พิกัด 35.5171,138.7519</div>
+              <div class="itin-sheet-note">ถ่ายรูปกับฟูจิช่วงเช้า แสงดี</div>
+            </td>
+            <td style="width:88px;"><span class="itin-sheet-status">วางแผน</span></td>
+            <td class="num" style="width:112px;"><span class="itin-sheet-est">¥2,500<i>≈ ฿600.00</i></span></td>
+          </tr>
+          <tr>
+            <td style="width:34px;color:#6b7280;font-weight:700;">2</td>
+            <td>
+              <div class="itin-sheet-item-title">ราเมงฮาจิบัง</div>
+              <div class="itin-sheet-item-meta">12:30 – 13:30 • 1 ชม. • อาหาร • Fujiyoshida</div>
+            </td>
+            <td><span class="itin-sheet-status">วางแผน</span></td>
+            <td class="num"><span style="color:#9ca3af;">—</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer class="itin-sheet-foot">
+      <span>ทริปฟูจิ 2027 • สร้างเมื่อ 20 ก.ย. 2569 15:04</span>
+      <span>แผนการเดินทางทั้งหมด • 4 รายการ</span>
+    </footer>
+  </div>
+</div>
+
+<script type="module">
+  import { exportToPngToCanvas, exportToPng } from '/src/js/exports/index.js';
+  import { findModernColors, buildPlainClone } from '/src/js/utils/colors.js';
+  import { schematicMap } from '/src/js/exports/itineraryMap.js';
+
+  const out = { steps: [], errors: [], modernBefore: {}, dataUrls: {} };
+
+  // Render the map block with the APP's own builder (pins = SVG, names = HTML).
+  const mapSlot = document.getElementById('map-slot');
+  const map = schematicMap([
+    { title: 'ทะเลสาบคาวากุจิ', date: '2026-10-10', lat: 35.5171, lng: 138.7519 },
+    { title: 'ราเมงฮาจิบัง', date: '2026-10-10', lat: 35.4906, lng: 138.8072 },
+    { title: 'ภูเขามิโตะ', date: '2026-10-11', lat: 36.3667, lng: 140.4667 }
+  ], { dayColors: { '2026-10-10': '#2563eb', '2026-10-11': '#e11d48' } });
+  mapSlot.innerHTML = map.svg + map.html;
+
+  // Prove the environment really does serialise color-mix() to color(srgb …)
+  const probe = document.createElement('div');
+  probe.style.cssText = 'color: color-mix(in srgb, oklch(60% 0.2 20) 45%, transparent);';
+  document.body.appendChild(probe);
+  out.modernBefore.probeComputed = getComputedStyle(probe).color;
+  out.modernBefore.receipt = findModernColors(document.getElementById('receipt-u1')).slice(0, 3);
+  out.modernBefore.sheet = findModernColors(document.getElementById('itinerary-export-sheet')).slice(0, 3);
+  probe.remove();
+
+  for (const [id, kind] of [['receipt-u1', 'receipt'], ['itinerary-export-sheet', 'itinerary']]) {
+    try {
+      const canvas = await exportToPngToCanvas(id, { flat: false, scale: 2 });
+      out.dataUrls[kind] = { width: canvas.width, height: canvas.height, url: canvas.toDataURL('image/png') };
+      out.steps.push(`${id} → ok (${canvas.width}×${canvas.height})`);
+    } catch (e) {
+      out.errors.push(`${id}: ${e.message}`);
+    }
+  }
+
+  // Also drive the download path once (a real anchor click in a real browser).
+  try {
+    await exportToPng('receipt-u1', 'harness-receipt.png', { flat: false, scale: 2 });
+    out.steps.push('exportToPng(receipt) → ok');
+  } catch (e) { out.errors.push(`exportToPng: ${e.message}`); }
+
+  // The production path for receipts/sheets goes through the off-screen plain
+  // clone — export THAT node directly and measure how much ink it produced, so a
+  // blank capture (a classic html2canvas failure) can never slip through.
+  const inkRatio = (canvas) => {
+    try {
+      const ctx = canvas.getContext('2d');
+      const { width, height } = canvas;
+      const data = ctx.getImageData(0, 0, width, height).data;
+      let ink = 0, total = 0;
+      for (let i = 0; i < data.length; i += 4 * 37) {   // sample every 37th pixel
+        total++;
+        if (data[i] < 245 || data[i + 1] < 245 || data[i + 2] < 245) ink++;
+      }
+      return total ? ink / total : 0;
+    } catch (e) { return -1; }
+  };
+
+  for (const [id, kind] of [['receipt-u1', 'receipt'], ['itinerary-export-sheet', 'itinerary']]) {
+    const built = buildPlainClone(document.getElementById(id));
+    if (!built) { out.errors.push(`clone(${id}): could not build the plain clone`); continue; }
+    try {
+      const canvas = await exportToPngToCanvas(built.node, { flat: false, scale: 2 });
+      const ratio = inkRatio(canvas);
+      out.clones = out.clones || {};
+      out.clones[id] = { width: canvas.width, height: canvas.height, ink: Number(ratio.toFixed(4)) };
+      if (!(ratio > 0.01)) out.errors.push(`clone(${id}): the capture looks blank (ink ${ratio})`);
+      else out.steps.push(`clone(${id}) → ok (${canvas.width}×${canvas.height}, ink ${(ratio * 100).toFixed(1)}%)`);
+      out.dataUrls[`${kind}-clone`] = { width: canvas.width, height: canvas.height, url: canvas.toDataURL('image/png') };
+    } catch (e) {
+      out.errors.push(`clone(${id}): ${e.message}`);
+    } finally {
+      built.cleanup();
+    }
+  }
+
+  window.__harnessResult = out;
+</script>
+</body>
+</html>

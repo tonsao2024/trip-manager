@@ -344,7 +344,9 @@ const COLOR_PROPS = [
   // html2canvas parses these too — they are the ones people forget
   '-webkit-text-fill-color', '-webkit-text-stroke-color', '-webkit-text-stroke',
   'text-emphasis-color', 'border-block-start-color', 'border-block-end-color',
-  'border-inline-start-color', 'border-inline-end-color', 'column-rule', 'outline'
+  'border-inline-start-color', 'border-inline-end-color', 'column-rule', 'outline',
+  // shorthands html2canvas also inspects
+  'border-color', 'border-top', 'border-right', 'border-bottom', 'border-left', 'border'
 ];
 
 const NEEDS_FIX = /color-mix\(|oklch\(|oklab\(|\blab\(|\blch\(|\bcolor\(|light-dark\(|color-contrast\(|device-cmyk\(/i;
@@ -360,6 +362,37 @@ function safeFallbackFor(prop, resolved) {
   if (DROP_IF_UNRESOLVED.test(prop)) return prop === 'background-image' ? 'none' : 'none';
   if (/color$/i.test(prop) || prop === 'color') return resolved || 'rgb(0, 0, 0)';
   return resolved || 'rgb(0, 0, 0)';
+}
+
+/**
+ * Pseudo elements (::before / ::after) cannot be patched inline and can still
+ * carry `color-mix()` / `color()` values, so hand them the parent's (plain)
+ * colour and drop everything gradient/shadow-like for the capture.
+ * @returns {HTMLElement|null} the injected <style> (call .remove() when done)
+ */
+export function injectPlainPseudoSheet(win = globalThis.window) {
+  const sheet = win?.document?.createElement?.('style');
+  if (!sheet) return null;
+  try { sheet.setAttribute('data-export-sanitizer', '1'); } catch { /* ignore */ }
+  sheet.textContent = `
+      *, *::before, *::after {
+        -webkit-text-fill-color: currentColor !important;
+        -webkit-text-stroke-color: currentColor !important;
+        text-decoration-color: currentColor !important;
+        column-rule-color: currentColor !important;
+        outline-color: currentColor !important;
+        caret-color: currentColor !important;
+        text-emphasis-color: currentColor !important;
+      }
+      *::before, *::after {
+        background-image: none !important;
+        box-shadow: none !important;
+        text-shadow: none !important;
+        border-color: currentColor !important;
+      }
+    `;
+  try { win.document.head?.appendChild(sheet); } catch { return sheet; }
+  return sheet;
 }
 
 /**
@@ -426,31 +459,8 @@ export function sanitizeColorsForExport(root, win = globalThis.window) {
     }
   }
 
-  // Pseudo elements (::before / ::after) cannot be patched inline. They can still
-  // carry `color-mix()` / `color()` values, so hand them the parent's (already
-  // plain) colour and drop everything gradient/shadow-like for the capture.
-  const sheet = win.document?.createElement?.('style');
-  if (sheet) {
-    try { sheet.setAttribute?.('data-export-sanitizer', '1'); } catch { /* ignore */ }
-    sheet.textContent = `
-      *, *::before, *::after {
-        -webkit-text-fill-color: currentColor !important;
-        -webkit-text-stroke-color: currentColor !important;
-        text-decoration-color: currentColor !important;
-        column-rule-color: currentColor !important;
-        outline-color: currentColor !important;
-        caret-color: currentColor !important;
-        text-emphasis-color: currentColor !important;
-      }
-      *::before, *::after {
-        background-image: none !important;
-        box-shadow: none !important;
-        text-shadow: none !important;
-        border-color: currentColor !important;
-      }
-    `;
-    try { win.document.head?.appendChild(sheet); } catch { /* ignore */ }
-  }
+  // Pseudo elements (::before / ::after) cannot be patched inline — see below.
+  const sheet = injectPlainPseudoSheet(win);
 
   return () => {
     try { sheet?.remove?.(); } catch { /* ignore */ }
@@ -461,6 +471,134 @@ export function sanitizeColorsForExport(root, win = globalThis.window) {
       } catch { /* ignore */ }
     }
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * Plain-style clone — the definitive export trick.
+ *
+ * html2canvas parses the *computed* styles of the captured subtree. Chromium
+ * serialises every colour that came from `color-mix()`/`oklch()` as
+ * `color(srgb …)`, and html2canvas throws on it ("Attempting to parse an
+ * unsupported color function \"color\""). Sanitising the live element is
+ * fragile: a single property no one thought of is enough to break the export.
+ *
+ * So before a capture we build a deep clone whose every property is written as
+ * an inline `!important` declaration taken from the source's computed style —
+ * with colours already converted to plain rgb()/rgba(). html2canvas then reads
+ * values that WE produced, and no CSS rule (or custom property) can leak a
+ * modern colour into the capture.
+ * ------------------------------------------------------------------ */
+
+/** Properties copied onto the clone (computed → inline, so rendering matches). */
+const FLATTEN_PROPS = [
+  'display', 'position', 'top', 'right', 'bottom', 'left', 'z-index', 'float',
+  'box-sizing', 'width', 'height', 'min-width', 'min-height', 'max-width', 'max-height',
+  'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+  'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+  'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
+  'border-top-style', 'border-right-style', 'border-bottom-style', 'border-left-style',
+  'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
+  'border-top-left-radius', 'border-top-right-radius', 'border-bottom-right-radius', 'border-bottom-left-radius',
+  'background-color', 'background-image', 'background-position', 'background-size', 'background-repeat',
+  'color', 'font-family', 'font-size', 'font-weight', 'font-style', 'line-height', 'letter-spacing',
+  'text-align', 'text-transform', 'text-decoration-line', 'text-indent', 'white-space',
+  'word-break', 'overflow-wrap', 'text-overflow', 'vertical-align', 'opacity',
+  'overflow', 'overflow-x', 'overflow-y', 'transform', 'transform-origin',
+  'flex-direction', 'flex-wrap', 'flex-grow', 'flex-shrink', 'flex-basis',
+  'justify-content', 'align-items', 'align-self', 'align-content', 'gap', 'row-gap', 'column-gap',
+  'order', 'grid-template-columns', 'grid-template-rows', 'grid-auto-flow', 'grid-column', 'grid-row',
+  'list-style-type', 'border-collapse', 'border-spacing', 'table-layout',
+  'object-fit', 'object-position', 'box-shadow', 'text-shadow', 'filter', 'backdrop-filter',
+  'aspect-ratio', 'direction', 'visibility', 'mix-blend-mode', 'outline-width', 'outline-style', 'outline-color',
+  '-webkit-text-fill-color', '-webkit-text-stroke-color', '-webkit-text-stroke-width'
+];
+
+/** Resolve one computed value to something html2canvas can always parse. */
+function toPlainValue(prop, raw, { normalize, resolveCanvas }) {
+  if (!raw || typeof raw !== 'string') return null;
+  const isColor = /color$/i.test(prop) || prop === 'color';
+  const isBgImage = prop === 'background-image';
+  if (!NEEDS_FIX.test(raw)) {
+    // Already plain — but still validate colours so we never pass something odd on.
+    if (isColor && parseColor(raw) === null && !/^(transparent|currentcolor|inherit|none|initial|unset)$/i.test(raw)) {
+      const viaCanvas = resolveCanvas(raw);
+      if (viaCanvas) return toRgba(viaCanvas);
+    }
+    return raw;
+  }
+  let out = resolveColorValue(raw, { normalize });
+  if (out && NEEDS_FIX.test(out)) out = rewriteColorFunctions(out, resolveCanvas);
+  if (out && NEEDS_FIX.test(out)) out = resolveColorValue(out, { normalize });
+  if (out && !NEEDS_FIX.test(out)) return out;
+  if (isBgImage) return 'none';                     // gradients/shadows are the usual culprits
+  if (prop === 'box-shadow' || prop === 'text-shadow' || prop === 'filter' || prop === 'backdrop-filter') return 'none';
+  const viaCanvas = resolveCanvas(raw);
+  if (viaCanvas) return toRgba(viaCanvas);
+  return null;                                      // caller decides the fallback
+}
+
+/**
+ * Deep-clone `root` with every computed style written inline (colours plain).
+ * @returns {{node: Element, cleanup: () => void}|null}
+ */
+export function buildPlainClone(root, win = globalThis.window, { hidden = true } = {}) {
+  if (!root || !win?.document || !root.cloneNode) return null;
+  let clone;
+  try { clone = root.cloneNode(true); } catch { return null; }
+  const sources = [root, ...(root.querySelectorAll?.('*') || [])];
+  const targets = [clone, ...(clone.querySelectorAll?.('*') || [])];
+  if (sources.length !== targets.length) return null;
+
+  const normalize = makeCanvasNormalizer(win);
+  const resolveCanvas = makeCanvasColorResolver(win);
+
+  for (let i = 0; i < sources.length; i++) {
+    const src = sources[i];
+    const dst = targets[i];
+    if (!dst?.style) continue;
+    let cs;
+    try { cs = win.getComputedStyle(src); } catch { continue; }
+    if (!cs) continue;
+    let css = '';
+    for (const prop of FLATTEN_PROPS) {
+      let raw = '';
+      try { raw = cs.getPropertyValue(prop) || ''; } catch { continue; }
+      if (!raw) continue;
+      let value = toPlainValue(prop, raw, { normalize, resolveCanvas });
+      if (value == null || value === '') {
+        if (prop === 'background-color') value = 'rgba(0, 0, 0, 0)';
+        else if (prop === 'background-image' || /shadow|filter/.test(prop)) value = 'none';
+        else continue;
+      }
+      css += `${prop}:${value} !important;`;
+    }
+    try { dst.style.cssText = css; } catch { /* ignore */ }
+    if (dst.tagName === 'CANVAS') continue;
+  }
+
+  // Rasterised canvases (map exports) must travel as images.
+  try {
+    for (const canvas of [...clone.querySelectorAll('canvas')]) {
+      try {
+        const img = win.document.createElement('img');
+        img.setAttribute('src', canvas.toDataURL('image/png'));
+        img.setAttribute('style', canvas.getAttribute('style') || '');
+        img.className = canvas.className || '';
+        canvas.replaceWith(img);
+      } catch { /* keep the canvas as-is */ }
+    }
+  } catch { /* ignore */ }
+
+  if (!hidden) return { node: clone, cleanup: () => {} };
+
+  const wrap = win.document.createElement('div');
+  wrap.setAttribute('data-export-clone', '1');
+  wrap.setAttribute('aria-hidden', 'true');
+  const width = Math.max(root.scrollWidth || 0, root.clientWidth || 0, 320);
+  wrap.style.cssText = `position:fixed;left:-20000px;top:0;z-index:0;pointer-events:none;width:${width}px;`;
+  wrap.appendChild(clone);
+  try { win.document.body.appendChild(wrap); } catch { return null; }
+  return { node: clone, cleanup: () => { try { wrap.remove(); } catch { /* ignore */ } } };
 }
 
 /**
@@ -513,6 +651,26 @@ export function hardPlainPalette(root, win = globalThis.window) {
       } catch { /* ignore */ }
     }
   };
+}
+
+/** Names of every property still carrying an unreadable colour (for diagnostics). */
+export function findModernColors(root, win = globalThis.window) {
+  if (!root || !win?.getComputedStyle) return [];
+  const found = [];
+  const nodes = [root];
+  for (let parent = root.parentElement; parent; parent = parent.parentElement) nodes.push(parent);
+  nodes.push(...(root.querySelectorAll?.('*') || []));
+  for (const node of nodes) {
+    let computed;
+    try { computed = win.getComputedStyle(node); } catch { continue; }
+    if (!computed) continue;
+    for (const prop of COLOR_PROPS) {
+      let raw = '';
+      try { raw = computed.getPropertyValue(prop) || ''; } catch { continue; }
+      if (raw && NEEDS_FIX.test(raw)) found.push(`${node.tagName?.toLowerCase() || '?'}.${prop}=${raw.slice(0, 40)}`);
+    }
+  }
+  return found;
 }
 
 /** Does anything in this subtree still carry a color html2canvas cannot read? */

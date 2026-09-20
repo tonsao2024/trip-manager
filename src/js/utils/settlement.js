@@ -109,6 +109,8 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
       date: exp.date || '',
       role: 'paid',
       method,
+      cardName: exp.cardName || '',
+      hasReceipt: Boolean(exp.receiptImage || exp.receiptUrl),
       estimated: Boolean(exp.isEstimated),
       amountMinor: total,
       currency: exp.currency || null
@@ -128,6 +130,8 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
           role: 'share',
           paidBy: payerId,
           method,
+          cardName: exp.cardName || '',
+          hasReceipt: Boolean(exp.receiptImage || exp.receiptUrl),
           estimated: Boolean(exp.isEstimated),
           amountMinor: share,
           currency: exp.currency || null
@@ -143,6 +147,33 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
     return row;
   });
   return statements.sort((a, b) => b.paidMinor - a.paidMinor || String(a.displayName).localeCompare(String(b.displayName)));
+}
+
+/**
+ * Spending per credit card — "ค่าใช้จ่ายเกิดขึ้นในบัตรไหนบ้าง".
+ *
+ * @param {Array} expenses
+ * @param {Object} membersMap  id → member (for the card holder name)
+ * @returns {Array<{card:string, totalMinor:number, count:number, holders:string[], currency:string|null, estimatedMinor:number}>}
+ */
+export function cardSummary(expenses = [], membersMap = {}) {
+  const rows = new Map();
+  for (const e of expenses) {
+    if (!e || (e.status || 'active') === 'voided') continue;
+    if (e.paymentMethod !== 'card' || !e.cardName) continue;
+    const key = String(e.cardName).trim();
+    if (!key) continue;
+    if (!rows.has(key)) rows.set(key, { card: key, totalMinor: 0, count: 0, holders: [], currency: e.currency || null, estimatedMinor: 0 });
+    const row = rows.get(key);
+    const amount = Number(e.netTotalMinor) || 0;
+    row.totalMinor += amount;
+    row.count += 1;
+    if (e.isEstimated) row.estimatedMinor += amount;
+    const holder = membersMap[e.payerId || e.paidBy]?.displayName;
+    if (holder && !row.holders.includes(holder)) row.holders.push(holder);
+    if (!row.currency && e.currency) row.currency = e.currency;
+  }
+  return [...rows.values()].sort((a, b) => b.totalMinor - a.totalMinor);
 }
 
 /** Which expenses a settlement transaction settles (debtor's share of each). */
