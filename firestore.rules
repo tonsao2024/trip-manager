@@ -214,6 +214,24 @@ service cloud.firestore {
         allow update: if isAuthenticated();
         allow delete: if isAuthenticated();
       }
+
+      // Comments attached to an expense (flag / question an item).
+      // Any member of the trip may write one; it may be edited or removed by the
+      // person who wrote it, or by a trip admin (moderation).
+      match /comments/{commentId} {
+        allow read: if isTripMember(tripId);
+        allow create: if isTripMember(tripId);
+        allow update, delete: if isTripMember(tripId) && (
+          isTripAdmin(tripId) || !('uid' in resource.data) || resource.data.uid == request.auth.uid
+        );
+      }
+
+      // Activity log: who created / edited / deleted what. Append-only.
+      match /activity/{entryId} {
+        allow read: if isTripMember(tripId);
+        allow create: if isTripMember(tripId);
+        allow update, delete: if false;
+      }
     }
   }
 }

@@ -129,12 +129,14 @@ function buildPayload(data) {
     thbMinor: Math.round((data.netTotalMinor || 0) * rate),
     notes: data.notes || '',
     source: data.source || 'manual',
+    createdByName: data.createdByName || '',
+    updatedByName: data.updatedByName || '',
     _decimals: decimals,
     _currency: currency
   };
 }
 
-export async function addExpense(tripId, data, userId) {
+export async function addExpense(tripId, data, userId, by = null) {
   if (!db) throw new Error('DB not ready');
   if (!userId) throw new Error('User not authenticated');
 
@@ -154,10 +156,13 @@ export async function addExpense(tripId, data, userId) {
 
   const payload = buildPayload({ ...data, netTotalMinor: net });
   delete payload._decimals; delete payload._currency;
+  const authorName = by?.displayName || by?.email || '';
   const ref = await addDoc(collection(db, `trips/${tripId}/expenses`), {
     ...payload,
     createdBy: userId,
     updatedBy: userId,
+    createdByName: authorName,
+    updatedByName: authorName,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     version: 1
@@ -171,7 +176,7 @@ export async function addExpense(tripId, data, userId) {
   return ref.id;
 }
 
-export async function updateExpense(tripId, expenseId, updates, userId) {
+export async function updateExpense(tripId, expenseId, updates, userId, by = null) {
   const ref = doc(db, `trips/${tripId}/expenses`, expenseId);
   const snap = await getDoc(ref);
   if (!snap.exists()) throw new Error('ไม่พบรายการนี้');
@@ -202,6 +207,7 @@ export async function updateExpense(tripId, expenseId, updates, userId) {
     estimatedMinor: merged.isEstimated ? merged.netTotalMinor : 0,
     actualMinor: merged.isEstimated ? 0 : merged.netTotalMinor,
     updatedBy: userId,
+    updatedByName: by?.displayName || by?.email || merged.updatedByName || '',
     updatedAt: serverTimestamp(),
     version: (merged.version || 0) + 1,
     _decimals: decimals

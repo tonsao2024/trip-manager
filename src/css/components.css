@@ -1662,14 +1662,16 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 }
 .itin-layout.map-hidden { grid-template-columns: minmax(0, 1fr); }
 .itin-col-days { min-width: 0; }
-.itin-col-map { min-width: 0; align-self: start; position: sticky; top: 10px; }
+.itin-col-map { min-width: 0; align-self: start; position: sticky; top: 10px; max-height: calc(100vh - 16px); }
+/* "แผนที่พอดีจอเสมอ": the exact height is measured in JS (--itin-map-h) and the
+   fallbacks below only apply for the very first paint. */
 @media (min-width: 1024px) {
-  .itin-col-map #map { height: min(74vh, 680px) !important; }
+  .itin-col-map #map { height: var(--itin-map-h, calc(100vh - 150px)) !important; }
 }
 @media (max-width: 1023px) {
   .itin-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
-  .itin-col-map { order: -1; position: static; }
-  .itin-col-map #map { height: min(40vh, 320px) !important; }
+  .itin-col-map { order: -1; position: static; max-height: none; }
+  .itin-col-map #map { height: var(--itin-map-h, min(44vh, 340px)) !important; }
 }
 
 /* ------------------------------------------------------------------ *
@@ -1825,3 +1827,223 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 .notes-board--done { opacity: .92; }
 .note-actions button[data-note-act="done"]:hover { background: #dcfce7; }
 .note-actions button[data-note-act="restore"]:hover { background: #dbeafe; }
+
+/* ============================================================
+   v11 — comments / questions on expenses, activity log,
+   day grouping, prominent member name on receipts
+   ============================================================ */
+
+/* Comment button on an expense row: badge with the number of comments */
+.icon-btn.has-comments {
+  color: #0369a1;
+  background: #e0f2fe;
+  border-color: #bae6fd;
+}
+.icon-btn.has-comments:hover { color: #075985; background: #bae6fd; border-color: #7dd3fc; }
+.icon-btn-badge {
+  position: absolute;
+  top: -5px; right: -5px;
+  min-width: 15px; height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #0284c7;
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 800;
+  line-height: 15px;
+  text-align: center;
+  box-shadow: 0 1px 4px rgba(2, 132, 199, 0.4);
+}
+.icon-btn { position: relative; }
+.comment-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 7px; border-radius: 999px;
+  background: #e0f2fe; color: #0369a1;
+  font-size: 10px; font-weight: 800;
+  border: 1px solid #bae6fd;
+}
+.comment-chip svg { width: 10px; height: 10px; }
+
+/* Last comment preview under an expense row */
+.expense-comment-preview {
+  display: flex; align-items: center; gap: 5px;
+  margin-top: 6px;
+  padding: 5px 8px;
+  border-radius: 10px;
+  background: #f0f9ff;
+  border: 1px solid #e0f2fe;
+  color: #0c4a6e;
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+.expense-comment-preview svg { width: 12px; height: 12px; flex-shrink: 0; color: #0284c7; }
+.expense-comment-preview b { font-weight: 800; }
+[data-theme="dark"] .expense-comment-preview { background: rgba(2, 132, 199, 0.16); border-color: rgba(125, 211, 252, 0.3); color: #bae6fd; }
+[data-theme="dark"] .icon-btn.has-comments { background: rgba(2, 132, 199, 0.22); border-color: rgba(125, 211, 252, 0.35); color: #bae6fd; }
+
+/* Comment sheet */
+.comment-list { display: grid; gap: 8px; max-height: 46vh; overflow-y: auto; padding-right: 2px; }
+.comment-row {
+  display: flex; gap: 9px; align-items: flex-start;
+  padding: 9px 10px;
+  border-radius: 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+}
+.comment-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.comment-head b { font-size: 11.5px; font-weight: 800; }
+.comment-head > span { font-size: 10px; color: var(--text-tertiary); }
+.comment-del {
+  margin-left: auto;
+  display: grid; place-items: center;
+  width: 22px; height: 22px; border-radius: 8px;
+  background: transparent; border: 0; cursor: pointer;
+  color: var(--text-tertiary);
+}
+.comment-del:hover { background: var(--danger-bg); color: var(--danger); }
+.comment-text { font-size: 12px; line-height: 1.45; margin-top: 2px; word-break: break-word; }
+
+/* Activity log (\"ใครแก้ไขล่าสุด\") */
+.activity-row {
+  display: flex; gap: 9px; align-items: flex-start;
+  padding: 8px 4px;
+  border-bottom: 1px dashed var(--border-light);
+}
+.activity-row:last-child { border-bottom: 0; }
+.activity-icon {
+  display: grid; place-items: center;
+  width: 26px; height: 26px; border-radius: 9px;
+  background: var(--bg-secondary);
+  color: var(--primary-strong);
+  border: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+.activity-icon svg { width: 13px; height: 13px; }
+
+/* Expenses grouped by day */
+.expense-day { display: grid; gap: 10px; margin-bottom: 14px; }
+.expense-day-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  position: sticky; top: 0; z-index: 2;
+  backdrop-filter: blur(8px);
+}
+.expense-day-num {
+  display: grid; place-items: center;
+  width: 34px; height: 34px; border-radius: 12px;
+  background: var(--primary-light);
+  color: var(--primary-strong);
+  font-weight: 800; font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.expense-day-title { font-size: 12.5px; font-weight: 800; }
+.expense-day-sub { font-size: 10.5px; color: var(--text-tertiary); }
+.expense-day-total { margin-left: auto; text-align: right; }
+.expense-day-total .amount { font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.expense-day-total .thb-equiv { font-size: 10px; }
+.expense-day-items { display: grid; gap: 10px; }
+
+/* Receipt: the member's name is the headline (screen + exported PNG) */
+.receipt-member-name {
+  font-family: var(--font-display);
+  font-size: 30px;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin-top: 2px;
+}
+.receipt-member-name--lg { font-size: 40px; }
+.rcpt-member-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 2px solid var(--border);
+  margin-bottom: 12px;
+}
+.rcpt-member-bar .avatar {
+  width: 58px; height: 58px; font-size: 22px; font-weight: 800;
+  border-radius: 18px; flex-shrink: 0;
+}
+.rcpt-member-label { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-tertiary); }
+.rcpt-member-sub { font-size: 11.5px; color: var(--text-secondary); margin-top: 3px; }
+
+/* Receipt picker: everyone, or one member at a time */
+.receipt-picker { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; }
+.receipt-picker-item {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 12px 7px 7px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 12px; font-weight: 700;
+}
+.receipt-picker-item .avatar { width: 24px; height: 24px; font-size: 10px; }
+.receipt-picker-item.active { border-color: var(--primary); background: var(--primary-light); color: var(--primary-strong); }
+.receipt-picker-item .count { font-size: 10px; font-weight: 800; color: var(--text-tertiary); }
+.receipt-picker-item.active .count { color: var(--primary-strong); }
+
+/* Comments shown inside the receipt (flag / question an item) */
+.rcpt-comment {
+  display: flex; gap: 6px; align-items: flex-start;
+  margin-top: 4px; padding: 5px 8px;
+  border-radius: 10px;
+  background: #f0f9ff;
+  border-left: 3px solid #0284c7;
+  font-size: 10.5px; line-height: 1.4; color: #0c4a6e;
+}
+.rcpt-comment b { font-weight: 800; }
+.rcpt-comment-icon { flex-shrink: 0; color: #0284c7; }
+.rcpt-summary-comments {
+  margin-top: 8px; padding: 8px 10px;
+  border-radius: 12px;
+  background: #f0f9ff;
+  border: 1px solid #e0f2fe;
+}
+.rcpt-summary-comments-title { font-size: 11px; font-weight: 800; color: #0c4a6e; display: flex; align-items: center; gap: 5px; }
+.rcpt-comment-flag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 7px; border-radius: 999px;
+  background: #e0f2fe; color: #0369a1;
+  font-size: 9.5px; font-weight: 800;
+}
+.export-flat .receipt .rcpt-member-bar { background: #ffffff !important; }
+.export-flat .receipt .rcpt-member-name { color: #0f172a !important; }
+.export-flat .receipt .rcpt-comment { background: #f0f9ff !important; border-left-color: #0284c7 !important; color: #0c4a6e !important; }
+.export-flat .receipt .rcpt-summary-comments { background: #f0f9ff !important; border-color: #bae6fd !important; }
+
+/* Itinerary: export one day at a time */
+.itin-day-export { display: flex; align-items: center; gap: 6px; }
+.itin-day-export-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 9px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border);
+  font-size: 10.5px; font-weight: 700; cursor: pointer;
+  color: var(--text-secondary);
+}
+.itin-day-export-btn:hover { border-color: var(--primary); color: var(--primary-strong); background: var(--primary-light); }
+@media (max-width: 520px) {
+  .receipt-member-name { font-size: 24px; }
+  .receipt-member-name--lg { font-size: 30px; }
+}
+
+/* Small \"ทักท้วง\" button under a receipt item */
+.rcpt-comment-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 4px; padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border);
+  color: var(--text-secondary);
+  font-size: 10px; font-weight: 700; cursor: pointer;
+}
+.rcpt-comment-btn:hover { border-style: solid; border-color: #0284c7; background: #e0f2fe; color: #0369a1; }
+
+/* Day header line on a single-day exported sheet */
+.itin-sheet-dayline { font-size: 13px; font-weight: 700; color: #2563eb; margin: -2px 0 6px; }

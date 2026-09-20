@@ -73,7 +73,7 @@ export function joinPermissionHelp(lang = 'th', { projectId = null, action = 'jo
     ],
     consoleUrl: consoleRulesUrl(projectId),
     repoUrl: REPO_RULES_URL,
-    missing: ['publicProfiles', 'trips/{tripId}/joinRequests', 'users/{uid}/joinRequests', 'trips/{tripId}/categories']
+    missing: ['publicProfiles', 'trips/{tripId}/joinRequests', 'users/{uid}/joinRequests', 'trips/{tripId}/categories', 'trips/{tripId}/comments', 'trips/{tripId}/activity']
   };
 }
 

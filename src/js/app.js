@@ -58,6 +58,8 @@ import {
 import { parseCoordinates, getInitials, compressImage } from './utils/helpers.js';
 import { suggestCards, rememberCard, uploadReceiptImage } from './utils/cards.js';
 import { schematicMap, parseLatLng } from './exports/itineraryMap.js';
+import { listComments, addComment, deleteComment, commentsByExpense, commentsPending } from './comments/index.js';
+import { logActivity, listActivity, activityLabel, activityIcon, lastEditorText } from './utils/activity.js';
 import { t, setLang, getLang } from './utils/i18n.js';
 
 const appEl = document.getElementById('app');
@@ -74,6 +76,177 @@ if (fujiLoaderEl) fujiLoaderEl.innerHTML = renderFujiMascot('loading', 80);
 // --- Icon helpers (Lucide) — replaces all text emoji with real icons ---
 const icon = (name, cls = 'w-4 h-4') => `<i data-lucide="${name}" class="${cls}"></i>`;
 const spinner = (cls = 'w-4 h-4') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="animation: spinFast .9s linear infinite;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
+
+/* ================================================================== *
+ * Comments — members question a bill from the expense list or from the
+ * settlement receipts; the sheet is shared by both pages.
+ * ================================================================== */
+
+/** The signed-in user in the shape the comment/activity log expects. */
+function actor() {
+  return {
+    uid: currentUser?.uid || '',
+    displayName: currentUserDisplayName() || currentUser?.email || '',
+    email: currentUser?.email || '',
+    photoURL: currentUser?.photoURL || ''
+  };
+}
+
+function currentUserDisplayName() {
+  const member = currentTripMembers?.find?.(m => m.id === currentUser?.uid);
+  return member?.displayName || currentUser?.displayName || '';
+}
+
+let currentTripMembers = [];
+
+/** Stamp a moment from a Firestore timestamp / Date / seconds. */
+function fmtWhen(stamp, lang = getLang()) {
+  const seconds = stamp?.seconds ?? (stamp instanceof Date ? stamp.getTime() / 1000 : Number(stamp) || 0);
+  if (!seconds) return '';
+  const d = new Date(seconds * 1000);
+  const diffMin = Math.round((Date.now() - d.getTime()) / 60000);
+  if (diffMin < 1) return lang === 'th' ? 'เมื่อสักครู่' : 'just now';
+  if (diffMin < 60) return lang === 'th' ? `${diffMin} นาทีที่แล้ว` : `${diffMin} min ago`;
+  if (diffMin < 60 * 24 * 7) {
+    const h = Math.round(diffMin / 60);
+    return lang === 'th' ? `${h} ชม. ที่แล้ว` : `${h} h ago`;
+  }
+  return d.toLocaleString(lang === 'th' ? 'th-TH' : 'en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+/** "💬 2" badge used on expense rows / receipt lines. */
+function commentChip(count, extraClass = '') {
+  if (!count) return '';
+  return `<span class="comment-chip ${extraClass}">${icon('message-square', 'w-2.5 h-2.5')} ${count}</span>`;
+}
+
+/**
+ * Comment sheet for one expense (used from the expense list AND the receipts).
+ * @param {{tripId:string, expenseId:string, title?:string, amount?:string,
+ *          comments?:Array, onChanged?:Function, canDeleteAny?:boolean}} options
+ */
+function openCommentSheet({ tripId, expenseId, title = '', amount = '', comments = [], onChanged = null, canDeleteAny = false }) {
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  let items = comments.filter(c => c.expenseId === expenseId);
+  const me = actor();
+
+  const rowHtml = (c) => `
+    <div class="comment-row" data-comment-row="${c.id}">
+      <div class="avatar" style="width:28px;height:28px;font-size:11px;background:${escapeHtml(c.color || 'var(--primary)')};">
+        ${c.photoURL ? `<img src="${escapeHtml(c.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(c.name || '?'))}
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="comment-head">
+          <b>${escapeHtml(c.name || '—')}</b>
+          <span>${escapeHtml(fmtWhen(c.createdAt, lang))}</span>
+          ${c.pending ? `<span class="badge badge-current text-[9px]">${th('ในเครื่องนี้','on device')}</span>` : ''}
+          ${(canDeleteAny || c.uid === me.uid) ? `<button class="comment-del" data-comment-del="${c.id}" title="${t('delete')}">${icon('trash-2', 'w-3 h-3')}</button>` : ''}
+        </div>
+        <div class="comment-text">${escapeHtml(c.text)}</div>
+      </div>
+    </div>`;
+
+  const sheet = showBottomSheet(`
+    <div class="space-y-3">
+      <div class="flex items-start gap-3">
+        <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--info-light);color:var(--info);">${icon('message-square', 'w-5 h-5')}</div>
+        <div class="min-w-0">
+          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${th('ความเห็น / ทักท้วง','Comment / question')}</h3>
+          <p class="text-[11px] text-[var(--text-secondary)] truncate">${escapeHtml(title)}${amount ? ` • ${escapeHtml(amount)}` : ''}</p>
+        </div>
+      </div>
+      <div id="comment-list" class="comment-list"></div>
+      <form id="comment-form" class="space-y-2">
+        <textarea id="comment-input" class="input" style="min-height:70px;" placeholder="${th('พิมพ์ข้อความ เช่น “รายการนี้หารไม่ถูก หรือจ่ายซ้ำหรือเปล่า?”','e.g. “This split looks off — was it paid twice?”')}"></textarea>
+        <button type="submit" id="comment-send" class="btn btn-primary w-full">${icon('send', 'w-4 h-4')} ${th('ส่งความเห็น','Post comment')}</button>
+      </form>
+    </div>
+  `);
+  queueIcons();
+
+  const listEl = sheet.sheet.querySelector('#comment-list');
+  const renderList = () => {
+    if (!listEl) return;
+    listEl.innerHTML = items.length
+      ? items.map(rowHtml).join('')
+      : `<p class="text-[11px] text-[var(--text-tertiary)] text-center py-3">${th('ยังไม่มีความเห็น — เริ่มทักท้วงรายการนี้ได้เลย','No comments yet — start the discussion')}</p>`;
+    listEl.querySelectorAll('[data-comment-del]').forEach(btn => btn.addEventListener('click', async () => {
+      const id = btn.dataset.commentDel;
+      const ok = await confirmAction({ title: th('ลบความเห็นนี้?','Delete this comment?'), confirmText: t('delete'), danger: true, icon: 'trash-2' });
+      if (!ok) return;
+      const target = items.find(c => c.id === id);
+      await deleteComment(tripId, id);
+      items = items.filter(c => c.id !== id);
+      renderList();
+      onChanged?.();
+      // The audit trail is written after the UI update — a slow log must never
+      // delay (or block) what the user sees.
+      logActivity(tripId, { type: 'comment.delete', targetId: expenseId, title, detail: target?.text?.slice(0, 80) || '', user: me }).catch(() => {});
+      toast.success(th('ลบความเห็นแล้ว','Comment deleted'));
+    }));
+    queueIcons();
+  };
+  renderList();
+
+  sheet.sheet.querySelector('#comment-form')?.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const input = sheet.sheet.querySelector('#comment-input');
+    const text = input?.value.trim();
+    if (!text) { toast.error(th('พิมพ์ข้อความก่อนส่ง','Type something first')); return; }
+    const btn = sheet.sheet.querySelector('#comment-send');
+    if (btn) btn.disabled = true;
+    try {
+      const res = await addComment(tripId, expenseId, text, me);
+      items = [...items, { id: res.id, expenseId, text, uid: me.uid, name: me.displayName, photoURL: me.photoURL, pending: !res.synced, createdAt: { seconds: Math.floor(Date.now() / 1000) } }];
+      if (input) input.value = '';
+      renderList();
+      onChanged?.(res);
+      // Same rule as above: the log entry goes out after the comment is visible.
+      logActivity(tripId, { type: 'comment.create', targetId: expenseId, title, detail: text.slice(0, 80), user: me }).catch(() => {});
+      toast.success(res.synced ? th('ส่งความเห็นแล้ว','Comment posted') : th('บันทึกไว้ในเครื่องนี้ (ยังไม่ได้ Publish firestore.rules)','Saved on this device (firestore.rules not published yet)'));
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+  return sheet;
+}
+
+/** The trip's edit history ("ใครแก้ไขล่าสุด"). */
+async function openActivitySheet(tripId) {
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const sheet = showBottomSheet(`
+    <div class="space-y-3">
+      <div class="flex items-center gap-3">
+        <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--bg-secondary);color:var(--text-secondary);">${icon('history', 'w-5 h-5')}</div>
+        <div>
+          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${th('ประวัติการแก้ไข','Activity log')}</h3>
+          <p class="text-[11px] text-[var(--text-secondary)]">${th('ใครเพิ่ม/แก้ไข/ลบ อะไร และเมื่อไร','Who added, edited or deleted what')}</p>
+        </div>
+      </div>
+      <div id="activity-list"><div class="skeleton h-16"></div><div class="skeleton h-16"></div></div>
+    </div>
+  `);
+  queueIcons();
+  const box = sheet.sheet.querySelector('#activity-list');
+  const entries = await listActivity(tripId, { limitCount: 60 });
+  if (!box) return sheet;
+  box.innerHTML = entries.length ? entries.map(e => `
+    <div class="activity-row">
+      <div class="activity-icon">${icon(activityIcon(e.type), 'w-3.5 h-3.5')}</div>
+      <div class="min-w-0 flex-1">
+        <div class="text-xs"><b>${escapeHtml(e.name || '—')}</b> ${escapeHtml(activityLabel(e.type, lang))}${e.title ? ` — ${escapeHtml(e.title)}` : ''}</div>
+        ${e.detail ? `<div class="text-[10px] text-[var(--text-tertiary)] truncate">${escapeHtml(e.detail)}</div>` : ''}
+        <div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(fmtWhen(e.at, lang))}${e.pending ? ` • ${th('ในเครื่องนี้','on device')}` : ''}</div>
+      </div>
+    </div>`).join('')
+    : `<p class="text-[11px] text-[var(--text-tertiary)] text-center py-4">${th('ยังไม่มีประวัติ','No history yet')}</p>`;
+  queueIcons();
+  return sheet;
+}
 
 // --- Render lifecycle + null-safe DOM helpers ---------------------------------
 // Every async view captures a render token; when the user navigates away the token
@@ -2539,7 +2712,8 @@ async function renderItinerary(params) {
         <div class="btn-row">
           <button id="view-all-btn" class="btn btn-secondary btn-sm">${icon('calendar-days', 'w-4 h-4')} <span id="view-all-label">${th('ดูทั้งหมด','View all')}</span></button>
           <button id="toggle-map-btn" class="btn btn-primary btn-sm">${icon('map', 'w-4 h-4')} ${th('แผนที่','Map')}</button>
-          <button id="export-png-btn" class="btn btn-secondary btn-sm">${icon('image', 'w-4 h-4')} PNG</button>
+          <button id="export-png-btn" class="btn btn-secondary btn-sm" title="${th('PNG ทั้งแผน','Whole-plan PNG')}">${icon('image', 'w-4 h-4')} PNG</button>
+          <button id="export-day-png-btn" class="btn btn-secondary btn-sm" title="${th('PNG เฉพาะวันนี้','PNG for one day')}">${icon('calendar-down', 'w-4 h-4')} PNG ${th('รายวัน','per day')}</button>
           ${isAdmin ? `
           <button id="export-excel-btn" class="btn btn-secondary btn-sm">${icon('file-spreadsheet', 'w-4 h-4')} Excel</button>
           <button id="import-excel-btn" class="btn btn-secondary btn-sm">${icon('upload', 'w-4 h-4')} Import</button>` : ''}
@@ -2622,6 +2796,7 @@ async function renderItinerary(params) {
 
   try {
     members = await listMembers(tripId);
+    currentTripMembers = members || [];
   } catch (e) { console.warn('members load failed', e?.message); }
   if (isStale(token)) return;
 
@@ -2668,20 +2843,24 @@ async function renderItinerary(params) {
     if (btn) btn.className = mapVisible ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
     if (mapVisible) {
       setTimeout(async () => {
+        fitMapToViewport();
         const { refreshMapSize } = await import('./maps/index.js');
         refreshMapSize('map');
-        await refreshMap(visibleItems);
+        await refreshMap(visibleItems, { fit: true });
       }, 120);
     }
   });
 
   bind('map-fit-btn', 'click', async () => {
+    fitMapToViewport();
     const { refreshMapSize } = await import('./maps/index.js');
     refreshMapSize('map');
     await refreshMap(visibleItems, { fit: true });
+    fitMapToViewport();
   });
 
   bind('export-png-btn', 'click', () => exportItineraryPng());
+  bind('export-day-png-btn', 'click', () => exportItineraryDayPng(selectedDate));
 
   function mapStatus(state, message) {
     const statusEl = document.getElementById('map-status');
@@ -2701,6 +2880,40 @@ async function renderItinerary(params) {
     }
   }
 
+  /**
+   * "แผนที่พอดีจอเสมอ" — measure the viewport and give the map exactly that
+   * height (desktop: fills the sticky column under the toolbar, mobile: a
+   * comfortable slice), then tell Leaflet to re-measure its tiles.
+   */
+  function fitMapToViewport({ refit = false } = {}) {
+    const mapEl = document.getElementById('map');
+    const col = document.getElementById('itin-layout')?.querySelector('.itin-col-map');
+    if (!mapEl || !col || !mapVisible) return;
+    const top = Math.max(col.getBoundingClientRect().top, 8);
+    const isMobile = window.matchMedia('(max-width: 1023px)').matches;
+    const h = isMobile
+      ? Math.round(Math.min(Math.max(window.innerHeight * 0.44, 240), 420))
+      : Math.round(Math.min(Math.max(window.innerHeight - top - 20, 300), 900));
+    mapEl.style.setProperty('--itin-map-h', `${h}px`);
+    import('./maps/index.js').then(({ refreshMapSize }) => refreshMapSize('map')).catch(() => {});
+    if (refit && visibleItems.some(i => i.coordinates)) refreshMap(visibleItems, { fit: true });
+  }
+
+  // Keep the map fitted while the window/orientation changes (debounced).
+  let mapFitTimer = null;
+  const onViewportChange = () => {
+    clearTimeout(mapFitTimer);
+    mapFitTimer = setTimeout(() => fitMapToViewport({ refit: true }), 140);
+  };
+  window.addEventListener('resize', onViewportChange);
+  window.addEventListener('orientationchange', onViewportChange);
+  const stopViewportWatch = () => {
+    clearTimeout(mapFitTimer);
+    window.removeEventListener('resize', onViewportChange);
+    window.removeEventListener('orientationchange', onViewportChange);
+  };
+  document.addEventListener('routechange', stopViewportWatch, { once: true });
+
   /** Re-render the map markers. This NEVER wipes the container node that Leaflet owns. */
   async function refreshMap(items, { fit = false, forceRecreate = false } = {}) {
     if (!mapVisible) return;
@@ -2718,6 +2931,7 @@ async function renderItinerary(params) {
       mapReady = true;
       mapStatus(located.length ? 'ready' : 'empty');
       setText('map-count', `${res.count || 0} ${th('หมุด','pins')}`);
+      fitMapToViewport();
       refreshMapSize('map');
       if (fit && located.length) {
         setTimeout(() => refreshMapSize('map'), 200);
@@ -3015,17 +3229,26 @@ async function renderItinerary(params) {
     return def ? (lang === 'th' ? def.th : def.en) : (it.status || 'planned');
   };
 
-  /** The printable sheet that becomes the PNG. */
-  function itinerarySheetHtml(ordered, mapDataUrl) {
+  /**
+   * The printable sheet that becomes the PNG.
+   * @param {Array} ordered itinerary items
+   * @param {string|null} mapDataUrl captured map image, if any
+   * @param {{day?:string|null}} options `day` → export only that day (หนึ่งรูปต่อหนึ่งวัน)
+   */
+  function itinerarySheetHtml(ordered, mapDataUrl, { day = null } = {}) {
+    const isDay = !!day;
     const tripDaysList = tripDays.length ? tripDays.map(d => dayjs(d).format('YYYY-MM-DD')) : [];
-    const daysSet = new Set([...tripDaysList, ...ordered.map(i => i.date).filter(Boolean)]);
+    const daysSet = new Set(isDay ? [day] : [...tripDaysList, ...ordered.map(i => i.date).filter(Boolean)]);
     const days = [...daysSet].sort();
-    const located = ordered
+    const scoped = isDay ? ordered.filter(i => (i.date || '') === day) : ordered;
+    const dayIndex = isDay ? Math.max(tripDaysList.indexOf(day), days.indexOf(day)) + 1 : 0;
+    const dayTitle = isDay ? (formatDate(day, lang, trip?.timezone) || day) : '';
+    const located = scoped
       .map(i => ({ title: i.title || '', date: i.date || '', ...(parseLatLng(i.coordinates) || {}) }))
       .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
 
-    const estTotal = ordered.reduce((sum, it) => sum + estTripMinor(it), 0);
-    const actualTotal = ordered.filter(it => it.expenseId).reduce((sum, it) => sum + estTripMinor(it), 0);
+    const estTotal = scoped.reduce((sum, it) => sum + estTripMinor(it), 0);
+    const actualTotal = scoped.filter(it => it.expenseId).reduce((sum, it) => sum + estTripMinor(it), 0);
 
     let mapBlock;
     if (mapDataUrl) {
@@ -3042,7 +3265,7 @@ async function renderItinerary(params) {
       <span><i class="itin-sheet-dot" style="background:${dayColors[d] || '#2563eb'};"></i>${th('วันที่','Day')} ${i + 1} • ${dayjs(d).format('DD MMM')}${dayColors[d] ? '' : ''}</span>`).join('');
 
     const daySections = days.map((day, dayIdx) => {
-      const dayItems = ordered.filter(it => (it.date || '') === day);
+      const dayItems = scoped.filter(it => (it.date || '') === day);
       const dayEst = dayItems.reduce((sum, it) => sum + estTripMinor(it), 0);
       const rows = dayItems.map((it, idx) => {
         const est = estTripMinor(it);
@@ -3088,8 +3311,9 @@ async function renderItinerary(params) {
       <div id="itinerary-export-sheet" class="itin-sheet">
         <header class="itin-sheet-head">
           <div>
-            <div class="itin-sheet-kicker">${th('แผนการเดินทาง','Itinerary')}</div>
+            <div class="itin-sheet-kicker">${isDay ? `${th('แผนการเดินทาง','Itinerary')} • ${th('วันที่','Day')} ${dayIndex}` : th('แผนการเดินทาง','Itinerary')}</div>
             <h1>${escapeHtml(trip?.name || '')}</h1>
+            ${isDay ? `<div class="itin-sheet-dayline">${escapeHtml(dayTitle)} • ${located.length} ${th('หมุดบนแผนที่','map pins')}</div>` : ''}
             <div class="itin-sheet-meta">
               <span>${icon('calendar-days', 'w-3.5 h-3.5')} <b>${escapeHtml(trip?.startDate || '')}</b> → <b>${escapeHtml(trip?.endDate || '')}</b></span>
               <span>${icon('map-pinned', 'w-3.5 h-3.5')} <b>${ordered.length}</b> ${th('ที่','places')}</span>
@@ -3099,7 +3323,7 @@ async function renderItinerary(params) {
           </div>
           <div class="itin-sheet-stats">
             <div class="itin-sheet-stat">
-              <span>${th('ประมาณการรวม','Estimated total')}</span>
+              <span>${isDay ? th('ประมาณการของวันนี้','Estimated for this day') : th('ประมาณการรวม','Estimated total')}</span>
               <b>${formatCurrency(estTotal, currency)}</b>
               ${fmtThbOf(estTotal) ? `<i>≈ ${fmtThbOf(estTotal)}</i>` : ''}
             </div>
@@ -3116,13 +3340,30 @@ async function renderItinerary(params) {
           <div class="itin-sheet-legend">${legendItems}${legend}</div>
         </section>
 
-        ${daySections || `<div class="itin-sheet-empty">${th('ยังไม่มีแผนในทริปนี้','No itinerary items yet')}</div>`}
+        ${daySections || `<div class="itin-sheet-empty">${isDay ? th('วันนี้ยังไม่มีแผน','No plans for this day') : th('ยังไม่มีแผนในทริปนี้','No itinerary items yet')}</div>`}
 
         <footer class="itin-sheet-foot">
           <span>${escapeHtml(trip?.name || '')} • ${th('สร้างเมื่อ','generated')} ${dayjs().format('D MMM YYYY HH:mm')}</span>
-          <span>${th('แผนการเดินทางทั้งหมด','Full itinerary')} • ${ordered.length} ${th('รายการ','items')}</span>
+          <span>${isDay ? `${th('แผนของวัน','Plan for')} ${escapeHtml(dayTitle)} • ${scoped.length} ${th('รายการ','items')}` : `${th('แผนการเดินทางทั้งหมด','Full itinerary')} • ${scoped.length} ${th('รายการ','items')}`}</span>
         </footer>
       </div>`;
+  }
+
+  /** Everything both export buttons need: items, rate and the live map capture. */
+  async function prepareItineraryExport() {
+    // Expenses carry the rate snapshots used for the ≈ THB lines (cached read).
+    const expenseList = await fetchAllExpenses(tripId).catch(() => []) || [];
+    exportThbRate = resolveTripThbRate(trip, expenseList, currency);
+    const all = await fetchItinerary(tripId, null).catch(() => visibleItems) || [];
+    const ordered = [...all].sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.order || 0) - (b.order || 0));
+    return ordered;
+  }
+
+  /** Wait for every image of the sheet so nothing is captured half-loaded. */
+  async function waitForSheetImages(wrap) {
+    await Promise.all([...wrap.querySelectorAll('img')].map(img => {
+      try { return img.decode ? img.decode().catch(() => {}) : Promise.resolve(); } catch { return Promise.resolve(); }
+    }));
   }
 
   async function exportItineraryPng() {
@@ -3131,11 +3372,7 @@ async function renderItinerary(params) {
     const tLoad = toast.loading(th('กำลังสร้างรูปแผนการเดินทาง…', 'Building the itinerary image…'));
     try {
       const { elementToPngDataUrl, exportToPng } = await import('./exports/index.js');
-      // Expenses carry the rate snapshots used for the ≈ THB lines (cached read).
-      const expenseList = await fetchAllExpenses(tripId).catch(() => []) || [];
-      exportThbRate = resolveTripThbRate(trip, expenseList, currency);
-      const all = await fetchItinerary(tripId, null).catch(() => visibleItems) || [];
-      const ordered = [...all].sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.order || 0) - (b.order || 0));
+      const ordered = await prepareItineraryExport();
 
       // The live map is captured first (real tiles), schematic SVG as fallback.
       let mapDataUrl = null;
@@ -3145,9 +3382,7 @@ async function renderItinerary(params) {
       }
 
       wrap.innerHTML = itinerarySheetHtml(ordered, mapDataUrl);
-      await Promise.all([...wrap.querySelectorAll('img')].map(img => {
-        try { return img.decode ? img.decode().catch(() => {}) : Promise.resolve(); } catch { return Promise.resolve(); }
-      }));
+      await waitForSheetImages(wrap);
       wrap.classList.add('is-capturing');
       const safeName = String(trip?.name || tripId).replace(/[\\/:*?"<>|\s]+/g, '-').slice(0, 40);
       await exportToPng('itinerary-export-sheet', `itinerary-${safeName}-${dayjs().format('YYYYMMDD')}.png`, { flat: false, scale: 2 });
@@ -3160,6 +3395,42 @@ async function renderItinerary(params) {
     } finally {
       // The sheet stays off-screen so the result can be inspected (and so a
       // retry does not have to rebuild the map capture).
+      wrap.classList.remove('is-capturing');
+    }
+  }
+
+  /**
+   * PNG of ONE day (หนึ่งรูปต่อหนึ่งวัน). The map is built from that day's own
+   * coordinates so the picture always matches the day it shows.
+   */
+  async function exportItineraryDayPng(day) {
+    const wrap = document.getElementById('itinerary-export-wrap');
+    if (!wrap || !day) return;
+    const tLoad = toast.loading(th('กำลังสร้างรูปของวันนี้…', 'Building the day image…'));
+    try {
+      const { elementToPngDataUrl, exportToPng } = await import('./exports/index.js');
+      const ordered = await prepareItineraryExport();
+      const dayItems = ordered.filter(it => (it.date || '') === day);
+
+      // The live map shows the selected day, so it can be captured as-is.
+      let mapDataUrl = null;
+      const mapEl = document.getElementById('map');
+      const liveMapMatches = !showAll && day === selectedDate && mapVisible && mapEl?.querySelector('.leaflet-tile');
+      if (liveMapMatches) mapDataUrl = await elementToPngDataUrl('map', { flat: false, scale: 2 });
+
+      wrap.innerHTML = itinerarySheetHtml(ordered, mapDataUrl, { day });
+      await waitForSheetImages(wrap);
+      wrap.classList.add('is-capturing');
+      const safeName = String(trip?.name || tripId).replace(/[\\/:*?"<>|\s]+/g, '-').slice(0, 40);
+      const idx = Math.max(tripDays.map(d => dayjs(d).format('YYYY-MM-DD')).indexOf(day), 0) + 1;
+      await exportToPng('itinerary-export-sheet', `itinerary-${safeName}-day${idx}-${day}.png`, { flat: false, scale: 2 });
+      tLoad.close();
+      toast.success(th('ส่งออกรูปของวันนี้แล้ว', 'Day image exported'));
+      confetti({ y: 150, count: 10 });
+    } catch (e) {
+      tLoad.close();
+      toast.error(e?.message || String(e));
+    } finally {
       wrap.classList.remove('is-capturing');
     }
   }
@@ -3253,6 +3524,7 @@ async function renderItinerary(params) {
               ${formatDate(day, lang, trip?.timezone)}
               <span class="badge badge-planned text-[10px]">${dayItems.length} ${th('ที่','places')}</span>
               <span class="text-[10px] text-[var(--text-tertiary)] ml-auto">${formatCurrency(dayItems.reduce((sum, i) => sum + (Number(i.estimateAmount) > 0 ? toMinor(Number(i.estimateAmount), getCurrencyDecimals(i.estimateCurrency || currency)) : 0), 0), currency)}</span>
+              <button class="itin-day-export-btn" data-export-day="${escapeHtml(day)}" title="${th('ส่งออก PNG ของวันนี้','Export this day as a PNG')}">${icon('image', 'w-3.5 h-3.5')} PNG</button>
             </h3>
             <div class="space-y-3 stagger">${dayItems.map((it, idx) => itemCardHtml(it, idx, { draggable: editMode })).join('')}</div>
           </div>
@@ -3260,6 +3532,11 @@ async function renderItinerary(params) {
       } else {
         listEl.innerHTML = items.map((it, idx) => itemCardHtml(it, idx, { draggable: editMode })).join('');
       }
+
+      listEl.querySelectorAll('[data-export-day]').forEach(btn => btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await exportItineraryDayPng(btn.dataset.exportDay);
+      }));
 
       listEl.querySelectorAll('[data-act]').forEach(btn => btn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -3725,15 +4002,19 @@ async function renderExpenses(params) {
   const trip = currentTrip;
   const currency = trip?.baseCurrency || 'THB';
   // permissions, trip groups and the member list are independent — one round trip
-  const [perms, , membersRes] = await Promise.all([
+  const [perms, , membersRes, commentsRes] = await Promise.all([
     resolvePermissions(tripId, trip, currentUser.uid),
     loadTripCategories(tripId).catch(e => console.warn(e)),
-    listMembers(tripId).catch(e => { console.warn(e); return []; })
+    listMembers(tripId).catch(e => { console.warn(e); return []; }),
+    listComments(tripId).catch(e => { console.warn(e); return []; })
   ]);
   if (isStale(token)) return;
   const isAdmin = perms.isAdmin;
 
   const members = membersRes || [];
+  currentTripMembers = members;
+  let tripComments = commentsRes || [];
+  let commentMap = commentsByExpense(tripComments);
   if (isStale(token)) return;
   const membersMap = Object.fromEntries(members.map(m => [m.id, m]));
 
@@ -3767,8 +4048,15 @@ async function renderExpenses(params) {
         <button class="chip" data-filter="estimated">${icon('hourglass', 'w-3.5 h-3.5')} ${th('ประมาณการ','Estimated')}</button>
         <button class="chip" data-filter="actual">${icon('check-circle', 'w-3.5 h-3.5')} ${th('จ่ายจริง','Actual')}</button>
       </div>
-      <div class="px-1 mb-1 flex justify-end">
-        <button id="manage-cats-btn" class="link-btn text-[11px]">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage expense groups')}</button>
+      <div class="px-1 mb-2 flex items-center justify-between gap-2 flex-wrap">
+        <div class="segmented" id="expense-group-toggle">
+          <button type="button" class="segmented-item active" data-group="list">${icon('list', 'w-3.5 h-3.5')} ${th('เรียงรายการ','List')}</button>
+          <button type="button" class="segmented-item" data-group="day">${icon('calendar-days', 'w-3.5 h-3.5')} ${th('แยกตามวัน','By day')}</button>
+        </div>
+        <div class="btn-row">
+          <button id="activity-btn" class="link-btn text-[11px]">${icon('history', 'w-3.5 h-3.5')} ${th('ประวัติการแก้ไข','Activity log')}</button>
+          <button id="manage-cats-btn" class="link-btn text-[11px]">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage expense groups')}</button>
+        </div>
       </div>
       <div class="chip-row mb-4" id="cat-filters">
         <button class="chip chip-active" data-cat="">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('ทุกหมวด','All categories')}</button>
@@ -3789,6 +4077,45 @@ async function renderExpenses(params) {
   let allLoaded = [];
   let activeFilter = 'all';
   let catFilter = '';
+  // How the list is presented: one flat list, or grouped per day (a request).
+  let groupMode = localStorage.getItem('fuji_exp_group') === 'day' ? 'day' : 'list';
+  applyGroupToggle();
+
+  /** Baht equivalent of a trip-currency amount ('' for THB trips). */
+  const expThbTag = (minor) => {
+    if (currency === 'THB') return '';
+    const v = toThbMinor(minor, currency, resolveTripThbRate(trip, allLoaded, currency) || 0);
+    return v == null ? '' : `<span class="thb-equiv thb-equiv--strong">≈ ${formatCurrency(v, 'THB')}</span>`;
+  };
+
+  function applyGroupToggle() {
+    document.querySelectorAll('#expense-group-toggle [data-group]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.group === groupMode);
+    });
+  }
+
+  document.querySelectorAll('#expense-group-toggle [data-group]').forEach(btn => btn.addEventListener('click', () => {
+    groupMode = btn.dataset.group === 'day' ? 'day' : 'list';
+    try { localStorage.setItem('fuji_exp_group', groupMode); } catch { /* ignore */ }
+    applyGroupToggle();
+    applyFilterRender();
+  }));
+
+  bind('activity-btn', 'click', () => openActivitySheet(tripId));
+
+  /** Comment button + badge for one expense row. */
+  function commentButton(expenseId) {
+    const count = commentMap.get(expenseId)?.length || 0;
+    return `<button class="icon-btn ${count ? 'has-comments' : ''}" data-comment="${expenseId}" title="${th('ความเห็น / ทักท้วง','Comment / question')}">
+      ${icon('message-square', 'w-3.5 h-3.5')}${count ? `<span class="icon-btn-badge">${count}</span>` : ''}
+    </button>`;
+  }
+
+  function refreshComments() {
+    return listComments(tripId, { })
+      .then((list) => { tripComments = list; commentMap = commentsByExpense(list); applyFilterRender(); })
+      .catch((e) => console.warn('comments refresh failed', e?.message));
+  }
 
   document.querySelectorAll('#expense-filters [data-filter]').forEach(btn => btn.addEventListener('click', () => {
     activeFilter = btn.dataset.filter;
@@ -3861,8 +4188,11 @@ async function renderExpenses(params) {
           </div>
           ${e.description ? `<p class="text-[11px] text-[var(--text-secondary)] mt-1 line-clamp-2">${escapeHtml(e.description)}</p>` : ''}
           ${e.receiptImage ? `<img class="expense-receipt-thumb" src="${escapeHtml(e.receiptImage)}" alt="${th('รูปใบเสร็จ','Receipt photo')}" loading="lazy">` : ''}
+          ${(e.updatedByName || e.createdByName) ? `<p class="meta-line mt-1" style="color:var(--text-tertiary);">${icon('history', 'w-3 h-3')} ${escapeHtml(lastEditorText({ ...e, updatedAt: e.updatedByName ? e.updatedAt : null }, lang))}</p>` : ''}
+          ${commentMap.get(e.id)?.length ? `<p class="expense-comment-preview">${icon('message-square', 'w-3 h-3')} <b>${escapeHtml(commentMap.get(e.id)[commentMap.get(e.id).length - 1].name || '')}</b>: ${escapeHtml((commentMap.get(e.id)[commentMap.get(e.id).length - 1].text || '').slice(0, 70))}</p>` : ''}
         </div>
         <div class="expense-actions">
+          ${commentButton(e.id)}
           <button class="icon-btn" data-act="edit" data-id="${e.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
           <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${e.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
         </div>
@@ -3885,7 +4215,60 @@ async function renderExpenses(params) {
       queueIcons();
       return;
     }
-    listEl.innerHTML = items.map(e => expenseCardHtml(e)).join('');
+    if (groupMode === 'day') {
+      // Grouped per day: a header per date with the day's total (trip + THB).
+      const byDay = new Map();
+      for (const e of items) {
+        const key = e.date || '—';
+        if (!byDay.has(key)) byDay.set(key, []);
+        byDay.get(key).push(e);
+      }
+      const days = [...byDay.keys()].sort((a, b) => String(b).localeCompare(String(a)));
+      listEl.innerHTML = days.map(day => {
+        const dayItems = byDay.get(day);
+        const dayTotal = dayItems.reduce((sum, e) => {
+          const code = e.currency || currency;
+          const minor = e.netTotalMinor || 0;
+          if (code === currency) return sum + minor;
+          const usedRate = Number(e.thbRate) > 0 ? Number(e.thbRate) : 0;
+          const tripRate = resolveTripThbRate(trip, allLoaded, currency) || 0;
+          if (!usedRate || !tripRate) return sum + minor;
+          return sum + Math.round((minor * usedRate) / tripRate);
+        }, 0);
+        const thbTotal = expThbTag(dayTotal);
+        return `
+          <section class="expense-day" data-day="${escapeHtml(day)}">
+            <header class="expense-day-head">
+              <span class="expense-day-num">${day === '—' ? icon('calendar-x', 'w-4 h-4') : dayjs(day).format('DD')}</span>
+              <div class="min-w-0">
+                <div class="expense-day-title">${day === '—' ? th('ไม่ระบุวันที่','No date') : escapeHtml(formatDate(day, lang, trip?.timezone))}</div>
+                <div class="expense-day-sub">${dayItems.length} ${th('รายการ','items')}</div>
+              </div>
+              <div class="expense-day-total">
+                <b>${formatCurrency(dayTotal, currency)}</b>
+                ${thbTotal}
+              </div>
+            </header>
+            <div class="space-y-3 stagger">${dayItems.map(e => expenseCardHtml(e)).join('')}</div>
+          </section>`;
+      }).join('');
+    } else {
+      listEl.innerHTML = items.map(e => expenseCardHtml(e)).join('');
+    }
+    listEl.querySelectorAll('[data-comment]').forEach(btn => btn.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const id = btn.dataset.comment;
+      const exp = allLoaded.find(x => x.id === id);
+      openCommentSheet({
+        tripId,
+        expenseId: id,
+        title: exp?.title || '',
+        amount: exp ? formatCurrency(exp.netTotalMinor || 0, exp.currency || currency) : '',
+        comments: tripComments,
+        canDeleteAny: isAdmin,
+        onChanged: () => refreshComments()
+      });
+    }));
     listEl.querySelectorAll('[data-act]').forEach(btn => btn.addEventListener('click', async (ev) => {
       ev.stopPropagation();
       const id = btn.dataset.id;
@@ -3893,7 +4276,7 @@ async function renderExpenses(params) {
       else await removeExpense(id);
     }));
     listEl.querySelectorAll('[data-expense]').forEach(card => card.addEventListener('click', (ev) => {
-      if (ev.target.closest('[data-act]')) return;
+      if (ev.target.closest('[data-act]') || ev.target.closest('[data-comment]')) return;
       location.hash = `#/trip/${tripId}/expenses/add?id=${card.dataset.expense}`;
     }));
     queueIcons();
@@ -3912,6 +4295,11 @@ async function renderExpenses(params) {
     const tLoad = toast.loading(th('กำลังลบ...', 'Deleting...'));
     try {
       const result = await deleteExpense(tripId, id, currentUser.uid);
+      await logActivity(tripId, {
+        type: 'expense.delete', targetId: id, title: exp?.title || '',
+        detail: exp ? `${formatCurrency(exp.netTotalMinor || 0, exp.currency || currency)} • ${result === 'voided' ? th('ซ่อนไว้ (ลบถาวรไม่ได้)','voided') : th('ลบแล้ว','deleted')}` : '',
+        user: actor()
+      });
       tLoad.close();
       allLoaded = allLoaded.filter(e => e.id !== id);
       if (result === 'voided') toast.warning(th('ลบถาวรไม่ได้ (rules ยังไม่อนุญาต) — ซ่อนรายการนี้แทน', 'Hard delete blocked by rules — the expense was voided instead'));
@@ -4052,12 +4440,16 @@ async function renderExpenseAdd(params) {
 
   // Groups / members / itinerary are independent reads (and cached) — fire them
   // together so the form paints after one round trip, not three.
-  const [, membersRes, itemsRes] = await Promise.all([
+  const [, membersRes, itemsRes, commentsRes] = await Promise.all([
     loadTripCategories(tripId).catch(e => console.warn(e)),
     listMembers(tripId).catch(e => { console.warn(e); return []; }),
-    fetchItinerary(tripId, null).catch(e => { console.warn(e); return []; })
+    fetchItinerary(tripId, null).catch(e => { console.warn(e); return []; }),
+    listComments(tripId).catch(e => { console.warn(e); return []; })
   ]);
   let members = membersRes || [];
+  currentTripMembers = members;
+  const tripComments = commentsRes || [];
+  const commentMapAll = () => commentsByExpense(tripComments);
   let items = itemsRes || [];
   let expense = null;
   if (isEdit) {
@@ -4078,6 +4470,12 @@ async function renderExpenseAdd(params) {
           subtitle: th('กรอกยอด ผู้จ่าย และคนที่ร่วมหาร','Enter the amount, who paid and who shares it') })}
         <button id="exp-back" class="btn btn-ghost btn-sm">${icon('arrow-left', 'w-4 h-4')} ${th('กลับ','Back')}</button>
       </div>
+      ${isEdit ? `<div class="card p-3 mb-3 flex items-center gap-2 text-[11px] no-export" style="background:var(--bg-secondary);">
+        ${icon('history', 'w-3.5 h-3.5')}
+        <span>${escapeHtml(lastEditorText(e, lang) || th('ยังไม่มีข้อมูลผู้แก้ไข','No editor information yet'))}</span>
+        ${(commentMapAll().get(editId) || []).length ? commentChip((commentMapAll().get(editId) || []).length) : ''}
+        <button type="button" id="ex-comments-btn" class="link-btn text-[11px] ml-auto">${icon('message-square', 'w-3.5 h-3.5')} ${th('ความเห็น','Comments')}</button>
+      </div>` : ''}
       <form id="expense-form" class="space-y-5 card card-accent p-6">
         <div class="input-group"><label class="input-label">${icon('sparkles', 'w-3.5 h-3.5')} ${th('ชื่อรายการ','Title')} *</label><input id="ex-title" class="input" required autocomplete="off" placeholder="${th('เช่น ราเมงมื้อเย็น','e.g. Dinner ramen')}" value="${escapeHtml(e.title || '')}"></div>
 
@@ -4212,6 +4610,14 @@ async function renderExpenseAdd(params) {
   queueIcons();
 
   // Manage the trip's expense groups straight from the form.
+  bind('ex-comments-btn', 'click', () => openCommentSheet({
+    tripId,
+    expenseId: editId,
+    title: e.title || '',
+    comments: tripComments,
+    onChanged: () => { /* badge refreshes on the next open */ }
+  }));
+
   bind('ex-manage-cats', 'click', () => openCategoryManager(tripId, {
     onSaved: () => {
       const sel = document.getElementById('ex-cat');
@@ -4441,14 +4847,27 @@ async function renderExpenseAdd(params) {
       };
       if (!payload.title) throw new Error(th('กรุณากรอกชื่อรายการ', 'Title is required'));
       let savedId = editId;
+      const me = actor();
+      // Who wrote it, and what kind of change it was — the audit trail.
+      payload.createdByName = me.displayName;
+      payload.updatedByName = me.displayName;
       if (isEdit) {
-        await updateExpense(tripId, editId, payload, currentUser.uid);
+        await updateExpense(tripId, editId, payload, currentUser.uid, me);
       } else {
-        savedId = await addExpense(tripId, payload, currentUser.uid);
+        savedId = await addExpense(tripId, payload, currentUser.uid, me);
       }
-
       // Card name → remember locally so the next expense can pick it from a list.
       if (payload.cardName) rememberCard(tripId, payload.cardName);
+
+      // The audit entry is written after the local bookkeeping above, so a slow
+      // log write can never delay (or block) the user-visible result.
+      await logActivity(tripId, {
+        type: isEdit ? 'expense.update' : 'expense.create',
+        targetId: savedId,
+        title: payload.title,
+        detail: `${formatCurrency(payload.netTotalMinor || 0, payload.currency || currency)} • ${payload.date || ''}`,
+        user: me
+      });
 
       // Receipt photo: uploaded after save (needs the expense id) and stored on
       // the document. Storage when available, inlined image otherwise.
@@ -4456,18 +4875,22 @@ async function renderExpenseAdd(params) {
         toast.loading(th('กำลังอัปโหลดรูปใบเสร็จ…','Uploading receipt photo…'));
         const res = await uploadReceiptImage(tripId, savedId, pendingReceiptFile);
         if (res.url) {
-          await updateExpense(tripId, savedId, { receiptImage: res.url, receiptStorage: res.storage }, currentUser.uid);
+          await updateExpense(tripId, savedId, { receiptImage: res.url, receiptStorage: res.storage }, currentUser.uid, me);
           if (res.storage === 'inline') toast.info(th('เก็บรูปไว้ในเอกสารของทริปนี้','Photo stored inside the trip document'));
         } else {
           toast.warning(th('อัปโหลดรูปไม่สำเร็จ — บันทึกค่าใช้จ่ายไว้แล้ว','Photo upload failed — the expense was still saved'));
         }
       } else if (isEdit && receiptCleared) {
-        await updateExpense(tripId, savedId, { receiptImage: '', receiptStorage: 'none' }, currentUser.uid);
+        await updateExpense(tripId, savedId, { receiptImage: '', receiptStorage: 'none' }, currentUser.uid, me);
       }
       tLoad.close();
       toast.success(isEdit ? th('บันทึกการแก้ไขแล้ว', 'Saved') : th('บันทึกค่าใช้จ่ายแล้ว', 'Expense saved'));
       if (!isEdit) confetti({ y: 150 });
-      location.hash = `#/trip/${tripId}/expenses`;
+      // Only step back to the list if the form is still on screen: a save that
+      // finishes late (log/photo upload) must not yank the user off another page.
+      if ((location.hash.split('?')[0] || '') === `#/trip/${tripId}/expenses/add`) {
+        location.hash = `#/trip/${tripId}/expenses`;
+      }
     } catch (err) {
       tLoad.close();
       toast.error(err.message);
@@ -4510,6 +4933,9 @@ async function renderSettlement(params) {
 
   let state = { expenses: [], members: [], membersMap: {}, statements: [], balances: [], transactions: [] };
   let view = 'overview';   // ภาพรวมเป็นค่าเริ่มต้น (สลับเป็นใบเสร็จรายคนได้)
+  let receiptFilter = 'all';  // 'all' = ใบเสร็จทุกคน, หรือ memberId ของคนที่เลือกดู
+  let commentsAll = [];       // ความเห็น/ทักท้วงของทั้งทริป (ใช้ในใบเสร็จด้วย)
+  let commentMap = new Map();
 
   const money = (minor) => formatCurrency(minor || 0, currency);
   // Same rate resolution as the rest of the app (trip → expense snapshots → saved).
@@ -4528,6 +4954,43 @@ async function renderSettlement(params) {
       <div class="min-w-0">
         <div class="font-bold text-sm truncate">${escapeHtml(m.displayName)} ${isMe ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full text-white" style="background:var(--gradient-primary);">${th('คุณ','you')}</span>` : ''}</div>
         <div class="text-[10px] text-[var(--text-tertiary)]">${th('จ่ายจริง','paid')} ${m.paidCount} • ${th('ร่วมหาร','shares')} ${m.shareCount}</div>
+      </div>`;
+  }
+
+  const commentsFor = (expenseId) => commentMap.get(expenseId) || [];
+  /** How many items of this member's receipt carry a comment (flag). */
+  function flaggedCount(m) {
+    const ids = new Set();
+    for (const i of m.items) if (commentsFor(i.expenseId).length) ids.add(i.expenseId);
+    return ids.size;
+  }
+  /** Comment lines + "ทักท้วง" button shown under one receipt item. */
+  function commentBlock(expenseId) {
+    const list = commentsFor(expenseId);
+    const rows = list.map(c => `
+      <div class="rcpt-comment">
+        <span class="rcpt-comment-icon">${icon('message-square', 'w-3 h-3')}</span>
+        <span><b>${escapeHtml(c.name || '')}</b> ${escapeHtml(c.text)}</span>
+      </div>`).join('');
+    return `${rows}
+      <button class="rcpt-comment-btn no-export" data-receipt-comment="${escapeHtml(expenseId)}" title="${th('เพิ่มความเห็น / ทักท้วง','Add a comment / question')}">
+        ${icon('message-square', 'w-3 h-3')} ${list.length ? `${th('ความเห็น','Comments')} (${list.length})` : th('ทักท้วง','Comment')}
+      </button>`;
+  }
+  /** Switch between "everyone's receipts" and one member's receipt. */
+  function receiptPickerHtml() {
+    if (state.statements.length < 2) return '';
+    const totalFlags = state.statements.reduce((n, m) => n + flaggedCount(m), 0);
+    const chip = (id, label, count, avatar = '') => `
+      <button class="receipt-picker-item ${receiptFilter === id ? 'active' : ''}" data-receipt-filter="${escapeHtml(id)}">
+        ${avatar}${avatar ? '' : icon('users', 'w-3.5 h-3.5')}<span>${escapeHtml(label)}</span>
+        ${count ? `<span class="count">💬 ${count}</span>` : ''}
+      </button>`;
+    return `
+      <div class="receipt-picker no-export" id="receipt-picker">
+        ${chip('all', th('ทุกคน','Everyone'), totalFlags)}
+        ${state.statements.map(m => chip(m.memberId, m.displayName, flaggedCount(m),
+          `<span class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>`)).join('')}
       </div>`;
   }
 
@@ -4566,6 +5029,18 @@ async function renderSettlement(params) {
           </div>
         </div>
 
+        <!-- The member's name is the headline of this receipt (screen AND PNG) -->
+        <div class="rcpt-member-bar">
+          <div class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">
+            ${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}
+          </div>
+          <div class="min-w-0">
+            <div class="rcpt-member-label">${th('ใบเสร็จของ','Receipt for')}</div>
+            <div class="receipt-member-name receipt-member-name--lg">${escapeHtml(m.displayName)}${isMe ? ` <span style="font-size:14px;font-weight:700;color:var(--text-secondary);">(${th('คุณ','you')})</span>` : ''}</div>
+            <div class="rcpt-member-sub">${th('จ่ายจริง','paid')} ${m.paidCount} • ${th('ร่วมหาร','shares')} ${m.shareCount}${flaggedCount(m) ? ` • ${icon('message-square', 'w-3 h-3')} ${flaggedCount(m)} ${th('รายการที่ทักท้วง','flagged items')}` : ''}</div>
+          </div>
+        </div>
+
         <!-- 1) รับ — money this member actually paid (green block) -->
         <section class="rcpt-block rcpt-block--recv" data-receipt-section="received">
           <div class="rcpt-block-head">
@@ -4586,6 +5061,7 @@ async function renderSettlement(params) {
                       ${i.estimated ? ` <span class="badge badge-skipped text-[9px]">${th('ประมาณการ','est.')}</span>` : ''}
                       ${i.hasReceipt ? ` <span class="rcpt-flag">${icon('paperclip', 'w-3 h-3')} ${th('มีใบเสร็จ','receipt')}</span>` : ''}
                       <div class="rcpt-item-sub">${escapeHtml(i.date || '')}</div>
+                      ${commentBlock(i.expenseId)}
                     </td>
                     <td>${chip(i.method)}${i.cardName ? `<div class="rcpt-card">${icon('credit-card', 'w-3 h-3')} ${escapeHtml(i.cardName)}</div>` : ''}</td>
                     <td class="num">${money(i.amountMinor)}${currency !== 'THB' && thbOf(i.amountMinor) ? `<div class="thb-equiv block">≈ ${thbOf(i.amountMinor)}</div>` : ''}</td>
@@ -4623,6 +5099,7 @@ async function renderSettlement(params) {
                       <span class="rcpt-item-title">${escapeHtml(i.title)}</span>
                       ${i.estimated ? ` <span class="badge badge-skipped text-[9px]">${th('ประมาณการ','est.')}</span>` : ''}
                       <div class="rcpt-item-sub">${escapeHtml(i.date || '')} • ${methodLabel(i.method)}${i.cardName ? ` • ${escapeHtml(i.cardName)}` : ''}</div>
+                      ${commentBlock(i.expenseId)}
                     </td>
                     <td>${escapeHtml(payer?.displayName || '—')}</td>
                     <td class="num">${money(i.amountMinor)}${currency !== 'THB' && thbOf(i.amountMinor) ? `<div class="thb-equiv block">≈ ${thbOf(i.amountMinor)}</div>` : ''}</td>
@@ -4653,6 +5130,14 @@ async function renderSettlement(params) {
                 ? th('จะได้รับคืนจากเพื่อนในทริป','Gets this back from the group')
                 : th('ต้องจ่ายคืนให้เพื่อนในทริป','Owes this to the group')}${currency !== 'THB' && thbOf(m.netMinor) ? ` • ${th('คิดเป็นเงินไทย','in THB')} ${thbOf(Math.abs(m.netMinor))}` : ''}</div>
             </div>
+            ${flaggedCount(m) ? `<div class="rcpt-summary-comments">
+              <div class="rcpt-summary-comments-title">${icon('message-square', 'w-3.5 h-3.5')} ${th('มีความเห็น/ข้อทักท้วง','Comments & questions')} • ${flaggedCount(m)} ${th('รายการ','items')}</div>
+              ${[...new Set(m.items.map(i => i.expenseId))].filter(id => commentsFor(id).length).map(id => {
+                const item = m.items.find(i => i.expenseId === id);
+                return `<div class="text-[10.5px] mt-1"><b>${escapeHtml(item?.title || '')}</b></div>
+                  ${commentsFor(id).map(c => `<div class="rcpt-comment"><span class="rcpt-comment-icon">${icon('message-square', 'w-3 h-3')}</span><span><b>${escapeHtml(c.name || '')}</b> ${escapeHtml(c.text)}</span></div>`).join('')}`;
+              }).join('')}
+            </div>` : ''}
           </div>
         </section>
 
@@ -4778,7 +5263,34 @@ async function renderSettlement(params) {
       ${transactionsHtml()}`;
   }
 
+  /** Reload the trip's comments and repaint the receipts. */
+  async function refreshComments() {
+    commentsAll = await listComments(tripId, { limitCount: 400 }).catch(() => commentsAll);
+    commentMap = commentsByExpense(commentsAll);
+    if (view === 'receipts') renderView();
+  }
+
   function bindReceiptActions() {
+    document.querySelectorAll('#receipt-picker [data-receipt-filter]').forEach(btn => btn.addEventListener('click', () => {
+      receiptFilter = btn.dataset.receiptFilter === 'all' ? 'all' : btn.dataset.receiptFilter;
+      renderView();
+    }));
+
+    // ทักท้วง/แสดงความเห็นบนรายการในใบเสร็จได้เลย
+    document.querySelectorAll('[data-receipt-comment]').forEach(btn => btn.addEventListener('click', async () => {
+      const expenseId = btn.dataset.receiptComment;
+      const exp = state.expenses.find(e => e.id === expenseId);
+      await openCommentSheet({
+        tripId,
+        expenseId,
+        title: exp?.title || '',
+        amount: exp ? money(exp.netTotalMinor || 0) : '',
+        comments: commentsFor(expenseId),
+        canDeleteAny: true,
+        onChanged: refreshComments
+      });
+    }));
+
     document.querySelectorAll('[data-export-receipt]').forEach(btn => btn.addEventListener('click', async () => {
       const id = btn.dataset.exportReceipt;
       const tLoad = toast.loading(th('กำลังสร้างรูป...', 'Creating image...'));
@@ -4788,6 +5300,7 @@ async function renderSettlement(params) {
         if (!document.getElementById(`receipt-${id}`)) {
           // The overview is on screen — render the receipts again before capturing.
           view = 'receipts';
+          receiptFilter = 'all';   // make sure the receipt we capture exists
           document.querySelectorAll('#settle-views .chip').forEach(c => c.classList.toggle('chip-active', c.dataset.view === 'receipts'));
           renderView();
         }
@@ -4869,7 +5382,10 @@ async function renderSettlement(params) {
       queueIcons();
       return;
     }
-    content.innerHTML = `<div class="receipt-grid">${state.statements.map(receiptHtml).join('')}</div>${transactionsHtml()}`;
+    // ใบเสร็จรายคน: ดูของทุกคน หรือเลือกดูทีละคน (ตามที่ขอ — กรองตามชื่อสมาชิก)
+    if (receiptFilter !== 'all' && !state.statements.some(m => m.memberId === receiptFilter)) receiptFilter = 'all';
+    const visible = receiptFilter === 'all' ? state.statements : state.statements.filter(m => m.memberId === receiptFilter);
+    content.innerHTML = `${receiptPickerHtml()}<div class="receipt-grid">${visible.map(receiptHtml).join('')}</div>${transactionsHtml()}`;
     queueIcons();
     bindReceiptActions();
   }
@@ -4879,6 +5395,8 @@ async function renderSettlement(params) {
     if (!content) return;
     try {
       const { expenses, members } = await fetchSettlementData(tripId);
+      commentsAll = await listComments(tripId, { limitCount: 400 }).catch(() => []);
+      commentMap = commentsByExpense(commentsAll);
       if (!document.getElementById('settlement-content')) return;
       const membersMap = Object.fromEntries(members.map(m => [m.id, m]));
       const { balances, transactions } = calculateSettlement(expenses, members);

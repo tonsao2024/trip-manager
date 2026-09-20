@@ -332,6 +332,30 @@ export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeout
       }
     }
 
+    // 6b. Rules: comments on expenses + the activity log ("ใครแก้ไขล่าสุด")
+    if (tripId) {
+      try {
+        await withTimeout(d.getDocs(d.query(d.collection(d.db, 'trips', tripId, 'comments'), d.limit(1))), timeoutMs, 'comments');
+        add('rules-comments', pick(lang, 'Rules สำหรับความเห็น/ทักท้วง', 'Comment rules'), DIAG.ok,
+          pick(lang, 'ทักท้วงรายการค่าใช้จ่ายได้ และซิงก์ข้ามเครื่อง', 'Expense comments work and sync across devices'));
+      } catch (e) {
+        const info = classifyFirestoreError(e, pick(lang, 'ความเห็น', 'comments'), lang);
+        add('rules-comments', pick(lang, 'Rules สำหรับความเห็น/ทักท้วง', 'Comment rules'), info.status,
+          pick(lang, 'ความเห็นจะถูกเก็บไว้ในเครื่องนี้ก่อน — ยังไม่ซิงก์ข้ามเครื่อง', 'Comments stay on this device until the rules allow them'),
+          FIX.deployRules);
+      }
+      try {
+        await withTimeout(d.getDocs(d.query(d.collection(d.db, 'trips', tripId, 'activity'), d.limit(1))), timeoutMs, 'activity');
+        add('rules-activity', pick(lang, 'Rules สำหรับประวัติการแก้ไข', 'Activity-log rules'), DIAG.ok,
+          pick(lang, 'ประวัติ "ใครแก้ล่าสุด" ถูกบันทึกครบ', 'The \"who edited last\" history is recorded'));
+      } catch (e) {
+        const info = classifyFirestoreError(e, pick(lang, 'ประวัติการแก้ไข', 'the activity log'), lang);
+        add('rules-activity', pick(lang, 'Rules สำหรับประวัติการแก้ไข', 'Activity-log rules'), info.status,
+          pick(lang, 'ประวัติจะถูกเก็บในเครื่องนี้ก่อน — ยังไม่ซิงก์ข้ามเครื่อง', 'History stays on this device until the rules allow it'),
+          FIX.deployRules);
+      }
+    }
+
     // 7. Security: PIN hashes must never be client readable
     try {
       const snap = await withTimeout(d.getDoc(d.doc(d.db, 'loginAccounts', '__diagnostic_probe__')), timeoutMs, 'loginAccounts');

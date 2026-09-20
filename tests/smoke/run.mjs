@@ -1348,6 +1348,177 @@ const newCode = q('#invite-code-value')?.textContent?.replace('-', '') || '';
 check(newCode.length === 6 && newCode !== 'FUJI23', 'invite: new code generated and shown');
 check(fsdb.__dump('trips/t1')?.inviteCode === newCode, 'invite: new code saved on the trip');
 
+console.log('\n▶ v11: ความเห็น/ทักท้วงบนรายการ + ประวัติการแก้ไข (ใครแก้ล่าสุด)');
+{
+  await goto('#/trip/t1/expenses');
+  await waitFor(() => q('#expense-list'), { label: 'expense list' });
+  await sleep(260);
+
+  // --- comment button on every row + the comment sheet ---
+  check(qa('#expense-list [data-comment]').length > 0, 'comments: every expense row offers a comment button');
+  const commentBtn = q('#expense-list [data-comment]');
+  const commentedExpenseId = commentBtn?.dataset.comment;
+  await click(commentBtn);
+  await waitFor(() => q('#comment-input'), { label: 'comment sheet' });
+  check(!!q('#comment-list'), 'comments: the sheet lists the existing comments');
+  q('#comment-input').value = 'รายการนี้หารไม่ถูกหรือเปล่า?';
+  submit(q('#comment-form'));
+  const savedComment = () => [...fsdb.__store.entries()]
+    .find(([k, v]) => k.startsWith('trips/t1/comments/') && String(v?.text || '').includes('หารไม่ถูก'));
+  await waitFor(() => savedComment(), { timeout: 6000, label: 'comment saved' }).catch(() => {});
+  check(!!savedComment(), 'comments: the comment is stored on the trip');
+  check(savedComment()?.[1]?.expenseId === commentedExpenseId, 'comments: it is linked to the expense it questions');
+  const authorName = String(savedComment()?.[1]?.name || '');
+  check(authorName.trim().length > 0, `comments: the author is stored with it (${authorName || 'missing'})`);
+  check((q('#comment-list')?.textContent || '').includes(authorName), 'comments: the sheet shows the same author');
+  await waitFor(() => (q('#comment-list')?.textContent || '').includes('หารไม่ถูก'), { label: 'comment in list' }).catch(() => {});
+  check((q('#comment-list')?.textContent || '').includes('หารไม่ถูก'), 'comments: it appears in the sheet right away');
+  q('.bottom-sheet-backdrop')?.click();
+  await sleep(260);
+
+  // --- the row shows the flag (badge + preview) ---
+  await waitFor(() => q('#expense-list .icon-btn-badge'), { label: 'comment badge' }).catch(() => {});
+  check(!!q('#expense-list .icon-btn-badge'), 'comments: the row shows how many comments it has');
+  check(!!q('#expense-list .expense-comment-preview'), 'comments: the last comment is previewed on the row');
+
+  // --- who edited last (activity log) ---
+  check((q('#expense-list')?.textContent || '').includes('แก้ไขล่าสุด') || (q('#expense-list')?.textContent || '').includes('สร้างโดย'),
+    'activity: the row says who touched it last');
+  await click('#activity-btn');
+  await waitFor(() => q('#activity-list .activity-row'), { label: 'activity list' });
+  const activityText = q('#activity-list')?.textContent || '';
+  check(activityText.includes('สมชาย'), 'activity: the log names the member');
+  check(/เพิ่มค่าใช้จ่าย|แก้ไขค่าใช้จ่าย|แสดงความเห็น/.test(activityText), 'activity: the log says what was done');
+  check([...fsdb.__store.keys()].some(k => k.startsWith('trips/t1/activity/')), 'activity: entries are written to the trip');
+  q('.bottom-sheet-backdrop')?.click();
+  await sleep(260);
+}
+
+console.log('\n▶ v11: expense list grouped by day');
+{
+  await goto('#/trip/t1/expenses');
+  await waitFor(() => q('#expense-group-toggle'), { label: 'group toggle' });
+  await sleep(200);
+  check(!!q('#expense-group-toggle [data-group="list"]'), 'by day: the list view is still there');
+  const dayBtn = q('#expense-group-toggle [data-group="day"]');
+  check(!!dayBtn, 'by day: a toggle switches the list to day groups');
+  await click(dayBtn);
+  await sleep(160);
+  check(qa('#expense-list .expense-day').length > 0, 'by day: the list renders day blocks');
+  check(!!q('#expense-list .expense-day-head'), 'by day: every block has a day header');
+  check(!!q('#expense-list .expense-day-num') && !!(q('#expense-list .expense-day-title')?.textContent || '').trim(),
+    'by day: the header shows the date');
+  check(!!(q('#expense-list .expense-day-total')?.textContent || '').trim(), 'by day: every day shows its own total');
+  const inDays = qa('#expense-list .expense-day .expense-card').length;
+  check(inDays > 0, `by day: the cards are inside the day blocks (${inDays})`);
+  check(window.localStorage.getItem('fuji_exp_group') === 'day', 'by day: the choice is remembered');
+  check(dayBtn.classList.contains('active'), 'by day: the active chip is highlighted');
+  await click(q('#expense-group-toggle [data-group="list"]'));
+  await sleep(160);
+  check(qa('#expense-list .expense-day').length === 0 && qa('#expense-list .expense-card').length >= inDays,
+    'by day: switching back returns the flat list');
+}
+
+console.log('\n▶ v11: itin day PNG + แผนที่พอดีจอ');
+{
+  const h2c = await import(stub('html2canvas.mjs'));
+  const state = h2c.__h2cState;
+  const downloads = [];
+  const originalClick = window.HTMLAnchorElement.prototype.click;
+  window.HTMLAnchorElement.prototype.click = function () { downloads.push(this.download); };
+  try {
+    await goto('#/trip/t1/itinerary');
+    await waitFor(() => q('#itin-layout'), { label: 'itinerary' });
+    await sleep(320);
+
+    // map fits the screen: JS measures it and Leaflet is told to re-measure
+    check(/var\(--itin-map-h/.test(fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8')),
+      'map fit: the CSS height comes from a measured value');
+    check(!!(q('#map')?.style.getPropertyValue('--itin-map-h') || ''), 'map fit: the map height is measured from the viewport');
+    check(/px$/.test(q('#map')?.style.getPropertyValue('--itin-map-h') || ''), 'map fit: the measured height is in pixels');
+
+    // every day in the "view all" list can be exported on its own
+    if (!q('[data-export-day]')) {
+      await click('#view-all-btn');
+      await waitFor(() => q('[data-export-day]'), { label: 'day export buttons' }).catch(() => {});
+    }
+    check(qa('[data-export-day]').length >= 1, 'day png: each day has its own export button');
+    check(!!q('#export-day-png-btn'), 'day png: the toolbar has a per-day PNG button');
+
+    downloads.length = 0;
+    state.failedWith = [];
+    const firstDayBtn = q('[data-export-day]');
+    await click(firstDayBtn);
+    await waitFor(() => downloads.length > 0, { timeout: 9000, label: 'day png download' }).catch(() => {});
+    check(downloads.some(n => /^itinerary-.+-day\d+-\d{4}-\d{2}-\d{2}\.png$/.test(String(n))),
+      `day png: one image per day (${downloads.join(', ') || 'none'})`);
+    const sheet = q('#itinerary-export-sheet');
+    const daySections = sheet ? [...sheet.querySelectorAll('.itin-sheet-day')] : [];
+    check(daySections.length === 1, `day png: the image holds that single day only (${daySections.length})`);
+    check(/itin-sheet-dayline/.test(sheet?.innerHTML || ''), 'day png: the sheet names the day it shows');
+    check(state.failedWith.length === 0, `day png: no colour reject while rendering (${state.failedWith.length})`);
+
+    // the whole-plan export still works after a day export
+    downloads.length = 0;
+    await click('#export-png-btn');
+    await waitFor(() => downloads.length > 0, { timeout: 9000, label: 'plan png download' }).catch(() => {});
+    check(downloads.some(n => /^itinerary-/.test(String(n)) && !/-day\d+-/.test(String(n))),
+      'day png: the full-plan PNG is still exported');
+  } finally {
+    window.HTMLAnchorElement.prototype.click = originalClick;
+  }
+}
+
+console.log('\n▶ v11: ใบเสร็จ — เลือกดูรายคน, ชื่อเด่นชัด, ทักท้วงในใบเสร็จ');
+{
+  await goto('#/trip/t1/settlement');
+  await waitFor(() => q('#settle-views'), { label: 'settlement' });
+  await sleep(320);
+  await click('#settle-views [data-view="receipts"]');
+  await waitFor(() => q('#receipt-u1'), { label: 'receipt u1' });
+  await sleep(260);
+
+  // the member name is the headline of the receipt
+  const nameEl = q('#receipt-u1 .receipt-member-name');
+  check(!!nameEl, 'receipt: the member name is the headline of the receipt');
+  check((nameEl?.textContent || '').includes('สมชาย'), 'receipt: the headline reads the member name');
+  check(!!q('#receipt-u1 .rcpt-member-bar .avatar'), 'receipt: the headline carries the avatar');
+  check(/receipt-member-name/.test(fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8')),
+    'receipt: the name has its own (large) style');
+
+  // picker: everyone or one member
+  check(!!q('#receipt-picker'), 'receipt: a picker filters the receipts');
+  check(!!q('#receipt-picker [data-receipt-filter="all"]'), 'receipt: ทุกคน is offered');
+  check(!!q('#receipt-picker [data-receipt-filter="u2"]'), 'receipt: every member has their own chip');
+  await click('#receipt-picker [data-receipt-filter="u2"]');
+  await sleep(160);
+  check(!!q('#receipt-u2') && !q('#receipt-u1'), 'receipt: choosing a member shows that receipt only');
+  check(q('#receipt-picker [data-receipt-filter="u2"]')?.classList.contains('active'), 'receipt: the chosen member is highlighted');
+  await click('#receipt-picker [data-receipt-filter="all"]');
+  await sleep(160);
+  check(!!q('#receipt-u1') && !!q('#receipt-u2'), 'receipt: ทุกคน brings every receipt back');
+
+  // flag / question an item straight from the receipt
+  check(!!q('#receipt-u1 [data-receipt-comment]'), 'receipt: items offer a ทักท้วง button');
+  const flagBtn = q('#receipt-u1 [data-receipt-comment]');
+  const flaggedId = flagBtn?.dataset.receiptComment;
+  await click(flagBtn);
+  await waitFor(() => q('#comment-input'), { label: 'receipt comment sheet' });
+  q('#comment-input').value = 'ทักท้วงจากใบเสร็จ: ยอดนี้รวมทิปหรือยัง?';
+  submit(q('#comment-form'));
+  await waitFor(() => [...fsdb.__store.entries()].some(([k, v]) => k.startsWith('trips/t1/comments/')
+    && v?.expenseId === flaggedId && String(v?.text || '').includes('ทักท้วงจากใบเสร็จ')), { timeout: 6000, label: 'receipt comment' })
+    .catch(() => {});
+  q('.bottom-sheet-backdrop')?.click();
+  await sleep(320);
+  await waitFor(() => (q('#receipt-u1')?.textContent || '').includes('ทักท้วงจากใบเสร็จ'), { label: 'comment inside receipt' }).catch(() => {});
+  check((q('#receipt-u1')?.textContent || '').includes('ทักท้วงจากใบเสร็จ'), 'receipt: the comment shows inside the receipt itself');
+  check(!!q('#receipt-u1 .rcpt-comment'), 'receipt: comments are styled as flags on the item');
+  await goto('#/trip/t1/settlement');
+  await waitFor(() => q('#settle-overview'), { label: 'settlement again' });
+  check(q('#settle-views .chip-active')?.dataset.view === 'overview', 'receipt: the page still opens on ภาพรวม');
+}
+
 console.log('\n▶ delete the whole trip (UI)');
 // leave the member session so the admin flow runs with a "logged out" auth state
 window.localStorage.removeItem('fuji_member_session');
