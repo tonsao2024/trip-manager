@@ -53,6 +53,54 @@ function normalizeUsername(u) {
   return String(u).trim().toLowerCase();
 }
 
+/**
+ * Keep the public username → trip/member registry in sync. The app writes it
+ * itself when it creates a member locally (no Cloud Functions); the functions
+ * mirror it so a member created on one device can sign in from another even if
+ * the functions are later unavailable.
+ */
+function publicLoginRef(username) {
+  return db.doc(`publicMemberLogins/${normalizeUsername(username)}`);
+}
+
+async function publishPublicLogin({ username, tripId, memberUid, displayName }) {
+  if (!username || !tripId || !memberUid) return;
+  try {
+    await publicLoginRef(username).set({
+      username: normalizeUsername(username),
+      tripId,
+      memberId: memberUid,
+      displayName: displayName || null,
+      updatedAt: FieldValue.serverTimestamp(),
+      disabled: false
+    }, { merge: true });
+  } catch (e) {
+    console.warn('publishPublicLogin failed', e.message);
+  }
+}
+
+/** Diagnostics endpoint used by Settings > ตรวจสอบระบบ. */
+export const healthCheck = onCall(async (request) => {
+  const started = Date.now();
+  let firestore = 'ok';
+  try {
+    await db.doc('systemHealth/ping').set({ lastCheck: FieldValue.serverTimestamp() }, { merge: true });
+  } catch (e) {
+    firestore = `error: ${e.message}`;
+  }
+  return {
+    ok: firestore === 'ok',
+    region: 'asia-southeast1',
+    projectId: process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || null,
+    node: process.version,
+    auth: request.auth ? 'signed-in' : 'anonymous',
+    firestore,
+    ms: Date.now() - started,
+    time: new Date().toISOString(),
+    version: 'v5'
+  };
+});
+
 // Create member account with username + PIN
 export const createMemberAccount = onCall(async (request) => {
   const { tripId, username, pin, displayName, role = 'member', permissions = {} } = request.data;
@@ -82,7 +130,13 @@ export const createMemberAccount = onCall(async (request) => {
     });
     memberUid = userRecord.uid;
   } catch (e) {
-    throw new HttpsError('internal', e.message);
+    // Never swallow the reason: the app shows this message to the admin.
+    console.error('createMemberAccount: createUser failed', e);
+    const detail = String(e.message || e.code || 'unknown');
+    const code = /already.?exists/i.test(detail) ? 'already-exists'
+      : /quota|billing|permission|forbidden|unauthor/i.test(detail) ? 'permission-denied'
+      : 'internal';
+    throw new HttpsError(code, `สร้างบัญชี Firebase Auth ไม่สำเร็จ: ${detail}`);
   }
 
   const batch = db.batch();
@@ -112,6 +166,8 @@ export const createMemberAccount = onCall(async (request) => {
   batch.update(tripRef, { memberUids: FieldValue.arrayUnion(memberUid) });
 
   await batch.commit();
+
+  await publishPublicLogin({ username: norm, tripId, memberUid, displayName });
 
   await db.collection(`trips/${tripId}/activityLogs`).add({
     action: 'create_member',
@@ -168,6 +224,8 @@ export const resetMemberPin = onCall(async (request) => {
   if (!newPin || newPin.length < 4) throw new HttpsError('invalid-argument', 'Invalid PIN');
   const hash = await bcrypt.hash(newPin, 10);
   await loginRef.update({ pinHash: hash, updatedBy: callerUid, updatedAt: FieldValue.serverTimestamp() });
+  await publishPublicLogin({ username: norm, tripId: data.tripId, memberUid: data.memberUid });
+  await db.doc(`trips/${data.tripId}/members/${data.memberUid}`).set({ loginReady: true, username: norm }, { merge: true });
   await db.collection(`trips/${data.tripId}/activityLogs`).add({
     action: 'reset_pin',
     target: data.memberUid,
@@ -188,7 +246,8 @@ export const disableMemberAccount = onCall(async (request) => {
   const data = snap.data();
   if (!await isTripAdmin(data.tripId, callerUid)) throw new HttpsError('permission-denied', 'Admin only');
   await loginRef.update({ disabled: true });
-  await db.doc(`trips/${data.tripId}/members/${data.memberUid}`).update({ status: 'inactive' });
+  await publicLoginRef(norm).set({ disabled: true, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  await db.doc(`trips/${data.tripId}/members/${data.memberUid}`).update({ status: 'inactive', loginReady: false });
   await auth.updateUser(data.memberUid, { disabled: true });
   return { success: true };
 });

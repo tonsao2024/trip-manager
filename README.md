@@ -69,7 +69,51 @@ See `firestore.indexes.json` — composite for itinerary by date+order, expenses
 - `recalculateSettlement`: Minimize transactions (creditor/debtor matching).
 - `writeAuditLog`: Log sensitive actions.
 
+- `healthCheck`: Diagnostics endpoint for Settings > **ตรวจสอบระบบ** (returns region, project, Firestore write test).
+
 All functions validate auth, trip membership, input, rate limit, never return hash.
+
+## เปิดใช้ระบบล็อกอินสมาชิก (username + PIN)
+
+การล็อกอินสมาชิกมี 2 โหมด และ **โหมดในเครื่องใช้ได้ทันทีโดยไม่ต้อง deploy อะไร**:
+
+| โหมด | ต้องมี | ผลลัพธ์ |
+|------|--------|---------|
+| ในเครื่อง (ค่าเริ่มต้น) | ไม่มี | สมาชิกตั้งชื่อผู้ใช้ + PIN ได้ตอนเพิ่มสมาชิก (แฮช PBKDF2-SHA256 100k เก็บใน `members/{id}`) แล้วล็อกอินได้เลยบนอุปกรณ์นั้น |
+| เต็มรูปแบบ | Blaze plan + deploy functions + rules | สมาชิกได้ Firebase Auth จริง (custom token) ซิงก์ข้อมูลข้ามเครื่อง/ทุกที่ |
+
+### ขั้นตอนเปิดโหมดเต็มรูปแบบ
+
+1. อัปเกรดโปรเจกต์ `trip-manager-93b22` เป็นแผน **Blaze** (Cloud Functions ใช้ Spark ไม่ได้)
+2. ติดตั้ง CLI แล้วชี้โปรเจกต์
+   ```bash
+   npm i -g firebase-tools
+   firebase login
+   firebase use trip-manager-93b22
+   ```
+3. Deploy ฟังก์ชัน + กฎ + index
+   ```bash
+   firebase deploy --only functions,firestore:rules,firestore:indexes
+   ```
+4. ถ้าเรียกแล้วได้ 403 จาก Cloud Run ให้เปิดสิทธิ์ผู้เรียก (ทำกับ `loginwithusernamepin`, `creatememberaccount`, `healthcheck`)
+   ```bash
+   gcloud run services add-iam-policy-binding loginwithusernamepin \
+     --region=asia-southeast1 --member=allUsers --role=roles/run.invoker
+   ```
+5. เปิด provider: Firebase Console > Authentication > Sign-in method (Email/Password)
+6. ตรวจในแอป: **ตั้งค่า > ตรวจสอบระบบ** หรือสั่ง `await fujiDiagnose()` ใน console — ต้องขึ้น ✅ ทุกบรรทัด
+
+### ทำไมขึ้น `functions/internal: internal`
+
+| สาเหตุ | วิธีแก้ |
+|--------|--------|
+| ยังไม่ได้ deploy functions | `firebase deploy --only functions` |
+| Deploy คนละ region (แอปเรียก `asia-southeast1` เท่านั้น) | deploy ใหม่ตาม `firebase.json` |
+| โปรเจกต์อยู่แผน Spark | อัปเกรดเป็น Blaze |
+| Cloud Run ไม่ได้เปิด `allUsers` (403 → SDK รายงานเป็น internal) | คำสั่ง `gcloud run services add-iam-policy-binding` ด้านบน |
+| ฟังก์ชัน throw เอง | ดู Console > Functions > Logs (ตั้งแต่ v5 ฟังก์ชันส่งข้อความจริงกลับมาแทนคำว่า internal เฉย ๆ) |
+
+ถ้าสมาชิกยังไม่ได้รับสิทธิ์เต็มรูปแบบ แอปจะแสดงแถบ “โหมดสมาชิก (ไม่ใช้ Cloud Functions)” และอ่านข้อมูลจากแคชในเครื่องแทนการขึ้น error
 
 ## Folder Structure
 
@@ -184,6 +228,8 @@ firebase emulators:start --only firestore,auth,functions,storage
 - No PWA elements
 - GitHub Pages deployable
 - Animated, mobile-first UI: bottom nav, FAB, scroll reveal, confetti, count-up KPIs
+- Member login works with **and** without Cloud Functions (local PIN auth fallback + Firestore-backed when deployed)
+- Settings > **ตรวจสอบระบบ** runs 9 probes and prints exactly which deploy step is missing
 
 ### v5 fixes
 

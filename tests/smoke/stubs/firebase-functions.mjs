@@ -12,7 +12,7 @@ function fnError(name) {
 export function getFunctions() { return { __functions: true }; }
 export function httpsCallable(_fns, name) {
   return async (data) => {
-    if (name === 'createMemberAccount' || name === 'loginWithUsernamePin') throw fnError(name);
+    if (name === 'createMemberAccount' || name === 'loginWithUsernamePin' || name === 'healthCheck') throw fnError(name);
     if (responses[name]) return { data: responses[name] };
     return { data: { ok: true, echo: data } };
   };

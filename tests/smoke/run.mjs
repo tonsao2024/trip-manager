@@ -508,6 +508,21 @@ for (const [hash, kind] of scenePages) {
   if (scene) check(scene.querySelectorAll('.ps-art svg *').length > 2, `scene: ${kind} illustration has animated parts`);
 }
 
+console.log('\n▶ v5: Settings > system check explains broken member login');
+await goto('#/trip/t1/settings');
+await waitFor(() => q('#run-diagnostics'), { label: 'system check button' });
+check(!!q('#run-diagnostics'), 'system check: button present in settings');
+await click('#run-diagnostics');
+await waitFor(() => qa('#diag-results [data-diag]').length >= 5, { timeout: 8000, label: 'diagnostic rows' }).catch(() => {});
+const diagRows = qa('#diag-results [data-diag]');
+check(diagRows.length >= 5, `system check: ran every probe (${diagRows.length} rows)`);
+const fnRow = q('[data-diag="functions"]');
+check(!!fnRow && fnRow.dataset.status === 'fail', 'system check: broken Cloud Functions flagged');
+check(!!fnRow && /deploy/i.test(fnRow.textContent), 'system check: shows the firebase deploy command');
+check(!!q('[data-diag="security-pins"]'), 'system check: verifies PIN documents stay private');
+check(!!q('#diag-copy'), 'system check: report can be copied');
+check(typeof window.fujiDiagnose === 'function', 'system check: fujiDiagnose() console helper exposed');
+
 console.log('\n▶ v5: dashboard does not re-render icons every second');
 await goto('#/trip/t1/dashboard');
 await waitFor(() => q('#live-since [data-live-label]'), { label: 'live clock' });

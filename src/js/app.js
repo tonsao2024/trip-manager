@@ -4,6 +4,7 @@ import { toast } from './components/toast.js';
 import { renderFujiMascot, renderEmptyState } from './components/fuji.js';
 import { loginAdmin, loginMember, logout, hasStepUpSession } from './auth/index.js';
 import { memberLogin, saveMemberSession, getMemberSession, clearMemberSession, normalizeUsername } from './auth/memberAuth.js';
+import { runSystemDiagnostics, formatDiagnosticsReport, DIAG } from './utils/diagnostics.js';
 import { listTrips, getTrip, createTrip, updateTrip, deleteTrip, duplicateTrip, uploadCoverImage, clearTripsCache } from './trips/index.js';
 import { fetchItinerary, saveItineraryItem, deleteItineraryItem, reorderItinerary, getItineraryItem, syncItineraryExpense, findLinkedExpense } from './itinerary/index.js';
 import {
@@ -618,6 +619,19 @@ function renderMemberSessionNotice(on) {
   box.hidden = false;
   document.getElementById('member-session-notice-close')?.addEventListener('click', () => { box.hidden = true; });
   queueIcons();
+}
+
+// Console helper for support: `await fujiDiagnose()` in the browser console prints the
+// same report as Settings > ตรวจสอบระบบ (System check).
+if (typeof window !== 'undefined') {
+  window.fujiDiagnose = async () => {
+    const result = await runSystemDiagnostics({ tripId: currentTripId, lang: getLang() });
+    if (typeof console.table === 'function') {
+      console.table(result.results.map(x => ({ check: x.label, status: x.status, detail: x.detail })));
+    }
+    console.log(formatDiagnosticsReport({ tripId: currentTripId, lang: getLang(), results: result.results }));
+    return result;
+  };
 }
 
 function renderMemberSessionUi(session) {
@@ -4721,6 +4735,13 @@ async function renderSettings(params) {
         <button id="lang-switch" class="btn btn-secondary w-full btn-sm">${icon('languages', 'w-4 h-4')} ${lang === 'th' ? 'English' : 'ภาษาไทย'}</button>
       </div>
 
+      <div class="card p-5 space-y-3">
+        <h3 class="font-bold flex items-center gap-2">${icon('stethoscope', 'w-4 h-4')} ${th('ตรวจสอบระบบ','System check')}</h3>
+        <p class="text-xs text-[var(--text-secondary)]">${th('เช็กว่าล็อกอินสมาชิก, Cloud Functions และ Firestore Rules พร้อมใช้งานไหม (ใช้เวลาไม่กี่วินาที)','Checks member login, Cloud Functions and Firestore rules (a few seconds).')}</p>
+        <button id="run-diagnostics" class="btn btn-secondary w-full">${icon('play', 'w-4 h-4')} ${th('เริ่มตรวจสอบ','Run check')}</button>
+        <div id="diag-results" class="space-y-2"></div>
+      </div>
+
       <div class="card p-5 space-y-3" style="border-color: color-mix(in srgb, var(--danger) 35%, var(--border));">
         <h3 class="font-bold flex items-center gap-2" style="color:var(--danger);">${icon('alert-triangle', 'w-4 h-4')} ${th('เขตอันตราย','Danger zone')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('ลบทริปจะลบแผนการเดินทาง ค่าใช้จ่าย สมาชิก และเอกสารทั้งหมดอย่างถาวร','Deleting a trip removes its itinerary, expenses, members and documents permanently.')}</p>
@@ -4846,6 +4867,47 @@ async function renderSettings(params) {
     renderSettings(params);
     renderDesktopNav();
     updateBottomNav();
+  });
+
+  bind('run-diagnostics', 'click', async () => {
+    const box = document.getElementById('diag-results');
+    const btn = document.getElementById('run-diagnostics');
+    if (!box || !btn) return;
+    btn.disabled = true;
+    box.innerHTML = `<div class="diag-row"><span class="diag-dot"></span><span>${th('กำลังตรวจสอบ...','Running checks...')}</span></div>`;
+    try {
+      const report = await runSystemDiagnostics({ tripId, lang });
+      const color = { ok: 'var(--success)', warn: '#d97706', fail: 'var(--danger)' };
+      const glyph = { ok: 'check-circle-2', warn: 'alert-circle', fail: 'x-circle' };
+      box.innerHTML = report.results.map(r => `
+        <div class="diag-row" data-diag="${escapeHtml(r.id)}" data-status="${r.status}">
+          <i data-lucide="${glyph[r.status] || 'circle'}" class="w-4 h-4 shrink-0" style="color:${color[r.status] || 'var(--text-secondary)'};"></i>
+          <div class="min-w-0">
+            <div class="font-semibold" style="color:${color[r.status] || 'inherit'};">${escapeHtml(r.label)}</div>
+            <div class="text-[11px] text-[var(--text-secondary)]">${escapeHtml(r.detail || '')}</div>
+            ${r.fix ? `<div class="diag-fix">${escapeHtml(r.fix)}</div>` : ''}
+          </div>
+        </div>`).join('') + `
+        <div class="btn-row pt-1">
+          <button id="diag-copy" class="btn btn-secondary btn-sm">${icon('clipboard-copy', 'w-4 h-4')} ${th('คัดลอกผลตรวจสอบ','Copy report')}</button>
+          <button id="diag-rerun" class="btn btn-ghost btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${th('ตรวจอีกครั้ง','Run again')}</button>
+        </div>`;
+      queueIcons();
+      document.getElementById('diag-copy')?.addEventListener('click', () => {
+        const text = formatDiagnosticsReport({ tripId, lang, results: report.results });
+        const copied = navigator.clipboard?.writeText?.(text);
+        if (copied?.then) copied.then(() => toast.success(th('คัดลอกแล้ว','Copied'))).catch(() => toast.info(text.slice(0, 80)));
+        else toast.info(text.slice(0, 80));
+      });
+      document.getElementById('diag-rerun')?.addEventListener('click', () => document.getElementById('run-diagnostics')?.click());
+      toast[report.ok ? 'success' : 'error'](report.ok
+        ? th('ระบบพร้อมใช้งาน ✅','All checks passed ✅')
+        : th('พบปัญหาที่ต้องแก้ — ดูรายละเอียดด้านล่าง','Problems found — see details below'));
+    } catch (e) {
+      box.innerHTML = `<div class="diag-row" data-status="fail"><div><div class="font-semibold" style="color:var(--danger);">${escapeHtml(e.message)}</div></div></div>`;
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   bind('dup-trip', 'click', async () => {

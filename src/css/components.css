@@ -1412,3 +1412,38 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
   pointer-events: none;
 }
 @media (min-width: 641px) { .chip-row-scroll::after { display: none; } }
+
+
+/* ------------------------------------------------------------------
+   System check (Settings > ตรวจสอบระบบ)
+   ------------------------------------------------------------------ */
+.diag-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: var(--radius-md, 12px);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.45;
+  animation: fadeInDown .32s ease both;
+}
+.diag-fix {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  word-break: break-word;
+  white-space: pre-wrap;
+  color: var(--text-secondary);
+}
+.diag-row[data-status="fail"] { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+.diag-row[data-status="warn"] { border-color: #d9770640; }
+
+@media (max-width: 640px) {
+  .diag-row { padding: 8px 10px; }
+}
