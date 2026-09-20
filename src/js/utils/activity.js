@@ -6,7 +6,7 @@
 // read. If the write is refused (rules not published) the entry is kept on the
 // device, so the history is never silently lost.
 import { db, serverTimestamp } from '../firebase.js';
-import { collection, addDoc, getDocs, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { collection, addDoc, getDocs, getDoc, deleteDoc, doc, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const LOCAL_KEY = (tripId) => `fuji_activity:${tripId}`;
 const MAX_LOCAL = 150;
@@ -101,6 +101,40 @@ export async function recordAction(tripId, { type, targetId, title, detail, user
     logActivity(tripId, { type, targetId, title, detail, user })
   ]);
   return { ...log, by: user?.displayName || user?.email || '', uid: user?.uid || '' };
+}
+
+/**
+ * Delete one or more activity entries (admin only).
+ * Remote entries are removed from Firestore; local-only ones are pruned
+ * from the device cache.
+ * @param {string} tripId
+ * @param {string[]} entryIds  IDs to delete
+ * @returns {Promise<{deleted:number}>}
+ */
+export async function deleteActivityEntries(tripId, entryIds = []) {
+  if (!entryIds.length) return { deleted: 0 };
+  let deleted = 0;
+  const localIds = entryIds.filter(id => String(id).startsWith('local-'));
+  const remoteIds = entryIds.filter(id => !String(id).startsWith('local-'));
+
+  // Remote deletions (requires trip admin role per firestore.rules).
+  for (const id of remoteIds) {
+    try {
+      if (!db) throw new Error('DB not ready');
+      await deleteDoc(doc(db, `trips/${tripId}/activity`, id));
+      deleted++;
+    } catch (e) {
+      console.warn('deleteActivityEntries: remote delete failed', id, e?.code || e?.message);
+    }
+  }
+
+  // Local-only entries are pruned from the device cache.
+  if (localIds.length) {
+    const list = readLocal(tripId).filter(l => !localIds.includes(l.id));
+    writeLocal(tripId, list);
+    deleted += localIds.length;
+  }
+  return { deleted };
 }
 
 /** "สมชาย • 2 ชม. ที่แล้ว" for the last-editor line on a card. */

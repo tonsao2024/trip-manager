@@ -226,11 +226,14 @@ service cloud.firestore {
         );
       }
 
-      // Activity log: who created / edited / deleted what. Append-only.
+      // Activity log: who created / edited / deleted what.
+      // Members can read and append. Admins can also delete entries
+      // (keeping the log short avoids slow queries on large trips).
       match /activity/{entryId} {
         allow read: if isTripMember(tripId);
         allow create: if isTripMember(tripId);
-        allow update, delete: if false;
+        allow delete: if isTripAdmin(tripId);
+        allow update: if false;
       }
     }
   }

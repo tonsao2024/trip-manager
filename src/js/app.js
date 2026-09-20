@@ -59,7 +59,7 @@ import { parseCoordinates, getInitials, compressImage } from './utils/helpers.js
 import { suggestCards, rememberCard, uploadReceiptImage } from './utils/cards.js';
 import { schematicMap, parseLatLng } from './exports/itineraryMap.js';
 import { listComments, addComment, deleteComment, commentsByExpense, commentsPending } from './comments/index.js';
-import { logActivity, listActivity, activityLabel, activityIcon, lastEditorText } from './utils/activity.js';
+import { logActivity, listActivity, activityLabel, activityIcon, lastEditorText, deleteActivityEntries } from './utils/activity.js';
 import { t, setLang, getLang } from './utils/i18n.js';
 
 const appEl = document.getElementById('app');
@@ -215,36 +215,81 @@ function openCommentSheet({ tripId, expenseId, title = '', amount = '', comments
 }
 
 /** The trip's edit history ("ใครแก้ไขล่าสุด"). */
-async function openActivitySheet(tripId) {
+async function openActivitySheet(tripId, { isAdmin = false } = {}) {
   const lang = getLang();
   const th = (a, b) => (lang === 'th' ? a : b);
   const sheet = showBottomSheet(`
     <div class="space-y-3">
       <div class="flex items-center gap-3">
         <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--bg-secondary);color:var(--text-secondary);">${icon('history', 'w-5 h-5')}</div>
-        <div>
+        <div class="min-w-0 flex-1">
           <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${th('ประวัติการแก้ไข','Activity log')}</h3>
           <p class="text-[11px] text-[var(--text-secondary)]">${th('ใครเพิ่ม/แก้ไข/ลบ อะไร และเมื่อไร','Who added, edited or deleted what')}</p>
         </div>
+        ${isAdmin ? `<button id="activity-clear-all" class="btn btn-ghost btn-sm text-[10px]" style="min-height:28px;padding:2px 10px;color:var(--danger);">${icon('trash-2', 'w-3.5 h-3.5')} ${th('ล้างทั้งหมด','Clear all')}</button>` : ''}
       </div>
       <div id="activity-list"><div class="skeleton h-16"></div><div class="skeleton h-16"></div></div>
     </div>
   `);
   queueIcons();
   const box = sheet.sheet.querySelector('#activity-list');
-  const entries = await listActivity(tripId, { limitCount: 60 });
-  if (!box) return sheet;
-  box.innerHTML = entries.length ? entries.map(e => `
-    <div class="activity-row">
-      <div class="activity-icon">${icon(activityIcon(e.type), 'w-3.5 h-3.5')}</div>
-      <div class="min-w-0 flex-1">
-        <div class="text-xs"><b>${escapeHtml(e.name || '—')}</b> ${escapeHtml(activityLabel(e.type, lang))}${e.title ? ` — ${escapeHtml(e.title)}` : ''}</div>
-        ${e.detail ? `<div class="text-[10px] text-[var(--text-tertiary)] truncate">${escapeHtml(e.detail)}</div>` : ''}
-        <div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(fmtWhen(e.at, lang))}${e.pending ? ` • ${th('ในเครื่องนี้','on device')}` : ''}</div>
-      </div>
-    </div>`).join('')
-    : `<p class="text-[11px] text-[var(--text-tertiary)] text-center py-4">${th('ยังไม่มีประวัติ','No history yet')}</p>`;
-  queueIcons();
+  let entries = await listActivity(tripId, { limitCount: 60 });
+
+  function renderEntries() {
+    if (!box) return;
+    box.innerHTML = entries.length ? entries.map(e => `
+      <div class="activity-row" data-activity-id="${e.id}">
+        <div class="activity-icon">${icon(activityIcon(e.type), 'w-3.5 h-3.5')}</div>
+        <div class="min-w-0 flex-1">
+          <div class="text-xs"><b>${escapeHtml(e.name || '—')}</b> ${escapeHtml(activityLabel(e.type, lang))}${e.title ? ` — ${escapeHtml(e.title)}` : ''}</div>
+          ${e.detail ? `<div class="text-[10px] text-[var(--text-tertiary)] truncate">${escapeHtml(e.detail)}</div>` : ''}
+          <div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(fmtWhen(e.at, lang))}${e.pending ? ` • ${th('ในเครื่องนี้','on device')}` : ''}</div>
+        </div>
+        ${isAdmin ? `<button class="activity-del-btn" data-activity-del="${e.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>` : ''}
+      </div>`).join('')
+      : `<p class="text-[11px] text-[var(--text-tertiary)] text-center py-4">${th('ยังไม่มีประวัติ','No history yet')}</p>`;
+
+    // Bind individual delete buttons
+    box.querySelectorAll('[data-activity-del]').forEach(btn => btn.addEventListener('click', async () => {
+      const id = btn.dataset.activityDel;
+      const ok = await confirmAction({
+        title: th('ลบประวัตินี้?', 'Delete this entry?'),
+        confirmText: t('delete'), danger: true, icon: 'trash-2'
+      });
+      if (!ok) return;
+      try {
+        await deleteActivityEntries(tripId, [id]);
+        entries = entries.filter(e => e.id !== id);
+        renderEntries();
+        toast.success(th('ลบแล้ว', 'Deleted'));
+      } catch (err) { toast.error(err.message); }
+    }));
+    queueIcons();
+  }
+  renderEntries();
+
+  // "Clear all" — admin only
+  const clearBtn = sheet.sheet.querySelector('#activity-clear-all');
+  if (clearBtn && isAdmin) {
+    clearBtn.addEventListener('click', async () => {
+      const ok = await confirmAction({
+        title: th('ล้างประวัติทั้งหมด?', 'Clear all activity?'),
+        message: th('รายการประวัติทั้งหมดจะถูกลบออก เพื่อเพิ่มประสิทธิภาพของระบบ', 'All history entries will be removed to improve performance.'),
+        confirmText: th('ล้างทั้งหมด', 'Clear all'), danger: true, icon: 'trash-2'
+      });
+      if (!ok) return;
+      const tLoad = toast.loading(th('กำลังลบ...', 'Deleting...'));
+      try {
+        const ids = entries.map(e => e.id);
+        await deleteActivityEntries(tripId, ids);
+        entries = [];
+        renderEntries();
+        tLoad.close();
+        toast.success(th('ล้างประวัติทั้งหมดแล้ว', 'All history cleared'));
+      } catch (err) { tLoad.close(); toast.error(err.message); }
+    });
+  }
+
   return sheet;
 }
 
@@ -3465,7 +3510,6 @@ async function renderItinerary(params) {
               </div>
               ${it.address ? `<p class="meta-line mt-1">${icon('map-pin', 'w-3 h-3')} <span class="truncate">${escapeHtml(it.address)}</span></p>` : ''}
               ${(it.coordinates || it.address || it.googleMapsUrl) ? `<a class="nav-link-btn mt-1.5" href="${escapeHtml(googleMapsPlaceUrl(it))}" target="_blank" rel="noopener">${icon('navigation', 'w-3 h-3')} ${th('นำทาง Google Maps','Navigate')}</a>` : ''}
-              ${it.coordinates ? `<p class="meta-line mt-0.5 text-[var(--text-tertiary)]">${icon('crosshair', 'w-3 h-3')} ${escapeHtml(it.coordinates)}</p>` : ''}
               ${estimateMinor ? `
                 <div class="estimate-line">
                   ${icon('hourglass', 'w-3.5 h-3.5')}
@@ -3477,10 +3521,14 @@ async function renderItinerary(params) {
           </div>
           <div class="itin-actions">
             ${(it.coordinates || it.address || it.googleMapsUrl) ? `<button class="icon-btn" data-act="navigate" data-id="${it.id}" title="${th('นำทางด้วย Google Maps','Navigate with Google Maps')}" style="color:var(--primary-strong);">${icon('navigation', 'w-3.5 h-3.5')}</button>` : ''}
-            ${it.coordinates ? `<button class="icon-btn" data-act="locate" data-id="${it.id}" title="${th('ดูบนแผนที่','Show on map')}">${icon('crosshair', 'w-3.5 h-3.5')}</button>` : ''}
-            <button class="icon-btn" data-act="status" data-id="${it.id}" title="${th('เปลี่ยนสถานะ','Change status')}">${icon('circle-check', 'w-3.5 h-3.5')}</button>
-            <button class="icon-btn" data-act="edit" data-id="${it.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
-            <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${it.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
+            <div class="itin-more-wrap">
+              <button class="icon-btn" data-act="more" data-id="${it.id}" title="${th('เพิ่มเติม','More')}">${icon('more-vertical', 'w-3.5 h-3.5')}</button>
+              <div class="itin-more-menu" data-more-menu="${it.id}">
+                <button data-act="status" data-id="${it.id}">${icon('circle-check', 'w-4 h-4')} ${th('เปลี่ยนสถานะ','Change status')}</button>
+                <button data-act="edit" data-id="${it.id}">${icon('pencil', 'w-4 h-4')} ${t('edit')}</button>
+                <button data-act="delete" data-id="${it.id}" class="is-danger">${icon('trash-2', 'w-4 h-4')} ${t('delete')}</button>
+              </div>
+            </div>
           </div>
         </div>
         <div class="itin-thumb">
@@ -3554,14 +3602,31 @@ async function renderItinerary(params) {
           }
           return;
         }
+        if (btn.dataset.act === 'more') {
+          // Toggle the dropdown menu for this card
+          const menuId = btn.dataset.id;
+          const menu = listEl.querySelector(`[data-more-menu="${menuId}"]`);
+          if (!menu) return;
+          // Close any other open menus first
+          listEl.querySelectorAll('.itin-more-menu.is-open').forEach(m => {
+            if (m !== menu) m.classList.remove('is-open');
+          });
+          menu.classList.toggle('is-open');
+          return;
+        }
+        // Close any open dropdown menus before executing an action
+        listEl.querySelectorAll('.itin-more-menu.is-open').forEach(m => m.classList.remove('is-open'));
         if (btn.dataset.act === 'edit') openItemForm(item, item.date);
         if (btn.dataset.act === 'delete') await removeItem(item);
         if (btn.dataset.act === 'status') await changeStatus(item);
-        if (btn.dataset.act === 'locate') {
-          const { focusItineraryItem } = await import('./maps/index.js');
-          focusItineraryItem('map', visibleItems, item.id);
-        }
       }));
+
+      // Close dropdown menus when clicking outside the card
+      const closeMenus = () => {
+        listEl?.querySelectorAll('.itin-more-menu.is-open').forEach(m => m.classList.remove('is-open'));
+      };
+      document.addEventListener('click', closeMenus);
+      document.addEventListener('routechange', () => document.removeEventListener('click', closeMenus), { once: true });
 
       if (editMode) {
         try {
@@ -4105,7 +4170,7 @@ async function renderExpenses(params) {
     applyFilterRender();
   }));
 
-  bind('activity-btn', 'click', () => openActivitySheet(tripId));
+  bind('activity-btn', 'click', () => openActivitySheet(tripId, { isAdmin }));
 
   /** Comment button + badge for one expense row. */
   function commentButton(expenseId) {
@@ -4689,6 +4754,8 @@ async function renderExpenseAdd(params) {
   }).map(m => m.id));
   let splitMethod = 'equal';
   let customAllocations = {};
+  let lockedAllocations = new Set();   // IDs whose custom amount was manually set
+  let splitIncludesVatSc = true;        // true = custom amounts include VAT/SC, false = exclude
 
   document.querySelectorAll('#payer-tiles [data-payer]').forEach(btn => btn.addEventListener('click', () => {
     selectedPayer = btn.dataset.payer;
@@ -4742,6 +4809,7 @@ async function renderExpenseAdd(params) {
     if (!area) return;
     const v = readValues();
     const ids = members.filter(m => selectedShare.has(m.id));
+    const dec = getCurrencyDecimals(v.cur);
     if (!members.length) { area.innerHTML = ''; return; }
     if (!ids.length) {
       area.innerHTML = `<p class="text-xs" style="color:var(--danger);">${th('เลือกอย่างน้อย 1 คนที่ร่วมหาร','Pick at least one person to share')}</p>`;
@@ -4755,17 +4823,160 @@ async function renderExpenseAdd(params) {
             <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${escapeHtml(getInitials(m.displayName))}</span>
             <span class="truncate">${escapeHtml(m.displayName)}</span>
           </span>
-          <span class="font-bold flex-shrink-0">${per.toFixed(getCurrencyDecimals(v.cur))}</span>
+          <span class="font-bold flex-shrink-0">${per.toFixed(dec)}</span>
         </div>`).join('');
     } else {
-      area.innerHTML = ids.map(m => `
-        <div class="flex gap-2 items-center">
-          <span class="text-sm w-28 truncate flex-shrink-0">${escapeHtml(m.displayName)}</span>
-          <input data-alloc="${m.id}" class="input flex-1" type="number" step="0.01" min="0" placeholder="0.00" value="${customAllocations[m.id] ?? (e.allocations ? fromMinor(e.allocations.find(a => a.memberId === m.id)?.amountMinor || 0, getCurrencyDecimals(v.cur)) : '')}">
-        </div>`).join('') + `<p class="input-hint">${icon('info', 'w-3 h-3 inline')} ${th('ผลรวมต้องเท่ากับยอดสุทธิ','The sum must equal the net total')}</p>`;
-      area.querySelectorAll('[data-alloc]').forEach(inp => inp.addEventListener('input', () => { customAllocations[inp.dataset.alloc] = inp.value; }));
+      // ---- Custom split ----
+      // Show VAT/SC inclusion toggle + auto-distribute inputs
+      const vatScToggle = `
+        <div class="split-vat-toggle">
+          <span class="text-[11px] font-bold flex-shrink-0">${icon('calculator', 'w-3.5 h-3.5')} ${th('ยอดที่กรอก','Amounts')}:</span>
+          <div class="segmented" style="flex:1;min-height:28px;">
+            <button type="button" data-vatsc="include" class="segmented-item ${splitIncludesVatSc ? 'active' : ''}" style="font-size:11px;padding:4px 8px;">${th('รวม VAT/Service แล้ว','Incl. VAT/SC')}</button>
+            <button type="button" data-vatsc="exclude" class="segmented-item ${!splitIncludesVatSc ? 'active' : ''}" style="font-size:11px;padding:4px 8px;">${th('ยังไม่รวม VAT/SC','Excl. VAT/SC')}</button>
+          </div>
+        </div>`;
+
+      // Compute computed allocations based on current customAllocations + auto-distribute
+      const computed = computeCustomAllocations(v, ids, dec);
+
+      const rows = ids.map(m => {
+        const isLocked = lockedAllocations.has(m.id);
+        const entered = customAllocations[m.id];
+        const finalAmount = computed[m.id] ?? 0;
+        const displayValue = entered !== undefined ? entered : '';
+        return `
+          <div class="split-row">
+            <div class="split-name">
+              <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;flex-shrink:0;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+              <span class="truncate text-xs font-medium" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
+            </div>
+            <input data-alloc="${m.id}" class="input split-input" type="number" step="0.01" min="0" placeholder="0.00" value="${displayValue}" style="min-height:36px;padding:6px 10px;font-size:13px;">
+            <button type="button" class="split-lock-btn ${isLocked ? 'is-locked' : ''}" data-lock="${m.id}" title="${isLocked ? th('ปลดล็อก — จะถูกระบบกระจายยอดอัตโนมัติ','Unlock — will be auto-distributed') : th('ล็อกยอดนี้ไว้ ไม่ให้ระบบแก้','Lock this amount')}">${icon(isLocked ? 'lock' : 'unlock', 'w-3 h-3')}</button>
+            ${displayValue === '' ? `<span class="split-computed" title="${th('กระจายอัตโนมัติ','Auto-distributed')}">${finalAmount > 0 ? finalAmount.toFixed(dec) : '—'}</span>` : `<span class="text-xs font-bold flex-shrink-0" style="color:var(--text-secondary);min-width:50px;text-align:right;">${finalAmount > 0 ? finalAmount.toFixed(dec) : '—'}</span>`}
+          </div>`;
+      }).join('');
+
+      // Summary: show total of entered vs net total
+      const enteredSum = ids.reduce((s, m) => s + (parseFloat(customAllocations[m.id]) || 0), 0);
+      const remaining = v.net - enteredSum;
+      const unfilledCount = ids.filter(m => customAllocations[m.id] === undefined && !lockedAllocations.has(m.id)).length;
+      const summaryHint = `
+        <div class="split-auto-hint">
+          ${icon('info', 'w-3.5 h-3.5')}
+          <span>${splitIncludesVatSc
+            ? (unfilledCount > 0
+              ? th(`กรอกแล้ว ${enteredSum.toFixed(dec)} • กระจายอัตโนมัติอีก ${remaining.toFixed(dec)} ให้ ${unfilledCount} คน`, `Entered ${enteredSum.toFixed(dec)} • auto-distributing ${remaining.toFixed(dec)} to ${unfilledCount} more`)
+              : th(`กรอกครบ ${enteredSum.toFixed(dec)} จาก ${v.net.toFixed(dec)}`, `Entered ${enteredSum.toFixed(dec)} of ${v.net.toFixed(dec)}`))
+            : (unfilledCount > 0
+              ? th(`กรอกยอดก่อน VAT/SC แล้ว ${enteredSum.toFixed(dec)} • ระบบจะบวก VAT/SC ให้ทีละคน`, `Entered ${enteredSum.toFixed(dec)} before VAT/SC • VAT/SC added per person`)
+              : th(`กรอกครบยอดก่อน VAT/SC ${enteredSum.toFixed(dec)} • ระบบบวก VAT/SC ให้อัตโนมัติ`, `All entered before VAT/SC ${enteredSum.toFixed(dec)} • VAT/SC added automatically`))
+          }</span>
+        </div>`;
+
+      area.innerHTML = vatScToggle + rows + summaryHint;
+
+      // Bind VAT/SC toggle
+      area.querySelectorAll('[data-vatsc]').forEach(btn => btn.addEventListener('click', () => {
+        splitIncludesVatSc = btn.dataset.vatsc === 'include';
+        renderSplitArea();
+      }));
+
+      // Bind input changes — auto-distribute remaining
+      area.querySelectorAll('[data-alloc]').forEach(inp => inp.addEventListener('input', () => {
+        const id = inp.dataset.alloc;
+        const val = inp.value;
+        if (val === '' || val === undefined) {
+          delete customAllocations[id];
+          lockedAllocations.delete(id);
+        } else {
+          customAllocations[id] = val;
+          lockedAllocations.add(id);  // typing locks it automatically
+        }
+        renderSplitArea();
+      }));
+
+      // Bind lock buttons
+      area.querySelectorAll('[data-lock]').forEach(btn => btn.addEventListener('click', () => {
+        const id = btn.dataset.lock;
+        if (lockedAllocations.has(id)) {
+          lockedAllocations.delete(id);
+          delete customAllocations[id];  // unlock clears the value too
+        } else {
+          lockedAllocations.add(id);
+        }
+        renderSplitArea();
+      }));
     }
     queueIcons();
+  }
+
+  /**
+   * Compute the final per-person allocation for custom split.
+   * - "Includes VAT/SC": entered amounts should sum to netTotal; unfilled persons
+   *   share whatever remains equally.
+   * - "Excludes VAT/SC": entered amounts are pre-tax subtotals; the system adds
+   *   a proportional share of (serviceCharge + tax - discount) on top.
+   */
+  function computeCustomAllocations(v, ids, dec) {
+    const result = {};
+    if (!ids.length) return result;
+
+    if (splitIncludesVatSc) {
+      // Entered amounts are final (already include VAT/SC).
+      let filledSum = 0;
+      let unfilled = [];
+      for (const m of ids) {
+        const entered = customAllocations[m.id];
+        if (entered !== undefined && entered !== '') {
+          const amt = parseFloat(entered) || 0;
+          result[m.id] = amt;
+          filledSum += amt;
+        } else {
+          unfilled.push(m.id);
+        }
+      }
+      // Distribute remaining equally among unfilled persons
+      const remaining = v.net - filledSum;
+      if (unfilled.length > 0 && remaining > 0) {
+        const perUnfilled = remaining / unfilled.length;
+        for (const id of unfilled) result[id] = perUnfilled;
+      } else {
+        for (const id of unfilled) result[id] = 0;
+      }
+    } else {
+      // "Excludes VAT/SC": entered amounts are subtotals (before VAT/SC).
+      // The total adjustment = serviceCharge + tax - discount.
+      const adjustment = v.serv + v.tax - v.disc;
+      let filledSubtotal = 0;
+      let unfilled = [];
+      const subtotals = {};
+      for (const m of ids) {
+        const entered = customAllocations[m.id];
+        if (entered !== undefined && entered !== '') {
+          const sub = parseFloat(entered) || 0;
+          subtotals[m.id] = sub;
+          filledSubtotal += sub;
+        } else {
+          unfilled.push(m.id);
+        }
+      }
+      // If nothing was entered, distribute the base subtotal equally.
+      // The "base subtotal" for unfilled = (v.sub - filledSubtotal) / unfilledCount.
+      if (unfilled.length > 0) {
+        const remainingSub = Math.max(0, v.sub - filledSubtotal);
+        const perUnfilledSub = remainingSub / unfilled.length;
+        for (const id of unfilled) subtotals[id] = perUnfilledSub;
+      }
+      const totalSubtotal = Object.values(subtotals).reduce((s, x) => s + x, 0) || 1;
+      // Distribute the adjustment proportionally based on each person's subtotal share.
+      for (const m of ids) {
+        const sub = subtotals[m.id] || 0;
+        const share = totalSubtotal > 0 ? sub / totalSubtotal : 0;
+        result[m.id] = sub + (adjustment * share);
+      }
+    }
+    return result;
   }
 
   document.querySelectorAll('[data-split]').forEach(btn => btn.addEventListener('click', () => {
@@ -4811,9 +5022,14 @@ async function renderExpenseAdd(params) {
       if (splitMethod === 'equal') {
         allocations = splitEqual(v.netMinor, ids);
       } else {
+        // Smart custom split: use computeCustomAllocations which handles
+        // auto-distribution and VAT/SC inclusion/exclusion.
+        const dec = getCurrencyDecimals(v.cur);
+        const sharedMembers = members.filter(m => selectedShare.has(m.id));
+        const computed = computeCustomAllocations(v, sharedMembers, dec);
         allocations = ids.map(id => ({
           memberId: id,
-          amountMinor: toMinor(parseFloat(customAllocations[id] ?? document.querySelector(`[data-alloc="${id}"]`)?.value) || 0, getCurrencyDecimals(v.cur))
+          amountMinor: toMinor(computed[id] || 0, dec)
         }));
         const sum = allocations.reduce((s, a) => s + a.amountMinor, 0);
         if (sum !== v.netMinor) {

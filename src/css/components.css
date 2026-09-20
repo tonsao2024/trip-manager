@@ -2056,6 +2056,15 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 @media (max-width: 520px) {
   .receipt-member-name { font-size: 24px; }
   .receipt-member-name--lg { font-size: 30px; }
+  /* Itinerary cards: tighter spacing on phones */
+  .itin-card { padding: 10px; gap: 8px; }
+  .itin-thumb { width: 96px; border-radius: 10px; }
+  .itin-actions { gap: 3px; }
+  .itin-more-menu { min-width: 140px; right: -4px; }
+  /* Split rows: compact */
+  .split-row { padding: 6px 8px; gap: 6px; }
+  .split-row .split-name { max-width: 80px; }
+  .split-row .split-name span.truncate { max-width: 50px; }
 }
 
 /* Small \"ทักท้วง\" button under a receipt item */
@@ -2107,6 +2116,32 @@ html, body { max-width: 100%; overflow-x: clip; }
   .icon-btn { width: 38px; height: 38px; border-radius: 12px; }
   .icon-btn svg { width: 17px; height: 17px; }
   .comment-del { width: 26px; height: 26px; }
+
+  /* Tiles (payer/share): avatar-only on small screens — names make them too wide */
+  .tile-grid .tile { justify-content: center; padding: 8px; }
+  .tile-grid .tile .text-sm,
+  .tile-grid .tile .text-xs { display: none; }
+  .tile-grid .tile .avatar { flex-shrink: 0; }
+
+  /* Split area: hide long names, keep avatar + amount */
+  #split-area .flex.justify-between span.truncate { max-width: 60px; }
+}
+
+/* iPhone Pro Max (430px) and similar large phones */
+@media (min-width: 390px) and (max-width: 520px) {
+  /* Ensure forms don't overflow */
+  .card { padding-left: 14px; padding-right: 14px; }
+  .card.card-accent { padding-left: 16px; padding-right: 16px; }
+  /* Grid layouts: stack to single column on narrow phones */
+  .grid.grid-cols-3 { grid-template-columns: repeat(2, 1fr); }
+  .grid.grid-cols-3 > .col-span-2 { grid-column: span 2; }
+}
+
+/* Very small phones (iPhone SE, 375px) */
+@media (max-width: 389px) {
+  .grid.grid-cols-2, .grid.grid-cols-3 { grid-template-columns: 1fr; }
+  .grid.grid-cols-3 > .col-span-2 { grid-column: span 1; }
+  .tile-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* Long unbreakable text (a member's email, a username, a long place name) used
@@ -2121,3 +2156,131 @@ html, body { max-width: 100%; overflow-x: clip; }
   /* Cards are the scroll container's content: never let one push the page wide */
   .card > *, .member-row > *, .expense-card > * { min-width: 0; }
 }
+
+/* ============================================================
+   v13 — Itinerary card: cleaner action buttons (dropdown "more" menu)
+   Only the navigate button stays visible; status/edit/delete live in a
+   compact dropdown that opens on tap.
+   ============================================================ */
+
+.itin-more-wrap { position: relative; display: inline-flex; }
+.itin-more-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 20;
+  min-width: 160px;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+  padding: 6px;
+  margin-top: 4px;
+  animation: menuFadeIn 0.16s ease;
+}
+.itin-more-menu.is-open { display: block; }
+.itin-more-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.itin-more-menu button:hover { background: var(--bg-secondary); }
+.itin-more-menu button.is-danger { color: var(--danger); }
+.itin-more-menu button.is-danger:hover { background: var(--danger-bg); }
+.itin-more-menu button svg { width: 15px; height: 15px; flex-shrink: 0; }
+@keyframes menuFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ============================================================
+   v13 — Smart custom split: auto-distribute + VAT/SC inclusion toggle
+   ============================================================ */
+
+.split-vat-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.split-vat-toggle .segmented { flex: 1; }
+.split-auto-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--info) 25%, transparent);
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+.split-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--bg-secondary);
+}
+.split-row .split-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 0 0 auto;
+  max-width: 110px;
+}
+.split-row .split-name span.truncate { max-width: 70px; }
+.split-row .split-input { flex: 1; min-width: 0; }
+.split-row .split-computed {
+  flex: 1; min-width: 0;
+  text-align: right;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--primary-strong);
+}
+.split-row .split-lock-btn {
+  display: grid; place-items: center;
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.split-row .split-lock-btn:hover { background: var(--bg-secondary); color: var(--primary-strong); border-color: var(--primary); }
+.split-row .split-lock-btn.is-locked { color: var(--primary-strong); background: var(--primary-light); border-color: var(--primary); }
+.split-row .split-lock-btn svg { width: 13px; height: 13px; }
+
+/* Activity delete button */
+.activity-del-btn {
+  display: grid; place-items: center;
+  width: 24px; height: 24px; border-radius: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: auto;
+  transition: all 0.15s ease;
+}
+.activity-del-btn:hover { background: var(--danger-bg); color: var(--danger); }
+.activity-del-btn svg { width: 13px; height: 13px; }
