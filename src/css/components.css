@@ -1447,3 +1447,25 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 @media (max-width: 640px) {
   .diag-row { padding: 8px 10px; }
 }
+
+
+/* Google sign-in button (member login on the free plan) */
+.btn-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-weight: 700;
+  background: #fff;
+  color: #1f2937;
+  border: 1.5px solid #dadce0;
+  box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+.btn-google:hover { background: #f8fafc; box-shadow: 0 3px 10px rgba(0,0,0,.12); }
+.btn-google:active { transform: scale(.985); }
+[data-mode="dark"] .btn-google,
+.dark-mode .btn-google {
+  background: #1f2430;
+  color: #f1f5f9;
+  border-color: #333b4d;
+}

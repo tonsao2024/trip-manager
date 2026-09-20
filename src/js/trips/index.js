@@ -2,6 +2,7 @@ import { db, storage, serverTimestamp, isStorageAvailable } from '../firebase.js
 import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, query, where, limit, arrayUnion, arrayRemove } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { compressImage } from '../utils/helpers.js';
+import { generateInviteCode } from '../utils/invite.js';
 
 const TRIPS_CACHE_KEY = 'fuji_trips_cache';
 const CACHE_TTL = 10 * 60 * 1000;
@@ -88,6 +89,28 @@ export async function listTrips(userId, isSuperAdmin = false) {
   if (cached?.length) return cached;
   
   throw new Error('ไม่มีสิทธิ์เข้าถึง - ต้อง deploy Firestore Rules ใหม่ที่ Firebase Console > Firestore > Rules > วาง firestore.rules > Publish');
+}
+
+/** New code for a trip that was created before invite codes existed, or to revoke one. */
+export async function regenerateInviteCode(tripId) {
+  if (!db) throw new Error('DB not ready');
+  const code = generateInviteCode();
+  await updateDoc(doc(db, 'trips', tripId), { inviteCode: code, inviteEnabled: true, updatedAt: serverTimestamp() });
+  return code;
+}
+
+export async function setInviteEnabled(tripId, enabled) {
+  if (!db) throw new Error('DB not ready');
+  await updateDoc(doc(db, 'trips', tripId), { inviteEnabled: Boolean(enabled), updatedAt: serverTimestamp() });
+}
+
+/** Trip lookup by invite code (used by the join page). */
+export async function findTripByInviteCode(code) {
+  if (!db) throw new Error('DB not ready');
+  const snap = await getDocs(query(collection(db, 'trips'), where('inviteCode', '==', code), limit(1)));
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() };
 }
 
 export async function getTrip(tripId) {
@@ -193,6 +216,9 @@ export async function createTrip(data, userId) {
     themeColor: data.themeColor || '#8bb89a',
     status: 'draft',
     memberUids: [userId],
+    // Members join by typing this code; the admin approves the request.
+    inviteCode: generateInviteCode(),
+    inviteEnabled: true,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     createdBy: userId

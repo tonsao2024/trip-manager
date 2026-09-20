@@ -39,7 +39,25 @@ service cloud.firestore {
     // Users collection - only self or super admin
     match /users/{uid} {
       allow read: if isAuthenticated() && (request.auth.uid == uid || isSuperAdmin());
-      allow write: if isSuperAdmin() || (isAuthenticated() && request.auth.uid == uid && request.resource.data.role == resource.data.role);
+      // A member signing in with Google/email creates their own profile doc.
+      // They may never choose an admin role for themselves.
+      allow create: if isAuthenticated() && request.auth.uid == uid
+        && (!request.resource.data.keys().hasAny(['role']) || request.resource.data.role == 'member');
+      allow update: if isSuperAdmin() || (isAuthenticated() && request.auth.uid == uid
+        && request.resource.data.role == resource.data.role);
+      allow delete: if isSuperAdmin();
+
+      // Mirror of the join requests this member sent (so they can see the status).
+      match /joinRequests/{tripId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == uid;
+      }
+    }
+
+    // Public directory: name / email / photo only, so a trip admin can find the
+    // account of somebody who wants to join. No trip data, no permissions here.
+    match /publicProfiles/{uid} {
+      allow get, list: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == uid;
     }
 
     // loginAccounts - never allow client read, only via cloud functions
@@ -81,6 +99,15 @@ service cloud.firestore {
       allow delete: if isSuperAdmin()
         || (isAuthenticated() && resource.data.createdBy == request.auth.uid)
         || (isAuthenticated() && isTripAdmin(tripId));
+
+      // Join requests: anybody signed in may ask (they are not a member yet),
+      // only trip admins may read the queue or approve/reject.
+      match /joinRequests/{uid} {
+        allow get: if isAuthenticated() && (request.auth.uid == uid || isTripAdmin(tripId));
+        allow list: if isAuthenticated() && isTripAdmin(tripId);
+        allow create: if isAuthenticated() && request.auth.uid == uid;
+        allow update, delete: if isAuthenticated() && (request.auth.uid == uid || isTripAdmin(tripId));
+      }
 
       // Members - permissive to avoid permission errors
       match /members/{memberId} {

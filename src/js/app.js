@@ -5,7 +5,16 @@ import { renderFujiMascot, renderEmptyState } from './components/fuji.js';
 import { loginAdmin, loginMember, logout, hasStepUpSession } from './auth/index.js';
 import { memberLogin, saveMemberSession, getMemberSession, clearMemberSession, normalizeUsername } from './auth/memberAuth.js';
 import { runSystemDiagnostics, formatDiagnosticsReport, DIAG } from './utils/diagnostics.js';
-import { listTrips, getTrip, createTrip, updateTrip, deleteTrip, duplicateTrip, uploadCoverImage, clearTripsCache } from './trips/index.js';
+import { listTrips, getTrip, createTrip, updateTrip, deleteTrip, duplicateTrip, uploadCoverImage, clearTripsCache, regenerateInviteCode } from './trips/index.js';
+import {
+  signInWithGoogle, completeRedirectSignIn, signUpEmailAccount, sendAccountPasswordReset,
+  ensureUserProfile, findProfileByEmail
+} from './auth/accountAuth.js';
+import {
+  findTripByInviteCode, requestToJoin, listJoinRequests, listMyJoinRequests,
+  approveJoinRequest, rejectJoinRequest, cancelJoinRequest, addMemberFromProfile
+} from './members/join.js';
+import { formatInviteCode, isValidInviteCode, normalizeInviteCode } from './utils/invite.js';
 import { fetchItinerary, saveItineraryItem, deleteItineraryItem, reorderItinerary, getItineraryItem, syncItineraryExpense, findLinkedExpense } from './itinerary/index.js';
 import {
   fetchExpenses, fetchAllExpenses, addExpense, updateExpense, deleteExpense,
@@ -654,6 +663,10 @@ if (!isFirebaseConfigured) {
     currentUser = user;
     if (user) {
       renderMemberSessionNotice(false);
+      // Google / email accounts: keep users/{uid} + the public directory in sync.
+      if (user.providerData?.some(p => /google|password/.test(p.providerId))) {
+        ensureUserProfile(user).catch(e => console.warn('ensureUserProfile failed', e?.message));
+      }
       const initial = (user.displayName || user.email || '?')[0].toUpperCase();
       userAvatarBtn.textContent = initial;
       if (user.photoURL) {
@@ -699,6 +712,16 @@ if (!isFirebaseConfigured) {
   });
 } else {
   authReady = true;
+}
+
+// Coming back from a Google redirect sign-in (mobile browsers).
+if (isFirebaseConfigured && auth) {
+  completeRedirectSignIn().then(u => {
+    if (u) {
+      toast.success(getLang() === 'th' ? `ยินดีต้อนรับ ${u.displayName || u.email}` : `Welcome ${u.displayName || u.email}`);
+      if (!location.hash || location.hash.includes('login')) location.hash = '#/trips';
+    }
+  }).catch(e => toast.error(e.message || 'Google sign-in failed'));
 }
 
 // No Firebase Auth session? Restore the local member session (username + PIN).
@@ -925,27 +948,45 @@ function renderLogin() {
           </div>
         </div>
         <div class="card card-accent p-7">
+          <!-- Google account: one tap, no PIN to create or share, works on the free plan -->
+          <button id="google-signin-btn" class="btn btn-google w-full btn-lg mb-3">
+            <svg viewBox="0 0 48 48" class="w-5 h-5" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+            ${lang === 'th' ? 'เข้าสู่ระบบด้วยบัญชี Google' : 'Continue with Google'}
+          </button>
+          <p class="text-[11px] text-center text-[var(--text-tertiary)] mb-4 leading-relaxed">
+            ${lang === 'th'
+              ? 'สมาชิกใช้บัญชี Google ของตัวเองได้เลย — แอดมินเป็นคนอนุมัติให้เข้าร่วมแต่ละทริป'
+              : 'Members sign in with their own Google account — the trip admin approves each trip'}
+          </p>
+
           <div class="segmented mb-6">
-            <button data-tab="member" class="segmented-item active">${icon('user', 'w-4 h-4')} ${t('member')}</button>
-            <button data-tab="admin" class="segmented-item">${icon('shield-check', 'w-4 h-4')} ${t('admin')}</button>
+            <button data-tab="admin" class="segmented-item active">${icon('mail', 'w-4 h-4')} ${lang==='th' ? 'อีเมล / รหัสผ่าน' : 'Email / password'}</button>
+            <button data-tab="member" class="segmented-item">${icon('key-round', 'w-4 h-4')} ${lang==='th' ? 'ชื่อผู้ใช้ + PIN' : 'Username + PIN'}</button>
           </div>
 
-          <div id="tab-member">
+          <div id="tab-admin">
+            <form id="admin-form" class="space-y-4">
+              <div class="input-group"><label class="input-label">${icon('mail', 'w-3.5 h-3.5')} ${t('email')}</label><input id="admin-email" class="input" type="email" placeholder="you@example.com" required autocomplete="email"></div>
+              <div class="input-group"><label class="input-label">${icon('key-round', 'w-3.5 h-3.5')} ${t('password')}</label><input id="admin-pass" class="input" type="password" required autocomplete="current-password"></div>
+              <label class="flex items-center gap-2 text-sm cursor-pointer"><input id="admin-remember" type="checkbox" checked class="accent-[var(--primary)] w-4 h-4"> ${t('rememberDevice')}</label>
+              <button class="btn btn-primary w-full btn-lg" type="submit">${icon('log-in', 'w-4 h-4')} ${lang==='th' ? 'เข้าสู่ระบบ' : 'Sign in'}</button>
+              <div class="btn-row">
+                <button type="button" id="account-signup-btn" class="btn btn-secondary btn-sm">${icon('user-plus', 'w-4 h-4')} ${lang==='th' ? 'สมัครบัญชีใหม่ (สมาชิก)' : 'Create member account'}</button>
+                <button type="button" id="account-reset-btn" class="btn btn-ghost btn-sm">${icon('help-circle', 'w-4 h-4')} ${lang==='th' ? 'ลืมรหัสผ่าน' : 'Forgot password'}</button>
+              </div>
+            </form>
+          </div>
+
+          <div id="tab-member" class="hidden">
+            <p class="text-[11px] text-[var(--text-tertiary)] mb-3 leading-relaxed">${lang==='th'
+              ? 'สำหรับสมาชิกที่แอดมินสร้างบัญชีไว้ให้ในเครื่อง (ไม่มีบัญชี Google/อีเมล)'
+              : 'For members an admin created locally (no Google/email account).'}</p>
             <form id="member-form" class="space-y-4">
               <div class="input-group"><label class="input-label">${icon('compass', 'w-3.5 h-3.5')} Trip ID</label><input id="member-trip" class="input" placeholder="${lang==='th' ? 'เว้นว่างได้ (ไม่บังคับ)' : 'Optional'}" autocomplete="off"></div>
               <div class="input-group"><label class="input-label">${icon('user', 'w-3.5 h-3.5')} ${t('username')}</label><input id="member-user" class="input" placeholder="fuji_user" required autocomplete="username"></div>
               <div class="input-group"><label class="input-label">${icon('lock-keyhole', 'w-3.5 h-3.5')} ${t('pin')}</label><input id="member-pin" class="input" type="password" inputmode="numeric" placeholder="••••" required autocomplete="current-password"></div>
               <label class="flex items-center gap-2 text-sm cursor-pointer"><input id="member-remember" type="checkbox" checked class="accent-[var(--primary)] w-4 h-4"> ${t('rememberDevice')}</label>
               <button class="btn btn-primary w-full btn-lg" type="submit">${icon('log-in', 'w-4 h-4')} ${t('loginMember')}</button>
-            </form>
-          </div>
-
-          <div id="tab-admin" class="hidden">
-            <form id="admin-form" class="space-y-4">
-              <div class="input-group"><label class="input-label">${icon('mail', 'w-3.5 h-3.5')} ${t('email')}</label><input id="admin-email" class="input" type="email" placeholder="admin@example.com" required autocomplete="email"></div>
-              <div class="input-group"><label class="input-label">${icon('key-round', 'w-3.5 h-3.5')} ${t('password')}</label><input id="admin-pass" class="input" type="password" required autocomplete="current-password"></div>
-              <label class="flex items-center gap-2 text-sm cursor-pointer"><input id="admin-remember" type="checkbox" checked class="accent-[var(--primary)] w-4 h-4"> ${t('rememberDevice')}</label>
-              <button class="btn btn-primary w-full btn-lg" type="submit">${icon('log-in', 'w-4 h-4')} ${t('loginAdmin')}</button>
             </form>
           </div>
 
@@ -975,13 +1016,68 @@ function renderLogin() {
   tabs.forEach(btn => btn.addEventListener('click', () => {
     tabs.forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    appEl.querySelector('#tab-admin').classList.toggle('hidden', btn.dataset.tab !== 'admin');
     appEl.querySelector('#tab-member').classList.toggle('hidden', btn.dataset.tab !== 'member');
+    appEl.querySelector('#tab-admin').classList.toggle('hidden', btn.dataset.tab !== 'admin');
     setTimeout(() => {
       addPasswordToggle('member-pin');
       addPasswordToggle('admin-pass');
     }, 10);
   }));
+
+  // ---- Google account (recommended for members, works on the free plan) ----
+  appEl.querySelector('#google-signin-btn').onclick = async (e) => {
+    const btn = e.currentTarget;
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `${spinner('w-5 h-5')} ${lang==='th' ? 'กำลังเปิด Google...' : 'Opening Google...'}`;
+    queueIcons();
+    try {
+      const user = await signInWithGoogle(true);
+      // null = we were redirected to Google and will come back here
+      if (!user) return;
+      toast.success(lang==='th' ? `ยินดีต้อนรับ ${user.displayName || user.email}` : `Welcome ${user.displayName || user.email}`);
+      location.hash = '#/trips';
+    } catch (err) {
+      toast.error(err.message || 'Google sign-in failed');
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+      queueIcons();
+    }
+  };
+
+  // ---- Email account: sign up / forgot password ----
+  appEl.querySelector('#account-signup-btn').onclick = async () => {
+    const email = document.getElementById('admin-email').value.trim();
+    const pass = document.getElementById('admin-pass').value;
+    const name = await promptAction({
+      title: lang==='th' ? 'สมัครบัญชีสมาชิก' : 'Create member account',
+      message: lang==='th'
+        ? 'กรอกชื่อที่ต้องการให้เพื่อนเห็น แล้วระบบจะสมัครบัญชีให้ด้วยอีเมล/รหัสผ่านที่กรอกไว้ด้านบน'
+        : 'Enter the name your friends will see — the account is created with the email/password above.',
+      placeholder: lang==='th' ? 'เช่น นุ่น' : 'e.g. Nun',
+      confirmText: lang==='th' ? 'สมัคร' : 'Sign up', icon: 'user-plus'
+    });
+    if (!name) return;
+    const tLoad = toast.loading(lang==='th' ? 'กำลังสมัคร...' : 'Creating account...');
+    try {
+      await signUpEmailAccount(email, pass, name, document.getElementById('admin-remember').checked);
+      tLoad.close();
+      toast.success(lang==='th' ? 'สมัครสำเร็จ! ขั้นต่อไป: ขอรหัสเชิญทริปจากแอดมิน' : 'Account created! Next: ask the admin for a trip code');
+      location.hash = '#/trips';
+    } catch (err) {
+      tLoad.close();
+      toast.error(err.message);
+    }
+  };
+
+  appEl.querySelector('#account-reset-btn').onclick = async () => {
+    const email = document.getElementById('admin-email').value.trim();
+    if (!email) { toast.warning(lang==='th' ? 'กรอกอีเมลก่อน' : 'Enter your email first'); return; }
+    try {
+      await sendAccountPasswordReset(email);
+      toast.success(lang==='th' ? `ส่งลิงก์รีเซ็ตรหัสผ่านไปที่ ${email} แล้ว` : `Reset link sent to ${email}`);
+    } catch (err) { toast.error(err.message); }
+  };
 
   appEl.querySelector('#admin-form').onsubmit = async (e) => {
     e.preventDefault();
@@ -1534,12 +1630,105 @@ async function renderTripSelector() {
           subtitle: lang === 'th' ? 'เลือกทริปที่อยากจัดการ หรือสร้างทริปใหม่' : 'Pick a trip to manage, or create a new one',
           actions: `<button id="create-trip-btn" class="btn btn-primary">${icon('plus', 'w-4 h-4')} ${t('createTrip')}</button>` })}
       </div>
-      <div id="trip-grid" class="grid md:grid-cols-2 lg:grid-cols-3 gap-5"></div>
+      <div id="trip-grid" class="grid md:grid-cols-2 lg:grid-cols-3 gap-5 mb-5"></div>
+
+      <div class="card p-5 space-y-3" id="join-trip-card">
+        <h3 class="font-bold flex items-center gap-2">${icon('ticket', 'w-4 h-4')} ${lang === 'th' ? 'เข้าร่วมทริปด้วยรหัสเชิญ' : 'Join a trip with an invite code'}</h3>
+        <p class="text-xs text-[var(--text-secondary)]">${lang === 'th'
+          ? 'ขอรหัส 6 ตัวจากแอดมินทริป แล้วส่งคำขอเข้าร่วม — แอดมินกดอนุมัติแล้วคุณจะเห็นทริปนี้ทันที'
+          : 'Ask the trip admin for the 6-character code, request to join, and the trip appears here once approved.'}</p>
+        <div class="btn-row">
+          <input id="join-code-input" class="input font-mono tracking-[0.3em] uppercase" maxlength="7" placeholder="ABC-123" autocomplete="off" aria-label="invite code">
+          <button id="join-code-btn" class="btn btn-primary">${icon('log-in', 'w-4 h-4')} ${lang === 'th' ? 'ขอเข้าร่วม' : 'Request to join'}</button>
+        </div>
+        <div id="my-join-requests" class="space-y-2"></div>
+      </div>
     </div>
   `;
   queueIcons();
 
   bind('create-trip-btn', 'click', () => openTripForm(null, { onSaved: () => renderTripSelector() }));
+
+  // ---- join with an invite code ----
+  async function renderMyJoinRequests() {
+    const box = document.getElementById('my-join-requests');
+    if (!box) return;
+    const requests = await listMyJoinRequests(currentUser.uid);
+    if (isStale(token)) return;
+    box.innerHTML = requests.length ? requests.map(r => `
+      <div class="diag-row" data-join-request="${escapeHtml(r.tripId || r.id)}">
+        ${icon(r.status === 'rejected' ? 'x-circle' : 'clock', 'w-4 h-4 shrink-0')}
+        <div class="min-w-0">
+          <div class="font-semibold">${escapeHtml(r.tripName || r.tripId || '')}</div>
+          <div class="text-[11px] text-[var(--text-secondary)]">${r.status === 'rejected'
+            ? (lang === 'th' ? 'แอดมินปฏิเสธคำขอ' : 'The admin declined this request')
+            : (lang === 'th' ? 'รอแอดมินอนุมัติ' : 'Waiting for the admin to approve')}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm ml-auto" data-cancel-request="${escapeHtml(r.tripId || r.id)}">${lang === 'th' ? 'ยกเลิก' : 'Cancel'}</button>
+      </div>`).join('') : '';
+    box.querySelectorAll('[data-cancel-request]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          await cancelJoinRequest(btn.dataset.cancelRequest, currentUser.uid);
+          toast.info(lang === 'th' ? 'ยกเลิกคำขอแล้ว' : 'Request cancelled');
+          renderMyJoinRequests();
+        } catch (e) { toast.error(e.message); btn.disabled = false; }
+      });
+    });
+  }
+
+  bind('join-code-btn', 'click', async () => {
+    const input = document.getElementById('join-code-input');
+    const btn = document.getElementById('join-code-btn');
+    const code = normalizeInviteCode(input?.value || '');
+    if (!isValidInviteCode(code)) {
+      toast.warning(lang === 'th' ? 'รหัสเชิญมี 6 ตัวอักษร เช่น ABC-123' : 'The invite code has 6 characters, e.g. ABC-123');
+      return;
+    }
+    btn.disabled = true;
+    const tLoad = toast.loading(lang === 'th' ? 'กำลังค้นหาทริป...' : 'Looking for the trip...');
+    try {
+      const trip = await findTripByInviteCode(code);
+      tLoad.close();
+      if (!trip) {
+        toast.error(lang === 'th' ? 'ไม่พบทริปที่ใช้รหัสนี้ — ตรวจรหัสอีกครั้ง' : 'No trip uses this code — please check it');
+        btn.disabled = false;
+        return;
+      }
+      if (trip.inviteEnabled === false) {
+        toast.error(lang === 'th' ? 'ทริปนี้ปิดรับสมาชิกใหม่แล้ว' : 'This trip is closed for new members');
+        btn.disabled = false;
+        return;
+      }
+      if ((trip.memberUids || []).includes(currentUser.uid)) {
+        toast.success(lang === 'th' ? 'คุณเป็นสมาชิกทริปนี้อยู่แล้ว' : 'You are already a member of this trip');
+        location.hash = `#/trip/${trip.id}/dashboard`;
+        return;
+      }
+      const ok = await confirmAction({
+        title: lang === 'th' ? `ขอเข้าร่วม "${trip.name}" ?` : `Join "${trip.name}"?`,
+        message: lang === 'th'
+          ? 'ระบบจะส่งคำขอไปให้แอดมินทริปอนุมัติ'
+          : 'A request will be sent to the trip admin for approval.',
+        detail: `${escapeHtml(trip.startDate || '')} → ${escapeHtml(trip.endDate || '')}`,
+        confirmText: lang === 'th' ? 'ส่งคำขอ' : 'Send request', icon: 'ticket'
+      });
+      if (!ok) { btn.disabled = false; return; }
+      await requestToJoin(trip, currentUser);
+      confetti({ y: 160 });
+      toast.success(lang === 'th' ? 'ส่งคำขอแล้ว! รอแอดมินอนุมัติ' : 'Request sent! Waiting for approval');
+      input.value = '';
+      btn.disabled = false;
+      renderMyJoinRequests();
+    } catch (e) {
+      tLoad.close();
+      toast.error(e.message);
+      btn.disabled = false;
+    }
+  });
+
+  renderMyJoinRequests();
 
   const grid = document.getElementById('trip-grid');
   if (!grid) return;
@@ -4065,10 +4254,127 @@ async function renderMembers(params) {
         </div>
         <button id="add-member-btn" class="btn btn-primary btn-sm">${icon('user-plus', 'w-4 h-4')} ${th('เพิ่มสมาชิก','Add member')}</button>
       </div>
+
+      <div class="card p-5 space-y-3 mb-5" id="account-members-card">
+        <h3 class="font-bold flex items-center gap-2">${icon('user-check', 'w-4 h-4')} ${th('สมาชิกที่ล็อกอินด้วยบัญชี (Google / อีเมล)','Members with an account (Google / email)')}</h3>
+        <p class="text-xs text-[var(--text-secondary)]">${th('สมาชิกสมัครบัญชีเองได้ แล้วส่งคำขอเข้าร่วมด้วยรหัสเชิญ — แอดมินกดอนุมัติได้เลย (ไม่ต้องใช้ Cloud Functions)','Members create their own account and ask to join with the invite code — approve them here (no Cloud Functions needed).')}</p>
+        <div id="join-requests" class="space-y-2"><div class="skeleton h-10"></div></div>
+        <div class="btn-row">
+          <button id="add-by-email-btn" class="btn btn-secondary btn-sm">${icon('mail-plus', 'w-4 h-4')} ${th('เพิ่มด้วยอีเมล','Add by email')}</button>
+          <button id="refresh-requests-btn" class="btn btn-ghost btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${th('รีเฟรชคำขอ','Refresh requests')}</button>
+        </div>
+      </div>
       <div id="members-list" class="grid gap-3 stagger"></div>
     </div>
   `;
   queueIcons();
+
+  const canApprove = perms.isAdmin || perms.canManageMembers || perms.role === 'trip_admin';
+
+  async function loadJoinRequests() {
+    const box = document.getElementById('join-requests');
+    if (!box) return;
+    if (!canApprove) {
+      box.innerHTML = `<p class="text-[11px] text-[var(--text-tertiary)]">${th('เฉพาะแอดมินทริปเท่านั้นที่ดูคำขอเข้าร่วมได้','Only trip admins can see join requests.')}</p>`;
+      return;
+    }
+    box.innerHTML = `<div class="skeleton h-10"></div>`;
+    let requests = [];
+    try { requests = await listJoinRequests(tripId); } catch (e) {
+      box.innerHTML = `<p class="text-[11px]" style="color:var(--danger);">${escapeHtml(e.message)}</p>`;
+      return;
+    }
+    if (isStale(token)) return;
+    const pending = requests.filter(r => r.status !== 'rejected');
+    box.innerHTML = pending.length ? pending.map(r => `
+      <div class="diag-row" data-request="${escapeHtml(r.uid || r.id)}">
+        <div class="w-9 h-9 rounded-full grid place-items-center overflow-hidden flex-shrink-0 text-xs font-bold text-white" style="background:var(--gradient-primary);">
+          ${r.photoURL ? `<img src="${escapeHtml(r.photoURL)}" class="w-full h-full object-cover rounded-full" alt="">` : escapeHtml(getInitials(r.displayName || 'M'))}
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="font-semibold truncate">${escapeHtml(r.displayName || 'Member')}</div>
+          <div class="text-[11px] text-[var(--text-secondary)] truncate">${escapeHtml(r.email || '')}</div>
+        </div>
+        <div class="btn-row" style="grid-template-columns: repeat(2, minmax(0,1fr)); max-width:200px;">
+          <button class="btn btn-primary btn-sm" data-approve="${escapeHtml(r.uid || r.id)}">${icon('check', 'w-3.5 h-3.5')} ${th('อนุมัติ','Approve')}</button>
+          <button class="btn btn-ghost btn-sm" data-reject="${escapeHtml(r.uid || r.id)}">${th('ปฏิเสธ','Decline')}</button>
+        </div>
+      </div>`).join('') : `
+      <p class="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1.5">${icon('inbox', 'w-3.5 h-3.5')} ${th('ยังไม่มีคำขอเข้าร่วม — แชร์รหัสเชิญให้เพื่อนได้ที่หน้าตั้งค่า','No pending requests — share the invite code from Settings.')}</p>`;
+
+    box.querySelectorAll('[data-approve]').forEach(btn => btn.addEventListener('click', async () => {
+      const req = pending.find(x => (x.uid || x.id) === btn.dataset.approve);
+      if (!req) return;
+      btn.disabled = true;
+      const tLoad = toast.loading(th('กำลังเพิ่มสมาชิก...', 'Adding member...'));
+      try {
+        await approveJoinRequest(tripId, req);
+        tLoad.close();
+        confetti({ y: 160 });
+        toast.success(th(`อนุมัติ ${req.displayName || ''} แล้ว`, `${req.displayName || 'Member'} added`));
+        await loadJoinRequests();
+        await loadMembersList();
+      } catch (e) {
+        tLoad.close();
+        toast.error(e.message);
+        btn.disabled = false;
+      }
+    }));
+
+    box.querySelectorAll('[data-reject]').forEach(btn => btn.addEventListener('click', async () => {
+      const req = pending.find(x => (x.uid || x.id) === btn.dataset.reject);
+      if (!req) return;
+      const ok = await confirmAction({
+        title: th(`ปฏิเสธคำขอของ "${req.displayName || ''}" ?`, `Decline "${req.displayName || ''}"?`),
+        message: th('ผู้ใช้จะเห็นว่าคำขอถูกปฏิเสธ และยังขอใหม่ได้ภายหลัง', 'They will see the request was declined and can ask again later.'),
+        confirmText: th('ปฏิเสธ', 'Decline'), danger: true, icon: 'user-x'
+      });
+      if (!ok) return;
+      btn.disabled = true;
+      try {
+        await rejectJoinRequest(tripId, req);
+        toast.info(th('ปฏิเสธคำขอแล้ว', 'Request declined'));
+        await loadJoinRequests();
+      } catch (e) { toast.error(e.message); btn.disabled = false; }
+    }));
+  }
+
+  bind('refresh-requests-btn', 'click', () => loadJoinRequests());
+  bind('add-by-email-btn', 'click', async () => {
+    const email = await promptAction({
+      title: th('เพิ่มสมาชิกด้วยอีเมล', 'Add member by email'),
+      label: th('อีเมลที่สมาชิกใช้สมัคร', 'The email the member signed up with'),
+      placeholder: 'friend@example.com', confirmText: th('ค้นหา', 'Search'), icon: 'mail-plus'
+    });
+    if (!email) return;
+    const tLoad = toast.loading(th('กำลังค้นหา...', 'Searching...'));
+    try {
+      const profile = await findProfileByEmail(email);
+      tLoad.close();
+      if (!profile) {
+        toast.error(th('ไม่พบบัญชีนี้ — ให้สมาชิกเข้าสู่ระบบด้วย Google/อีเมลอย่างน้อย 1 ครั้งก่อน', 'Account not found — the member must sign in once first.'));
+        return;
+      }
+      const ok = await confirmAction({
+        title: th(`เพิ่ม "${profile.displayName || profile.email}" เข้าทริป?`, `Add "${profile.displayName || profile.email}" to this trip?`),
+        message: th('สมาชิกจะเข้าถึงข้อมูลทริปนี้ได้ทันที', 'They will get access to this trip immediately.'),
+        detail: escapeHtml(profile.email || ''), confirmText: th('เพิ่มเข้าทริป', 'Add to trip'), icon: 'user-plus'
+      });
+      if (!ok) return;
+      const tLoad2 = toast.loading(th('กำลังเพิ่ม...', 'Adding...'));
+      await addMemberFromProfile(tripId, profile);
+      tLoad2.close();
+      confetti({ y: 160 });
+      toast.success(th('เพิ่มสมาชิกแล้ว', 'Member added'));
+      await loadMembersList();
+      await loadJoinRequests();
+    } catch (e) {
+      tLoad.close();
+      toast.error(e.message);
+    }
+  });
+
+  loadJoinRequests();
 
   async function loadMembersList() {
     const list = document.getElementById('members-list');
@@ -4102,6 +4408,8 @@ async function renderMembers(params) {
               <div class="meta-line mt-0.5 flex-wrap">
                 ${icon(m.status === 'disabled' ? 'user-x' : 'circle-check', 'w-3 h-3')} ${escapeHtml(m.status || 'active')}
                 ${m.username ? ` • ${icon('at-sign', 'w-3 h-3')} ${escapeHtml(m.username)}` : ''}
+                ${m.authType === 'account' ? ` • <span style="color:var(--success);">${icon('shield-check','w-3 h-3')} ${th('บัญชี Google/อีเมล','Google/email account')}</span>` : ''}
+                ${m.email ? ` • ${escapeHtml(m.email)}` : ''}
                 ${m.authType === 'local' ? ` • <span style="color:var(--warning);">${th('ไม่มีล็อกอิน','no login')}</span>` : ''}
               </div>
               <div class="flex items-center gap-1.5 mt-1 flex-wrap">
@@ -4735,6 +5043,17 @@ async function renderSettings(params) {
         <button id="lang-switch" class="btn btn-secondary w-full btn-sm">${icon('languages', 'w-4 h-4')} ${lang === 'th' ? 'English' : 'ภาษาไทย'}</button>
       </div>
 
+      <div class="card p-5 space-y-3" id="invite-card">
+        <h3 class="font-bold flex items-center gap-2">${icon('ticket', 'w-4 h-4')} ${th('รหัสเชิญเข้าร่วมทริป','Trip invite code')}</h3>
+        <p class="text-xs text-[var(--text-secondary)]">${th('ส่งรหัสนี้ให้เพื่อน — พวกเขาล็อกอินด้วยบัญชี Google/อีเมล แล้วกรอกรหัสเพื่อขอเข้าร่วม จากนั้นกดอนุมัติได้ที่หน้าสมาชิก','Share this code with friends — they sign in with Google/email, enter it to request access, and you approve them on the Members page.')}</p>
+        <div class="flex items-center gap-2 flex-wrap">
+          <span id="invite-code-value" class="font-mono text-xl font-bold tracking-[0.3em] px-4 py-2 rounded-xl" style="background:var(--bg-secondary); border:1px dashed var(--border);">${escapeHtml(formatInviteCode(trip?.inviteCode) || '—')}</span>
+          <button id="invite-code-copy" class="btn btn-secondary btn-sm">${icon('copy', 'w-4 h-4')} ${th('คัดลอก','Copy')}</button>
+          <button id="invite-code-regen" class="btn btn-ghost btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${th('สร้างรหัสใหม่','New code')}</button>
+        </div>
+        <p class="text-[10px] text-[var(--text-tertiary)]">${th('รหัสจะสุ่มใหม่ได้ทุกเมื่อ — คนที่ยังไม่ได้อนุมัติจะใช้รหัสเดิมไม่ได้อีก','You can rotate the code anytime — old codes stop working immediately.')}</p>
+      </div>
+
       <div class="card p-5 space-y-3">
         <h3 class="font-bold flex items-center gap-2">${icon('stethoscope', 'w-4 h-4')} ${th('ตรวจสอบระบบ','System check')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เช็กว่าล็อกอินสมาชิก, Cloud Functions และ Firestore Rules พร้อมใช้งานไหม (ใช้เวลาไม่กี่วินาที)','Checks member login, Cloud Functions and Firestore rules (a few seconds).')}</p>
@@ -4867,6 +5186,36 @@ async function renderSettings(params) {
     renderSettings(params);
     renderDesktopNav();
     updateBottomNav();
+  });
+
+  bind('invite-code-copy', 'click', () => {
+    const code = formatInviteCode(trip?.inviteCode || '');
+    if (!code) return;
+    const copied = navigator.clipboard?.writeText?.(code);
+    if (copied?.then) copied.then(() => toast.success(th('คัดลอกรหัสเชิญแล้ว','Invite code copied'))).catch(() => toast.info(code));
+    else toast.info(code);
+  });
+
+  bind('invite-code-regen', 'click', async () => {
+    const ok = await confirmAction({
+      title: th('สร้างรหัสเชิญใหม่?', 'Generate a new invite code?'),
+      message: th('รหัสเดิมจะใช้ไม่ได้อีก (สมาชิกที่อนุมัติแล้วยังเข้าได้ตามปกติ)', 'The old code stops working (approved members keep access).'),
+      confirmText: th('สร้างใหม่', 'Generate'), icon: 'refresh-cw'
+    });
+    if (!ok) return;
+    const tLoad = toast.loading(th('กำลังสร้างรหัสใหม่...', 'Generating...'));
+    try {
+      const code = await regenerateInviteCode(tripId);
+      tLoad.close();
+      const el = document.getElementById('invite-code-value');
+      if (el) el.textContent = formatInviteCode(code);
+      if (currentTrip) currentTrip.inviteCode = code;
+      confetti({ y: 150 });
+      toast.success(th(`รหัสใหม่: ${formatInviteCode(code)}`, `New code: ${formatInviteCode(code)}`));
+    } catch (e) {
+      tLoad.close();
+      toast.error(e.message);
+    }
   });
 
   bind('run-diagnostics', 'click', async () => {

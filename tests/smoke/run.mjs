@@ -100,6 +100,7 @@ const TRIP = {
   startDate: new Date(Date.now() + 20 * 86400000).toISOString().slice(0, 10),
   endDate: new Date(Date.now() + 24 * 86400000).toISOString().slice(0, 10),
   baseCurrency: 'THB', timezone: 'Asia/Tokyo', exchangeRateToTHB: 0.24, themeColor: '#8bb89a',
+  inviteCode: 'FUJI23', inviteEnabled: true,
   status: 'active', createdBy: 'u1', memberUids: ['u1', 'u2'], budgetTotal: 5000000, budgetPerPerson: 2500000,
   createdAt: now, coverImage: ''
 };
@@ -652,6 +653,74 @@ if (memberUser && memberPin) {
 } else {
   check(false, 'login: member form present');
 }
+
+console.log('\n▶ v7: member joins with a Google account + invite code (no Cloud Functions)');
+{
+  // --- member side: sign in with a Google account, then request to join ---
+  const googleUser = {
+    uid: 'g1', email: 'friend@example.com', displayName: 'เพื่อนใหม่', photoURL: null,
+    providerData: [{ providerId: 'google.com' }]
+  };
+  // drop the local (username + PIN) session from the previous block first
+  window.localStorage.removeItem('fuji_member_session');
+  authStub.__emitAuth(null);
+  await authStub.__setGoogleUser(googleUser);
+  await goto('#/login');
+  await waitFor(() => q('#google-signin-btn'), { label: 'google button' }).catch(() => {});
+  check(!!q('#google-signin-btn'), 'google: login page offers "Continue with Google"');
+  await click('#google-signin-btn');
+  await waitFor(() => window.location.hash === '#/trips', { timeout: 6000, label: 'google redirect to trips' }).catch(() => {});
+  check(window.location.hash === '#/trips', 'google: signed in and landed on the trip list');
+  check(!!fsdb.__dump(`users/${googleUser.uid}`), 'google: user profile document created');
+  check(!!fsdb.__dump(`publicProfiles/${googleUser.uid}`), 'google: public directory entry created');
+
+  await waitFor(() => q('#join-trip-card'), { label: 'join card' });
+  check(!!q('#join-code-input') && !!q('#join-code-btn'), 'join: invite-code card shown on the trip list');
+  q('#join-code-input').value = 'fuji-23';
+  await click('#join-code-btn');
+  await waitFor(() => q('#confirm-ok'), { label: 'join confirmation' });
+  check(/ทริปฟูจิ/.test(window.document.querySelector('#confirm-title')?.textContent || window.document.body.textContent), 'join: found the trip by code (case/format insensitive)');
+  await click('#confirm-ok');
+  await waitFor(() => fsdb.__dump('trips/t1/joinRequests/g1'), { timeout: 6000, label: 'join request' }).catch(() => {});
+  check(!!fsdb.__dump('trips/t1/joinRequests/g1'), 'join: request stored for the admin to approve');
+  check(!!fsdb.__dump('users/g1/joinRequests/g1') || !!fsdb.__dump('users/g1/joinRequests/t1'), 'join: member can see their own request status');
+  await waitFor(() => /รอแอดมินอนุมัติ/.test(q('#my-join-requests')?.textContent || ''), { label: 'pending badge' }).catch(() => {});
+  check(/รอแอดมินอนุมัติ/.test(q('#my-join-requests')?.textContent || ''), 'join: pending status shown to the member');
+
+  // --- admin side: approve the request from the Members page ---
+  authStub.__emitAuth({ uid: 'u1', email: 'admin@example.com', displayName: 'Admin', photoURL: null, providerData: [{ providerId: 'password' }] });
+  await goto('#/trip/t1/members');
+  await waitFor(() => q('[data-request="g1"]'), { timeout: 6000, label: 'pending request row' }).catch(() => {});
+  check(!!q('[data-request="g1"]'), 'approve: pending request listed for the admin');
+  await click('[data-approve="g1"]');
+  await waitFor(() => fsdb.__dump('trips/t1/members/g1') && !fsdb.__dump('trips/t1/joinRequests/g1'), { timeout: 6000, label: 'approval' }).catch(() => {});
+  const approved = fsdb.__dump('trips/t1/members/g1');
+  check(!!approved, 'approve: member document created');
+  check(approved?.uid === 'g1' && approved?.authType === 'account', 'approve: member doc keyed by the account uid (rules allow access)');
+  check((fsdb.__dump('trips/t1')?.memberUids || []).includes('g1'), 'approve: uid added to trip memberUids');
+  check(!fsdb.__dump('trips/t1/joinRequests/g1'), 'approve: request cleaned up');
+  await sleep(300);
+  check(text$().includes('เพื่อนใหม่'), 'approve: new member appears in the members list');
+
+  // --- member side again: the approved trip now shows up ---
+  authStub.__emitAuth(googleUser);
+  await goto('#/trips');
+  await waitFor(() => text$().includes('ทริปฟูจิ'), { timeout: 6000, label: 'member trip list' }).catch(() => {});
+  check(text$().includes('ทริปฟูจิ'), 'join: approved trip appears in the member trip list');
+  check(!/รอแอดมินอนุมัติ/.test(q('#my-join-requests')?.textContent || ''), 'join: pending badge cleared after approval');
+}
+
+console.log('\n▶ v7: admin shares the invite code from Settings');
+await goto('#/trip/t1/settings');
+await waitFor(() => q('#invite-code-value'), { label: 'invite code card' });
+check((q('#invite-code-value').textContent || '').replace(/[^A-Z0-9]/g, '') === 'FUJI23', 'invite: settings shows the trip code formatted (ABC-123)');
+await click('#invite-code-regen');
+await waitFor(() => q('#confirm-ok'), { label: 'regen confirm' });
+await click('#confirm-ok');
+await waitFor(() => /[A-Z0-9]{3}-[A-Z0-9]{3}/.test(q('#invite-code-value')?.textContent || ''), { timeout: 6000, label: 'new code' }).catch(() => {});
+const newCode = q('#invite-code-value')?.textContent?.replace('-', '') || '';
+check(newCode.length === 6 && newCode !== 'FUJI23', 'invite: new code generated and shown');
+check(fsdb.__dump('trips/t1')?.inviteCode === newCode, 'invite: new code saved on the trip');
 
 console.log('\n▶ delete the whole trip (UI)');
 // leave the member session so the admin flow runs with a "logged out" auth state

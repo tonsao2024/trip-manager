@@ -73,7 +73,32 @@ See `firestore.indexes.json` — composite for itinerary by date+order, expenses
 
 All functions validate auth, trip membership, input, rate limit, never return hash.
 
-## เปิดใช้ระบบล็อกอินสมาชิก (username + PIN)
+## วิธีที่แนะนำ: สมาชิกใช้บัญชี Google/อีเมล + รหัสเชิญ (ใช้ได้บนแผนฟรี)
+
+Cloud Functions ต้องใช้แผน **Blaze** (เสียเงิน) — แต่การล็อกอินด้วย **Google** หรือ
+**อีเมล/รหัสผ่าน** เป็นฟีเจอร์ของ Firebase Authentication ที่ใช้ฟรี และให้ `uid` จริงมาใช้กับ
+Firestore Rules ได้ทันที จึงเป็นวิธีที่แนะนำบนแผนฟรี:
+
+1. สมาชิกกด **“เข้าสู่ระบบด้วยบัญชี Google”** (หรือสมัครด้วยอีเมล/รหัสผ่าน) — ระบบสร้าง
+   `users/{uid}` (role = member, กันการตั้งสิทธิ์ตัวเอง) และ `publicProfiles/{uid}` (ชื่อ/อีเมล/รูป เท่านั้น)
+2. แอดมินแชร์ **รหัสเชิญ 6 ตัว** ของทริป (หน้าตั้งค่า > รหัสเชิญเข้าร่วมทริป)
+3. สมาชิกกรอกรหัสที่หน้า “ทริปของฉัน” → ระบบสร้างคำขอที่
+   `trips/{tripId}/joinRequests/{uid}` (+ สำเนาที่ `users/{uid}/joinRequests/{tripId}` ให้สมาชิกดูสถานะ)
+4. แอดมินเปิด **หน้าสมาชิก > สมาชิกที่ล็อกอินด้วยบัญชี** กด **อนุมัติ** → ระบบสร้าง
+   `trips/{tripId}/members/{uid}` และเพิ่ม uid ใน `memberUids` → กฎ Firestore เปิดให้สมาชิกเข้าถึงทริปนั้น
+5. แอดมินยัง **เพิ่มด้วยอีเมล** ได้โดยตรง (ค้นหาจาก `publicProfiles`) หรือกำหนดบทบาท/สิทธิ์รายคนได้เหมือนเดิม
+
+สิ่งที่ต้องตั้งค่าครั้งเดียวใน Firebase Console (ฟรีทั้งหมด):
+
+| ตั้งค่า | ที่ไหน |
+|---------|--------|
+| เปิด Google + Email/Password | Authentication > Sign-in method |
+| เพิ่มโดเมนเว็บ (เช่น `tonsao2024.github.io`) | Authentication > Settings > Authorized domains |
+| Publish กฎใหม่ (`publicProfiles`, `joinRequests`) | Firestore > Rules (หรือ `firebase deploy --only firestore:rules`) |
+
+> ไม่ต้องใช้ Cloud Functions เลย — ตรวจสอบได้ที่ **ตั้งค่า > ตรวจสอบระบบ**
+
+## ทางเลือกเดิม: ล็อกอินสมาชิกด้วย username + PIN
 
 การล็อกอินสมาชิกมี 2 โหมด และ **โหมดในเครื่องใช้ได้ทันทีโดยไม่ต้อง deploy อะไร**:
 
@@ -228,7 +253,8 @@ firebase emulators:start --only firestore,auth,functions,storage
 - No PWA elements
 - GitHub Pages deployable
 - Animated, mobile-first UI: bottom nav, FAB, scroll reveal, confetti, count-up KPIs
-- Member login works with **and** without Cloud Functions (local PIN auth fallback + Firestore-backed when deployed)
+- Member login works with **and** without Cloud Functions: Google/email account + invite code + admin approval (free plan), plus the local username + PIN fallback
+- Trip admins can approve join requests, add members by email, and rotate the invite code
 - Settings > **ตรวจสอบระบบ** runs 9 probes and prints exactly which deploy step is missing
 
 ### v5 fixes
@@ -259,7 +285,7 @@ firebase emulators:start --only firestore,auth,functions,storage
 
 ```
 # Pure logic suites (no browser, no network):
-node tests/node-runner.mjs          # settlement, split, currency, countdown, Excel helpers
+node tests/node-runner.mjs          # settlement, split, currency, countdown, Excel, colors, invite codes, diagnostics
 
 # Browser suites:
 open tests/runner.html              # same suites + scheduling (needs CDN access)

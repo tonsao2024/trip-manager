@@ -20,7 +20,7 @@ export const FIX = {
   deployFunctions: 'firebase deploy --only functions   (โปรเจกต์ต้องอยู่แผน Blaze ก่อน)',
   runInvoker: 'gcloud run services add-iam-policy-binding loginwithusernamepin --region=asia-southeast1 --member=allUsers --role=roles/run.invoker',
   deployRules: 'firebase deploy --only firestore:rules   (หรือวาง firestore.rules ใน Firebase Console > Firestore > Rules > Publish)',
-  setMemberPin: 'ไปที่หน้าสมาชิก > เพิ่ม/แก้ไขสมาชิก > ใส่ชื่อผู้ใช้ + PIN แล้วบันทึก'
+  setMemberPin: 'แชร์รหัสเชิญ (หน้าตั้งค่า) ให้สมาชิกกดขอเข้าร่วม แล้วอนุมัติที่หน้าสมาชิก — หรือเพิ่ม/แก้ไขสมาชิกแล้วตั้งชื่อผู้ใช้ + PIN'
 };
 
 const isTh = (lang) => String(lang || 'th').startsWith('th');
@@ -290,6 +290,21 @@ export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeout
         FIX.deployRules);
     }
 
+    // 5b. Rules: public directory used by "add member by email"
+    if (d.auth?.currentUser?.uid) {
+      try {
+        await withTimeout(d.getDoc(d.doc(d.db, 'publicProfiles', d.auth.currentUser.uid)), timeoutMs, 'publicProfiles');
+        add('rules-profiles', pick(lang, 'Rules ไดเรกทอรีบัญชี (publicProfiles)', 'Account directory rules'), DIAG.ok,
+          pick(lang, 'แอดมินค้นหาสมาชิกด้วยอีเมลได้', 'Admins can find members by email'));
+      } catch (e) {
+        const info = classifyFirestoreError(e, pick(lang, 'ไดเรกทอรีบัญชี', 'the account directory'), lang);
+        add('rules-profiles', pick(lang, 'Rules ไดเรกทอรีบัญชี (publicProfiles)', 'Account directory rules'), info.status,
+          pick(lang, 'ยังอ่านไดเรกทอรีบัญชีไม่ได้ — ปุ่ม "เพิ่มด้วยอีเมล" จะใช้ไม่ได้',
+                    'The account directory is not readable — "Add by email" will not work'),
+          FIX.deployRules);
+      }
+    }
+
     // 6. Rules: post-it notes collection
     if (tripId) {
       try {
@@ -323,14 +338,15 @@ export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeout
       try {
         const snap = await withTimeout(d.getDocs(d.query(d.collection(d.db, 'trips', tripId, 'members'), d.limit(20))), timeoutMs, 'members');
         const ready = snap.docs.filter(x => x.data()?.loginReady || x.data()?.pinHash || x.data()?.username);
-        add('member-pins', pick(lang, 'สมาชิกที่มีชื่อผู้ใช้ + PIN', 'Members with a username + PIN'),
+        add('member-pins', pick(lang, 'สมาชิกที่ล็อกอินได้', 'Members who can sign in'),
           ready.length ? DIAG.ok : DIAG.warn,
           ready.length
             ? pick(lang, `มี ${ready.length} คนที่ล็อกอินได้`, `${ready.length} member(s) can sign in`)
-            : pick(lang, 'ยังไม่มีสมาชิกที่ตั้งชื่อผู้ใช้ + PIN', 'No member has a username + PIN yet'),
+            : pick(lang, 'ยังไม่มีสมาชิกที่ล็อกอินได้ — เชิญด้วยรหัสเชิญ หรือตั้งชื่อผู้ใช้ + PIN ให้สมาชิก',
+                            'No member can sign in yet — invite them with the trip code, or set a username + PIN'),
           ready.length ? null : FIX.setMemberPin);
       } catch (e) {
-        add('member-pins', pick(lang, 'สมาชิกที่มีชื่อผู้ใช้ + PIN', 'Members with a username + PIN'), DIAG.warn,
+        add('member-pins', pick(lang, 'สมาชิกที่ล็อกอินได้', 'Members who can sign in'), DIAG.warn,
           pick(lang, `อ่านรายชื่อสมาชิกไม่ได้: ${e.message}`, `Cannot read members: ${e.message}`),
           pick(lang, 'ตรวจสอบว่าเป็นสมาชิกของทริปนี้', 'Make sure you are a member of this trip'));
       }

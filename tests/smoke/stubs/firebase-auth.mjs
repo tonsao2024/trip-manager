@@ -13,4 +13,27 @@ export function signInWithCustomToken() { return Promise.resolve({ user: __curre
 export function signOut() { __currentUser = null; __emitAuth(null); return Promise.resolve(); }
 export function updateProfile() { return Promise.resolve(); }
 export function sendPasswordResetEmail() { return Promise.resolve(); }
-export default { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, setPersistence };
+
+// ---- Google / email account sign-in (member login on the free plan) ----
+export let __googleUser = null;
+export function __setGoogleUser(user) { __googleUser = user; }
+export class GoogleAuthProvider { setCustomParameters() {} }
+export function signInWithPopup() {
+  if (!__googleUser) {
+    const err = new Error('popup blocked'); err.code = 'auth/popup-blocked'; return Promise.reject(err);
+  }
+  __emitAuth(__googleUser);
+  return Promise.resolve({ user: __googleUser });
+}
+export function signInWithRedirect() { return Promise.resolve(); }
+export function getRedirectResult() { return Promise.resolve(null); }
+export function createUserWithEmailAndPassword(_auth, email, password) {
+  const user = { uid: 'new-' + Math.random().toString(36).slice(2, 8), email, password, displayName: null, photoURL: null, providerData: [{ providerId: 'password' }] };
+  __emitAuth(user);
+  return Promise.resolve({ user });
+}
+export default {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, setPersistence,
+  GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
+  createUserWithEmailAndPassword, sendPasswordResetEmail, updateProfile
+};
