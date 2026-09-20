@@ -29,6 +29,33 @@ export const ITINERARY_CATEGORY_DEFS = ITINERARY_CATEGORIES;
 export const CATEGORY_ICONS = Object.fromEntries(EXPENSE_CATEGORIES.map(c => [c.id, c.icon]));
 export const CATEGORY_COLORS = Object.fromEntries(EXPENSE_CATEGORIES.map(c => [c.id, c.color]));
 
+/* ------------------------------------------------------------------
+   Trip-defined groups (Settings / expense form → "จัดการกลุ่มค่าใช้จ่าย")
+   The registry is hydrated by src/js/categories/index.js from Firestore.
+   ------------------------------------------------------------------ */
+let CUSTOM_CATEGORIES = [];
+
+/** Replace the trip's custom groups. Definitions: { id, th, en, icon, color, order } */
+export function setCustomCategories(list) {
+  CUSTOM_CATEGORIES = Array.isArray(list)
+    ? list.filter(c => c && c.id && (c.th || c.en))
+    : [];
+  return CUSTOM_CATEGORIES;
+}
+
+export function getCustomCategories() { return CUSTOM_CATEGORIES.slice(); }
+
+export function isCustomCategory(id) { return CUSTOM_CATEGORIES.some(c => c.id === id); }
+
+/** Built-ins first, then the trip's own groups. */
+export function getAllExpenseCategories() {
+  return [...EXPENSE_CATEGORIES, ...CUSTOM_CATEGORIES];
+}
+
+export function getCategoryDef(id) {
+  return EXPENSE_CATEGORIES.find(c => c.id === id) || CUSTOM_CATEGORIES.find(c => c.id === id) || null;
+}
+
 function normalizeKey(str) {
   return String(str ?? '').replace(/\u00a0/g, ' ').replace(/[\s_\-\/\.\(\)\[\]:]+/g, ' ').trim().toLowerCase();
 }
@@ -67,6 +94,11 @@ const FUZZY_KEYWORDS = (() => {
 
 export function normalizeCategory(value) {
   if (!value) return 'general';
+  // A custom group id (or its exact label) always wins over fuzzy matching.
+  if (getCategoryDef(value)) return value;
+  const customHit = CUSTOM_CATEGORIES.find(c =>
+    normalizeKey(c.th) === normalizeKey(value) || normalizeKey(c.en) === normalizeKey(value));
+  if (customHit) return customHit.id;
   const key = normalizeKey(value);
   if (!key) return 'general';
   const exact = SYNONYMS.get(key);
@@ -76,17 +108,17 @@ export function normalizeCategory(value) {
 }
 
 export function categoryLabel(id, lang = 'th') {
-  const def = EXPENSE_CATEGORIES.find(c => c.id === id);
+  const def = getCategoryDef(id);
   if (!def) return id || 'general';
-  return lang === 'th' ? def.th : def.en;
+  return lang === 'th' ? (def.th || def.en) : (def.en || def.th);
 }
 
 export function categoryIcon(id) {
-  return CATEGORY_ICONS[id] || 'package';
+  return getCategoryDef(id)?.icon || CATEGORY_ICONS[id] || 'package';
 }
 
 export function categoryColor(id) {
-  return CATEGORY_COLORS[id] || 'var(--primary)';
+  return getCategoryDef(id)?.color || CATEGORY_COLORS[id] || 'var(--primary)';
 }
 
 export function itineraryCategoryLabel(id, lang = 'th') {

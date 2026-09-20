@@ -158,10 +158,12 @@ service cloud.firestore {
         }
       }
 
-      // Categories
+      // Expense groups (v9): every member of the trip sees the trip's own groups,
+      // any member may add / rename / re-icon / delete them (built-in groups are
+      // protected inside the app, they are never written here).
       match /categories/{categoryId} {
         allow read: if isAuthenticated();
-        allow write: if isAuthenticated();
+        allow create, update, delete: if isTripMember(tripId);
       }
 
       // Cards

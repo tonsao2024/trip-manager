@@ -2,8 +2,8 @@ import { auth, db, isFirebaseConfigured, onAuthStateChanged, syncState } from '.
 import { Router } from './router.js';
 import { toast } from './components/toast.js';
 import { renderFujiMascot, renderEmptyState } from './components/fuji.js';
-import { loginAdmin, loginMember, logout, hasStepUpSession } from './auth/index.js';
-import { memberLogin, saveMemberSession, getMemberSession, clearMemberSession, normalizeUsername } from './auth/memberAuth.js';
+import { loginAdmin, logout, hasStepUpSession } from './auth/index.js';
+import { getMemberSession, clearMemberSession } from './auth/memberAuth.js';
 import { runSystemDiagnostics, formatDiagnosticsReport, DIAG } from './utils/diagnostics.js';
 import { listTrips, getTrip, createTrip, updateTrip, deleteTrip, duplicateTrip, uploadCoverImage, clearTripsCache, regenerateInviteCode } from './trips/index.js';
 import {
@@ -27,8 +27,8 @@ import {
 import { fetchSettlementData, recalculateAndSaveSettlement } from './settlement/index.js';
 import { listMembers, createMember, updateMember, deleteMember, countMemberReferences, mapFunctionError, MEMBER_ROLES } from './members/index.js';
 import { dayjs, getCurrentTimes, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay } from './utils/date.js';
-import { formatCurrency, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal } from './utils/currency.js';
-import { calculateSettlement } from './utils/settlement.js';
+import { formatCurrency, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor } from './utils/currency.js';
+import { calculateSettlement, buildSettlementStatements } from './utils/settlement.js';
 import { splitEqual } from './utils/split.js';
 import { escapeHtml } from './utils/sanitize.js';
 import { showBottomSheet, showModal } from './components/modal.js';
@@ -41,8 +41,13 @@ import { listNotes, createNote, updateNote, deleteNote, NOTE_COLORS, noteColorHe
 import { googleMapsPlaceUrl, googleMapsDirectionsUrl, BASE_LAYERS, setMapLayer, getStoredLayerId } from './maps/index.js';
 import {
   EXPENSE_CATEGORIES, CATEGORY_ICONS, categoryLabel, categoryIcon, categoryColor,
-  ITINERARY_CATEGORIES, ITINERARY_STATUSES, normalizeCategory
+  ITINERARY_CATEGORIES, ITINERARY_STATUSES, normalizeCategory,
+  getAllExpenseCategories, getCategoryDef, isCustomCategory, setCustomCategories
 } from './utils/categories.js';
+import {
+  loadTripCategories, saveCategory, deleteCategory, countCategoryUsage,
+  CATEGORY_ICON_CHOICES, CATEGORY_COLOR_CHOICES
+} from './categories/index.js';
 import {
   exportWorkbookFile, readSpreadsheet, importItineraryRows, importExpenseRows,
   downloadItineraryTemplate, downloadExpensesTemplate, exportCsvFile,
@@ -1014,50 +1019,32 @@ function renderLogin() {
             <button id="login-dark" class="chip text-xs" data-mode-current></button>
           </div>
         </div>
-        <div class="card card-accent p-7">
-          <!-- Google account: one tap, no PIN to create or share, works on the free plan -->
-          <button id="google-signin-btn" class="btn btn-google w-full btn-lg mb-3">
+
+        <div class="card card-accent p-7 space-y-4">
+          <!-- Google first: the recommended way for members on the free plan -->
+          <button id="google-signin-btn" class="btn btn-google w-full btn-lg">
             <svg viewBox="0 0 48 48" class="w-5 h-5" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
             ${lang === 'th' ? 'เข้าสู่ระบบด้วยบัญชี Google' : 'Continue with Google'}
           </button>
-          <p class="text-[11px] text-center text-[var(--text-tertiary)] mb-4 leading-relaxed">
+
+          <div class="login-or"><span>${lang === 'th' ? 'หรือใช้บัญชีอีเมล' : 'or use an email account'}</span></div>
+
+          <form id="account-form" class="space-y-4">
+            <div class="input-group"><label class="input-label">${icon('mail', 'w-3.5 h-3.5')} ${t('email')}</label><input id="admin-email" class="input" type="email" placeholder="you@example.com" required autocomplete="email"></div>
+            <div class="input-group"><label class="input-label">${icon('key-round', 'w-3.5 h-3.5')} ${t('password')}</label><input id="admin-pass" class="input" type="password" required autocomplete="current-password"></div>
+            <label class="flex items-center gap-2 text-sm cursor-pointer"><input id="admin-remember" type="checkbox" checked class="accent-[var(--primary)] w-4 h-4"> ${t('rememberDevice')}</label>
+            <button class="btn btn-primary w-full btn-lg" type="submit">${icon('log-in', 'w-4 h-4')} ${lang==='th' ? 'เข้าสู่ระบบ' : 'Sign in'}</button>
+            <div class="btn-row">
+              <button type="button" id="account-signup-btn" class="btn btn-secondary btn-sm">${icon('user-plus', 'w-4 h-4')} ${lang==='th' ? 'สมัครบัญชีใหม่' : 'Create account'}</button>
+              <button type="button" id="account-reset-btn" class="btn btn-ghost btn-sm">${icon('help-circle', 'w-4 h-4')} ${lang==='th' ? 'ลืมรหัสผ่าน' : 'Forgot password'}</button>
+            </div>
+          </form>
+
+          <p class="text-[11px] text-center text-[var(--text-tertiary)] leading-relaxed">
             ${lang === 'th'
-              ? 'สมาชิกใช้บัญชี Google ของตัวเองได้เลย — แอดมินเป็นคนอนุมัติให้เข้าร่วมแต่ละทริป'
-              : 'Members sign in with their own Google account — the trip admin approves each trip'}
+              ? 'สมาชิกใช้บัญชี Google ของตัวเองได้ — แอดมินทริปเป็นคนอนุมัติให้เข้าร่วมแต่ละทริป'
+              : 'Members sign in with their own Google account — the trip admin approves each trip.'}
           </p>
-
-          <div class="segmented mb-6">
-            <button data-tab="admin" class="segmented-item active">${icon('mail', 'w-4 h-4')} ${lang==='th' ? 'อีเมล / รหัสผ่าน' : 'Email / password'}</button>
-            <button data-tab="member" class="segmented-item">${icon('key-round', 'w-4 h-4')} ${lang==='th' ? 'ชื่อผู้ใช้ + PIN' : 'Username + PIN'}</button>
-          </div>
-
-          <div id="tab-admin">
-            <form id="admin-form" class="space-y-4">
-              <div class="input-group"><label class="input-label">${icon('mail', 'w-3.5 h-3.5')} ${t('email')}</label><input id="admin-email" class="input" type="email" placeholder="you@example.com" required autocomplete="email"></div>
-              <div class="input-group"><label class="input-label">${icon('key-round', 'w-3.5 h-3.5')} ${t('password')}</label><input id="admin-pass" class="input" type="password" required autocomplete="current-password"></div>
-              <label class="flex items-center gap-2 text-sm cursor-pointer"><input id="admin-remember" type="checkbox" checked class="accent-[var(--primary)] w-4 h-4"> ${t('rememberDevice')}</label>
-              <button class="btn btn-primary w-full btn-lg" type="submit">${icon('log-in', 'w-4 h-4')} ${lang==='th' ? 'เข้าสู่ระบบ' : 'Sign in'}</button>
-              <div class="btn-row">
-                <button type="button" id="account-signup-btn" class="btn btn-secondary btn-sm">${icon('user-plus', 'w-4 h-4')} ${lang==='th' ? 'สมัครบัญชีใหม่ (สมาชิก)' : 'Create member account'}</button>
-                <button type="button" id="account-reset-btn" class="btn btn-ghost btn-sm">${icon('help-circle', 'w-4 h-4')} ${lang==='th' ? 'ลืมรหัสผ่าน' : 'Forgot password'}</button>
-              </div>
-            </form>
-          </div>
-
-          <div id="tab-member" class="hidden">
-            <p class="text-[11px] text-[var(--text-tertiary)] mb-3 leading-relaxed">${lang==='th'
-              ? 'สำหรับสมาชิกที่แอดมินสร้างบัญชีไว้ให้ในเครื่อง (ไม่มีบัญชี Google/อีเมล)'
-              : 'For members an admin created locally (no Google/email account).'}</p>
-            <form id="member-form" class="space-y-4">
-              <div class="input-group"><label class="input-label">${icon('compass', 'w-3.5 h-3.5')} Trip ID</label><input id="member-trip" class="input" placeholder="${lang==='th' ? 'เว้นว่างได้ (ไม่บังคับ)' : 'Optional'}" autocomplete="off"></div>
-              <div class="input-group"><label class="input-label">${icon('user', 'w-3.5 h-3.5')} ${t('username')}</label><input id="member-user" class="input" placeholder="fuji_user" required autocomplete="username"></div>
-              <div class="input-group"><label class="input-label">${icon('lock-keyhole', 'w-3.5 h-3.5')} ${t('pin')}</label><input id="member-pin" class="input" type="password" inputmode="numeric" placeholder="••••" required autocomplete="current-password"></div>
-              <label class="flex items-center gap-2 text-sm cursor-pointer"><input id="member-remember" type="checkbox" checked class="accent-[var(--primary)] w-4 h-4"> ${t('rememberDevice')}</label>
-              <button class="btn btn-primary w-full btn-lg" type="submit">${icon('log-in', 'w-4 h-4')} ${t('loginMember')}</button>
-            </form>
-          </div>
-
-          <p class="text-[11px] text-center text-[var(--text-tertiary)] mt-6 leading-relaxed flex items-center justify-center gap-1.5">${icon('shield-check', 'w-3.5 h-3.5')} ${lang==='th' ? 'การเชื่อมต่อปลอดภัย • ข้อมูลซิงก์แบบเรียลไทม์' : 'Secure connection • Realtime sync'}</p>
         </div>
       </div>
     </div>
@@ -1065,10 +1052,7 @@ function renderLogin() {
   queueIcons();
   updateModeIcons();
 
-  setTimeout(() => {
-    addPasswordToggle('member-pin');
-    addPasswordToggle('admin-pass');
-  }, 10);
+  setTimeout(() => addPasswordToggle('admin-pass'), 10);
 
   document.getElementById('login-lang').onclick = () => {
     const newLang = lang === 'th' ? 'en' : 'th';
@@ -1078,18 +1062,6 @@ function renderLogin() {
   };
   document.getElementById('login-theme').onclick = showThemePicker;
   document.getElementById('login-dark').onclick = cycleMode;
-
-  const tabs = appEl.querySelectorAll('.segmented-item');
-  tabs.forEach(btn => btn.addEventListener('click', () => {
-    tabs.forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    appEl.querySelector('#tab-member').classList.toggle('hidden', btn.dataset.tab !== 'member');
-    appEl.querySelector('#tab-admin').classList.toggle('hidden', btn.dataset.tab !== 'admin');
-    setTimeout(() => {
-      addPasswordToggle('member-pin');
-      addPasswordToggle('admin-pass');
-    }, 10);
-  }));
 
   // ---- Google account (recommended for members, works on the free plan) ----
   appEl.querySelector('#google-signin-btn').onclick = async (e) => {
@@ -1146,7 +1118,7 @@ function renderLogin() {
     } catch (err) { toast.error(err.message); }
   };
 
-  appEl.querySelector('#admin-form').onsubmit = async (e) => {
+  appEl.querySelector('#account-form').onsubmit = async (e) => {
     e.preventDefault();
     const btn = e.target.querySelector('button[type="submit"]');
     if (!btn) return;
@@ -1169,66 +1141,6 @@ function renderLogin() {
     }
   };
 
-  appEl.querySelector('#member-form').onsubmit = async (e) => {
-    e.preventDefault();
-    const btn = e.target.querySelector('button[type="submit"]');
-    if (!btn) return;
-    btn.disabled = true;
-    const originalHtml = btn.innerHTML;
-    btn.innerHTML = `${spinner('w-4 h-4')} ${lang==='th' ? 'กำลังตรวจสอบ...' : 'Checking...'}`;
-    queueIcons();
-    const tLoad = toast.loading(lang==='th' ? 'กำลังตรวจสอบ...' : 'Checking...');
-    try {
-      const username = document.getElementById('member-user').value.trim();
-      const pin = document.getElementById('member-pin').value;
-      const tripHint = document.getElementById('member-trip').value.trim() || null;
-      const remember = document.getElementById('member-remember').checked;
-      let signedIn = false;
-      // Preferred: Cloud Function (creates a real Firebase Auth session)
-      try {
-        if (typeof loginMember === 'function') {
-          await loginMember(username, pin, tripHint, remember);
-          signedIn = true;
-        }
-      } catch (fnErr) {
-        const code = String(fnErr?.code || '') + ' ' + String(fnErr?.message || '');
-        const usable = /internal|unavailable|not-found|unimplemented|failed-precondition|Functions|functions\//i.test(code);
-        if (!usable) throw fnErr;   // wrong PIN / unknown user → real error
-        console.warn('[Login] Cloud Function unavailable → local PIN login', fnErr?.message);
-      }
-      if (!signedIn) {
-        const res = await memberLogin(username, pin, tripHint, remember);
-        const m = res.member || {};
-        saveMemberSession({
-          tripId: res.tripId, memberId: res.memberId, username,
-          displayName: m.displayName, photoURL: m.photoURL, color: m.color, role: m.role,
-          remember
-        });
-        currentUser = {
-          uid: res.memberId,
-          displayName: m.displayName || username,
-          email: '',
-          photoURL: m.photoURL || null,
-          isMemberSession: true
-        };
-        currentTrip = null;
-        currentTripId = res.tripId;
-        try { localStorage.setItem('fuji_current_trip', res.tripId); } catch {}
-        authReady = true;
-        renderMemberSessionNotice(true);
-      }
-      tLoad.close();
-      toast.success(lang==='th' ? 'ยินดีต้อนรับ!' : 'Welcome!');
-      location.hash = '#/trips';
-      setTimeout(() => router.handle(), 30);
-    } catch (err) {
-      tLoad.close();
-      toast.error(err.message || 'Login failed');
-      btn.disabled = false;
-      btn.innerHTML = originalHtml;
-      queueIcons();
-    }
-  };
   queueIcons();
 }
 
@@ -2197,6 +2109,9 @@ async function renderDashboard(params) {
   /* ---------------- Data sections (each guarded separately) ---------------- */
   let expenses = [], members = [], items = [];
 
+  // Trip-defined expense groups (used by the category breakdown + recent list).
+  try { await loadTripCategories(tripId); } catch (e) { console.warn(e); }
+
   try {
     const data = await fetchSettlementData(tripId);
     if (isStale(token)) return;
@@ -2233,6 +2148,13 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
   const th = (a, b) => (lang === 'th' ? a : b);
   if (isStale(token)) return;
   const fmt = (minor) => formatCurrency(minor || 0, currency);
+  const rate = Number(trip?.exchangeRateToTHB) || 1;
+  // Every amount also gets its Thai-baht equivalent when the trip isn't in THB.
+  const thbTag = (minor) => {
+    if (currency === 'THB') return '';
+    const v = toThbMinor(minor, currency, rate);
+    return v == null ? '' : `<span class="thb-equiv">≈ ${formatCurrency(v, 'THB')}</span>`;
+  };
 
   const actualMinor = sumExpenses(expenses, { estimatedOnly: false });
   const estimatedMinor = sumExpenses(expenses, { estimatedOnly: true });
@@ -2242,10 +2164,22 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
   /* ---- KPI: total ---- */
   const totalEl = document.getElementById('kpi-total');
   if (totalEl) countUp(totalEl, totalMinor, { formatter: (v) => fmt(Math.round(v)) });
+  if (totalEl && currency !== 'THB') {
+    // Always show the baht equivalent right under the headline figure.
+    const tag = document.getElementById('kpi-total-thb');
+    const label = `≈ ${formatCurrency(toThbMinor(totalMinor, currency, rate) || 0, 'THB')}`;
+    if (!tag) {
+      const span = document.createElement('div');
+      span.id = 'kpi-total-thb';
+      span.className = 'thb-equiv';
+      span.textContent = label;
+      totalEl.insertAdjacentElement('afterend', span);
+    } else tag.textContent = label;
+  }
   setHtml('kpi-total-sub', `
     <span class="meta-line">${icon('check-circle', 'w-3 h-3')} ${th('จ่ายจริง','Actual')} ${fmt(actualMinor)}</span>
     <span class="meta-line">${icon('hourglass', 'w-3 h-3')} ${th('ประมาณการ','Estimated')} ${fmt(estimatedMinor)}</span>
-    ${currency !== 'THB' ? `<span class="meta-line">${icon('banknote', 'w-3 h-3')} ≈ ${fmt(thbTotal)} THB</span>` : ''}
+    ${currency !== 'THB' ? `<span class="meta-line">${icon('banknote', 'w-3 h-3')} ≈ ${formatCurrency(toThbMinor(thbTotal, currency, rate) || 0, 'THB')}</span>` : ''}
     <span class="meta-line">${icon('receipt', 'w-3 h-3')} ${expenses.length} ${th('รายการ','items')}</span>
   `);
 
@@ -2281,6 +2215,18 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
   if (balEl) {
     balEl.textContent = fmt(myBal?.net || 0);
     balEl.style.color = (myBal?.net || 0) >= 0 ? 'var(--success)' : 'var(--danger)';
+    const existing = document.getElementById('kpi-balance-thb');
+    if (currency !== 'THB') {
+      const label = `≈ ${formatCurrency(toThbMinor(myBal?.net || 0, currency, rate) || 0, 'THB')}`;
+      if (existing) existing.textContent = label;
+      else {
+        const span = document.createElement('div');
+        span.id = 'kpi-balance-thb';
+        span.className = 'thb-equiv';
+        span.textContent = label;
+        balEl.insertAdjacentElement('afterend', span);
+      }
+    } else existing?.remove();
   }
   setHtml('kpi-balance-sub', `<span class="meta-line">${myBal?.net >= 0 ? icon('arrow-down-left', 'w-3 h-3') + ' ' + th('จะได้รับคืน','gets back') : icon('arrow-up-right', 'w-3 h-3') + ' ' + th('ต้องจ่ายเพิ่ม','needs to pay')}</span>`);
 
@@ -2363,7 +2309,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
       <div class="py-2">
         <div class="flex justify-between items-center text-sm gap-2">
           <span class="meta-line truncate">${icon(categoryIcon(cat), 'w-3.5 h-3.5')} ${escapeHtml(categoryLabel(cat, lang))} <span class="text-[10px] text-[var(--text-tertiary)]">• ${v.count}</span></span>
-          <span class="font-bold flex-shrink-0">${fmt(total)} <span class="text-[10px] font-normal text-[var(--text-tertiary)]">${pct}%</span></span>
+          <span class="font-bold flex-shrink-0">${fmt(total)} <span class="text-[10px] font-normal text-[var(--text-tertiary)]">${pct}%</span>${thbTag(total)}</span>
         </div>
         <div class="progress mt-1.5" style="height:6px;">
           <div class="progress-bar progress-striped" style="width:${Math.max(3, Math.round(total / catMax * 100))}%; background:${categoryColor(cat)};"></div>
@@ -2378,16 +2324,16 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
   setHtml('estimate-compare', `
     <div class="space-y-3">
       <div>
-        <div class="flex justify-between text-xs mb-1"><span class="meta-line">${icon('check-circle', 'w-3.5 h-3.5')} ${th('จ่ายจริงแล้ว','Paid')}</span><b>${fmt(actualMinor)}</b></div>
+        <div class="flex justify-between text-xs mb-1"><span class="meta-line">${icon('check-circle', 'w-3.5 h-3.5')} ${th('จ่ายจริงแล้ว','Paid')}</span><b>${fmt(actualMinor)} ${thbTag(actualMinor)}</b></div>
         <div class="progress" style="height:8px;"><div class="progress-bar" style="width:${totalMinor ? Math.round(actualMinor / totalMinor * 100) : 0}%;"></div></div>
       </div>
       <div>
-        <div class="flex justify-between text-xs mb-1"><span class="meta-line">${icon('hourglass', 'w-3.5 h-3.5')} ${th('ประมาณการ/ต้องจอง','Estimated')}</span><b>${fmt(estimatedMinor)}</b></div>
+        <div class="flex justify-between text-xs mb-1"><span class="meta-line">${icon('hourglass', 'w-3.5 h-3.5')} ${th('ประมาณการ/ต้องจอง','Estimated')}</span><b>${fmt(estimatedMinor)} ${thbTag(estimatedMinor)}</b></div>
         <div class="progress" style="height:8px;"><div class="progress-bar" style="width:${estPct}%; background: var(--warning);"></div></div>
       </div>
       <div class="grid grid-cols-2 gap-2 text-xs">
-        <div class="p-2.5 rounded-xl" style="background:var(--bg-secondary);">${icon('user', 'w-3 h-3')} ${th('เฉลี่ย/คน','Avg / person')}<div class="font-bold text-sm mt-0.5">${fmt(Math.round(totalMinor / memberCount))}</div></div>
-        <div class="p-2.5 rounded-xl" style="background:var(--bg-secondary);">${icon('calendar-days', 'w-3 h-3')} ${th('เฉลี่ย/วัน','Avg / day')}<div class="font-bold text-sm mt-0.5">${fmt(Math.round(totalMinor / Math.max(1, getTripDays(trip?.startDate, trip?.endDate).length)))}</div></div>
+        <div class="p-2.5 rounded-xl" style="background:var(--bg-secondary);">${icon('user', 'w-3 h-3')} ${th('เฉลี่ย/คน','Avg / person')}<div class="font-bold text-sm mt-0.5">${fmt(Math.round(totalMinor / memberCount))}</div>${thbTag(Math.round(totalMinor / memberCount))}</div>
+        <div class="p-2.5 rounded-xl" style="background:var(--bg-secondary);">${icon('calendar-days', 'w-3 h-3')} ${th('เฉลี่ย/วัน','Avg / day')}<div class="font-bold text-sm mt-0.5">${fmt(Math.round(totalMinor / Math.max(1, getTripDays(trip?.startDate, trip?.endDate).length)))}</div>${thbTag(Math.round(totalMinor / Math.max(1, getTripDays(trip?.startDate, trip?.endDate).length)))}</div>
       </div>
     </div>`);
 
@@ -2426,10 +2372,12 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
             <div class="text-[11px] text-[var(--text-secondary)]">
               ${th('จ่าย','paid')} ${fmt(paidBy[id] || 0)} • ${th('รับผิดชอบ','share')} ${fmt(shareBy[id] || 0)}
             </div>
+            ${thbTag(paidBy[id] || 0)}
           </div>
         </div>
         <div class="text-right flex-shrink-0">
           <div class="font-bold text-sm" style="color:${bal >= 0 ? 'var(--success)' : 'var(--danger)'};">${fmt(bal)}</div>
+          ${thbTag(bal)}
           <div class="text-[10px] text-[var(--text-tertiary)]">${bal >= 0 ? th('ได้รับคืน','gets back') : th('ต้องจ่าย','pays')}</div>
         </div>
       </div>`;
@@ -2448,6 +2396,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
         </span>
         <span class="text-right flex-shrink-0">
           <span class="block font-bold text-sm">${formatCurrency(e.netTotalMinor || 0, e.currency || currency)}</span>
+          ${thbTag(toThbMinor(e.netTotalMinor || 0, e.currency || currency, e.thbRate || rate))}
           ${e.isEstimated ? `<span class="badge badge-skipped text-[9px]">${th('ประมาณการ','est.')}</span>` : ''}
         </span>
       </button>`;
@@ -2466,6 +2415,11 @@ async function renderItinerary(params) {
   const lang = getLang();
   const th = (a, b) => (lang === 'th' ? a : b);
   await loadTrip(tripId);
+  if (isStale(token)) return;
+
+  // Trip-defined expense groups feed the "estimated cost" select in the add/edit
+  // sheet, so load them before the page (and any sheet) renders.
+  try { await loadTripCategories(tripId); } catch (e) { console.warn(e); }
   if (isStale(token)) return;
 
   const trip = currentTrip;
@@ -3139,7 +3093,7 @@ async function renderItinerary(params) {
                 </div>
               </div>
               <div class="input-group"><label class="input-label text-[12px]">${icon('tag', 'w-3.5 h-3.5')} ${th('หมวดค่าใช้จ่าย','Expense category')}</label>
-                <select id="it-estimate-category" class="input">${EXPENSE_CATEGORIES.map(c => `<option value="${c.id}" ${normalizeCategory(it.estimateCategory || 'general') === c.id ? 'selected' : ''}>${lang==='th'?c.th:c.en}</option>`).join('')}</select>
+                <select id="it-estimate-category" class="input">${getAllExpenseCategories().map(c => `<option value="${c.id}" ${normalizeCategory(it.estimateCategory || 'general') === c.id ? 'selected' : ''}>${lang==='th'?(c.th||c.en):(c.en||c.th)}</option>`).join('')}</select>
               </div>
               <div class="input-group">
                 <label class="input-label text-[12px]">${icon('user', 'w-3.5 h-3.5')} ${th('ใครจ่าย','Paid by')}</label>
@@ -3407,7 +3361,7 @@ async function renderItinerary(params) {
   if (action === 'add') openItemForm(null, showAll ? null : selectedDate);
 }
 
-const EXPENSE_CATS = EXPENSE_CATEGORIES;
+const EXPENSE_CATS = EXPENSE_CATEGORIES;   // built-ins (kept for Excel/legacy paths)
 
 /* ================================================================== *
  * Expenses — list (edit / delete / filter / Excel)
@@ -3426,6 +3380,7 @@ async function renderExpenses(params) {
   const isAdmin = perms.isAdmin;
 
   let members = [];
+  try { await loadTripCategories(tripId); } catch (e) { console.warn(e); }
   try { members = await listMembers(tripId); } catch (e) { console.warn(e); }
   if (isStale(token)) return;
   const membersMap = Object.fromEntries(members.map(m => [m.id, m]));
@@ -3460,9 +3415,12 @@ async function renderExpenses(params) {
         <button class="chip" data-filter="estimated">${icon('hourglass', 'w-3.5 h-3.5')} ${th('ประมาณการ','Estimated')}</button>
         <button class="chip" data-filter="actual">${icon('check-circle', 'w-3.5 h-3.5')} ${th('จ่ายจริง','Actual')}</button>
       </div>
+      <div class="px-1 mb-1 flex justify-end">
+        <button id="manage-cats-btn" class="link-btn text-[11px]">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage expense groups')}</button>
+      </div>
       <div class="chip-row mb-4" id="cat-filters">
         <button class="chip chip-active" data-cat="">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('ทุกหมวด','All categories')}</button>
-        ${EXPENSE_CATEGORIES.map(c => `<button class="chip" data-cat="${c.id}">${icon(c.icon, 'w-3.5 h-3.5')} ${lang==='th'?c.th:c.en}</button>`).join('')}
+        ${getAllExpenseCategories().map(c => `<button class="chip" data-cat="${c.id}">${icon(c.icon, 'w-3.5 h-3.5')} ${lang==='th'?(c.th||c.en):(c.en||c.th)}</button>`).join('')}
       </div>
 
       <div id="expense-list" class="space-y-3 stagger"></div>
@@ -3473,6 +3431,7 @@ async function renderExpenses(params) {
   initReveal(appEl);
 
   bind('add-expense-btn', 'click', () => { location.hash = `#/trip/${tripId}/expenses/add`; });
+  bind('manage-cats-btn', 'click', () => openCategoryManager(tripId, { onSaved: () => renderExpenses(params) }));
 
   let lastDoc = null;
   let allLoaded = [];
@@ -3505,9 +3464,15 @@ async function renderExpenses(params) {
     const total = sumExpenses(allLoaded);
     const actual = sumExpenses(allLoaded, { estimatedOnly: false });
     const est = sumExpenses(allLoaded, { estimatedOnly: true });
-    setText('exp-sum-total', formatCurrency(total, currency));
-    setText('exp-sum-actual', formatCurrency(actual, currency));
-    setText('exp-sum-est', formatCurrency(est, currency));
+    const rateToThb = Number(trip?.exchangeRateToTHB) || 1;
+    const withThb = (minor) => {
+      if (currency === 'THB') return formatCurrency(minor, 'THB');
+      const thb = toThbMinor(minor, currency, rateToThb);
+      return `${formatCurrency(minor, currency)}<span class="thb-equiv">≈ ${formatCurrency(thb || 0, 'THB')}</span>`;
+    };
+    setHtml('exp-sum-total', withThb(total));
+    setHtml('exp-sum-actual', withThb(actual));
+    setHtml('exp-sum-est', withThb(est));
     setText('exp-sum-count', String(allLoaded.length));
   }
 
@@ -3525,7 +3490,9 @@ async function renderExpenses(params) {
             <h3 class="font-semibold text-sm truncate">${escapeHtml(e.title)}</h3>
             <div class="text-right flex-shrink-0">
               <div class="font-bold text-sm" style="font-family: var(--font-display);">${formatCurrency(e.netTotalMinor || 0, e.currency || currency)}</div>
-              ${e.currency !== currency && e.thbMinor ? `<div class="text-[10px] text-[var(--text-tertiary)]">≈ ${formatCurrency(e.thbMinor, 'THB')}</div>` : ''}
+              ${(e.currency || currency) !== 'THB'
+                ? `<div class="thb-equiv">≈ ${formatCurrency(toThbMinor(e.netTotalMinor || 0, e.currency || currency, e.thbRate || trip?.exchangeRateToTHB) || 0, 'THB')}</div>`
+                : ''}
             </div>
           </div>
           <div class="flex items-center gap-2 flex-wrap mt-1">
@@ -3729,6 +3696,8 @@ async function renderExpenseAdd(params) {
   let members = [];
   let items = [];
   let expense = null;
+  // Trip-defined expense groups must be in the registry before the form renders.
+  try { await loadTripCategories(tripId); } catch (e) { console.warn(e); }
   try { members = await listMembers(tripId); } catch (e) { console.warn(e); }
   try { items = await fetchItinerary(tripId, null); } catch (e) { console.warn(e); }
   if (isEdit) {
@@ -3755,9 +3724,11 @@ async function renderExpenseAdd(params) {
         <div class="grid grid-cols-2 gap-3">
           <div class="input-group"><label class="input-label">${icon('calendar', 'w-3.5 h-3.5')} ${th('วันที่','Date')} *</label><input id="ex-date" class="input" type="date" value="${escapeHtml(e.date || dayjs().format('YYYY-MM-DD'))}" required></div>
           <div class="input-group">
-            <label class="input-label">${icon('tag', 'w-3.5 h-3.5')} ${th('หมวดหมู่','Category')}</label>
+            <label class="input-label flex items-center justify-between">${icon('tag', 'w-3.5 h-3.5')} ${th('กลุ่มค่าใช้จ่าย','Expense group')}
+              <button type="button" id="ex-manage-cats" class="link-btn text-[10px]">${icon('settings-2', 'w-3 h-3')} ${th('จัดการ','Manage')}</button>
+            </label>
             <select id="ex-cat" class="input">
-              ${EXPENSE_CATEGORIES.map(c => `<option value="${c.id}" ${normalizeCategory(e.category || 'general') === c.id ? 'selected' : ''}>${lang==='th'?c.th:c.en}</option>`).join('')}
+              ${getAllExpenseCategories().map(c => `<option value="${c.id}" ${normalizeCategory(e.category || 'general') === c.id ? 'selected' : ''}>${lang==='th'?(c.th||c.en):(c.en||c.th)}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -3856,6 +3827,19 @@ async function renderExpenseAdd(params) {
     </div>
   `;
   queueIcons();
+
+  // Manage the trip's expense groups straight from the form.
+  bind('ex-manage-cats', 'click', () => openCategoryManager(tripId, {
+    onSaved: () => {
+      const sel = document.getElementById('ex-cat');
+      const keep = sel?.value;
+      if (sel) {
+        sel.innerHTML = getAllExpenseCategories()
+          .map(c => `<option value="${c.id}" ${keep === c.id ? 'selected' : ''}>${lang === 'th' ? (c.th || c.en) : (c.en || c.th)}</option>`)
+          .join('');
+      }
+    }
+  }));
 
   let selectedPayer = e.payerId || members[0]?.id || currentUser.uid;
   let selectedShare = new Set(members.filter(m => {
@@ -4046,24 +4030,258 @@ async function renderSettlement(params) {
   if (isStale(token)) return;
   const lang = getLang();
   const th = (a, b) => (lang === 'th' ? a : b);
+  const trip = currentTrip;
+  const currency = trip?.baseCurrency || 'THB';
+
   appEl.innerHTML = `
     <div class="page-enter">
       <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
         ${renderPageScene('settlement', { lang, title: `${icon('hand-coins', 'w-5 h-5')} ${t('settlement')}`,
-          subtitle: th('คำนวณว่าใครต้องจ่ายคืนใคร กี่บาท (จำนวนครั้งน้อยที่สุด)','Who owes whom, with the fewest transfers') })}
-        <button id="recalc-settle" class="btn btn-primary btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${lang==='th' ? 'คำนวณใหม่' : 'Recalculate'}</button>
-      </div>
-      <div id="settlement-content" class="space-y-4"><div class="skeleton h-32"></div></div>
-      <div class="card p-5 mt-6">
-        <h3 class="font-bold mb-3 flex items-center gap-2">${icon('share-2', 'w-4 h-4')} Export</h3>
+          subtitle: th('ใบเสร็จเคลียร์บิล: ใครจ่ายอะไร (เงินสด/บัตร) ใครต้องคืนเท่าไร','Clear-bill receipts: who paid what (cash/card), who owes how much') })}
         <div class="btn-row">
-          <button id="copy-line" class="btn btn-secondary btn-sm">${icon('message-circle', 'w-4 h-4')} ${lang==='th' ? 'คัดลอกส่ง LINE' : 'Copy for LINE'}</button>
-          <button id="export-png" class="btn btn-secondary btn-sm">${icon('image', 'w-4 h-4')} PNG</button>
+          <button id="recalc-settle" class="btn btn-primary btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${lang==='th' ? 'คำนวณใหม่' : 'Recalculate'}</button>
+          <button id="export-overview-png" class="btn btn-secondary btn-sm">${icon('image', 'w-4 h-4')} ${th('ภาพรวม PNG','Overview PNG')}</button>
+          <button id="print-settle" class="btn btn-secondary btn-sm">${icon('printer', 'w-4 h-4')} ${th('พิมพ์ / PDF','Print / PDF')}</button>
         </div>
       </div>
+
+      <div class="chip-row mb-4" id="settle-views">
+        <button class="chip chip-active" data-view="receipts">${icon('receipt-text', 'w-3.5 h-3.5')} ${th('ใบเสร็จรายคน','Per-person receipts')}</button>
+        <button class="chip" data-view="overview">${icon('scale', 'w-3.5 h-3.5')} ${th('ภาพรวม','Overview')}</button>
+      </div>
+
+      <div id="settlement-content" class="space-y-4"><div class="skeleton h-32"></div></div>
     </div>
   `;
   queueIcons();
+
+  let state = { expenses: [], members: [], membersMap: {}, statements: [], balances: [], transactions: [] };
+  let view = 'receipts';
+
+  const money = (minor) => formatCurrency(minor || 0, currency);
+  const thbOf = (minor) => {
+    const v = toThbMinor(minor, currency, trip?.exchangeRateToTHB);
+    return v == null ? '' : formatCurrency(v, 'THB');
+  };
+  const thbTag = (minor) => currency === 'THB' ? '' : `<span class="thb-equiv">≈ ${thbOf(minor)}</span>`;
+  const methodLabel = (m) => m === 'card' ? th('บัตรเครดิต', 'Card') : m === 'transfer' ? th('โอนเงิน', 'Transfer') : th('เงินสด', 'Cash');
+  const methodIcon = (m) => m === 'card' ? 'credit-card' : m === 'transfer' ? 'arrow-left-right' : 'banknote';
+
+  function memberHeader(m, { withAvatar = true } = {}) {
+    const isMe = m.memberId === currentUser.uid;
+    return `${withAvatar ? `<div class="avatar" style="width:34px;height:34px;background:${escapeHtml(m.color || 'var(--primary)')};font-size:12px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</div>` : ''}
+      <div class="min-w-0">
+        <div class="font-bold text-sm truncate">${escapeHtml(m.displayName)} ${isMe ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full text-white" style="background:var(--gradient-primary);">${th('คุณ','you')}</span>` : ''}</div>
+        <div class="text-[10px] text-[var(--text-tertiary)]">${th('จ่ายจริง','paid')} ${m.paidCount} • ${th('ร่วมหาร','shares')} ${m.shareCount}</div>
+      </div>`;
+  }
+
+  function receiptHtml(m) {
+    const isMe = m.memberId === currentUser.uid;
+    const methods = ['cash', 'card', 'transfer'].filter(k => m.paidByMethod[k] > 0);
+    const paidItems = m.items.filter(i => i.role === 'paid');
+    const shareItems = m.items.filter(i => i.role === 'share');
+    const settled = m.netMinor > 0 && shareItems.length === 0;
+    return `
+      <div class="receipt" data-receipt="${escapeHtml(m.memberId)}">
+        <div class="receipt-head">
+          <div class="receipt-title">${escapeHtml(t('settlement'))}</div>
+          <div class="receipt-sub">${escapeHtml(trip?.name || '')} • ${escapeHtml(trip?.startDate || '')} → ${escapeHtml(trip?.endDate || '')}</div>
+          <div class="receipt-meta">
+            <span><b>${th('สมาชิก','Member')}:</b> ${escapeHtml(m.displayName)}${isMe ? ` (${th('คุณ','you')})` : ''}</span>
+            <span><b>${th('สกุล','Currency')}:</b> ${currency}${currency !== 'THB' ? ` • 1 ${currency} = ${escapeHtml(String(trip?.exchangeRateToTHB || 1))} THB` : ''}</span>
+          </div>
+        </div>
+
+        <div class="receipt-section-title">${icon('arrow-down-circle', 'w-3.5 h-3.5')} ${th('รับ — เงินที่จ่ายไป','Received — money this member paid')}</div>
+        <table class="receipt-table">
+          <thead><tr>
+            <th>${th('รายการ','Item')}</th><th>${th('วิธี','Method')}</th><th class="num">${th('จำนวน','Amount')}</th>
+          </tr></thead>
+          <tbody>
+            ${paidItems.length ? paidItems.map(i => `
+              <tr>
+                <td>${escapeHtml(i.title)}${i.estimated ? ` <span class="badge badge-skipped text-[9px]">${th('ประมาณการ','est.')}</span>` : ''}<div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(i.date || '')}</div></td>
+                <td>${icon(methodIcon(i.method), 'w-3 h-3')} ${methodLabel(i.method)}</td>
+                <td class="num">${money(i.amountMinor)}${currency !== 'THB' && thbOf(i.amountMinor) ? `<div class="thb-equiv block">≈ ${thbOf(i.amountMinor)}</div>` : ''}</td>
+              </tr>`).join('')
+              : `<tr><td colspan="3" class="text-[var(--text-tertiary)]">${th('ยังไม่ได้จ่ายรายการใด','No payments recorded')}</td></tr>`}
+          </tbody>
+        </table>
+        <div class="receipt-line muted">
+          <span>${th('แยกตามวิธีจ่าย','By payment method')}</span>
+          <span>${methods.length ? methods.map(k => `${methodLabel(k)} ${money(m.paidByMethod[k])}`).join(' • ') : '—'}</span>
+        </div>
+        <div class="receipt-line"><span>${th('รวมรับ (จ่ายจริง)','Total paid')}</span><span class="font-bold">${money(m.paidMinor)} ${thbTag(m.paidMinor)}</span></div>
+
+        <div class="receipt-section-title">${icon('arrow-up-circle', 'w-3.5 h-3.5')} ${th('หัก — ส่วนที่ต้องรับผิดชอบ','Deductions — this member\'s share')}</div>
+        <table class="receipt-table">
+          <thead><tr>
+            <th>${th('รายการ','Item')}</th><th>${th('จ่ายโดย','Paid by')}</th><th class="num">${th('ส่วนของฉัน','My share')}</th>
+          </tr></thead>
+          <tbody>
+            ${shareItems.length ? shareItems.map(i => {
+              const payer = state.membersMap[i.paidBy];
+              return `
+              <tr>
+                <td>${escapeHtml(i.title)}${i.estimated ? ` <span class="badge badge-skipped text-[9px]">${th('ประมาณการ','est.')}</span>` : ''}<div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(i.date || '')} • ${methodLabel(i.method)}</div></td>
+                <td>${escapeHtml(payer?.displayName || '—')}</td>
+                <td class="num">${money(i.amountMinor)}${currency !== 'THB' && thbOf(i.amountMinor) ? `<div class="thb-equiv block">≈ ${thbOf(i.amountMinor)}</div>` : ''}</td>
+              </tr>`;
+            }).join('')
+              : `<tr><td colspan="3" class="text-[var(--text-tertiary)]">${th('ไม่มีส่วนที่ต้องรับผิดชอบ','No shares')}</td></tr>`}
+          </tbody>
+        </table>
+        <div class="receipt-line"><span>${th('รวมหัก (ส่วนที่ต้องรับผิดชอบ)','Total share')}</span><span class="font-bold">${money(m.owedMinor)} ${thbTag(m.owedMinor)}</span></div>
+
+        <div class="receipt-totals">
+          <div class="receipt-line"><span>${th('รับ','Received')}</span><span>${money(m.paidMinor)}</span></div>
+          <div class="receipt-line"><span>${th('หัก','Deducted')}</span><span>− ${money(m.owedMinor)}</span></div>
+          <div class="receipt-line total">
+            <span>${th('คงเหลือ','Balance')}</span>
+            <span class="${m.netMinor >= 0 ? 'receipt-positive' : 'receipt-negative'}">${m.netMinor >= 0 ? '+' : '−'}${money(Math.abs(m.netMinor))}</span>
+          </div>
+          ${m.netMinor >= 0
+            ? `<div class="receipt-line muted">${th('จะได้รับคืนจากเพื่อนในทริป','Gets this back from the group')}</div>`
+            : `<div class="receipt-line muted">${th('ต้องจ่ายคืนให้เพื่อนในทริป','Owes this to the group')}</div>`}
+          ${currency !== 'THB' && thbOf(m.netMinor) ? `<div class="receipt-line muted">${th('คิดเป็นเงินไทย','In Thai baht')}: ${thbOf(Math.abs(m.netMinor))}</div>` : ''}
+        </div>
+
+        <div class="receipt-foot">
+          ${settled ? `<span class="receipt-stamp">${icon('check-circle-2', 'w-3 h-3')} ${th('เคลียร์ครบแล้ว','Fully settled')}</span><br>` : ''}
+          ${th('ออกโดย Fuji Planner','Generated by Fuji Planner')} • ${escapeHtml(new Date().toLocaleString(lang === 'th' ? 'th-TH' : 'en-GB'))}
+        </div>
+
+        <div class="btn-row mt-3 no-export">
+          <button class="btn btn-secondary btn-sm" data-export-receipt="${escapeHtml(m.memberId)}">${icon('image', 'w-4 h-4')} ${th('PNG ใบเสร็จนี้','PNG this receipt')}</button>
+          <button class="btn btn-ghost btn-sm" data-copy-receipt="${escapeHtml(m.memberId)}">${icon('clipboard-copy', 'w-4 h-4')} ${th('คัดลอกข้อความ','Copy text')}</button>
+        </div>
+      </div>`;
+  }
+
+  function transactionsHtml() {
+    if (!state.transactions.length) {
+      return `<div class="card p-4">${renderEmptyState({ icon: 'party-popper', title: t('noDebt'), desc: t('allCleared') })}</div>`;
+    }
+    return `<div class="card p-5">
+      <h4 class="font-bold text-sm mb-4 flex items-center gap-2">${icon('arrow-left-right', 'w-4 h-4')} ${t('transactions')}
+        <span class="badge badge-planned text-[10px]">${state.transactions.length}</span></h4>
+      <div class="space-y-3 stagger">${state.transactions.map(tx => {
+        const from = state.membersMap[tx.from]; const to = state.membersMap[tx.to];
+        const fromStatement = state.statements.find(x => x.memberId === tx.from);
+        const details = (fromStatement?.items || []).filter(i => i.role === 'share');
+        return `<div class="p-3 rounded-xl" style="background:var(--bg-secondary); border:1px solid var(--border);">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="avatar w-8 h-8 text-[10px]" style="background:${from?.color || 'var(--primary)'};width:32px;height:32px;">${from?.photoURL ? `<img src="${escapeHtml(from.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(from?.displayName || ''))}</span>
+              <span style="color:var(--text-tertiary);">${icon('arrow-right', 'w-4 h-4')}</span>
+              <span class="avatar w-8 h-8 text-[10px]" style="background:${to?.color || 'var(--primary)'};width:32px;height:32px;">${to?.photoURL ? `<img src="${escapeHtml(to.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(to?.displayName || ''))}</span>
+              <span class="text-xs truncate">${escapeHtml(from?.displayName || '')} → ${escapeHtml(to?.displayName || '')}</span>
+            </div>
+            <div class="text-right flex-shrink-0">
+              <div class="font-bold text-sm">${money(tx.amountMinor)}</div>
+              ${thbTag(tx.amountMinor)}
+            </div>
+          </div>
+          ${details.length ? `<details class="mt-2">
+            <summary class="text-[11px] cursor-pointer" style="color:var(--text-secondary);">${th('ดูรายละเอียดที่ต้องจ่าย','What this payment covers')} (${details.length})</summary>
+            <table class="receipt-table mt-2"><tbody>
+              ${details.map(i => {
+                const payer = state.membersMap[i.paidBy];
+                return `<tr><td>${escapeHtml(i.title)}<div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(i.date || '')} • ${th('จ่ายโดย','paid by')} ${escapeHtml(payer?.displayName || '')} (${methodLabel(i.method)})</div></td>
+                  <td class="num">${money(i.amountMinor)}</td></tr>`;
+              }).join('')}
+            </tbody></table>
+          </details>` : ''}
+        </div>`;
+      }).join('')}</div>
+    </div>`;
+  }
+
+  function overviewHtml() {
+    const totalPaid = state.statements.reduce((s, m) => s + m.paidMinor, 0);
+    const byMethod = state.statements.reduce((acc, m) => {
+      ['cash', 'card', 'transfer'].forEach(k => { acc[k] += m.paidByMethod[k] || 0; });
+      return acc;
+    }, { cash: 0, card: 0, transfer: 0 });
+    return `
+      <div class="card p-5" id="settle-overview">
+        <h4 class="font-bold text-sm mb-4 flex items-center gap-2">${icon('scale', 'w-4 h-4')} ${th('ภาพรวมทั้งทริป','Trip overview')}</h4>
+        <div class="kpi-strip mb-4">
+          <div class="kpi-mini"><span class="kpi-mini-label">${th('จ่ายจริงรวม','Total paid')}</span><b>${money(totalPaid)}</b>${currency !== 'THB' ? `<span class="thb-equiv">≈ ${thbOf(totalPaid)}</span>` : ''}</div>
+          <div class="kpi-mini"><span class="kpi-mini-label">${th('เงินสด','Cash')}</span><b>${money(byMethod.cash)}</b>${currency !== 'THB' ? `<span class="thb-equiv">≈ ${thbOf(byMethod.cash)}</span>` : ''}</div>
+          <div class="kpi-mini"><span class="kpi-mini-label">${th('บัตร','Card')}</span><b>${money(byMethod.card)}</b>${currency !== 'THB' ? `<span class="thb-equiv">≈ ${thbOf(byMethod.card)}</span>` : ''}</div>
+          <div class="kpi-mini"><span class="kpi-mini-label">${th('โอน','Transfer')}</span><b>${money(byMethod.transfer)}</b>${currency !== 'THB' ? `<span class="thb-equiv">≈ ${thbOf(byMethod.transfer)}</span>` : ''}</div>
+        </div>
+        <table class="receipt-table">
+          <thead><tr>
+            <th>${th('สมาชิก','Member')}</th>
+            <th class="num">${th('รับ (จ่าย)','Paid')}</th>
+            <th class="num">${th('หัก (ส่วนตัว)','Share')}</th>
+            <th class="num">${th('คงเหลือ','Balance')}</th>
+          </tr></thead>
+          <tbody>
+            ${state.statements.map(m => `
+              <tr>
+                <td>${escapeHtml(m.displayName)}</td>
+                <td class="num">${money(m.paidMinor)}</td>
+                <td class="num">${money(m.owedMinor)}</td>
+                <td class="num ${m.netMinor >= 0 ? 'receipt-positive' : 'receipt-negative'}">${m.netMinor >= 0 ? '+' : '−'}${money(Math.abs(m.netMinor))}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        <div class="receipt-line muted"><span>${th('ยอดรวมทุกคน','Everyone together')}</span><span>${money(state.statements.reduce((s, m) => s + m.netMinor, 0))}</span></div>
+      </div>
+      ${transactionsHtml()}`;
+  }
+
+  function bindReceiptActions() {
+    document.querySelectorAll('[data-export-receipt]').forEach(btn => btn.addEventListener('click', async () => {
+      const id = btn.dataset.exportReceipt;
+      const tLoad = toast.loading(th('กำลังสร้างรูป...', 'Creating image...'));
+      try {
+        const { exportToPng } = await import('./exports/index.js');
+        const statement = state.statements.find(x => x.memberId === id);
+        document.querySelectorAll('.no-export').forEach(x => { x.style.visibility = 'hidden'; });
+        await exportToPng(`receipt-${id}`, `settlement-${(statement?.displayName || id)}.png`);
+        tLoad.close();
+        toast.success(lang === 'th' ? 'ส่งออกรูปใบเสร็จแล้ว' : 'Receipt image exported');
+      } catch (e) {
+        tLoad.close();
+        toast.error(e.message);
+      } finally {
+        document.querySelectorAll('.no-export').forEach(x => { x.style.visibility = ''; });
+      }
+    }));
+    document.querySelectorAll('[data-copy-receipt]').forEach(btn => btn.addEventListener('click', async () => {
+      const statement = state.statements.find(x => x.memberId === btn.dataset.copyReceipt);
+      if (!statement) return;
+      const lines = [
+        `${t('settlement')} — ${statement.displayName}`,
+        `${th('รับ (จ่ายไป)','Received')}: ${money(statement.paidMinor)}`,
+        `${th('หัก (ส่วนที่ต้องรับผิดชอบ)','Deducted')}: ${money(statement.owedMinor)}`,
+        `${th('คงเหลือ','Balance')}: ${money(statement.netMinor)}`,
+        ...statement.items.map(i => `• ${i.role === 'paid' ? '↑' : '↓'} ${i.title} ${i.amountMinor / Math.pow(10, getCurrencyDecimals(currency))} ${currency}`)
+      ];
+      try {
+        await navigator.clipboard.writeText(lines.join('\n'));
+        toast.success(th('คัดลอกแล้ว', 'Copied'));
+      } catch { toast.error(th('คัดลอกไม่สำเร็จ', 'Copy failed')); }
+    }));
+  }
+
+  function renderView() {
+    const content = document.getElementById('settlement-content');
+    if (!content) return;
+    if (view === 'overview') {
+      content.innerHTML = overviewHtml();
+      queueIcons();
+      return;
+    }
+    content.innerHTML = `<div class="receipt-grid">${state.statements.map(receiptHtml).join('')}</div>${transactionsHtml()}`;
+    queueIcons();
+    bindReceiptActions();
+  }
 
   async function load() {
     const content = document.getElementById('settlement-content');
@@ -4073,64 +4291,9 @@ async function renderSettlement(params) {
       if (!document.getElementById('settlement-content')) return;
       const membersMap = Object.fromEntries(members.map(m => [m.id, m]));
       const { balances, transactions } = calculateSettlement(expenses, members);
-      if (!transactions.length) {
-        content.innerHTML = `<div class="card p-4">${renderEmptyState({ icon: 'party-popper', title: t('noDebt'), desc: t('allCleared') })}</div>`;
-        queueIcons();
-        return;
-      }
-      content.innerHTML = `
-        <div class="grid md:grid-cols-2 gap-4">
-          <div class="card p-5">
-            <h4 class="font-bold text-sm mb-4 flex items-center gap-2">${icon('scale', 'w-4 h-4')} ${t('balances')}</h4>
-            <div class="space-y-1 stagger">
-            ${balances.map(b => {
-              const m = membersMap[b.memberId];
-              const isMe = b.memberId === currentUser.uid;
-              return `<div class="flex justify-between items-center text-sm py-2.5 border-b last:border-0 gap-2 ${isMe ? 'font-bold' : ''}" style="border-color:var(--border); ${isMe ? 'background:var(--primary-light); margin:0 -8px; padding:10px 8px; border-radius:12px;' : ''}">
-                <div class="flex items-center gap-2 min-w-0">
-                  <div class="w-8 h-8 rounded-full grid place-items-center text-xs font-bold text-white flex-shrink-0 overflow-hidden" style="background:${m?.color || 'var(--primary)'}">${m?.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m?.displayName || ''))}</div>
-                  <span class="truncate">${escapeHtml(m?.displayName || b.memberId.slice(0,6))} ${isMe ? (lang==='th' ? '(คุณ)' : '(you)') : ''}</span>
-                </div>
-                <span class="font-bold flex-shrink-0" style="color:${b.net >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatCurrency(b.net, currentTrip?.baseCurrency || 'THB')}</span>
-              </div>`;
-            }).join('')}
-            </div>
-          </div>
-          <div class="card p-5">
-            <h4 class="font-bold text-sm mb-4 flex items-center gap-2">${icon('arrow-left-right', 'w-4 h-4')} ${t('transactions')} <span class="badge badge-planned text-[10px]">${transactions.length}</span></h4>
-            <div class="space-y-3 stagger">${transactions.map(tx => {
-              const from = membersMap[tx.from]; const to = membersMap[tx.to];
-              return `<div class="flex items-center justify-between p-3 rounded-xl gap-2" style="background:var(--bg-secondary); border:1px solid var(--border);">
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class="avatar w-8 h-8 text-[10px]" style="background:${from?.color || 'var(--primary)'};width:32px;height:32px;">${from?.photoURL ? `<img src="${escapeHtml(from.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(from?.displayName || ''))}</span>
-                  <span style="color:var(--text-tertiary);">${icon('arrow-right', 'w-4 h-4')}</span>
-                  <span class="avatar w-8 h-8 text-[10px]" style="background:${to?.color || 'var(--primary)'};width:32px;height:32px;">${to?.photoURL ? `<img src="${escapeHtml(to.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(to?.displayName || ''))}</span>
-                  <span class="text-xs truncate">${escapeHtml(from?.displayName || '')} ${icon('arrow-right', 'w-3 h-3 inline')} ${escapeHtml(to?.displayName || '')}</span>
-                </div>
-                <div class="text-right flex-shrink-0"><div class="font-bold text-sm">${formatCurrency(tx.amountMinor, currentTrip?.baseCurrency || 'THB')}</div></div>
-              </div>`;
-            }).join('')}</div>
-          </div>
-        </div>
-      `;
-      queueIcons();
-      bind('copy-line', 'click', async () => {
-        const { copySettlementAsLineText } = await import('./exports/index.js');
-        const text = copySettlementAsLineText(transactions, membersMap, currentTrip?.baseCurrency || 'THB');
-        try {
-          await navigator.clipboard.writeText(text);
-          toast.success(lang==='th' ? 'คัดลอกข้อความสำหรับ LINE แล้ว' : 'Copied for LINE');
-        } catch { toast.error(lang==='th' ? 'คัดลอกไม่สำเร็จ' : 'Copy failed'); }
-      });
-      bind('export-png', 'click', async () => {
-        const tLoad = toast.loading('Exporting PNG...');
-        try {
-          const { exportToPng } = await import('./exports/index.js');
-          await exportToPng('settlement-content', `settlement-${tripId}.png`);
-          tLoad.close();
-          toast.success(lang==='th' ? 'ส่งออก PNG แล้ว' : 'PNG exported');
-        } catch (e) { tLoad.close(); toast.error(e.message); }
-      });
+      const statements = buildSettlementStatements(expenses, members);
+      state = { expenses, members, membersMap, statements, balances, transactions };
+      renderView();
     } catch (e) {
       console.error(e);
       content.innerHTML = `<div class="card p-5 text-center"><p class="text-sm font-semibold" style="color:var(--danger);">${escapeHtml(e.message)}</p><button id="settle-retry" class="btn btn-secondary btn-sm mt-3">${icon('refresh-cw', 'w-4 h-4')} ${lang==='th' ? 'ลองใหม่' : 'Retry'}</button></div>`;
@@ -4138,14 +4301,50 @@ async function renderSettlement(params) {
       queueIcons();
     }
   }
+
+  document.querySelectorAll('#settle-views [data-view]').forEach(btn => btn.addEventListener('click', () => {
+    view = btn.dataset.view;
+    document.querySelectorAll('#settle-views .chip').forEach(c => c.classList.remove('chip-active'));
+    btn.classList.add('chip-active');
+    renderView();
+  }));
+
+  bind('export-overview-png', 'click', async () => {
+    const tLoad = toast.loading(lang === 'th' ? 'กำลังสร้างรูป...' : 'Creating image...');
+    try {
+      const { exportToPng } = await import('./exports/index.js');
+      const target = view === 'overview' ? 'settle-overview' : 'settlement-content';
+      if (!document.getElementById(target)) { view = 'overview'; renderView(); }
+      document.querySelectorAll('.no-export').forEach(x => { x.style.visibility = 'hidden'; });
+      await exportToPng(document.getElementById(target) ? target : 'settlement-content', `settlement-overview-${tripId}.png`);
+      tLoad.close();
+      toast.success(lang === 'th' ? 'ส่งออก PNG แล้ว' : 'PNG exported');
+    } catch (e) {
+      tLoad.close();
+      toast.error(e.message);
+    } finally {
+      document.querySelectorAll('.no-export').forEach(x => { x.style.visibility = ''; });
+    }
+  });
+
+  bind('print-settle', 'click', async () => {
+    const { exportToPdf } = await import('./exports/index.js');
+    const tLoad = toast.loading(lang === 'th' ? 'กำลังสร้าง PDF...' : 'Creating PDF...');
+    try {
+      await exportToPdf('settlement-content', `settlement-${tripId}.pdf`);
+      tLoad.close();
+      toast.success(lang === 'th' ? 'สร้าง PDF แล้ว' : 'PDF created');
+    } catch (e) { tLoad.close(); toast.error(e.message); }
+  });
+
   document.getElementById('recalc-settle').addEventListener('click', async () => {
     const btn = document.getElementById('recalc-settle');
     btn.disabled = true;
-    const tLoad = toast.loading(lang==='th' ? 'กำลังคำนวณ...' : 'Calculating...');
+    const tLoad = toast.loading(lang === 'th' ? 'กำลังคำนวณ...' : 'Calculating...');
     try {
       await recalculateAndSaveSettlement(tripId, currentUser.uid);
       tLoad.close();
-      toast.success(lang==='th' ? 'คำนวณยอดใหม่แล้ว' : 'Recalculated');
+      toast.success(lang === 'th' ? 'คำนวณยอดใหม่แล้ว' : 'Recalculated');
       load();
     } catch (e) { tLoad.close(); toast.error(e.message); }
     finally {
@@ -4154,7 +4353,161 @@ async function renderSettlement(params) {
       queueIcons();
     }
   });
+
   load();
+}
+
+/**
+ * Manage the trip's expense groups. Opened from the expense form or Settings.
+ * Built-in groups can be recoloured/re-iconed (kept in the registry for the
+ * session); trip-defined groups are stored in Firestore and can be deleted.
+ */
+async function openCategoryManager(tripId, { onSaved } = {}) {
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+
+  const sheet = showBottomSheet(`
+    <div class="space-y-4">
+      <div class="flex items-center gap-3">
+        <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('layout-grid', 'w-5 h-5')}</div>
+        <div>
+          <h3 class="font-bold text-base" style="font-family: var(--font-display);">${th('จัดการกลุ่มค่าใช้จ่าย','Expense groups')}</h3>
+          <p class="text-[11px] text-[var(--text-tertiary)]">${th('เพิ่ม/แก้ไข/ลบกลุ่มของทริปนี้ได้','Add, edit or delete groups for this trip')}</p>
+        </div>
+      </div>
+      <div id="category-list" class="space-y-2"></div>
+      <button id="category-add" class="btn btn-primary w-full">${icon('plus', 'w-4 h-4')} ${th('เพิ่มกลุ่มใหม่','Add a group')}</button>
+    </div>
+  `);
+  queueIcons();
+
+  async function renderList() {
+    const box = sheet.sheet.querySelector('#category-list');
+    if (!box) return;
+    box.innerHTML = `<div class="skeleton h-10"></div>`;
+    await loadTripCategories(tripId, { silent: false });
+    const rows = getAllExpenseCategories();
+    box.innerHTML = rows.map(c => `
+      <div class="diag-row" data-cat-row="${escapeHtml(c.id)}">
+        <span class="row-icon" style="width:32px;height:32px;border-radius:10px;background:${escapeHtml(c.color || 'var(--primary)')}22;color:${escapeHtml(c.color || 'var(--primary)')};">
+          ${icon(c.icon || 'package', 'w-4 h-4')}
+        </span>
+        <div class="min-w-0 flex-1">
+          <div class="font-semibold text-xs truncate">${escapeHtml(lang === 'th' ? (c.th || c.en) : (c.en || c.th))}</div>
+          <div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(c.id)}${isCustomCategory(c.id) ? ` • ${th('กลุ่มของทริป','trip group')}` : ` • ${th('พื้นฐาน','built-in')}`}</div>
+        </div>
+        <button class="icon-btn" data-cat-edit="${escapeHtml(c.id)}" title="${th('แก้ไข','Edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
+        <button class="icon-btn icon-btn-danger" data-cat-del="${escapeHtml(c.id)}" title="${th('ลบ','Delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
+      </div>`).join('');
+
+    box.querySelectorAll('[data-cat-edit]').forEach(btn => btn.addEventListener('click', () => openEditor(btn.dataset.catEdit)));
+    box.querySelectorAll('[data-cat-del]').forEach(btn => btn.addEventListener('click', async () => {
+      const id = btn.dataset.catDel;
+      if (!isCustomCategory(id)) {
+        toast.warning(th('กลุ่มพื้นฐานลบไม่ได้ — แก้ไขชื่อ/สี/ไอคอนได้','Built-in groups cannot be deleted — edit their name/colour/icon instead'));
+        return;
+      }
+      const used = await countCategoryUsage(tripId, id);
+      const ok = await confirmAction({
+        title: th('ลบกลุ่มนี้?', 'Delete this group?'),
+        message: used
+          ? th(`มี ${used} รายการใช้กลุ่มนี้อยู่ — รายการจะกลายเป็น "อื่นๆ"`, `${used} expenses use it — they will fall back to "Others"`)
+          : th('ยังไม่มีรายการที่ใช้กลุ่มนี้', 'No expense uses this group yet'),
+        confirmText: t('delete'), danger: true, icon: 'trash-2'
+      });
+      if (!ok) return;
+      try {
+        await deleteCategory(tripId, id);
+        toast.success(th('ลบกลุ่มแล้ว', 'Group deleted'));
+        await renderList();
+        await onSaved?.();
+      } catch (e) { toast.error(e.message); }
+    }));
+  }
+
+  function openEditor(id = null) {
+    const existing = id ? getCategoryDef(id) : null;
+    const isNew = !id;
+    const editor = showBottomSheet(`
+      <div class="space-y-3">
+        <h3 class="font-bold text-base">${isNew ? th('เพิ่มกลุ่มค่าใช้จ่าย','New expense group') : th('แก้ไขกลุ่มค่าใช้จ่าย','Edit expense group')}</h3>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="input-group"><label class="input-label">${th('ชื่อ (ไทย)','Name (Thai)')}</label><input id="cat-th" class="input" value="${escapeHtml(existing?.th || '')}" placeholder="${th('เช่น ค่ามาสสาจ','e.g. Massage')}"></div>
+          <div class="input-group"><label class="input-label">${th('ชื่อ (อังกฤษ)','Name (English)')}</label><input id="cat-en" class="input" value="${escapeHtml(existing?.en || '')}" placeholder="Massage"></div>
+        </div>
+        <div class="input-group">
+          <label class="input-label">${th('ไอคอน','Icon')}</label>
+          <div class="chip-row" id="cat-icons" style="max-height:120px; overflow:auto;">
+            ${CATEGORY_ICON_CHOICES.map(ic => `<button type="button" class="chip ${((existing?.icon || 'package') === ic) ? 'chip-active' : ''}" data-icon="${ic}">${icon(ic, 'w-3.5 h-3.5')} ${ic.split('-')[0]}</button>`).join('')}
+          </div>
+        </div>
+        <div class="input-group">
+          <label class="input-label">${th('สี','Colour')}</label>
+          <div class="chip-row" id="cat-colors">
+            ${CATEGORY_COLOR_CHOICES.map(col => `<button type="button" class="chip ${((existing?.color || '#9aa79c') === col) ? 'chip-active' : ''}" data-color="${col}" style="background:${col}22; border-color:${col};">${icon('circle', 'w-3 h-3')} ${col}</button>`).join('')}
+          </div>
+        </div>
+        <div id="cat-preview" class="diag-row"></div>
+        <div class="flex gap-2">
+          <button id="cat-save" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${t('save')}</button>
+          <button id="cat-cancel" class="btn btn-secondary">${t('cancel')}</button>
+        </div>
+      </div>
+    `);
+    queueIcons();
+
+    let pick = {
+      icon: existing?.icon || 'package',
+      color: existing?.color || '#9aa79c'
+    };
+    const paintPreview = () => {
+      const box = editor.sheet.querySelector('#cat-preview');
+      const labelTh = editor.sheet.querySelector('#cat-th')?.value || existing?.th || '';
+      const labelEn = editor.sheet.querySelector('#cat-en')?.value || existing?.en || '';
+      if (!box) return;
+      box.innerHTML = `
+        <span class="row-icon" style="width:32px;height:32px;border-radius:10px;background:${pick.color}22;color:${pick.color};">${icon(pick.icon, 'w-4 h-4')}</span>
+        <div class="min-w-0"><div class="font-semibold text-xs">${escapeHtml(lang === 'th' ? labelTh : labelEn)}</div>
+        <div class="text-[10px] text-[var(--text-tertiary)]">${th('ตัวอย่างป้ายในรายการ','Preview in lists')}</div></div>`;
+      queueIcons();
+    };
+    paintPreview();
+
+    editor.sheet.querySelectorAll('#cat-icons [data-icon]').forEach(btn => btn.addEventListener('click', () => {
+      pick.icon = btn.dataset.icon;
+      editor.sheet.querySelectorAll('#cat-icons .chip').forEach(c => c.classList.remove('chip-active'));
+      btn.classList.add('chip-active');
+      paintPreview();
+    }));
+    editor.sheet.querySelectorAll('#cat-colors [data-color]').forEach(btn => btn.addEventListener('click', () => {
+      pick.color = btn.dataset.color;
+      editor.sheet.querySelectorAll('#cat-colors .chip').forEach(c => c.classList.remove('chip-active'));
+      btn.classList.add('chip-active');
+      paintPreview();
+    }));
+    editor.sheet.querySelector('#cat-th').addEventListener('input', paintPreview);
+    editor.sheet.querySelector('#cat-en').addEventListener('input', paintPreview);
+    editor.sheet.querySelector('#cat-cancel').addEventListener('click', () => editor.close());
+
+    editor.sheet.querySelector('#cat-save').addEventListener('click', async () => {
+      const thName = editor.sheet.querySelector('#cat-th').value.trim();
+      const enName = editor.sheet.querySelector('#cat-en').value.trim();
+      if (!thName && !enName) { toast.warning(th('กรอกชื่อกลุ่มก่อน','Enter a group name first')); return; }
+      const tLoad = toast.loading(th('กำลังบันทึก...', 'Saving...'));
+      try {
+        const saved = await saveCategory(tripId, { th: thName, en: enName, icon: pick.icon, color: pick.color }, { id: id || null });
+        tLoad.close();
+        toast.success(th('บันทึกกลุ่มแล้ว', 'Group saved'));
+        editor.close();
+        await renderList();
+        await onSaved?.(saved);
+      } catch (e) { tLoad.close(); toast.error(e.message); }
+    });
+  }
+
+  sheet.sheet.querySelector('#category-add').addEventListener('click', () => openEditor(null));
+  await renderList();
+  return sheet;
 }
 
 const ROLE_ICONS = { super_admin: 'crown', trip_admin: 'shield-check', member: 'user', viewer: 'eye' };
@@ -4177,11 +4530,10 @@ function openMemberForm(tripId, member = null, { onSaved } = {}) {
       </div>
       <form id="member-form" class="space-y-3">
         <div class="input-group"><label class="input-label">${icon('user', 'w-3.5 h-3.5')} ${th('ชื่อที่แสดง','Display name')} *</label><input id="m-name" class="input" required autocomplete="off" value="${escapeHtml(m.displayName || '')}" placeholder="${th('เช่น นุ่น','e.g. Nun')}"></div>
-        <div class="input-group"><label class="input-label">${icon('at-sign', 'w-3.5 h-3.5')} ${th('ชื่อผู้ใช้ (สำหรับล็อกอิน)','Username (for login)')}</label><input id="m-user" class="input" autocomplete="off" value="${escapeHtml(m.username || '')}" placeholder="fuji_user"></div>
         <div class="input-group">
-          <label class="input-label">${icon('lock-keyhole', 'w-3.5 h-3.5')} PIN ${isEdit ? th('(เว้นว่าง = ไม่เปลี่ยน)','(blank = keep current)') : ''}</label>
-          <input id="m-pin" class="input" type="password" inputmode="numeric" autocomplete="new-password" placeholder="••••">
-          <p class="input-hint">${th('ตั้ง PIN 4-12 ตัวเพื่อให้สมาชิกเข้าสู่ระบบด้วยชื่อผู้ใช้ + PIN ได้ (ทำงานได้แม้ไม่ได้ deploy Cloud Functions)','Set a 4-12 digit PIN so the member can sign in with username + PIN (works even without Cloud Functions).')}</p>
+          <label class="input-label">${icon('mail', 'w-3.5 h-3.5')} ${th('อีเมล (ไม่บังคับ)','Email (optional)')}</label>
+          <input id="m-email" class="input" type="email" autocomplete="off" value="${escapeHtml(m.email || '')}" placeholder="friend@example.com">
+          <p class="input-hint">${th('สมาชิกเข้าสู่ระบบด้วยบัญชี Google/อีเมลของตัวเอง แล้วขอเข้าร่วมทริปด้วยรหัสเชิญ','Members sign in with their own Google/email account and join with the trip code.')}</p>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div class="input-group"><label class="input-label">${icon('shield', 'w-3.5 h-3.5')} ${th('บทบาท','Role')}</label>
@@ -4212,34 +4564,25 @@ function openMemberForm(tripId, member = null, { onSaved } = {}) {
         ${isEdit ? `
           <div class="p-3 rounded-xl text-[11px] flex items-start gap-2" style="background:var(--bg-secondary); border:1px solid var(--border);">
             ${icon('info', 'w-3.5 h-3.5 mt-0.5')}
-            <span>${m.loginReady
-              ? th('สมาชิกนี้เข้าสู่ระบบได้ด้วยชื่อผู้ใช้ + PIN แล้ว — ใส่ PIN ใหม่ถ้าต้องการรีเซ็ต','This member can sign in with username + PIN. Enter a new PIN to reset it.')
-              : th('ยังเข้าสู่ระบบไม่ได้ — ตั้งชื่อผู้ใช้และ PIN ด้านบนเพื่อเปิดการเข้าสู่ระบบ','Login is not enabled yet — set a username and PIN above to turn it on.')}</span>
+            <span>${m.authType === 'account'
+              ? th('สมาชิกคนนี้ล็อกอินด้วยบัญชี Google/อีเมลของตัวเอง และเข้าถึงทริปนี้ได้ทันที','This member signs in with their own Google/email account and already has access.')
+              : th('สมาชิกคนนี้ยังไม่มีบัญชี — ให้เขาสมัครด้วย Google/อีเมล แล้วขอเข้าร่วมด้วยรหัสเชิญ (อนุมัติได้ที่หน้านี้)','This member has no account yet — ask them to sign up with Google/email and join with the trip code.')}</span>
           </div>` : ''}
-        ${isEdit ? `<button type="button" id="m-regen-pin" class="btn btn-secondary btn-sm w-full">${icon('refresh-cw', 'w-4 h-4')} ${th('สุ่ม PIN ใหม่','Generate new PIN')}</button>` : ''}
       </form>
     </div>
   `);
   queueIcons();
-  setTimeout(() => addPasswordToggle('m-pin'), 10);
-
-  bind('m-regen-pin', 'click', () => {
-    const pin = String(Math.floor(1000 + Math.random() * 9000));
-    const input = document.getElementById('m-pin');
-    if (input) { input.value = pin; input.type = 'text'; }
-    toast.info(th(`PIN ใหม่: ${pin}`, `New PIN: ${pin}`));
-  });
 
   document.getElementById('member-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const btn = document.getElementById('m-submit');
     btn.disabled = true;
-    let pendingCredentials = null;
+    const pendingCredentials = null;
     const tLoad = toast.loading(isEdit ? th('กำลังบันทึก...', 'Saving...') : th('กำลังเพิ่มสมาชิก...', 'Adding member...'));
     try {
       const payload = {
         displayName: document.getElementById('m-name').value.trim(),
-        username: document.getElementById('m-user').value.trim(),
+        email: document.getElementById('m-email')?.value.trim() || '',
         role: document.getElementById('m-role').value,
         color: document.getElementById('m-color').value,
         photoURL: document.getElementById('m-photo').value.trim(),
@@ -4249,23 +4592,17 @@ function openMemberForm(tripId, member = null, { onSaved } = {}) {
           canManageMembers: document.getElementById('m-perm-manage').checked
         }
       };
-      const pin = document.getElementById('m-pin').value;
       if (isEdit) {
         if (document.getElementById('m-status')) payload.status = document.getElementById('m-status').value;
-        await updateMember(tripId, m.id, payload, { pin: pin || null });
+        await updateMember(tripId, m.id, payload);
         tLoad.close();
-        toast.success(pin
-          ? th('บันทึกแล้ว • ตั้ง PIN ใหม่เรียบร้อย', 'Saved • new PIN set')
-          : th('บันทึกแล้ว', 'Saved'));
+        toast.success(th('บันทึกแล้ว', 'Saved'));
       } else {
-        const res = await createMember(tripId, { ...payload, pin, createdBy: currentUser?.uid }, {
+        await createMember(tripId, { ...payload, createdBy: currentUser?.uid }, {
           onNotice: (msg) => toast.warning(msg)
         });
         tLoad.close();
-        pendingCredentials = res.mode === 'pin' ? { username: payload.username, pin } : null;
-        toast.success(res.mode === 'pin'
-          ? th('เพิ่มสมาชิกแล้ว • ล็อกอินด้วยชื่อผู้ใช้ + PIN ได้เลย', 'Member added • can sign in with username + PIN')
-          : th('เพิ่มสมาชิกแล้ว (ยังไม่เปิดล็อกอิน)', 'Member added (login not enabled)'));
+        toast.success(th('เพิ่มสมาชิกแล้ว', 'Member added'));
       }
       sheet.close();
       confetti({ y: 150 });
@@ -4347,7 +4684,7 @@ async function renderMembers(params) {
       <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div>
           ${renderPageScene('members', { lang, title: `${icon('users', 'w-5 h-5')} ${t('members')}`,
-            subtitle: `${th('บทบาทของคุณ','Your role')}: <b>${escapeHtml(perms.role)}</b> • ${th('ตั้งชื่อผู้ใช้ + PIN ให้สมาชิกเข้าสู่ระบบได้','set a username + PIN so members can sign in')}` })}
+            subtitle: `${th('บทบาทของคุณ','Your role')}: <b>${escapeHtml(perms.role)}</b> • ${th('สมาชิกล็อกอินด้วย Google/อีเมล แล้วขอเข้าร่วมทริปได้','members sign in with Google/email and request to join')}` })}
         </div>
         <button id="add-member-btn" class="btn btn-primary btn-sm">${icon('user-plus', 'w-4 h-4')} ${th('เพิ่มสมาชิก','Add member')}</button>
       </div>
@@ -5050,6 +5387,7 @@ async function renderSettings(params) {
   const lang = getLang();
   const th = (a, b) => (lang === 'th' ? a : b);
   await loadTrip(tripId);
+  try { await loadTripCategories(tripId); } catch (e) { console.warn(e); }
   if (isStale(token)) return;
   const trip = currentTrip;
   const currentColor = localStorage.getItem('fuji_color_theme') || 'sage';
@@ -5148,6 +5486,13 @@ async function renderSettings(params) {
           <button class="mode-option ${mode === 'auto' ? 'active' : ''}" data-mode="auto">${icon('monitor', 'w-5 h-5')} Auto</button>
         </div>
         <button id="lang-switch" class="btn btn-secondary w-full btn-sm">${icon('languages', 'w-4 h-4')} ${lang === 'th' ? 'English' : 'ภาษาไทย'}</button>
+      </div>
+
+      <div class="card p-5 space-y-3" id="expense-groups-card">
+        <h3 class="font-bold flex items-center gap-2">${icon('layout-grid', 'w-4 h-4')} ${th('กลุ่มค่าใช้จ่าย','Expense groups')}</h3>
+        <p class="text-xs text-[var(--text-secondary)]">${th('เพิ่ม แก้ไขชื่อ/สี/ไอคอน หรือลบกลุ่มของทริปนี้ได้ ทุกหน้าจะใช้กลุ่มใหม่ทันที','Add, rename, recolour or delete groups for this trip — every screen picks them up.')}</p>
+        <div id="settings-cat-list" class="flex flex-wrap gap-1.5"></div>
+        <button id="settings-manage-cats" class="btn btn-secondary btn-sm w-full">${icon('settings-2', 'w-4 h-4')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage groups')}</button>
       </div>
 
       <div class="card p-5 space-y-3" id="invite-card">
@@ -5294,6 +5639,20 @@ async function renderSettings(params) {
     renderDesktopNav();
     updateBottomNav();
   });
+
+  // Expense groups preview (values come from the shared registry).
+  (function paintCategoryChips() {
+    const box = document.getElementById('settings-cat-list');
+    if (!box) return;
+    box.innerHTML = getAllExpenseCategories().map(c => `
+      <span class="chip text-[10px]" style="background:${escapeHtml(c.color || 'var(--primary)')}22; border-color:${escapeHtml(c.color || 'var(--primary)')};">
+        ${icon(c.icon || 'package', 'w-3 h-3')} ${escapeHtml(lang === 'th' ? (c.th || c.en) : (c.en || c.th))}
+      </span>`).join('');
+    queueIcons();
+  })();
+  bind('settings-manage-cats', 'click', () => openCategoryManager(tripId, {
+    onSaved: () => { loadTripCategories(tripId).then(() => renderSettings(params)); }
+  }));
 
   bind('invite-code-copy', 'click', () => {
     const code = formatInviteCode(trip?.inviteCode || '');

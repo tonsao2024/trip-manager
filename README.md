@@ -94,13 +94,18 @@ Firestore Rules ได้ทันที จึงเป็นวิธีที
 |---------|--------|
 | เปิด Google + Email/Password | Authentication > Sign-in method |
 | เพิ่มโดเมนเว็บ (เช่น `tonsao2024.github.io`) | Authentication > Settings > Authorized domains |
-| Publish กฎใหม่ (`publicProfiles`, `joinRequests`) | Firestore > Rules (หรือ `firebase deploy --only firestore:rules`) |
+| Publish กฎใหม่ (`publicProfiles`, `joinRequests`, `trips/{tripId}/categories`) | Firestore > Rules (หรือ `firebase deploy --only firestore:rules`) |
 
 > ไม่ต้องใช้ Cloud Functions เลย — ตรวจสอบได้ที่ **ตั้งค่า > ตรวจสอบระบบ**
 
-## ทางเลือกเดิม: ล็อกอินสมาชิกด้วย username + PIN
+## ทางเลือกเดิม (เลิกใช้แล้วใน v9): username + PIN
 
-การล็อกอินสมาชิกมี 2 โหมด และ **โหมดในเครื่องใช้ได้ทันทีโดยไม่ต้อง deploy อะไร**:
+> **v9 ลบหน้าล็อกอิน username + PIN ออกแล้ว** — เหลือหน้าเดียวคือ Google หรืออีเมล/รหัสผ่าน
+> เซสชันเก่าที่ค้างอยู่ในเครื่อง (`fuji_member_session`) ยังกู้คืนได้ ใครที่ยังไม่เคยตั้งบัญชี
+> ให้กด **“เข้าสู่ระบบด้วยบัญชี Google”** แล้วเข้าร่วมทริปด้วยรหัสเชิญ (ดูหัวข้อด้านบน)
+> ส่วนด้านล่างนี้เก็บไว้เป็นข้อมูลอ้างอิงของระบบเดิม/ฟังก์ชันที่ต้องใช้แผน Blaze เท่านั้น
+
+การล็อกอินสมาชิกเคยมี 2 โหมด:
 
 | โหมด | ต้องมี | ผลลัพธ์ |
 |------|--------|---------|
@@ -131,7 +136,8 @@ Firestore Rules ได้ทันที จึงเป็นวิธีที
 ### เจอ `Missing or insufficient permissions` ตอนกรอกรหัสเชิญ
 
 แปลว่า **ยังไม่ได้ Publish กฎใหม่** (คอลเลกชัน `joinRequests` / `publicProfiles` / `users/{uid}/joinRequests`
-ยังไม่มีในกฎที่ใช้งานอยู่) — ไม่ใช่บั๊กของแอป:
+/ `trips/{tripId}/categories` ยังไม่มีในกฎที่ใช้งานอยู่) — ไม่ใช่บั๊กของแอป (อาการเดียวกันนี้จะเกิดตอน
+บันทึก **กลุ่มค่าใช้จ่าย** ของทริปด้วย):
 
 1. ในแอปจะขึ้นกล่อง **"ยังไม่ได้ Publish Firestore Rules"** พร้อมปุ่ม
    **คัดลอกกฎทั้งหมด** (ดึงไฟล์ `firestore.rules` จากเว็บ/raw GitHub ให้) และ
@@ -267,11 +273,23 @@ firebase emulators:start --only firestore,auth,functions,storage
 - No PWA elements
 - GitHub Pages deployable
 - Animated, mobile-first UI: bottom nav, FAB, scroll reveal, confetti, count-up KPIs
-- Member login works with **and** without Cloud Functions: Google/email account + invite code + admin approval (free plan), plus the local username + PIN fallback
+- **One login screen only** (v9): Google sign-in or email/password — the old username + PIN screen is gone.
+  Legacy local sessions (`fuji_member_session`) still restore so nobody is locked out.
+- Member login works with **and** without Cloud Functions: Google/email account + invite code + admin approval (free plan)
 - Trip admins can approve join requests, add members by email, and rotate the invite code
 - If the Firestore rules are not published yet, the app explains it step by step (copy-rules button,
   console deep link, ready-made message for the admin) instead of a raw `Missing or insufficient permissions`
 - Settings > **ตรวจสอบระบบ** runs 9 probes and prints exactly which deploy step is missing
+- **Every expense amount shows its baht value** (v9): a `≈ ฿…` line next to the trip-currency figure on
+  the dashboard KPIs, category breakdown, member board, estimate-vs-actual, recent expenses and every
+  expense card / summary strip (hidden for THB trips, or when no exchange rate is set)
+- **Editable expense groups** (v9): add / rename (TH+EN) / re-icon / re-colour / delete the trip's own
+  groups in `trips/{tripId}/categories`; they flow into the expense form, filters, itinerary estimates
+  and dashboard stats. Built-in groups can be edited but never deleted
+- **Clear-bill receipts** (v9): per person รับ / หัก / คงเหลือ with a cash-vs-card breakdown, an
+  overview table, and PNG export per person **and** for the whole table
+- **Reliable PNG/PDF export** (v9): the receipt is captured in a flat monochrome palette
+  (`.export-flat`) with a canvas colour resolver, so `color-mix()` can never break the capture again
 
 ### v5 fixes
 
@@ -297,11 +315,34 @@ firebase emulators:start --only firestore,auth,functions,storage
 - **Mobile sub-menus**: `.btn-row` becomes a 2-column grid and chip rows wrap on ≤640 px screens, so
   nothing scrolls off-screen.
 
+### v9 changes
+
+- **One login screen**: the username + PIN card and its Members-page fields were removed; sign-in is
+  Google or email/password only, followed by the invite code + admin approval flow.
+- **Always show THB**: `toThbMinor()` / `formatThbLabel()` / `effectiveThbRate()` in
+  `src/js/utils/currency.js` power a `≈ ฿…` line (`.thb-equiv`) everywhere an amount is shown —
+  dashboard KPIs (`#kpi-total-thb`, `#kpi-balance-thb`), category totals, member board,
+  estimate-vs-actual, averages, recent expenses, the expenses summary strip and every expense card.
+  Blank on THB trips, hidden when the trip has no rate (rate ≤ 0).
+- **User-editable expense groups** (`src/js/categories/index.js`): stored in
+  `trips/{tripId}/categories/{id}` = `{th,en,icon,color,custom:true,order,…}`; the registry in
+  `src/js/utils/categories.js` merges them with the built-ins for the expense form, expense filters,
+  itinerary estimate select, dashboard stats and Settings, and `normalizeCategory()` resolves them by
+  id, Thai or English label so imports keep working. Built-in groups can be edited but not deleted.
+- **Settlement detail** (`buildSettlementStatements()` in `src/js/utils/settlement.js`): one receipt per
+  member with รับ (paid, split by cash / card / transfer), หัก (their share, with who paid) and คงเหลือ,
+  estimated rows badged, plus an overview table and PNG export per person and for the overview.
+- **PNG export fix**: `makeCanvasColorResolver()` / `rewriteColorFunctions()` in
+  `src/js/utils/colors.js` + `.export-flat` (monochrome receipt palette) — exports no longer fail with
+  *“เบราว์เซอร์ยังไม่รองรับเฉดสีบางแบบ”*.
+- Tests: `tests/unit/thb.test.js`, `tests/unit/categories.test.js`, `tests/unit/statement.test.js`
+  (now 13 + 1 skipped) and three new smoke blocks (THB everywhere, group CRUD, receipts + exports).
+
 ## Tests
 
 ```
 # Pure logic suites (no browser, no network):
-node tests/node-runner.mjs          # settlement, split, currency, countdown, Excel, colors, invite codes, diagnostics
+node tests/node-runner.mjs          # settlement, split, currency, THB, groups, statements, countdown, Excel, colors, invite codes, diagnostics
 
 # Browser suites:
 open tests/runner.html              # same suites + scheduling (needs CDN access)

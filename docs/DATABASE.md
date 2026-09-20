@@ -126,8 +126,31 @@
 }
 ```
 
+### Expense groups (v9) — `trips/{tripId}/categories/{categoryId}`
+
+User-defined groups shown everywhere a category is picked or summarised. `categoryId` is
+`custom-<slug>` for groups the user creates; the built-in groups live in the app and are only
+overridden when a doc with the same id exists.
+
+```json
+{
+  "id": "custom-nuad-spa",
+  "th": "นวด/สปา",
+  "en": "Massage / Spa",
+  "icon": "heart-pulse",
+  "color": "#a48fc0",
+  "custom": true,
+  "order": 500,
+  "createdAt": "timestamp",
+  "updatedAt": "timestamp"
+}
+```
+
+Rules: members read, trip members create/update/delete (`isTripMember(tripId)`); built-ins are
+refused by the app before any write.
+
 ### Other subcollections
-- `cards`, `categories`, `exchangeRates`, `settings`, `activityLogs`, `imports`, `settlements`
+- `cards`, `exchangeRates`, `settings`, `activityLogs`, `imports`, `settlements`
 
 All money in minor units to avoid float errors.
 

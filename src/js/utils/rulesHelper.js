@@ -60,8 +60,8 @@ export function joinPermissionHelp(lang = 'th', { projectId = null, action = 'jo
   return {
     title: th ? 'ยังไม่ได้ Publish Firestore Rules' : 'Firestore rules are not published yet',
     message: th
-      ? `Firestore ไม่อนุญาตให้${what} เพราะกฎที่ใช้งานอยู่ในโปรเจกต์ยังไม่มีคอลเลกชัน joinRequests / publicProfiles — แก้ได้ใน 1 นาที`
-      : `Firestore denied ${what} because the published rules have no joinRequests / publicProfiles collection yet — it takes a minute to fix.`,
+      ? `Firestore ไม่อนุญาตให้${what} เพราะกฎที่ใช้งานอยู่ในโปรเจกต์ยังไม่มีคอลเลกชัน joinRequests / publicProfiles / categories — แก้ได้ใน 1 นาที`
+      : `Firestore denied ${what} because the published rules have no joinRequests / publicProfiles / categories collection yet — it takes a minute to fix.`,
     steps: th ? [
       'กดปุ่ม "เปิด Firebase Console" ด้านล่าง (ต้องเป็นบัญชีเจ้าของโปรเจกต์)',
       'ไปที่แท็บ Rules แล้วเลือก "แก้ไข" วางกฎทั้งหมดจากปุ่ม "คัดลอกกฎทั้งหมด" แทนของเดิม',
@@ -73,7 +73,7 @@ export function joinPermissionHelp(lang = 'th', { projectId = null, action = 'jo
     ],
     consoleUrl: consoleRulesUrl(projectId),
     repoUrl: REPO_RULES_URL,
-    missing: ['publicProfiles', 'trips/{tripId}/joinRequests', 'users/{uid}/joinRequests']
+    missing: ['publicProfiles', 'trips/{tripId}/joinRequests', 'users/{uid}/joinRequests', 'trips/{tripId}/categories']
   };
 }
 
@@ -81,6 +81,6 @@ export function joinPermissionHelp(lang = 'th', { projectId = null, action = 'jo
 export function adminHelpMessage(member, trip, lang = 'th') {
   const th = String(lang).startsWith('th');
   return th
-    ? `สวัสดีครับ/ค่ะ 🙏 ฉันล็อกอินด้วยบัญชี ${member?.email || member?.displayName || ''} แล้วกรอกรหัสเชิญของทริป "${trip?.name || ''}" แต่ระบบขึ้น "Missing or insufficient permissions" ตอนส่งคำขอเข้าร่วม\nกรุณาเปิด Firebase Console > Firestore Database > Rules > วางไฟล์ firestore.rules ล่าสุด > กด Publish ให้ด้วยครับ (กฎต้องมีคอลเลกชัน joinRequests)`
-    : `Hi! I signed in as ${member?.email || member?.displayName || ''} and entered the invite code for "${trip?.name || ''}", but got "Missing or insufficient permissions" when sending the join request.\nPlease open Firebase Console > Firestore Database > Rules, paste the latest firestore.rules and press Publish (the joinRequests collection must be allowed).`;
+    ? `สวัสดีครับ/ค่ะ 🙏 ฉันล็อกอินด้วยบัญชี ${member?.email || member?.displayName || ''} แล้วกรอกรหัสเชิญของทริป "${trip?.name || ''}" แต่ระบบขึ้น "Missing or insufficient permissions" ตอนส่งคำขอเข้าร่วม\nกรุณาเปิด Firebase Console > Firestore Database > Rules > วางไฟล์ firestore.rules ล่าสุด > กด Publish ให้ด้วยครับ (กฎต้องมีคอลเลกชัน joinRequests และ categories)`
+    : `Hi! I signed in as ${member?.email || member?.displayName || ''} and entered the invite code for "${trip?.name || ''}", but got "Missing or insufficient permissions" when sending the join request.\nPlease open Firebase Console > Firestore Database > Rules, paste the latest firestore.rules and press Publish (the joinRequests and categories collections must be allowed).`;
 }

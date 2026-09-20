@@ -255,8 +255,7 @@ check(!!q('[data-act="delete"], .icon-btn-danger'), 'members: delete button');
 await click('#add-member-btn');
 await waitFor(() => q('#member-form'), { label: 'member form' });
 window.document.getElementById('m-name').value = 'เคน';
-window.document.getElementById('m-user').value = 'ken';
-window.document.getElementById('m-pin').value = '1234';
+window.document.getElementById('m-email').value = 'ken@example.com';
 submit(q('#member-form'));
 await waitFor(() => (fsdb.__dump('trips/t1/members/new-member-uid') || Object.keys(fsdb.__store).some(k => k.startsWith('trips/t1/members/') && fsdb.__store.get(k).displayName === 'เคน')), { label: 'member created' }).catch(() => {});
 const createdMember = [...fsdb.__store.entries()].find(([k, v]) => k.startsWith('trips/t1/members/') && v.displayName === 'เคน');
@@ -614,44 +613,210 @@ check(/^rgb/.test(colorsMod.resolveColorValue('oklch(70% 0.1 150)', { normalize:
 const exportsSrc = fs.readFileSync(path.join(root, 'src/js/exports/index.js'), 'utf8');
 check(/sanitizeColorsForExport/.test(exportsSrc), 'png: export sanitizes colors before html2canvas runs');
 
-console.log('\n▶ v5: member login without Cloud Functions');
-const authSrc = fs.readFileSync(path.join(root, 'src/js/members/index.js'), 'utf8');
-check(/setMemberPin/.test(authSrc) && /publishMemberLookup/.test(authSrc), 'members: PIN is hashed + published for login without Cloud Functions');
-check(!/onNotice\?\.\('ไม่สามารถสร้างบัญชีล็อกอินได้/.test(authSrc), 'members: no more "Cloud Functions unavailable" warning path');
-const authStub2 = await import(stub('firebase-auth.mjs'));
-authStub2.__emitAuth(null);   // become a member without a Firebase session
-await sleep(80);
-await goto('#/login');
-await waitFor(() => q('#member-form'), { label: 'login page' });
-const memberUser = q('#member-user');
-const memberPin = q('#member-pin');
-const memberTrip = q('#member-trip');
-if (memberUser && memberPin) {
-  // seed a member with a PBKDF2 PIN, exactly what createMember writes
-  const saltArr = new Uint8Array(16).fill(7);
-  const saltHex = [...saltArr].map(b => b.toString(16).padStart(2, '0')).join('');
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode('2468'), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: saltArr, iterations: 100000 }, key, 256);
-  const pinHash = [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('');
-  fsdb.__seed('trips/t1/members/u2', {
-    ...(fsdb.__dump('trips/t1/members/u2') || {}),
-    username: 'nun', pinHash, pinSalt: saltHex, pinIterations: 100000, loginReady: true, status: 'active'
+console.log('\n▶ v9: THB is shown next to every amount');
+{
+  authStub.__emitAuth({ uid: 'u1', email: 'admin@example.com', displayName: 'สมชาย', photoURL: null, providerData: [{ providerId: 'password' }] });
+  await sleep(80);
+  // Earlier blocks switched the trip currency to THB; this block needs a foreign
+  // currency to prove the baht equivalent is always attached.
+  fsdb.__seed('trips/t1', { ...fsdb.__dump('trips/t1'), baseCurrency: 'JPY', exchangeRateToTHB: 0.24 });
+  window.localStorage.removeItem('fuji_trips_cache');
+  await goto('#/trip/t1/dashboard');
+  await waitFor(() => q('#kpi-total'), { label: 'dashboard KPIs' });
+  await sleep(500);
+  const dash = text$();
+  check(/≈/.test(dash) && /฿/.test(dash), 'thb: dashboard shows a baht equivalent (trip is in JPY)');
+  check(!!q('#kpi-total-thb'), 'thb: total KPI has a dedicated THB line');
+  const recent = q('#recent-expenses')?.textContent || '';
+  check(/฿/.test(recent), 'thb: recent expense rows show the baht value');
+  const board = q('#member-board-content')?.textContent || '';
+  check(/฿/.test(board), 'thb: member board shows the baht value');
+  const cats = q('#category-stats')?.textContent || '';
+  check(/฿/.test(cats), 'thb: category breakdown shows the baht value');
+
+  await goto('#/trip/t1/expenses');
+  await waitFor(() => q('.expense-card'), { label: 'expense cards' });
+  check(/฿/.test(q('.expense-card')?.textContent || ''), 'thb: expense card shows the baht value');
+  check(/฿/.test(q('.kpi-strip')?.textContent || ''), 'thb: expense summary strip shows the baht value');
+}
+
+console.log('\n▶ v9: expense groups can be added, edited and deleted');
+{
+  await goto('#/trip/t1/expenses');
+  await waitFor(() => q('#manage-cats-btn'), { label: 'manage groups button' });
+  await click('#manage-cats-btn');
+  await waitFor(() => q('#category-add'), { label: 'category manager' });
+  const rowsBefore = qa('[data-cat-row]').length;
+  check(rowsBefore >= 9, `groups: built-in groups listed (${rowsBefore})`);
+  check(!!q('[data-cat-del="food"]'), 'groups: built-in rows present');
+
+  await click('#category-add');
+  await waitFor(() => q('#cat-th'), { label: 'group editor' });
+  window.document.getElementById('cat-th').value = 'นวด/สปา';
+  window.document.getElementById('cat-en').value = 'Massage / Spa';
+  q('#cat-icons [data-icon="heart-pulse"]').click();
+  q('#cat-colors [data-color="#a48fc0"]').click();
+  await click('#cat-save');
+  await waitFor(() => [...fsdb.__store.keys()].some(k => k.startsWith('trips/t1/categories/')), { timeout: 6000, label: 'group saved' }).catch(() => {});
+  const savedCat = [...fsdb.__store.entries()].find(([k]) => k.startsWith('trips/t1/categories/'));
+  check(!!savedCat, 'groups: new group saved to Firestore');
+  check(savedCat?.[1].th === 'นวด/สปา' && savedCat?.[1].icon === 'heart-pulse', 'groups: name + icon stored');
+
+  // the new group must be selectable in the expense form
+  await goto('#/trip/t1/expenses/add');
+  await waitFor(() => q('#ex-cat'), { label: 'expense form' });
+  const options = qa('#ex-cat option').map(o => o.value);
+  check(options.includes(savedCat[0].split('/').pop()), 'groups: new group appears in the expense form');
+  check(!!q('#ex-manage-cats'), 'groups: manage shortcut inside the expense form');
+
+  // a new expense filed under that group must be labelled on the dashboard
+  const catId = savedCat[0].split('/').pop();
+  fsdb.__seed(`trips/t1/expenses/ecat1`, {
+    title: 'นวดวันแรก', date: TRIP.startDate, category: catId, currency: 'JPY', baseCurrency: 'THB',
+    subtotalMinor: 8000, discountMinor: 0, serviceMinor: 0, taxMinor: 0, cardFeeMinor: 0, netTotalMinor: 8000,
+    thbRate: 0.24, thbMinor: 1920, payerId: 'u1', status: 'active', isEstimated: false, estimatedMinor: 0,
+    actualMinor: 8000, paymentMethod: 'cash',
+    allocations: [{ memberId: 'u1', amountMinor: 8000 }], createdAt: new Date()
   });
-  fsdb.__seed('publicMemberLogins/nun', { username: 'nun', tripId: 't1', memberId: 'u2' });
-  memberUser.value = 'nun';
-  memberPin.value = '2468';
-  if (memberTrip) memberTrip.value = 't1';
-  submit(q('#member-form'));
+  await goto('#/trip/t1/dashboard');
+  await waitFor(() => q('#category-stats'), { label: 'dashboard categories' });
   await sleep(400);
-  await waitFor(() => /#\/trips/.test(window.location.hash) || text$().includes('ทริปฟูจิ'), { timeout: 6000, label: 'member login' }).catch(() => {});
-  check(/trips/.test(window.location.hash), 'login: member signs in with username + PIN (no Cloud Functions)');
-  const session = JSON.parse(window.localStorage.getItem('fuji_member_session') || 'null');
-  check(session?.memberId === 'u2' && session?.tripId === 't1', 'login: member session stored');
-  check(text$().includes('ทริปฟูจิ'), 'login: member lands on their trip list');
-  const notice = window.document.getElementById('member-session-notice');
-  check(!!notice && notice.hidden === false && /Cloud Functions|ผู้ใช้|PIN/.test(notice.textContent), 'login: local member mode notice is shown');
-} else {
-  check(false, 'login: member form present');
+  check(/นวด/.test(q('#category-stats')?.textContent || ''), 'groups: dashboard shows the trip group name (not the raw id)');
+  check(!/custom-/.test(q('#category-stats')?.textContent || ''), 'groups: no raw id leaks into the dashboard');
+
+  // the itinerary estimate select is fed by the same registry
+  await goto('#/trip/t1/itinerary');
+  await waitFor(() => q('#add-itinerary-btn'), { label: 'itinerary page' });
+  await click('#add-itinerary-btn');
+  await waitFor(() => q('#it-estimate-category'), { label: 'itinerary form' });
+  check(qa('#it-estimate-category option').some(o => o.value === savedCat[0].split('/').pop()), 'groups: new group appears in the itinerary estimate select');
+  q('.sheet-close')?.click() || q('#itinerary-form')?.closest('.sheet')?.remove();
+
+  // and the group manager is reachable from settings
+  await goto('#/trip/t1/settings');
+  await waitFor(() => q('#settings-manage-cats'), { label: 'settings groups card' });
+  check(/นวด/.test(q('#settings-cat-list')?.textContent || ''), 'groups: settings lists the trip group');
+
+  // rename it, then delete it (everything the user adds must be editable)
+  await click('#settings-manage-cats');
+  await waitFor(() => q(`[data-cat-edit="${catId}"]`), { label: 'group row in manager' });
+  await click(`[data-cat-edit="${catId}"]`);
+  await waitFor(() => q('#cat-th'), { label: 'group editor' });
+  window.document.getElementById('cat-th').value = 'นวด/สปา (แก้ไข)';
+  await click('#cat-save');
+  await waitFor(() => (fsdb.__dump(savedCat[0]) || {}).th === 'นวด/สปา (แก้ไข)', { timeout: 6000, label: 'group renamed' });
+  check(true, 'groups: an existing group can be renamed');
+
+  await click(`[data-cat-del="${catId}"]`);
+  await waitFor(() => q('#confirm-ok'), { label: 'delete confirm' });
+  await click('#confirm-ok');
+  await waitFor(() => !fsdb.__dump(savedCat[0]), { timeout: 6000, label: 'group deleted' }).catch(() => {});
+  check(!fsdb.__dump(savedCat[0]), 'groups: a trip group can be deleted');
+
+  // built-in groups are protected
+  // deleting closes the sheet and re-renders settings — reopen from there
+  if (!q('[data-cat-del="food"]')) {
+    await waitFor(() => q('#settings-manage-cats'), { timeout: 6000, label: 'settings after delete' });
+    await click('#settings-manage-cats');
+  }
+  await waitFor(() => q('[data-cat-del="food"]'), { timeout: 6000, label: 'manager reopened' });
+  const groupsBefore = [...fsdb.__store.keys()].filter(k => k.startsWith('trips/t1/categories/')).length;
+  await click('[data-cat-del="food"]');
+  await sleep(300);
+  const groupsAfter = [...fsdb.__store.keys()].filter(k => k.startsWith('trips/t1/categories/')).length;
+  check(groupsBefore === groupsAfter && !fsdb.__dump('trips/t1/categories/food'), 'groups: built-in groups cannot be deleted');
+  check(/พื้นฐาน/.test(window.document.getElementById('toast-container')?.textContent || ''), 'groups: deleting a built-in group is refused with a warning');
+  window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await sleep(200);
+}
+
+console.log('\n▶ v9: clear-bill receipts (received / deducted / balance + per-person PNG)');
+{
+  authStub.__emitAuth({ uid: 'u1', email: 'admin@example.com', displayName: 'สมชาย', photoURL: null, providerData: [{ providerId: 'password' }] });
+  await sleep(80);
+  await goto('#/trip/t1/settlement');
+  await waitFor(() => q('[data-receipt]'), { timeout: 8000, label: 'settlement receipts' });
+
+  const receipts = qa('[data-receipt]');
+  check(receipts.length >= 3, `settlement: one receipt per member (${receipts.length})`);
+  const me = q('[data-receipt="u1"]');
+  check(!!me, 'settlement: receipt keyed by member id');
+  const txt = me?.textContent || '';
+  check(/รับ/.test(txt) && /หัก/.test(txt) && /คงเหลือ/.test(txt), 'settlement: receipt shows received / deducted / balance');
+  check(/บัตรเครดิต|เงินสด|โอนเงิน/.test(txt), 'settlement: payment method shown (cash / card / transfer)');
+  // earlier blocks add/remove expenses, so check the receipt against live data
+  const tripExpenseTitles = [...fsdb.__store.entries()]
+    .filter(([k]) => k.startsWith('trips/t1/expenses/'))
+    .map(([, v]) => v.title)
+    .filter(Boolean);
+  const paidSection = txt.split('หัก')[0];
+  check(tripExpenseTitles.some(t => paidSection.includes(t)), 'settlement: the items this member paid are listed');
+  check(tripExpenseTitles.some(t => txt.includes(t)), 'settlement: shares show which bill they belong to');
+  check(/\d{4}-\d{2}-\d{2}/.test(txt), 'settlement: rows carry the expense date');
+  check(/าจโดย|จ่ายโดย/.test(txt), 'settlement: shares name who paid');
+  check(/THB|฿/.test(txt), 'settlement: baht equivalent present');
+  check(!!me?.querySelector('[data-export-receipt]'), 'settlement: per-person PNG export button');
+  check(!!me?.querySelector('[data-copy-receipt]'), 'settlement: receipt text can be copied');
+  check(qa('[data-export-receipt]').length >= 3, 'settlement: every member can export their own receipt');
+  check(!!q('#export-overview-png') && !!q('#print-settle'), 'settlement: overview PNG + print/PDF buttons');
+  check(!!q('#settle-views [data-view="overview"]'), 'settlement: overview / receipts switch');
+
+  // the transactions list explains what each payment covers
+  check(qa('details').length > 0 || /ดูรายละเอียด/.test(text$()), 'settlement: transaction detail available');
+
+  // switch to the overview + export it (html2canvas is stubbed)
+  await click('#settle-views [data-view="overview"]');
+  await waitFor(() => q('#settle-overview'), { label: 'overview table' });
+  const overview = q('#settle-overview')?.textContent || '';
+  check(/เงินสด/.test(overview) && /บัตร/.test(overview), 'settlement: overview splits cash vs card');
+  check(!!q('#settle-overview .receipt-table'), 'settlement: overview renders a statement table');
+  await click('#export-overview-png');
+  await waitFor(() => /sent|export|ส่งออก/i.test(window.document.getElementById('toast-container')?.textContent || ''), { timeout: 6000, label: 'overview export' }).catch(() => {});
+  check(!errors.some(e => /unsupported color/i.test(e)), 'settlement: overview PNG export runs without colour errors');
+
+  // per-person export must also work (flat mode + sanitizer)
+  await click('#settle-views [data-view="receipts"]');
+  await waitFor(() => q('[data-export-receipt="u1"]'), { label: 'receipts view' });
+  await click('[data-export-receipt="u1"]');
+  await sleep(600);
+  check(!errors.some(e => /unsupported color|ส่งออกรูปไม่สำเร็จ/i.test(e)), 'settlement: per-person PNG export runs without colour errors');
+}
+
+console.log('\n▶ v9: one simple login screen (Google + email only)');
+{
+  const authStub2 = await import(stub('firebase-auth.mjs'));
+  authStub2.__emitAuth(null);
+  await sleep(80);
+  await goto('#/login');
+  await waitFor(() => q('#google-signin-btn'), { label: 'login page' });
+  check(!!q('#google-signin-btn'), 'login: Google button is the primary action');
+  check(!!q('#admin-email') && !!q('#admin-pass'), 'login: email + password form present');
+  check(!!q('#account-signup-btn') && !!q('#account-reset-btn'), 'login: sign-up + forgot-password available');
+  check(!q('#member-form') && !q('#member-pin') && !q('#member-user'), 'login: username + PIN form removed');
+  check(!q('#tab-member') && !q('#tab-admin'), 'login: no member/admin tabs to choose from');
+  check(!/ชื่อผู้ใช้ \+ PIN/.test(html$()) && !/member-pin/.test(html$()), 'login: PIN wording gone from the page');
+  // A member who signed in earlier on this device keeps their session.
+  window.localStorage.setItem('fuji_member_session', JSON.stringify({
+    tripId: 't1', memberId: 'u2', username: 'nun', displayName: 'นุ่น', remember: true,
+    expires: Date.now() + 86400000, ts: Date.now()
+  }));
+  authStub2.__emitAuth(null);
+  await goto('#/trips');
+  await waitFor(() => text$().includes('ทริปฟูจิ'), { timeout: 6000, label: 'legacy member session restore' }).catch(() => {});
+  check(text$().includes('ทริปฟูจิ'), 'login: an existing local member session still restores');
+  window.localStorage.removeItem('fuji_member_session');
+  // The member form no longer asks for a PIN either — members join with an account.
+  authStub2.__emitAuth({ uid: 'u1', email: 'admin@example.com', displayName: 'Admin', photoURL: null, providerData: [{ providerId: 'password' }] });
+  await sleep(80);
+  await goto('#/trip/t1/members');
+  await waitFor(() => q('#add-member-btn'), { label: 'members page' });
+  await click('#add-member-btn');
+  await waitFor(() => q('#member-form'), { label: 'member form' });
+  check(!q('#member-pin') && !q('#m-pin'), 'members: add-member form no longer asks for a username/PIN login');
+  check(!q('#m-regen-pin'), 'members: no PIN generator button');
+  check(!!q('#m-name') && !!q('#m-role'), 'members: core member fields still there');
+  window.document.querySelector('.bottom-sheet')?.remove();
+  window.document.querySelector('.bottom-sheet-backdrop')?.remove();
 }
 
 console.log('\n▶ v7: member joins with a Google account + invite code (no Cloud Functions)');

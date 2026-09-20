@@ -236,6 +236,73 @@ export function makeCanvasNormalizer(win) {
   };
 }
 
+/**
+ * Resolve ANY CSS color the browser understands into [r,g,b,a] by painting a
+ * single pixel and reading it back. This is what finally kills
+ * "unsupported color function 'color'": Chromium serialises color-mix()/oklch()
+ * computed values as `color(srgb …)`, which html2canvas cannot parse but the
+ * canvas can render exactly.
+ */
+export function makeCanvasColorResolver(win) {
+  const cache = new Map();
+  let ctx = null;
+  return (cssColor) => {
+    if (!cssColor) return null;
+    const key = String(cssColor).trim();
+    if (cache.has(key)) return cache.get(key);
+    let result = null;
+    try {
+      if (!ctx) {
+        const canvas = win.document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        ctx = canvas.getContext('2d', { willReadFrequently: true });
+      }
+      if (ctx) {
+        ctx.clearRect(0, 0, 1, 1);
+        ctx.fillStyle = key;
+        // Unsupported values leave fillStyle untouched ("#000000" set below).
+        ctx.fillStyle = '#010203';
+        ctx.fillStyle = key;
+        const applied = ctx.fillStyle;
+        if (typeof applied === 'string' && applied !== '#000000' || applied === key) {
+          ctx.fillRect(0, 0, 1, 1);
+          const data = ctx.getImageData(0, 0, 1, 1).data;
+          const out = [data[0], data[1], data[2], data[3] / 255];
+          // A fully transparent pixel is a valid answer (color is transparent).
+          result = out;
+        }
+      }
+    } catch {
+      result = null;
+    }
+    cache.set(key, result);
+    return result;
+  };
+}
+
+const ANY_COLOR_FN_RE = /(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(([^()]*(?:\([^()]*\)[^()]*)*)\)/gi;
+
+/**
+ * Rewrite every modern color function inside an arbitrary CSS value
+ * (gradients, shadows, borders, SVG fills…) into rgb()/rgba().
+ * `resolver` comes from makeCanvasColorResolver().
+ */
+export function rewriteColorFunctions(value, resolver, ctx = {}) {
+  if (!value || typeof value !== 'string' || !resolver) return value;
+  if (!ANY_COLOR_FN_RE.test(value)) return value;
+  ANY_COLOR_FN_RE.lastIndex = 0;
+  return value.replace(ANY_COLOR_FN_RE, (full) => {
+    const parsed = parseColor(full);
+    if (parsed) return toRgba(parsed);
+    const resolved = resolver(full);
+    if (!resolved) return full;
+    // Fully transparent captures are usually a failed parse, not a real color.
+    if (resolved[3] === 0 && !/transparent/i.test(full)) return full;
+    return toRgba(resolved);
+  });
+}
+
 const COLOR_PROPS = [
   'color', 'background-color', 'background-image', 'border-top-color', 'border-right-color',
   'border-bottom-color', 'border-left-color', 'outline-color', 'box-shadow', 'text-decoration-color',
@@ -252,8 +319,20 @@ const NEEDS_FIX = /color-mix\(|oklch\(|oklab\(|\blab\(|\blch\(|\bcolor\(/i;
 export function sanitizeColorsForExport(root, win = globalThis.window) {
   if (!root || !win?.getComputedStyle) return () => {};
   const normalize = makeCanvasNormalizer(win);
+  const resolveCanvas = makeCanvasColorResolver(win);
   const nodes = [root, ...root.querySelectorAll('*')];
   const restore = [];
+
+  const safeValue = (raw) => {
+    let out = resolveColorValue(raw, { normalize });
+    if (out && NEEDS_FIX.test(out)) out = rewriteColorFunctions(out, resolveCanvas);
+    if (!out || NEEDS_FIX.test(out)) {
+      // Last resort: paint the whole value (works for gradients with modern stops).
+      const painted = rewriteColorFunctions(String(raw), resolveCanvas);
+      if (painted && !NEEDS_FIX.test(painted)) out = painted;
+    }
+    return out;
+  };
 
   for (const node of nodes) {
     let computed;
@@ -262,7 +341,7 @@ export function sanitizeColorsForExport(root, win = globalThis.window) {
     for (const prop of COLOR_PROPS) {
       const raw = computed.getPropertyValue(prop);
       if (!raw || !NEEDS_FIX.test(raw)) continue;
-      const resolved = resolveColorValue(raw, { normalize });
+      const resolved = safeValue(raw);
       if (!resolved || resolved === raw || NEEDS_FIX.test(resolved)) continue;
       const previous = node.style.getPropertyValue(prop);
       const previousPriority = node.style.getPropertyPriority(prop);
@@ -273,7 +352,17 @@ export function sanitizeColorsForExport(root, win = globalThis.window) {
     }
   }
 
+  // Pseudo elements (::before / ::after) can also carry modern colors and cannot
+  // be patched inline — neutralise them with one override sheet instead.
+  const sheet = win.document?.createElement?.('style');
+  try { sheet?.setAttribute?.('data-export-sanitizer', '1'); } catch { /* ignore */ }
+  sheet.textContent = `
+    ::before, ::after { background-image: none !important; box-shadow: none !important; text-shadow: none !important; }
+  `;
+  try { sheet && win.document.head?.appendChild(sheet); } catch { /* ignore */ }
+
   return () => {
+    try { sheet?.remove?.(); } catch { /* ignore */ }
     for (const { node, prop, previous, previousPriority } of restore) {
       try {
         if (previous) node.style.setProperty(prop, previous, previousPriority || '');

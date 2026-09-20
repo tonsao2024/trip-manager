@@ -65,3 +65,31 @@ export function convertCurrency(amountMinor, fromCurrency, toCurrency, rate) {
   const convertedMajor = major * rate;
   return toMinor(convertedMajor, toDec);
 }
+
+
+/**
+ * Convert an amount to Thai baht minor units.
+ * `rate` = how many THB 1 unit of `currency` is worth (trip.exchangeRateToTHB).
+ * Returns null when there is no usable rate (caller can then hide the THB line).
+ */
+export function toThbMinor(minor, currency = 'THB', rate = 1) {
+  const value = Number(minor) || 0;
+  if (!currency || currency === 'THB') return value;
+  const r = Number(rate) || 0;
+  if (r <= 0) return null;
+  return Math.round(value * r);
+}
+
+/** "≈ ฿7,680.00" — short label used next to a foreign-currency amount. */
+export function formatThbLabel(minor, locale = 'th-TH') {
+  if (minor == null) return '';
+  return `≈ ${formatCurrency(minor, 'THB', locale)}`;
+}
+
+/** Effective THB rate for an expense (its own snapshot wins over the trip rate). */
+export function effectiveThbRate(expense, trip) {
+  const own = Number(expense?.thbRate);
+  if (own > 0) return own;
+  const tripRate = Number(trip?.exchangeRateToTHB);
+  return tripRate > 0 ? tripRate : 0;
+}

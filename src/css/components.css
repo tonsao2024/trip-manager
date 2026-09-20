@@ -1469,3 +1469,127 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
   color: #f1f5f9;
   border-color: #333b4d;
 }
+
+
+/* ------------------------------------------------------------------
+   Login: divider between Google and the email form
+   ------------------------------------------------------------------ */
+.login-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.login-or::before, .login-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ------------------------------------------------------------------
+   THB equivalent shown next to foreign-currency amounts
+   ------------------------------------------------------------------ */
+.thb-equiv {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.thb-equiv.block { display: flex; justify-content: flex-end; }
+
+/* ------------------------------------------------------------------
+   Flat export mode — receipts/reports print in one plain palette so canvas
+   exporters never meet a modern color function. No gradients, no shadows.
+   ------------------------------------------------------------------ */
+.export-flat {
+  background: #ffffff !important;
+  color: #1f2937 !important;
+}
+.export-flat *,
+.export-flat *::before,
+.export-flat *::after {
+  background-image: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  backdrop-filter: none !important;
+  color: #1f2937 !important;
+  border-color: #d1d5db !important;
+}
+.export-flat .card,
+.export-flat .kpi-mini,
+.export-flat .kpi-tile,
+.export-flat [class*="rounded"] { background: #ffffff !important; }
+.export-flat .card { border: 1px solid #d1d5db !important; }
+.export-flat .badge,
+.export-flat .chip,
+.export-flat .meta-line,
+.export-flat .text-\[11px\],
+.export-flat .text-\[10px\] { background: transparent !important; }
+.export-flat .avatar,
+.export-flat .row-icon {
+  background: #f3f4f6 !important;
+  color: #374151 !important;
+  border: 1px solid #d1d5db !important;
+}
+.export-flat .badge { border: 1px solid #d1d5db !important; color: #374151 !important; }
+.export-flat svg, .export-flat svg * { color: #374151 !important; fill: none !important; stroke: #374151 !important; }
+.export-flat .receipt-total,
+.export-flat .font-bold { color: #111827 !important; }
+.export-flat img { filter: grayscale(100%) contrast(1.05); }
+
+/* ------------------------------------------------------------------
+   Receipt / statement (settlement details, per-person export)
+   ------------------------------------------------------------------ */
+.receipt {
+  background: #ffffff;
+  color: #1f2937;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 18px 14px;
+}
+.receipt-head { text-align: center; border-bottom: 2px dashed var(--border); padding-bottom: 12px; margin-bottom: 12px; }
+.receipt-title { font-family: var(--font-display); font-size: 18px; font-weight: 800; letter-spacing: .01em; }
+.receipt-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+.receipt-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-secondary); margin-top: 8px; gap: 8px; flex-wrap: wrap; }
+.receipt-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.receipt-table th {
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-tertiary);
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+}
+.receipt-table td { padding: 6px 4px; border-bottom: 1px dashed var(--border); vertical-align: top; }
+.receipt-table td.num, .receipt-table th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.receipt-section-title { font-size: 11px; font-weight: 800; margin: 14px 0 6px; display: flex; align-items: center; gap: 6px; }
+.receipt-totals { margin-top: 12px; border-top: 2px dashed var(--border); padding-top: 10px; }
+.receipt-line { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 3px 0; }
+.receipt-line.total { font-weight: 800; font-size: 14px; border-top: 1px solid var(--border); margin-top: 6px; padding-top: 8px; }
+.receipt-line.muted { color: var(--text-tertiary); font-size: 11px; }
+.receipt-positive { color: #047857; font-weight: 700; }
+.receipt-negative { color: #b91c1c; font-weight: 700; }
+.receipt-foot { margin-top: 14px; text-align: center; font-size: 10px; color: var(--text-tertiary); border-top: 1px dashed var(--border); padding-top: 10px; }
+.receipt-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.receipt-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+@media (max-width: 640px) {
+  .receipt { padding: 14px 12px 12px; }
+  .receipt-table { font-size: 11px; }
+}

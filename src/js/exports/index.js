@@ -28,15 +28,27 @@ function isOpaque(color) {
   return !(alpha < 0.999);
 }
 
+/** Swap the element into the monochrome "receipt" look for the capture. */
+function applyFlatMode(el) {
+  el.classList.add('export-flat');
+  return () => el.classList.remove('export-flat');
+}
+
 /**
  * Render an element to a PNG file download.
  * @param {string} elementId
  * @param {string} filename
- * @param {{scale?:number, backgroundColor?:string|null}} [options]
+ * @param {{scale?:number, backgroundColor?:string|null, flat?:boolean}} [options]
+ *   `flat` (default true for receipts) repaints the subtree in plain colours so
+ *   html2canvas has nothing modern to parse — the safest possible export.
  */
 export async function exportToPng(elementId, filename = 'export.png', options = {}) {
   const el = document.getElementById(elementId);
   if (!el) throw new Error('ไม่พบเนื้อหาที่จะบันทึกเป็นรูป (element หายไป)');
+
+  const restoreFlat = options.flat !== false ? applyFlatMode(el) : () => {};
+  // Let the browser apply the flat styles before html2canvas reads them.
+  await new Promise(r => requestAnimationFrame(() => r()));
 
   let html2canvas;
   try {
@@ -65,11 +77,13 @@ export async function exportToPng(elementId, filename = 'export.png', options = 
   } catch (e) {
     const message = String(e?.message || e);
     if (/unsupported color function/i.test(message)) {
-      throw new Error('ส่งออกรูปไม่สำเร็จ: เบราว์เซอร์ยังไม่รองรับเฉดสีบางแบบ — ลองอัปเดตเบราว์เซอร์ หรือใช้ปุ่ม "พิมพ์ / PDF" แทน');
+      // Should be unreachable now (flat mode + canvas resolver), so say what to do.
+      throw new Error('ส่งออกรูปไม่สำเร็จ: พบเฉดสีที่เบราว์เซอร์แปลงไม่ได้ — ลองใหม่ หรือใช้ปุ่ม "พิมพ์ / PDF" แทน');
     }
     throw new Error('ส่งออกรูปไม่สำเร็จ: ' + message);
   } finally {
     restore();
+    restoreFlat();
   }
 }
 
@@ -83,6 +97,8 @@ export async function exportToPdf(elementId, filename = 'export.pdf', orientatio
   ]);
   const { jsPDF } = jspdfMod;
 
+  const restoreFlat = applyFlatMode(el);
+  await new Promise(r => requestAnimationFrame(() => r()));
   const restore = sanitizeColorsForExport(el);
   try {
     const canvas = await html2canvasMod(el, {
@@ -95,6 +111,7 @@ export async function exportToPdf(elementId, filename = 'export.pdf', orientatio
     pdf.save(filename);
   } finally {
     restore();
+    restoreFlat();
   }
 }
 
