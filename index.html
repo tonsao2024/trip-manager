@@ -23,9 +23,9 @@
   </script>
 
   <!-- Design System v3 (cache-busted) -->
-  <link rel="stylesheet" href="./src/css/tokens.css?v=13">
-  <link rel="stylesheet" href="./src/css/components.css?v=13">
-  <link rel="stylesheet" href="./src/css/animations.css?v=13">
+  <link rel="stylesheet" href="./src/css/tokens.css?v=14">
+  <link rel="stylesheet" href="./src/css/components.css?v=14">
+  <link rel="stylesheet" href="./src/css/animations.css?v=14">
 
   <!-- Lucide Icons -->
   <script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
@@ -158,11 +158,14 @@
     </div>
   </main>
 
-  <!-- Bottom Nav (mobile): Home removed — tap the logo to go home -->
+  <!-- Bottom Nav (mobile): Home removed — tap the logo to go home.
+       Documents moved out (still reachable via the เพิ่มเติม page / desktop nav);
+       Dashboard + เคลียร์บิล added for one-tap access. -->
   <nav id="bottom-nav" class="bottom-nav md:hidden">
+    <button data-route="#/trip/dashboard" class="bottom-nav-item"><i data-lucide="layout-dashboard"></i><span>แดชบอร์ด</span></button>
     <button data-route="#/trip/itinerary" class="bottom-nav-item"><i data-lucide="map-pinned"></i><span>แผน</span></button>
     <button data-route="#/trip/expenses" class="bottom-nav-item"><i data-lucide="wallet"></i><span>ค่าใช้จ่าย</span></button>
-    <button data-route="#/trip/documents" class="bottom-nav-item"><i data-lucide="folder"></i><span>เอกสาร</span></button>
+    <button data-route="#/trip/settlement" class="bottom-nav-item"><i data-lucide="hand-coins"></i><span>เคลียร์บิล</span></button>
     <button data-route="#/trip/more" class="bottom-nav-item"><i data-lucide="more-horizontal"></i><span>เพิ่มเติม</span></button>
   </nav>
 
@@ -197,6 +200,6 @@
   </script>
 
   <!-- App (cache-busted) -->
-  <script type="module" src="./src/js/app.js?v=13"></script>
+  <script type="module" src="./src/js/app.js?v=14"></script>
 </body>
 </html>

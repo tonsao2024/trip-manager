@@ -914,7 +914,6 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 @media (min-width: 640px) { .itin-thumb { width: 164px; } }
 @media (max-width: 380px) { .itin-thumb { width: 104px; } }
 
-.itin-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .estimate-line {
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   margin-top: 8px; padding: 6px 10px; border-radius: 12px;
@@ -2059,8 +2058,6 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
   /* Itinerary cards: tighter spacing on phones */
   .itin-card { padding: 10px; gap: 8px; }
   .itin-thumb { width: 96px; border-radius: 10px; }
-  .itin-actions { gap: 3px; }
-  .itin-more-menu { min-width: 140px; right: -4px; }
   /* Split rows: compact */
   .split-row { padding: 6px 8px; gap: 6px; }
   .split-row .split-name { max-width: 80px; }
@@ -2117,11 +2114,13 @@ html, body { max-width: 100%; overflow-x: clip; }
   .icon-btn svg { width: 17px; height: 17px; }
   .comment-del { width: 26px; height: 26px; }
 
-  /* Tiles (payer/share): avatar-only on small screens — names make them too wide */
-  .tile-grid .tile { justify-content: center; padding: 8px; }
-  .tile-grid .tile .text-sm,
-  .tile-grid .tile .text-xs { display: none; }
+  /* Tiles (payer/share): full-width rows on phones — hiding the names left
+     "คนจ่าย / ใครหารด้วย" showing avatar only, so users couldn't see who is who. */
+  .tile-grid { grid-template-columns: 1fr; gap: 8px; }
+  .tile-grid .tile { justify-content: flex-start; padding: 9px 12px; }
   .tile-grid .tile .avatar { flex-shrink: 0; }
+  .tile-grid .tile .text-sm,
+  .tile-grid .tile .text-xs { white-space: normal; overflow-wrap: anywhere; }
 
   /* Split area: hide long names, keep avatar + amount */
   #split-area .flex.justify-between span.truncate { max-width: 60px; }
@@ -2141,7 +2140,7 @@ html, body { max-width: 100%; overflow-x: clip; }
 @media (max-width: 389px) {
   .grid.grid-cols-2, .grid.grid-cols-3 { grid-template-columns: 1fr; }
   .grid.grid-cols-3 > .col-span-2 { grid-column: span 1; }
-  .tile-grid { grid-template-columns: repeat(2, 1fr); }
+  /* .tile-grid stays single-column (names must stay readable) */
 }
 
 /* Long unbreakable text (a member's email, a username, a long place name) used
@@ -2284,3 +2283,81 @@ html, body { max-width: 100%; overflow-x: clip; }
 }
 .activity-del-btn:hover { background: var(--danger-bg); color: var(--danger); }
 .activity-del-btn svg { width: 13px; height: 13px; }
+
+/* ============================================================
+   v14 — Expense form: tidy sections
+   The form used to be one long unbroken list of fields. Each
+   logical group (details / amount / payer & split / extras) now
+   gets a headed section with a divider, so the page reads top
+   to bottom in the order you actually fill it in.
+   ============================================================ */
+/* Custom split rows: one span now shows the final amount for every person —
+   "split-computed" style when the system auto-distributed it, a plain bold
+   secondary number once the user typed/locked their own amount. */
+.split-row .split-final {
+  flex: 0 0 auto;
+  min-width: 52px;
+  text-align: right;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.split-row .split-final.split-computed {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--primary-strong);
+}
+
+.form-section + .form-section {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1.5px dashed var(--border);
+}
+.form-section-head { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
+.form-section-head h3 { font-size: 14px; font-weight: 800; letter-spacing: -0.01em; color: var(--text); }
+.form-section-icon {
+  width: 30px; height: 30px; border-radius: 10px;
+  display: grid; place-items: center; flex-shrink: 0;
+  background: var(--primary-light); color: var(--primary-strong);
+}
+.form-section-icon svg { width: 15px; height: 15px; }
+.form-submit-row {
+  margin-top: 24px; padding-top: 18px;
+  border-top: 1.5px dashed var(--border);
+}
+
+/* ============================================================
+   v14 — Itinerary card: the "more" (3-dot) menu works again
+   and lives on the photo.
+   - the navigate ICON button is gone (it duplicated the
+     "นำทาง Google Maps" link already inside the card body)
+   - the menu used to be clipped by .card's overflow:hidden,
+     so tapping 3-dots appeared to do nothing
+   - while open, the card is lifted (z-index) so the dropdown
+     paints above the cards below it
+   ============================================================ */
+.itin-card { overflow: visible; }
+.itin-card.itin-menu-open { z-index: 60; }
+.itin-thumb { overflow: visible; }
+.itin-thumb img { border-radius: 13px; }
+.itin-more-wrap { position: absolute; top: 6px; right: 6px; z-index: 5; }
+.itin-thumb-more {
+  width: 30px; height: 30px;
+  border-radius: var(--radius-full);
+  display: grid; place-items: center;
+  background: rgba(15, 23, 42, 0.55);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.itin-thumb-more:hover { background: rgba(15, 23, 42, 0.78); }
+.itin-thumb-more:active { transform: scale(0.94); }
+.itin-thumb-more svg { width: 15px; height: 15px; }
+.itin-more-menu { top: calc(100% + 6px); right: -6px; }
+@media (max-width: 520px) {
+  .itin-more-menu { min-width: 148px; }
+}
