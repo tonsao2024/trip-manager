@@ -30,7 +30,7 @@ import { fetchSettlementData, recalculateAndSaveSettlement } from './settlement/
 
 import { listMembers, createMember, updateMember, deleteMember, countMemberReferences, mapFunctionError, MEMBER_ROLES } from './members/index.js';
 import { dayjs, getCurrentTimes, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay, parseDurationInput } from './utils/date.js';
-import { expensesInThb, convertCurrency, formatCurrency, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate } from './utils/currency.js';
+import { expensesInThb, convertCurrency, formatCurrency, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually } from './utils/currency.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses } from './utils/settlement.js';
 import { splitCustom, splitEqual } from './utils/split.js';
 import { escapeHtml } from './utils/sanitize.js';
@@ -2498,7 +2498,8 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
   const budgetBase = Number(trip?.budgetTotal) > 0
     ? Number(trip.budgetTotal)
     : (Number(trip?.budgetPerPerson) > 0 ? Number(trip.budgetPerPerson) * Math.max(1, members.length) : 0);
-  const budget = toThbMinor(budgetBase, currency, rate) || 0;
+  const budgetCur = trip?.budgetCurrency || 'THB';
+  const budget = budgetCur === 'THB' ? budgetBase : (toThbMinor(budgetBase, budgetCur, rate) || 0);
   const budgetEl = document.getElementById('kpi-budget');
   /** Secondary trip-currency line under a baht KPI. */
   const setKpiThb = (hostEl, id, label) => {
@@ -2573,7 +2574,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
   const myBudgetBase = hasOwnBudget
     ? Number(memberBudgets[myId])
     : (Number(trip?.budgetPerPerson) > 0 ? Number(trip.budgetPerPerson) : 0);
-  const myBudget = toThbMinor(myBudgetBase, currency, rate) || 0;
+  const myBudget = budgetCur === 'THB' ? myBudgetBase : (toThbMinor(myBudgetBase, budgetCur, rate) || 0);
   const myNet = myBal?.net || 0;
   const myLeft = myBudget - myShare;
   const myPct = myBudget > 0 ? Math.min(100, Math.round((myShare / myBudget) * 100)) : 0;
@@ -7330,9 +7331,13 @@ async function renderSettings(params) {
     listMembers(tripId).then(m => { settingMembers = m || []; }).catch(() => {})
   ]);
   if (isStale(token)) return;
-  const budgetDecimals = getCurrencyDecimals(trip?.baseCurrency || 'THB');
+  const budgetDecimals = 2; // Budget is always in THB (satang)
   const memberBudgets = (trip?.memberBudgets && typeof trip.memberBudgets === 'object') ? trip.memberBudgets : {};
-  const fmtBudgetInput = (minor) => Number(minor) > 0 ? formatAmount(fromMinor(Number(minor), budgetDecimals), budgetDecimals) : '';
+  const fmtBudgetInput = (minor) => {
+    if (!(Number(minor) > 0)) return '';
+    const val = fromMinor(Number(minor), budgetDecimals);
+    return val % 1 === 0 ? formatAmount(val, 0) : formatAmount(val, budgetDecimals);
+  };
 
   const currencies = [
     { code: 'THB', name: th('บาทไทย', 'Thai Baht') }, { code: 'JPY', name: th('เยนญี่ปุ่น', 'Japanese Yen') },
@@ -7401,22 +7406,29 @@ async function renderSettings(params) {
       </div>
 
       <div class="card p-5 space-y-4">
-        <h3 class="font-bold flex items-center gap-2">${icon('piggy-bank', 'w-4 h-4')} ${th('งบประมาณ','Budget')}</h3>
+        <h3 class="font-bold flex items-center gap-2">${icon('piggy-bank', 'w-4 h-4')} ${th('งบประมาณ (บาท)','Budget (THB)')}</h3>
         <div class="grid grid-cols-2 gap-3">
-          <div class="input-group"><label class="input-label">${icon('wallet', 'w-3.5 h-3.5')} ${th('งบประมาณรวม','Total budget')}</label><input id="s-budget-total" class="input money-input" type="text" inputmode="decimal" value="${fmtBudgetInput(trip?.budgetTotal)}" placeholder="50,000"><p class="input-hint">${trip?.baseCurrency || 'THB'} • ${th('งบของทั้งทริป','whole-trip budget')}</p></div>
-          <div class="input-group"><label class="input-label">${icon('user', 'w-3.5 h-3.5')} ${th('งบต่อคน (ค่าเริ่มต้น)','Default per person')}</label><input id="s-budget-per-person" class="input money-input" type="text" inputmode="decimal" value="${fmtBudgetInput(trip?.budgetPerPerson)}" placeholder="10,000"><p class="input-hint">${th('ใช้กับคนที่ไม่ได้ตั้งงบ riêng','applies to members without their own budget')}</p></div>
+          <div class="input-group"><label class="input-label">${icon('wallet', 'w-3.5 h-3.5')} ${th('งบประมาณรวม','Total budget')}</label><input id="s-budget-total" class="input money-input" type="text" inputmode="decimal" value="${fmtBudgetInput(trip?.budgetTotal)}" placeholder="50,000"><p class="input-hint">THB (บาท) • ${th('งบของทั้งทริป','whole-trip budget')}</p></div>
+          <div class="input-group"><label class="input-label">${icon('user', 'w-3.5 h-3.5')} ${th('งบต่อคน (ค่าเริ่มต้น)','Default per person')}</label><input id="s-budget-per-person" class="input money-input" type="text" inputmode="decimal" value="${fmtBudgetInput(trip?.budgetPerPerson)}" placeholder="10,000"><p class="input-hint">THB (บาท) • ${th('ใช้กับคนที่ไม่ได้ตั้งงบรายคน','applies to members without their own budget')}</p></div>
         </div>
 
         <div class="input-group">
-          <label class="input-label">${icon('users', 'w-3.5 h-3.5')} ${th('งบประมาณรายคน','Per-member budgets')}</label>
-          <p class="input-hint mb-2">${th('กำหนดงบของแต่ละคนได้เอง — คนที่ไม่มีงบ riêngจะใช้างบต่อคนด้านบน','Set a personal budget for each member — anyone without one uses the default above')}</p>
+          <div class="flex items-center justify-between gap-2 mb-1 flex-wrap">
+            <label class="input-label mb-0">${icon('users', 'w-3.5 h-3.5')} ${th('งบประมาณรายคน','Per-member budgets')}</label>
+            ${settingMembers.length > 0 ? `
+              <button type="button" id="btn-distribute-budget" class="btn btn-secondary btn-sm text-xs" style="min-height:30px;padding:4px 10px;gap:5px;">
+                ${icon('divide', 'w-3.5 h-3.5')} ${th('กระจายงบเท่ากัน', 'Distribute equally')}
+              </button>
+            ` : ''}
+          </div>
+          <p class="input-hint mb-2">${th('กำหนดงบของแต่ละคนได้เอง — คนที่ไม่ได้ตั้งงบรายคนจะใช้างบต่อคนด้านบน หรือกดกระจายงบเท่ากันเพื่อกำหนดงบให้ทุกคน','Set a personal budget for each member — anyone without one uses the default above, or distribute equally to fill for everyone')}</p>
           <div id="member-budget-rows" class="space-y-2">
             ${settingMembers.map(m => `
               <div class="member-budget-row">
                 <span class="avatar" style="width:28px;height:28px;font-size:10px;background:${escapeHtml(m.color || 'var(--primary)')};flex-shrink:0;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                 <span class="text-xs font-medium truncate flex-1" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
                 <input id="s-mbudget-${escapeHtml(m.id)}" class="input money-input member-budget-input" type="text" inputmode="decimal" placeholder="0.00" value="${escapeHtml(fmtBudgetInput(memberBudgets[m.id]))}">
-                <span class="text-[10px] text-[var(--text-tertiary)] flex-shrink-0">${escapeHtml(trip?.baseCurrency || 'THB')}</span>
+                <span class="text-[10px] text-[var(--text-tertiary)] flex-shrink-0 font-medium">THB</span>
               </div>`).join('') || `<p class="text-xs text-[var(--text-secondary)]">${th('ยังไม่มีสมาชิกในทริป','No members yet')}</p>`}
           </div>
         </div>
@@ -7507,13 +7519,12 @@ async function renderSettings(params) {
   });
 
   bindMoneyInputs(document);
-  /** Read the per-member budgets currently typed in the form (minor units). */
+  /** Read the per-member budgets currently typed in the form (minor units in THB satang). */
   function readMemberBudgets() {
-    const dec = getCurrencyDecimals(document.getElementById('s-currency').value);
     const out = {};
     for (const m of settingMembers) {
       const v = parseCurrencyInput(document.getElementById(`s-mbudget-${m.id}`)?.value || '');
-      if (v > 0) out[m.id] = toMinor(v, dec);
+      if (v > 0) out[m.id] = toMinor(v, 2);
     }
     return out;
   }
@@ -7527,11 +7538,12 @@ async function renderSettings(params) {
       const normalized = expensesInThb(expenses, trip);
       const totalMinor = sumExpenses(normalized);
       const code = document.getElementById('s-currency').value;
-      const dec = getCurrencyDecimals(code);
       const rate = code === 'THB' ? 1 : parseCurrencyInput(document.getElementById('s-thb-rate').value);
       const budgetTotal = parseCurrencyInput(document.getElementById('s-budget-total').value) || 0;
       const budgetPerPerson = parseCurrencyInput(document.getElementById('s-budget-per-person').value) || 0;
-      const toThb = (major) => { const v = toThbMinor(toMinor(major, dec), code, rate); return v == null ? 0 : v; };
+      const budgetTotalMinor = toMinor(budgetTotal, 2);
+      const budgetPerPersonMinor = toMinor(budgetPerPerson, 2);
+      const secondaryTripCurr = (thbMinor) => (code === 'THB' || !rate ? '' : formatCurrency(convertCurrency(thbMinor, 'THB', code, 1 / rate), code));
 
       // Each member's committed share (their allocations, normalized to THB).
       const shareBy = {};
@@ -7540,14 +7552,17 @@ async function renderSettings(params) {
         for (const a of exp.allocations || []) shareBy[a.memberId] = (shareBy[a.memberId] || 0) + (a.amountMinor || 0);
       }
 
-      let html = `<div class="flex items-center gap-2">${icon('wallet', 'w-4 h-4')} <span>${th('ใช้ไป','Spent')}: <b>${formatCurrency(totalMinor, 'THB')}</b></span></div>`;
-      if (budgetTotal) {
-        const budgetMinor = toThb(budgetTotal);
-        const diff = budgetMinor - totalMinor;
-        const pct = budgetMinor > 0 ? Math.min(100, Math.round(totalMinor / budgetMinor * 100)) : 0;
-        html += `<div class="flex items-center gap-2 mt-2">${icon('pie-chart', 'w-4 h-4')} <span>${th('งบ','Budget')} ${moneyHtml(toMinor(budgetTotal, dec), code, rate)} • ${diff >= 0 ? th(`เหลือ ${formatCurrency(diff, 'THB')}`, `${formatCurrency(diff, 'THB')} left`) : th(`เกิน ${formatCurrency(-diff, 'THB')}`, `${formatCurrency(-diff, 'THB')} over`)} (${pct}%)</span></div><div class="progress mt-2"><div class="progress-bar" style="width:${pct}%; ${diff < 0 ? 'background: var(--danger);' : ''}"></div></div>`;
+      let html = `<div class="flex items-center gap-2">${icon('wallet', 'w-4 h-4')} <span>${th('ใช้ไป','Spent')}: <b>${formatCurrency(totalMinor, 'THB')}</b>${code !== 'THB' && secondaryTripCurr(totalMinor) ? ` <span class="text-xs text-[var(--text-tertiary)]">(≈ ${secondaryTripCurr(totalMinor)})</span>` : ''}</span></div>`;
+      if (budgetTotalMinor > 0) {
+        const diff = budgetTotalMinor - totalMinor;
+        const pct = Math.min(100, Math.round(totalMinor / budgetTotalMinor * 100));
+        const origSec = secondaryTripCurr(budgetTotalMinor);
+        html += `<div class="flex items-center gap-2 mt-2">${icon('pie-chart', 'w-4 h-4')} <span>${th('งบ','Budget')} ${thbPlusLabelHtml(budgetTotalMinor, origSec)} • ${diff >= 0 ? th(`เหลือ ${formatCurrency(diff, 'THB')}`, `${formatCurrency(diff, 'THB')} left`) : th(`เกิน ${formatCurrency(-diff, 'THB')}`, `${formatCurrency(-diff, 'THB')} over`)} (${pct}%)</span></div><div class="progress mt-2"><div class="progress-bar" style="width:${pct}%; ${diff < 0 ? 'background: var(--danger);' : ''}"></div></div>`;
       }
-      if (budgetPerPerson) html += `<div class="flex items-center gap-2 mt-2">${icon('user', 'w-4 h-4')} <span>${th('งบต่อคน (ค่าเริ่มต้น)','Default per person')} ${moneyHtml(toMinor(budgetPerPerson, dec), code, rate)}</span></div>`;
+      if (budgetPerPersonMinor > 0) {
+        const origSec = secondaryTripCurr(budgetPerPersonMinor);
+        html += `<div class="flex items-center gap-2 mt-2">${icon('user', 'w-4 h-4')} <span>${th('งบต่อคน (ค่าเริ่มต้น)','Default per person')} ${thbPlusLabelHtml(budgetPerPersonMinor, origSec)}</span></div>`;
+      }
 
       /* ---- Consistency checks (a request: the numbers must add up) ---- */
       const memberRows = settingMembers.map(m => {
@@ -7555,19 +7570,17 @@ async function renderSettings(params) {
         const own = typed > 0 ? typed : budgetPerPerson;
         return { m, own, typed, spent: shareBy[m.id] || 0 };
       });
-      const sumMembers = memberRows.reduce((s, r) => s + (r.typed > 0 ? toThb(r.typed) : 0), 0);
+      const sumMembers = memberRows.reduce((s, r) => s + (r.typed > 0 ? toMinor(r.typed, 2) : 0), 0);
       const checks = [];
-      if (budgetTotal && sumMembers > 0) {
-        const totalThb = toThb(budgetTotal);
-        if (Math.abs(sumMembers - totalThb) > 1) {
-          checks.push({ icon: 'alert-triangle', text: `${th('ผลรวมงบรายคน', 'Sum of personal budgets')} <b>${formatCurrency(sumMembers, 'THB')}</b> ${th('ไม่เท่ากับงบรวม', 'does not equal the total budget')} <b>${formatCurrency(totalThb, 'THB')}</b> ${th('(ส่วนต่าง', '(difference')} ${formatCurrency(Math.abs(sumMembers - totalThb), 'THB')})` });
+      if (budgetTotalMinor > 0 && sumMembers > 0) {
+        if (Math.abs(sumMembers - budgetTotalMinor) > 1) {
+          checks.push({ icon: 'alert-triangle', text: `${th('ผลรวมงบรายคน', 'Sum of personal budgets')} <b>${formatCurrency(sumMembers, 'THB')}</b> ${th('ไม่เท่ากับงบรวม', 'does not equal the total budget')} <b>${formatCurrency(budgetTotalMinor, 'THB')}</b> ${th('(ส่วนต่าง', '(difference')} ${formatCurrency(Math.abs(sumMembers - budgetTotalMinor), 'THB')})` });
         }
       }
-      if (budgetTotal && budgetPerPerson && settingMembers.length) {
-        const expected = toThb(budgetPerPerson) * settingMembers.length;
-        const totalThb = toThb(budgetTotal);
-        if (Math.abs(expected - totalThb) > 1 && sumMembers <= 0) {
-          checks.push({ icon: 'info', text: `${th('งบต่อคน ×', 'Per person ×')} ${settingMembers.length} ${th('คน =', ' people =')} <b>${formatCurrency(Math.round(expected), 'THB')}</b> ${th('แต่งบรวมคือ', 'but the total budget is')} <b>${formatCurrency(totalThb, 'THB')}</b>` });
+      if (budgetTotalMinor > 0 && budgetPerPersonMinor > 0 && settingMembers.length) {
+        const expected = budgetPerPersonMinor * settingMembers.length;
+        if (Math.abs(expected - budgetTotalMinor) > 1 && sumMembers <= 0) {
+          checks.push({ icon: 'info', text: `${th('งบต่อคน ×', 'Per person ×')} ${settingMembers.length} ${th('คน =', ' people =')} <b>${formatCurrency(Math.round(expected), 'THB')}</b> ${th('แต่งบรวมคือ', 'but the total budget is')} <b>${formatCurrency(budgetTotalMinor, 'THB')}</b>` });
         }
       }
       if (checks.length) {
@@ -7580,7 +7593,7 @@ async function renderSettings(params) {
         html += `<div class="budget-member-list mt-3">
           <div class="budget-member-head">${icon('users', 'w-3.5 h-3.5')} ${th('งบรายคน vs ส่วนที่ต้องรับผิดชอบ','Personal budget vs committed share')}</div>
           ${withBudget.map(r => {
-            const bThb = toThb(r.own);
+            const bThb = toMinor(r.own, 2);
             const left = bThb - r.spent;
             const pct = bThb > 0 ? Math.min(100, Math.round(r.spent / bThb * 100)) : 0;
             return `<div class="budget-member-row">
@@ -7600,9 +7613,91 @@ async function renderSettings(params) {
   updateBudgetCompare();
   bind('s-budget-total', 'input', updateBudgetCompare);
   bind('s-budget-per-person', 'input', updateBudgetCompare);
+  bind('s-currency', 'change', updateBudgetCompare);
+  bind('s-thb-rate', 'input', updateBudgetCompare);
   settingMembers.forEach(m => {
     const input = document.getElementById(`s-mbudget-${m.id}`);
     input?.addEventListener('input', updateBudgetCompare);
+  });
+
+  bind('btn-distribute-budget', 'click', async () => {
+    if (!settingMembers.length) {
+      toast.info(th('ยังไม่มีสมาชิกในทริป', 'No members in this trip yet'));
+      return;
+    }
+    const count = settingMembers.length;
+    const totalVal = parseCurrencyInput(document.getElementById('s-budget-total')?.value || '');
+    const perPersonVal = parseCurrencyInput(document.getElementById('s-budget-per-person')?.value || '');
+
+    let { perPerson } = distributeBudgetEqually({ total: totalVal, perPerson: perPersonVal, memberCount: count });
+
+    if (!(perPerson > 0)) {
+      const existing = settingMembers
+        .map(m => parseCurrencyInput(document.getElementById(`s-mbudget-${m.id}`)?.value || ''))
+        .find(v => v > 0);
+      const input = await promptAction({
+        title: th('กระจายงบประมาณรายบุคคล', 'Distribute individual budget'),
+        label: th(`ระบุงบประมาณต่อคนสำหรับสมาชิก ${count} คน (บาท)`, `Specify budget per person for ${count} members (THB)`),
+        placeholder: '10,000',
+        value: existing ? (existing % 1 === 0 ? formatAmount(existing, 0) : formatAmount(existing, 2)) : '',
+        confirmText: th('กระจายงบ', 'Distribute'),
+        icon: 'divide'
+      });
+      if (input == null) return;
+      const entered = parseCurrencyInput(input);
+      if (!(entered > 0)) {
+        toast.error(th('กรุณาระบุจำนวนเงินที่มากกว่า 0', 'Please enter an amount greater than 0'));
+        return;
+      }
+      perPerson = entered;
+    }
+
+    if (!(perPerson > 0)) return;
+
+    // Check if any member has a differing budget already set
+    const hasDifferent = settingMembers.some(m => {
+      const v = parseCurrencyInput(document.getElementById(`s-mbudget-${m.id}`)?.value || '');
+      return v > 0 && Math.abs(v - perPerson) > 0.01;
+    });
+
+    if (hasDifferent) {
+      const ok = await confirmAction({
+        title: th('กระจายงบประมาณรายบุคคล', 'Distribute individual budget'),
+        message: th(
+          `ต้องการแทนที่งบของสมาชิกทุกคนเป็นคนละ ${formatCurrency(toMinor(perPerson, 2), 'THB')} ใช่หรือไม่?`,
+          `Do you want to set everyone's budget to ${formatCurrency(toMinor(perPerson, 2), 'THB')}?`
+        ),
+        confirmText: th('กระจายงบเท่ากัน', 'Distribute equally'),
+        cancelText: th('ยกเลิก', 'Cancel'),
+        icon: 'divide'
+      });
+      if (!ok) return;
+    }
+
+    const formatted = perPerson % 1 === 0 ? formatAmount(perPerson, 0) : formatAmount(perPerson, 2);
+    settingMembers.forEach(m => {
+      const input = document.getElementById(`s-mbudget-${m.id}`);
+      if (input) {
+        input.value = formatted;
+      }
+    });
+
+    const ppInput = document.getElementById('s-budget-per-person');
+    if (ppInput) {
+      ppInput.value = formatted;
+    }
+
+    const totalInput = document.getElementById('s-budget-total');
+    if (totalInput && !(parseCurrencyInput(totalInput.value) > 0)) {
+      const newTotal = Math.round(perPerson * count * 100) / 100;
+      totalInput.value = newTotal % 1 === 0 ? formatAmount(newTotal, 0) : formatAmount(newTotal, 2);
+    }
+
+    updateBudgetCompare();
+    toast.success(th(
+      `กระจายงบคนละ ${formatCurrency(toMinor(perPerson, 2), 'THB')} ให้สมาชิก ${count} คนแล้ว`,
+      `Distributed ${formatCurrency(toMinor(perPerson, 2), 'THB')} per person to ${count} members`
+    ));
   });
 
   const saveAll = async (btnId, extra = {}) => {
@@ -7646,8 +7741,9 @@ async function renderSettings(params) {
 
   bind('save-settings', 'click', () => saveAll('save-settings'));
   bind('save-budget', 'click', () => saveAll('save-budget', {
-    budgetTotal: toMinor(parseCurrencyInput(document.getElementById('s-budget-total').value), getCurrencyDecimals(document.getElementById('s-currency').value)),
-    budgetPerPerson: toMinor(parseCurrencyInput(document.getElementById('s-budget-per-person').value), getCurrencyDecimals(document.getElementById('s-currency').value)),
+    budgetTotal: toMinor(parseCurrencyInput(document.getElementById('s-budget-total').value), 2),
+    budgetPerPerson: toMinor(parseCurrencyInput(document.getElementById('s-budget-per-person').value), 2),
+    budgetCurrency: 'THB',
     memberBudgets: readMemberBudgets()
   }));
 

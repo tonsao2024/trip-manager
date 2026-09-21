@@ -55,7 +55,7 @@
 }
 ```
 
-- `budgetTotal` / `budgetPerPerson` / `memberBudgets` (v13): budgets in **minor units**;
+- `budgetTotal` / `budgetPerPerson` / `memberBudgets` / `budgetCurrency` (v13): budgets in **THB minor units (satang)**;
   `memberBudgets` maps memberId → that person's own budget, shown on the dashboard wallet.
 - `cards` (v13): the managed credit-card list every member picks from in the expense form
   (add/edit/delete in Settings → cards), so card names can't be free-typed.
