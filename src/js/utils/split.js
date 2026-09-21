@@ -94,9 +94,43 @@ export function splitItemized(lineItems, adjustments = { serviceMinor: 0, discou
 export function validateAllocations(totalMinor, allocations) {
   if (!allocations?.length) return { valid: false, error: 'No allocations' };
   for (const a of allocations) {
-    if (a.amountMinor < 0) return { valid: false, error: 'Negative allocation' };
+    if (!Number.isSafeInteger(a.amountMinor) || a.amountMinor < 0) return { valid: false, error: 'Invalid allocation amount' };
   }
   const sum = allocations.reduce((s, a) => s + a.amountMinor, 0);
   if (sum !== totalMinor) return { valid: false, error: `Sum ${sum} != total ${totalMinor}` };
   return { valid: true };
+}
+
+/** Exact minor-unit custom split. Empty inputs share the remainder, not errors.
+ * Each adjustment is apportioned separately so the displayed breakdown adds up.
+ */
+export function splitCustom({ subtotalMinor, netTotalMinor, discountMinor = 0, serviceMinor = 0, taxMinor = 0, includesAdjustments = true, entries }) {
+  const target = includesAdjustments ? netTotalMinor : subtotalMinor;
+  const filled = entries.filter(e => e.amountMinor != null);
+  const empty = entries.filter(e => e.amountMinor == null);
+  const enteredMinor = filled.reduce((n, e) => n + e.amountMinor, 0);
+  const differenceMinor = target - enteredMinor;
+  const valid = entries.length > 0 && filled.every(e => Number.isSafeInteger(e.amountMinor) && e.amountMinor >= 0)
+    && differenceMinor >= 0 && (empty.length > 0 || differenceMinor === 0);
+  const auto = new Map(splitEqual(Math.max(0, differenceMinor), empty.map(e => e.memberId)).map(e => [e.memberId, e.amountMinor]));
+  const bases = entries.map(e => ({ memberId: e.memberId, amountMinor: e.amountMinor ?? auto.get(e.memberId) ?? 0 }));
+  const sum = bases.reduce((n, e) => n + e.amountMinor, 0);
+  // Largest remainder: deterministic, non-negative, and exact to the last cent.
+  const distribute = total => {
+    if (!sum) return bases.map(() => 0);
+    const raw = bases.map(e => total * e.amountMinor / sum);
+    const values = raw.map(Math.floor);
+    const order = raw.map((n, i) => ({ i, fraction: n - values[i] })).sort((a, b) => b.fraction - a.fraction || a.i - b.i);
+    for (let n = 0, left = total - values.reduce((a, b) => a + b, 0); n < left; n++) values[order[n % order.length].i]++;
+    return values;
+  };
+  const discounts = distribute(discountMinor), services = distribute(serviceMinor), taxes = distribute(taxMinor);
+  const rows = bases.map((e, i) => ({ memberId: e.memberId, subtotalMinor: e.amountMinor,
+    discountMinor: includesAdjustments ? 0 : discounts[i],
+    serviceMinor: includesAdjustments ? 0 : services[i],
+    taxMinor: includesAdjustments ? 0 : taxes[i],
+    amountMinor: includesAdjustments ? e.amountMinor : e.amountMinor - discounts[i] + services[i] + taxes[i]
+  }));
+  return { valid: valid && rows.every(e => e.amountMinor >= 0) && rows.reduce((n, e) => n + e.amountMinor, 0) === netTotalMinor,
+    enteredMinor, differenceMinor, unfilledCount: empty.length, rows };
 }

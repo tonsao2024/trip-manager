@@ -87,7 +87,7 @@ export function testExcel() {
   const hotel = exp.expenses[0];
   assert(hotel.isEstimated === true, 'estimated flag parsed');
   assert(hotel.netTotalMinor === 32000, 'net total in minor units (JPY has 0 decimals)');
-  assert(hotel.thbMinor === 8000, `THB conversion, got ${hotel.thbMinor}`);
+  assert(hotel.thbMinor === 800000, `THB conversion, got ${hotel.thbMinor}`);
   assert(hotel.category === 'stay', 'expense category normalized from Thai');
   assert(hotel.allocations.length === 3, 'equal split across 3 members');
   const sum = hotel.allocations.reduce((s, a) => s + a.amountMinor, 0);

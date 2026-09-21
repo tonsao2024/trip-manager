@@ -1,6 +1,7 @@
+import { expensePayments, validatePayments } from '../utils/payments.js';
 import { db, serverTimestamp } from '../firebase.js';
 import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, startAfter, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { calculateNetTotal, getCurrencyDecimals, toMinor } from '../utils/currency.js';
+import { toThbMinor, calculateNetTotal, getCurrencyDecimals, toMinor } from '../utils/currency.js';
 import { validateAllocations } from '../utils/split.js';
 import { normalizeCategory } from '../utils/categories.js';
 import { cachedRead, cacheInvalidate, cacheForget } from '../utils/datacache.js';
@@ -62,7 +63,7 @@ export async function fetchExpenses(tripId, { filters = {}, pageSize = 20, lastD
 function applyFilters(items, filters = {}) {
   let out = items;
   if (filters.category) out = out.filter(e => e.category === filters.category);
-  if (filters.payerId) out = out.filter(e => e.payerId === filters.payerId);
+  if (filters.payerId) out = out.filter(e => expensePayments(e).some(p => p.memberId === filters.payerId));
   if (filters.currency) out = out.filter(e => e.currency === filters.currency);
   if (filters.kind === 'estimated') out = out.filter(e => e.isEstimated);
   if (filters.kind === 'actual') out = out.filter(e => !e.isEstimated);
@@ -98,6 +99,10 @@ function buildPayload(data) {
     date: data.date,
     category: normalizeCategory(data.category),
     payerId: data.payerId,
+    payments: expensePayments(data),
+    splitMethod: data.splitMethod || 'unequal',
+    splitIncludesVatSc: data.splitIncludesVatSc !== false,
+    splitInputs: data.splitInputs || null,
     allocations: data.allocations,
     subtotalMinor: data.subtotalMinor,
     discountMinor: data.discountMinor || 0,
@@ -126,7 +131,7 @@ function buildPayload(data) {
     actualMinor: data.isEstimated ? 0 : (data.netTotalMinor || 0),
     budgetCategory: data.budgetCategory || data.category || '',
     thbRate: rate,
-    thbMinor: Math.round((data.netTotalMinor || 0) * rate),
+    thbMinor: toThbMinor(data.netTotalMinor || 0, currency, rate),
     notes: data.notes || '',
     source: data.source || 'manual',
     createdByName: data.createdByName || '',
@@ -154,6 +159,7 @@ export async function addExpense(tripId, data, userId, by = null) {
   const valid = validateAllocations(net, data.allocations);
   if (!valid.valid) throw new Error(valid.error);
 
+  if (!validatePayments(net, expensePayments({ ...data, netTotalMinor: net }))) throw new Error('ยอดผู้จ่ายรวมต้องเท่ากับยอดสุทธิ');
   const payload = buildPayload({ ...data, netTotalMinor: net });
   delete payload._decimals; delete payload._currency;
   const authorName = by?.displayName || by?.email || '';
@@ -197,13 +203,14 @@ export async function updateExpense(tripId, expenseId, updates, userId, by = nul
     const v = validateAllocations(merged.netTotalMinor, merged.allocations);
     if (!v.valid) throw new Error(v.error);
   }
+  if (!validatePayments(merged.netTotalMinor, expensePayments(merged))) throw new Error('ยอดผู้จ่ายรวมต้องเท่ากับยอดสุทธิ');
   const rate = Number(merged.thbRate) > 0 ? Number(merged.thbRate) : 1;
   const payload = {
     ...updates,
     netTotalMinor: merged.netTotalMinor,
     category: normalizeCategory(merged.category),
     thbRate: rate,
-    thbMinor: Math.round(merged.netTotalMinor * rate),
+    thbMinor: toThbMinor(merged.netTotalMinor, merged.currency || 'THB', rate),
     estimatedMinor: merged.isEstimated ? merged.netTotalMinor : 0,
     actualMinor: merged.isEstimated ? 0 : merged.netTotalMinor,
     updatedBy: userId,
@@ -290,7 +297,7 @@ export async function importExpensesFromJson(tripId, expenses, userId) {
       category: normalizeCategory(data.category),
       netTotalMinor: net,
       thbRate: rate,
-      thbMinor: Math.round(net * rate),
+      thbMinor: toThbMinor(net, data.currency || 'THB', rate),
       status: data.status || 'active',
       isEstimated: !!data.isEstimated,
       createdBy: userId,
@@ -341,7 +348,7 @@ export async function bulkCreateExpenses(tripId, expenses, userId, { onProgress 
       category: normalizeCategory(data.category),
       netTotalMinor: net,
       thbRate: rate,
-      thbMinor: Math.round(net * rate),
+      thbMinor: toThbMinor(net, data.currency || 'THB', rate),
       status: 'active',
       isEstimated: !!data.isEstimated,
       createdBy: userId,

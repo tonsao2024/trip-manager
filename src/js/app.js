@@ -1,3 +1,5 @@
+import { bindMoneyInputs } from './utils/moneyInput.js';
+import { expensePayments, validatePayments } from './utils/payments.js';
 import { auth, db, isFirebaseConfigured, onAuthStateChanged, syncState } from './firebase.js';
 import { Router } from './router.js';
 import { toast } from './components/toast.js';
@@ -28,9 +30,9 @@ import { fetchSettlementData, recalculateAndSaveSettlement } from './settlement/
 
 import { listMembers, createMember, updateMember, deleteMember, countMemberReferences, mapFunctionError, MEMBER_ROLES } from './members/index.js';
 import { dayjs, getCurrentTimes, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay } from './utils/date.js';
-import { formatCurrency, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate } from './utils/currency.js';
+import { expensesInThb, convertCurrency, formatCurrency, formatAmount, parseCurrencyInput, moneyHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate } from './utils/currency.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary } from './utils/settlement.js';
-import { splitEqual } from './utils/split.js';
+import { splitCustom, splitEqual } from './utils/split.js';
 import { escapeHtml } from './utils/sanitize.js';
 import { showBottomSheet, showModal } from './components/modal.js';
 import { confirmAction, promptAction } from './components/confirm.js';
@@ -2428,48 +2430,29 @@ async function renderDashboard(params) {
 function renderDashboardData({ tripId, trip, expenses, members, items, currency, lang, token, params }) {
   const th = (a, b) => (lang === 'th' ? a : b);
   if (isStale(token)) return;
-  const fmt = (minor) => formatCurrency(minor || 0, currency);
-  // The trip's own rate wins; otherwise fall back to the rate snapshotted on its
-  // expenses, so the baht line still appears for trips that never set one.
   const rate = resolveTripThbRate(trip, expenses, currency);
-  // Every amount also gets its Thai-baht equivalent when the trip isn't in THB.
-  const thbTag = (minor) => {
-    if (currency === 'THB') return '';
-    const v = toThbMinor(minor, currency, rate || 0);
-    return v == null ? '' : `<span class="thb-equiv">≈ ${formatCurrency(v, 'THB')}</span>`;
-  };
-  /** The same, for a row priced in its own currency (no double conversion). */
-  const expenseThbTag = (e) => {
-    const code = e.currency || currency;
-    if (code === 'THB') return '';
-    const usedRate = Number(e.thbRate) > 0 ? Number(e.thbRate) : (code === currency ? rate : 0);
-    const v = toThbMinor(e.netTotalMinor || 0, code, usedRate || 0);
-    return v == null ? '' : `<span class="thb-equiv">≈ ${formatCurrency(v, 'THB')}</span>`;
-  };
-
-  /** Baht equivalent of an amount in the trip currency ('' when THB/no rate). */
-  const thbOfBudget = (minor) => {
-    if (currency === 'THB') return '';
-    const v = toThbMinor(minor, currency, rate || 0);
-    return v == null ? '' : formatCurrency(v, 'THB');
-  };
+  const originalExpenses = expenses;
+  expenses = expensesInThb(expenses, trip);
+  const fmt = minor => formatCurrency(minor || 0, 'THB');
+  const secondary = minor => currency === 'THB' || !rate ? '' : formatCurrency(convertCurrency(minor, 'THB', currency, 1 / rate), currency);
+  const thbTag = minor => secondary(minor) ? `<span class="money-secondary">≈ ${secondary(minor)}</span>` : '';
+  const thbOfBudget = secondary;
 
   const actualMinor = sumExpenses(expenses, { estimatedOnly: false });
   const estimatedMinor = sumExpenses(expenses, { estimatedOnly: true });
   const totalMinor = actualMinor + estimatedMinor;
-  const thbTotal = expenses.reduce((s, e) => s + (e.thbMinor || e.netTotalMinor || 0), 0);
 
   /* ---- KPI: total ---- */
   const totalEl = document.getElementById('kpi-total');
   if (totalEl) countUp(totalEl, totalMinor, { formatter: (v) => fmt(Math.round(v)) });
   if (totalEl && currency !== 'THB') {
-    // Always show the baht equivalent right under the headline figure.
+    // Keep the original trip currency below the baht headline.
     const tag = document.getElementById('kpi-total-thb');
-    const label = `≈ ${formatCurrency(toThbMinor(totalMinor, currency, rate) || 0, 'THB')}`;
+    const label = secondary(totalMinor);
     if (!tag) {
       const span = document.createElement('div');
       span.id = 'kpi-total-thb';
-      span.className = 'thb-equiv thb-equiv--strong';
+      span.className = 'money-secondary';
       span.textContent = label;
       totalEl.insertAdjacentElement('afterend', span);
     } else tag.textContent = label;
@@ -2477,16 +2460,16 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
   setHtml('kpi-total-sub', `
     <span class="meta-line">${icon('check-circle', 'w-3 h-3')} ${th('จ่ายจริง','Actual')} ${fmt(actualMinor)}</span>
     <span class="meta-line">${icon('hourglass', 'w-3 h-3')} ${th('ประมาณการ','Estimated')} ${fmt(estimatedMinor)}</span>
-    ${currency !== 'THB' ? `<span class="meta-line">${icon('banknote', 'w-3 h-3')} ≈ ${formatCurrency(toThbMinor(thbTotal, currency, rate) || 0, 'THB')}</span>` : ''}
     <span class="meta-line">${icon('receipt', 'w-3 h-3')} ${expenses.length} ${th('รายการ','items')}</span>
   `);
 
   /* ---- KPI: budget ---- */
-  const budget = Number(trip?.budgetTotal) > 0
+  const budgetBase = Number(trip?.budgetTotal) > 0
     ? Number(trip.budgetTotal)
     : (Number(trip?.budgetPerPerson) > 0 ? Number(trip.budgetPerPerson) * Math.max(1, members.length) : 0);
+  const budget = toThbMinor(budgetBase, currency, rate) || 0;
   const budgetEl = document.getElementById('kpi-budget');
-  /** The baht line under a KPI — shown even when the trip never set a rate. */
+  /** Secondary trip-currency line under a baht KPI. */
   const setKpiThb = (hostEl, id, label) => {
     if (!hostEl) return;
     const shown = /^\s*[฿]|THB/.test(label || '') || currency === 'THB';
@@ -2496,14 +2479,13 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
     else {
       const span = document.createElement('div');
       span.id = id;
-      span.className = 'thb-equiv thb-equiv--strong';
+      span.className = 'money-secondary';
       span.textContent = label;
       hostEl.insertAdjacentElement('afterend', span);
     }
   };
   if (budget > 0) {
-    // Budgets are entered in the trip currency; compare against the trip-currency
-    // total (they used to be compared against the baht total — wrong scale).
+    // Both budget and expenses have been normalized to Thai satang.
     const spend = totalMinor;
     const left = budget - spend;
     if (budgetEl) budgetEl.textContent = fmt(Math.max(0, left));
@@ -2511,8 +2493,8 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
     const bar = document.getElementById('kpi-budget-bar');
     if (bar) { bar.style.width = `${pct}%`; if (left < 0) bar.style.background = 'var(--danger)'; }
     // งบคงเหลือต้องเห็นเป็นเงินบาทด้วย (แม้ทริปไม่ตั้งเรต) — a request.
-    const leftThb = toThbMinor(Math.max(0, left), currency, rate || 0);
-    setKpiThb(budgetEl, 'kpi-budget-thb', leftThb == null ? '' : `≈ ${formatCurrency(leftThb, 'THB')}`);
+    const leftThb = Math.max(0, left);
+    setKpiThb(budgetEl, 'kpi-budget-thb', secondary(leftThb));
     setHtml('kpi-budget-sub', left >= 0
       ? `${th('ใช้ไป','Used')} ${pct}% • ${th('งบ','budget')} ${fmt(budget)}${budget !== totalMinor && thbOfBudget(budget) ? ` (≈ ${thbOfBudget(budget)})` : ''}`
       : `<span style="color:var(--danger);">${th('เกินงบ','Over budget')} ${fmt(-left)}${thbOfBudget(-left) ? ` (≈ ${thbOfBudget(-left)})` : ''}</span>`);
@@ -2536,12 +2518,12 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
     balEl.style.color = (myBal?.net || 0) >= 0 ? 'var(--success)' : 'var(--danger)';
     const existing = document.getElementById('kpi-balance-thb');
     if (currency !== 'THB') {
-      const label = `≈ ${formatCurrency(toThbMinor(myBal?.net || 0, currency, rate) || 0, 'THB')}`;
+      const label = secondary(myBal?.net || 0);
       if (existing) existing.textContent = label;
       else {
         const span = document.createElement('div');
         span.id = 'kpi-balance-thb';
-        span.className = 'thb-equiv thb-equiv--strong';
+        span.className = 'money-secondary';
         span.textContent = label;
         balEl.insertAdjacentElement('afterend', span);
       }
@@ -2599,7 +2581,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
           ${it.address ? ` • ${escapeHtml(String(it.address).slice(0, 28))}` : ''}
         </div>
       </div>
-      ${Number(it.estimateAmount) > 0 ? `<span class="badge badge-skipped text-[10px]">≈ ${escapeHtml(it.estimateCurrency || currency)} ${Number(it.estimateAmount).toLocaleString()}</span>` : ''}
+      ${Number(it.estimateAmount) > 0 ? `<span class="badge badge-skipped text-[10px]">${moneyHtml(toMinor(Number(it.estimateAmount), getCurrencyDecimals(it.estimateCurrency || currency)), it.estimateCurrency || currency, resolveTripThbRate(trip, originalExpenses, it.estimateCurrency || currency))}</span>` : ''}
     </div>`).join('')
     : renderEmptyState({
       icon: 'map-pinned',
@@ -2672,7 +2654,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
   const membersMap = Object.fromEntries(members.map(m => [m.id, m]));
   const paidBy = {}, shareBy = {};
   expenses.forEach(e => {
-    if (e.payerId) paidBy[e.payerId] = (paidBy[e.payerId] || 0) + (e.netTotalMinor || 0);
+    for (const p of expensePayments(e)) paidBy[p.memberId] = (paidBy[p.memberId] || 0) + p.amountMinor;
     (e.allocations || []).forEach(a => { shareBy[a.memberId] = (shareBy[a.memberId] || 0) + (a.amountMinor || 0); });
   });
   const boardIds = [...new Set([...members.map(m => m.id), ...Object.keys(paidBy), ...Object.keys(shareBy)])];
@@ -2703,9 +2685,9 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
   }).join('') : `<p class="text-sm text-[var(--text-secondary)]">${t('noData')}</p>`);
 
   /* ---- Recent expenses ---- */
-  const recent = [...expenses].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 5);
+  const recent = [...originalExpenses].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 5);
   setHtml('recent-expenses', recent.length ? recent.map(e => {
-    const payer = membersMap[e.payerId]?.displayName || '';
+    const payer = expensePayments(e).map(p => membersMap[p.memberId]?.displayName || p.memberId).join(', ');
     return `
       <button class="expense-row" data-expense="${e.id}">
         <span class="row-icon" style="width:34px;height:34px;border-radius:11px;background:color-mix(in srgb, ${categoryColor(e.category)} 18%, transparent);color:${categoryColor(e.category)};">${icon(categoryIcon(e.category), 'w-4 h-4')}</span>
@@ -2714,8 +2696,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
           <span class="block text-[11px] text-[var(--text-secondary)]">${escapeHtml(categoryLabel(e.category, lang))}${payer ? ' • ' + escapeHtml(payer) : ''} • ${escapeHtml(e.date || '')}</span>
         </span>
         <span class="text-right flex-shrink-0">
-          <span class="block font-bold text-sm">${formatCurrency(e.netTotalMinor || 0, e.currency || currency)}</span>
-          ${expenseThbTag(e)}
+          ${moneyHtml(e.netTotalMinor || 0, e.currency || currency, e.thbRate || resolveTripThbRate(trip, originalExpenses, e.currency || currency))}
           ${e.isEstimated ? `<span class="badge badge-skipped text-[9px]">${th('ประมาณการ','est.')}</span>` : ''}
         </span>
       </button>`;
@@ -2740,9 +2721,10 @@ async function renderItinerary(params) {
   const currency = trip?.baseCurrency || 'THB';
   // Trip groups feed the "estimated cost" select in the add/edit sheet, so load
   // them together with the permissions (one round trip, cached afterwards).
-  const [perms] = await Promise.all([
+  const [perms, , itineraryExpenses] = await Promise.all([
     resolvePermissions(tripId, trip, currentUser.uid),
-    loadTripCategories(tripId).catch(e => console.warn(e))
+    loadTripCategories(tripId).catch(e => console.warn(e)),
+    fetchAllExpenses(tripId).catch(() => [])
   ]);
   if (isStale(token)) return;
   const isAdmin = perms.isAdmin;
@@ -2910,6 +2892,15 @@ async function renderItinerary(params) {
 
   bind('export-png-btn', 'click', () => exportItineraryPng());
   bind('export-day-png-btn', 'click', () => exportItineraryDayPng(selectedDate));
+
+  function itineraryMoney(items) {
+    const estimates = items.map(i => ({ netTotalMinor: toMinor(Number(i.estimateAmount) || 0, getCurrencyDecimals(i.estimateCurrency || currency)), currency: i.estimateCurrency || currency, thbRate: resolveTripThbRate(trip, itineraryExpenses, i.estimateCurrency || currency) }));
+    try {
+      const total = sumExpenses(expensesInThb(estimates, trip));
+      const rate = resolveTripThbRate(trip, itineraryExpenses, currency);
+      return `<span class="money-primary">${formatCurrency(total, 'THB')}</span>` + (currency !== 'THB' && rate ? `<span class="money-secondary">≈ ${formatCurrency(convertCurrency(total, 'THB', currency, 1 / rate), currency)}</span>` : '');
+    } catch { return th('ยังไม่มีเรท THB', 'THB rate needed'); }
+  }
 
   function mapStatus(state, message) {
     const statusEl = document.getElementById('map-status');
@@ -3257,11 +3248,7 @@ async function renderItinerary(params) {
     planned: '#2563eb', current: '#d97706', completed: '#059669', skipped: '#6b7280', cancelled: '#dc2626'
   };
   // Rate for the baht lines in the exported sheet: trip rate → expense snapshots.
-  let exportThbRate = resolveTripThbRate(trip, [], currency);
-  const fmtThbOf = (minor) => {
-    const v = toThbMinor(minor, currency, exportThbRate || 0);
-    return v == null || currency === 'THB' ? '' : formatCurrency(v, 'THB');
-  };
+  let exportThbRate = resolveTripThbRate(trip, itineraryExpenses, currency);
   /** Estimated cost of an itinerary item, expressed in the trip currency. */
   const estTripMinor = (it) => {
     const amount = Number(it.estimateAmount) || 0;
@@ -3269,9 +3256,9 @@ async function renderItinerary(params) {
     const code = it.estimateCurrency || currency;
     const minor = toMinor(amount, getCurrencyDecimals(code));
     if (code === currency) return minor;
-    const codeRate = resolveTripThbRate(trip, [], code);
+    const codeRate = resolveTripThbRate(trip, itineraryExpenses, code);
     if (!codeRate || !exportThbRate) return 0;
-    return Math.round((minor * codeRate) / exportThbRate);
+    return convertCurrency(toThbMinor(minor, code, codeRate), 'THB', currency, 1 / exportThbRate);
   };
   const statusLabel = (it) => {
     const def = ITINERARY_STATUSES.find(st => st.id === (it.status || 'planned'));
@@ -3318,7 +3305,6 @@ async function renderItinerary(params) {
       const dayEst = dayItems.reduce((sum, it) => sum + estTripMinor(it), 0);
       const rows = dayItems.map((it, idx) => {
         const est = estTripMinor(it);
-        const thb = est ? fmtThbOf(est) : '';
         const meta = [
           `${formatTime(it.startAt, trip?.timezone)} – ${formatTime(it.endAt, trip?.timezone)}`,
           formatDuration(it.durationMinutes),
@@ -3336,7 +3322,7 @@ async function renderItinerary(params) {
               ${it.notes ? `<div class="itin-sheet-note">${escapeHtml(it.notes)}</div>` : ''}
             </td>
             <td style="width:88px;"><span class="itin-sheet-status">${escapeHtml(statusLabel(it))}</span></td>
-            <td class="num" style="width:112px;">${est ? `<span class="itin-sheet-est">${formatCurrency(est, currency)}${thb ? `<i>≈ ${thb}</i>` : ''}</span>` : '<span style="color:#9ca3af;">—</span>'}</td>
+            <td class="num" style="width:112px;">${est ? `<span class="itin-sheet-est">${moneyHtml(est, currency, exportThbRate)}</span>` : '<span style="color:#9ca3af;">—</span>'}</td>
           </tr>`;
       }).join('');
       return `
@@ -3344,7 +3330,7 @@ async function renderItinerary(params) {
           <div class="itin-sheet-day-head">
             <div class="itin-sheet-day-num" style="background:${dayColors[day] || '#2563eb'};">${dayIdx + 1}</div>
             <div class="itin-sheet-day-title">${escapeHtml(formatDate(day, lang, trip?.timezone) || day)}</div>
-            <div class="itin-sheet-day-sub">${dayItems.length} ${th('ที่','places')}${dayEst ? ` • ${formatCurrency(dayEst, currency)}` : ''}</div>
+            <div class="itin-sheet-day-sub">${dayItems.length} ${th('ที่','places')}${dayEst ? ` • ${moneyHtml(dayEst, currency, exportThbRate)}` : ''}</div>
           </div>
           ${dayItems.length ? `
           <table class="itin-sheet-table">
@@ -3373,13 +3359,11 @@ async function renderItinerary(params) {
           <div class="itin-sheet-stats">
             <div class="itin-sheet-stat">
               <span>${isDay ? th('ประมาณการของวันนี้','Estimated for this day') : th('ประมาณการรวม','Estimated total')}</span>
-              <b>${formatCurrency(estTotal, currency)}</b>
-              ${fmtThbOf(estTotal) ? `<i>≈ ${fmtThbOf(estTotal)}</i>` : ''}
+              ${moneyHtml(estTotal, currency, exportThbRate)}
             </div>
             <div class="itin-sheet-stat">
               <span>${th('ผูกกับค่าใช้จ่ายแล้ว','Linked to expenses')}</span>
-              <b>${formatCurrency(actualTotal, currency)}</b>
-              ${fmtThbOf(actualTotal) ? `<i>≈ ${fmtThbOf(actualTotal)}</i>` : ''}
+              ${moneyHtml(actualTotal, currency, exportThbRate)}
             </div>
           </div>
         </header>
@@ -3513,7 +3497,7 @@ async function renderItinerary(params) {
               ${estimateMinor ? `
                 <div class="estimate-line">
                   ${icon('hourglass', 'w-3.5 h-3.5')}
-                  <span>${th('ประมาณการ','Est.')} <b>${formatCurrency(estimateMinor, it.estimateCurrency || currency)}</b></span>
+                  <span>${th('ประมาณการ','Est.')} <b>${moneyHtml(estimateMinor, it.estimateCurrency || currency, resolveTripThbRate(trip, itineraryExpenses, it.estimateCurrency || currency))}</b></span>
                   <span class="text-[10px]">${escapeHtml(categoryLabel(it.estimateCategory || 'general', lang))}${payerName ? ` • ${th('จ่าย','paid by')} ${escapeHtml(payerName)}` : ''}${sharedNames.length ? ` • ${th('หาร','split')} ${sharedNames.length} ${th('คน','pax')}` : ''}</span>
                   ${it.expenseId ? `<span class="badge badge-skipped text-[9px]">${th('อยู่ในค่าใช้จ่าย','in expenses')}</span>` : ''}
                 </div>` : ''}
@@ -3573,7 +3557,7 @@ async function renderItinerary(params) {
               <span class="step-num">${dayjs(day).format('DD')}</span>
               ${formatDate(day, lang, trip?.timezone)}
               <span class="badge badge-planned text-[10px]">${dayItems.length} ${th('ที่','places')}</span>
-              <span class="text-[10px] text-[var(--text-tertiary)] ml-auto">${formatCurrency(dayItems.reduce((sum, i) => sum + (Number(i.estimateAmount) > 0 ? toMinor(Number(i.estimateAmount), getCurrencyDecimals(i.estimateCurrency || currency)) : 0), 0), currency)}</span>
+              <span class="text-[10px] text-[var(--text-tertiary)] ml-auto">${itineraryMoney(dayItems)}</span>
               <button class="itin-day-export-btn" data-export-day="${escapeHtml(day)}" title="${th('ส่งออก PNG ของวันนี้','Export this day as a PNG')}">${icon('image', 'w-3.5 h-3.5')} PNG</button>
             </h3>
             <div class="space-y-3 stagger">${dayItems.map((it, idx) => itemCardHtml(it, idx, { draggable: editMode })).join('')}</div>
@@ -3787,7 +3771,7 @@ async function renderItinerary(params) {
 
             <div id="it-estimate-fields" class="${hasEstimate ? '' : 'hidden'} space-y-3 mt-3">
               <div class="grid grid-cols-3 gap-2">
-                <div class="input-group col-span-2"><label class="input-label text-[12px]">${icon('banknote', 'w-3.5 h-3.5')} ${th('จำนวนเงิน','Amount')}</label><input id="it-estimate-amount" class="input" type="number" step="0.01" min="0" value="${it.estimateAmount ?? ''}" placeholder="0.00"></div>
+                <div class="input-group col-span-2"><label class="input-label text-[12px]">${icon('banknote', 'w-3.5 h-3.5')} ${th('จำนวนเงิน','Amount')}</label><input id="it-estimate-amount" class="input money-input" type="text" inputmode="decimal" value="${it.estimateAmount == null ? '' : formatAmount(it.estimateAmount, getCurrencyDecimals(it.estimateCurrency || currency))}" placeholder="0.00"></div>
                 <div class="input-group"><label class="input-label text-[12px]">${icon('coins', 'w-3.5 h-3.5')} ${th('สกุลเงิน','Currency')}</label>
                   <select id="it-estimate-currency" class="input">${['THB','JPY','USD','EUR','KRW','TWD','SGD'].map(c => `<option value="${c}" ${(it.estimateCurrency || currency) === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
                 </div>
@@ -3865,6 +3849,7 @@ async function renderItinerary(params) {
       );
     });
 
+    bindMoneyInputs(document);
     let payerId = it.estimatePayerId || currentUser.uid;
     let shareIds = it.estimateShareWith?.length ? [...it.estimateShareWith] : members.map(m => m.id);
 
@@ -3902,7 +3887,7 @@ async function renderItinerary(params) {
         const coords = document.getElementById('it-coords').value.trim();
         if (coords && !parseCoordinates(coords)) throw new Error(th('พิกัดไม่ถูกต้อง (ใช้รูปแบบ lat,lng)','Invalid coordinates (use lat,lng)'));
         const wantEstimate = estimateToggle.checked;
-        const estimateAmount = wantEstimate ? (parseFloat(document.getElementById('it-estimate-amount').value) || 0) : 0;
+        const estimateAmount = wantEstimate ? (parseCurrencyInput(document.getElementById('it-estimate-amount').value) || 0) : 0;
         if (wantEstimate && !(estimateAmount > 0)) throw new Error(th('กรอกจำนวนเงินประมาณการ หรือปิดสวิตช์','Enter the estimated amount or turn the switch off'));
 
         const payload = {
@@ -4080,7 +4065,8 @@ async function renderExpenses(params) {
     resolvePermissions(tripId, trip, currentUser.uid),
     loadTripCategories(tripId).catch(e => console.warn(e)),
     listMembers(tripId).catch(e => { console.warn(e); return []; }),
-    listComments(tripId).catch(e => { console.warn(e); return []; })
+    listComments(tripId).catch(e => { console.warn(e); return []; }),
+    fetchAllExpenses(tripId).catch(() => [])
   ]);
   if (isStale(token)) return;
   const isAdmin = perms.isAdmin;
@@ -4155,13 +4141,6 @@ async function renderExpenses(params) {
   let groupMode = localStorage.getItem('fuji_exp_group') === 'day' ? 'day' : 'list';
   applyGroupToggle();
 
-  /** Baht equivalent of a trip-currency amount ('' for THB trips). */
-  const expThbTag = (minor) => {
-    if (currency === 'THB') return '';
-    const v = toThbMinor(minor, currency, resolveTripThbRate(trip, allLoaded, currency) || 0);
-    return v == null ? '' : `<span class="thb-equiv thb-equiv--strong">≈ ${formatCurrency(v, 'THB')}</span>`;
-  };
-
   function applyGroupToggle() {
     document.querySelectorAll('#expense-group-toggle [data-group]').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.group === groupMode);
@@ -4214,15 +4193,18 @@ async function renderExpenses(params) {
   }
 
   function renderSummary() {
-    const total = sumExpenses(allLoaded);
-    const actual = sumExpenses(allLoaded, { estimatedOnly: false });
-    const est = sumExpenses(allLoaded, { estimatedOnly: true });
-    const rateToThb = Number(trip?.exchangeRateToTHB) || 1;
-    const withThb = (minor) => {
-      if (currency === 'THB') return formatCurrency(minor, 'THB');
-      const thb = toThbMinor(minor, currency, rateToThb);
-      return `${formatCurrency(minor, currency)}<span class="thb-equiv">≈ ${formatCurrency(thb || 0, 'THB')}</span>`;
-    };
+    let normalized;
+    try { normalized = expensesInThb(allLoaded, trip); }
+    catch (err) {
+      ['exp-sum-total', 'exp-sum-actual', 'exp-sum-est'].forEach(id => setHtml(id, `<span class="money-secondary">${escapeHtml(err.message)}</span>`));
+      setText('exp-sum-count', String(allLoaded.length));
+      return;
+    }
+    const total = sumExpenses(normalized);
+    const actual = sumExpenses(normalized, { estimatedOnly: false });
+    const est = sumExpenses(normalized, { estimatedOnly: true });
+    const rate = resolveTripThbRate(trip, allLoaded, currency);
+    const withThb = minor => `<span class="money-primary">${formatCurrency(minor, 'THB')}</span>` + (currency !== 'THB' && rate ? `<span class="money-secondary">≈ ${formatCurrency(convertCurrency(minor, 'THB', currency, 1 / rate), currency)}</span>` : '');
     setHtml('exp-sum-total', withThb(total));
     setHtml('exp-sum-actual', withThb(actual));
     setHtml('exp-sum-est', withThb(est));
@@ -4231,7 +4213,7 @@ async function renderExpenses(params) {
 
   function expenseCardHtml(e) {
     const catLabel = categoryLabel(e.category || 'general', lang);
-    const payer = membersMap[e.payerId]?.displayName || '';
+    const payer = expensePayments(e).map(p => membersMap[p.memberId]?.displayName || p.memberId).join(', ');
     const participants = (e.allocations || []).filter(a => a.amountMinor > 0).length;
     const method = e.paymentMethod === 'card' ? 'card' : e.paymentMethod === 'transfer' ? 'transfer' : 'cash';
     const methodText = method === 'card' ? th('บัตรเครดิต','Card') : method === 'transfer' ? th('โอนเงิน','Transfer') : th('เงินสด','Cash');
@@ -4244,10 +4226,7 @@ async function renderExpenses(params) {
           <div class="flex items-start justify-between gap-2">
             <h3 class="font-semibold text-sm truncate">${escapeHtml(e.title)}</h3>
             <div class="text-right flex-shrink-0">
-              <div class="font-bold text-sm" style="font-family: var(--font-display);">${formatCurrency(e.netTotalMinor || 0, e.currency || currency)}</div>
-              ${(e.currency || currency) !== 'THB'
-                ? `<div class="thb-equiv">≈ ${formatCurrency(toThbMinor(e.netTotalMinor || 0, e.currency || currency, e.thbRate || trip?.exchangeRateToTHB) || 0, 'THB')}</div>`
-                : ''}
+              ${moneyHtml(e.netTotalMinor || 0, e.currency || currency, e.thbRate || resolveTripThbRate(trip, allLoaded, e.currency || currency))}
             </div>
           </div>
           <div class="flex items-center gap-2 flex-wrap mt-1">
@@ -4300,16 +4279,10 @@ async function renderExpenses(params) {
       const days = [...byDay.keys()].sort((a, b) => String(b).localeCompare(String(a)));
       listEl.innerHTML = days.map(day => {
         const dayItems = byDay.get(day);
-        const dayTotal = dayItems.reduce((sum, e) => {
-          const code = e.currency || currency;
-          const minor = e.netTotalMinor || 0;
-          if (code === currency) return sum + minor;
-          const usedRate = Number(e.thbRate) > 0 ? Number(e.thbRate) : 0;
-          const tripRate = resolveTripThbRate(trip, allLoaded, currency) || 0;
-          if (!usedRate || !tripRate) return sum + minor;
-          return sum + Math.round((minor * usedRate) / tripRate);
-        }, 0);
-        const thbTotal = expThbTag(dayTotal);
+        let dayTotal = null;
+        try { dayTotal = sumExpenses(expensesInThb(dayItems, trip)); } catch { /* missing rate */ }
+        const tripRate = resolveTripThbRate(trip, allLoaded, currency);
+        const thbTotal = dayTotal != null && currency !== 'THB' && tripRate ? `<span class="money-secondary">≈ ${formatCurrency(convertCurrency(dayTotal, 'THB', currency, 1 / tripRate), currency)}</span>` : '';
         return `
           <section class="expense-day" data-day="${escapeHtml(day)}">
             <header class="expense-day-head">
@@ -4319,7 +4292,7 @@ async function renderExpenses(params) {
                 <div class="expense-day-sub">${dayItems.length} ${th('รายการ','items')}</div>
               </div>
               <div class="expense-day-total">
-                <b>${formatCurrency(dayTotal, currency)}</b>
+                <b class="money-primary">${dayTotal == null ? th('ยังไม่มีเรท THB','THB rate needed') : formatCurrency(dayTotal, 'THB')}</b>
                 ${thbTotal}
               </div>
             </header>
@@ -4499,6 +4472,7 @@ async function renderExpenses(params) {
  * Expense editor — add AND edit (all fields editable, deletable)
  * ================================================================== */
 async function renderExpenseAdd(params) {
+  const editorHash = location.hash;
   const tripId = params.tripId;
   const token = beginRender();
   const lang = getLang();
@@ -4514,11 +4488,12 @@ async function renderExpenseAdd(params) {
 
   // Groups / members / itinerary are independent reads (and cached) — fire them
   // together so the form paints after one round trip, not three.
-  const [, membersRes, itemsRes, commentsRes] = await Promise.all([
+  const [, membersRes, itemsRes, commentsRes, expenseRates] = await Promise.all([
     loadTripCategories(tripId).catch(e => console.warn(e)),
     listMembers(tripId).catch(e => { console.warn(e); return []; }),
     fetchItinerary(tripId, null).catch(e => { console.warn(e); return []; }),
-    listComments(tripId).catch(e => { console.warn(e); return []; })
+    listComments(tripId).catch(e => { console.warn(e); return []; }),
+    fetchAllExpenses(tripId).catch(() => [])
   ]);
   let members = membersRes || [];
   currentTripMembers = members;
@@ -4535,7 +4510,9 @@ async function renderExpenseAdd(params) {
   const e = expense || {};
   const currency = e.currency || baseCurrency;
   const decimals = getCurrencyDecimals(currency);
-  const amount = (minor) => (minor ? fromMinor(minor, decimals) : '');
+  const amount = (minor) => (minor ? formatAmount(fromMinor(minor, decimals), decimals) : '');
+  const initialPayments = expensePayments(e);
+  const initialPayers = new Set(initialPayments.length ? initialPayments.map(p => p.memberId) : [members[0]?.id || currentUser.uid]);
 
   appEl.innerHTML = `
     <div class="page-enter max-w-[720px] mx-auto">
@@ -4579,7 +4556,6 @@ async function renderExpenseAdd(params) {
                   <option value="estimated" ${e.isEstimated ? 'selected' : ''}>${th('ประมาณการ','Estimated')}</option>
                 </select>
               </div>
-              <div class="input-group"><label class="input-label">${icon('arrow-left-right', 'w-3.5 h-3.5')} ${th('เรทเป็น THB','Rate to THB')}</label><input id="ex-thb-rate" class="input" type="number" step="0.0001" min="0" value="${e.thbRate || trip?.exchangeRateToTHB || 1}"></div>
             </div>
           </div>
         </section>
@@ -4592,17 +4568,19 @@ async function renderExpenseAdd(params) {
           </div>
           <div class="space-y-3">
             <div class="grid grid-cols-3 gap-3">
-              <div class="input-group col-span-2"><label class="input-label">${icon('banknote', 'w-3.5 h-3.5')} ${th('ยอดรวม','Subtotal')} *</label><input id="ex-subtotal" class="input" type="number" step="0.01" min="0" required placeholder="0.00" value="${amount(e.subtotalMinor)}"></div>
+              <div class="input-group col-span-2"><label class="input-label">${icon('banknote', 'w-3.5 h-3.5')} ${th('ยอดก่อนส่วนลด / VAT / Service Charge','Subtotal before adjustments')} *</label><input id="ex-subtotal" class="input money-input" type="text" inputmode="decimal" required placeholder="0.00" value="${amount(e.subtotalMinor)}"></div>
               <div class="input-group"><label class="input-label">${icon('coins', 'w-3.5 h-3.5')} ${th('สกุลเงิน','Currency')}</label>
                 <select id="ex-currency" class="input">${['THB','JPY','USD','EUR','KRW','TWD','SGD','GBP','CNY','HKD','AUD','VND'].map(c => `<option value="${c}" ${currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
               </div>
             </div>
 
             <div class="grid grid-cols-3 gap-3">
-              <div class="input-group"><label class="input-label">${icon('ticket', 'w-3.5 h-3.5')} ${th('ส่วนลด','Discount')}</label><input id="ex-discount" class="input" type="number" step="0.01" min="0" value="${amount(e.discountMinor) || 0}"></div>
-              <div class="input-group"><label class="input-label">${icon('concierge-bell', 'w-3.5 h-3.5')} Service</label><input id="ex-service" class="input" type="number" step="0.01" min="0" value="${amount(e.serviceMinor) || 0}"></div>
-              <div class="input-group"><label class="input-label">${icon('receipt-text', 'w-3.5 h-3.5')} Tax</label><input id="ex-tax" class="input" type="number" step="0.01" min="0" value="${amount(e.taxMinor) || 0}"></div>
+              <div class="input-group"><label class="input-label">${icon('ticket', 'w-3.5 h-3.5')} ${th('ส่วนลด','Discount')}</label><input id="ex-discount" class="input money-input" type="text" inputmode="decimal" value="${amount(e.discountMinor) || 0}"></div>
+              <div class="input-group"><label class="input-label">${icon('concierge-bell', 'w-3.5 h-3.5')} Service Charge</label><input id="ex-service" class="input money-input" type="text" inputmode="decimal" value="${amount(e.serviceMinor) || 0}"></div>
+              <div class="input-group"><label class="input-label">${icon('receipt-text', 'w-3.5 h-3.5')} VAT / Tax</label><input id="ex-tax" class="input money-input" type="text" inputmode="decimal" value="${amount(e.taxMinor) || 0}"></div>
             </div>
+
+              <div class="input-group"><label class="input-label">${icon('arrow-left-right', 'w-3.5 h-3.5')} ${th('เรทเป็น THB','Rate to THB')}</label><input id="ex-thb-rate" class="input" type="number" step="0.0001" min="0" value="${e.thbRate || resolveTripThbRate(trip, expenseRates, currency) || ''}"></div>
 
             <div id="net-preview" class="p-4 rounded-xl text-sm font-bold border flex items-center gap-2" style="border-color: var(--border); background: var(--bg-secondary);">${icon('calculator', 'w-4 h-4')} ${t('netTotal')}: --</div>
             <div id="thb-preview" class="p-3 rounded-xl border text-sm flex items-center gap-2" style="border-color: color-mix(in srgb, var(--success) 35%, transparent); background: var(--success-bg); color: var(--success);">${icon('banknote', 'w-4 h-4')} THB: --</div>
@@ -4617,10 +4595,10 @@ async function renderExpenseAdd(params) {
           </div>
           <div class="space-y-4">
             <div class="input-group">
-              <label class="input-label">${icon('user', 'w-3.5 h-3.5')} ${th('คนจ่าย','Paid by')} *</label>
+              <label class="input-label">${icon('user', 'w-3.5 h-3.5')} ${th('คนจ่าย (เลือกได้หลายคน)','Paid by (select one or more)')} *</label>
               <div id="payer-tiles" class="tile-grid">
                 ${members.map(m => `
-                  <button type="button" class="tile ${(e.payerId || members[0]?.id || currentUser.uid) === m.id ? 'tile-selected' : ''}" data-payer="${m.id}" title="${escapeHtml(m.displayName)}">
+                  <button type="button" class="tile ${initialPayers.has(m.id) ? 'tile-selected' : ''}" data-payer="${m.id}" title="${escapeHtml(m.displayName)}">
                     <span class="flex items-center gap-2 min-w-0">
                       <span class="avatar w-8 h-8 text-xs" style="background:${m.color || 'var(--primary)'};width:32px;height:32px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                       <span class="text-sm font-medium truncate">${escapeHtml(m.displayName)}</span>
@@ -4629,6 +4607,25 @@ async function renderExpenseAdd(params) {
               </div>
             </div>
 
+        <div class="grid grid-cols-2 gap-3">
+          <div class="input-group"><label class="input-label">${icon('credit-card', 'w-3.5 h-3.5')} ${th('วิธีจ่าย','Payment method')}</label>
+            <select id="ex-payment" class="input">
+              <option value="cash" ${(e.paymentMethod || 'cash') === 'cash' ? 'selected' : ''}>${th('เงินสด','Cash')}</option>
+              <option value="card" ${e.paymentMethod === 'card' ? 'selected' : ''}>${th('บัตรเครดิต','Card')}</option>
+              <option value="transfer" ${e.paymentMethod === 'transfer' ? 'selected' : ''}>${th('โอนเงิน','Transfer')}</option>
+            </select>
+          </div>
+          <div class="input-group" id="ex-card-group">
+            <label class="input-label">${icon('credit-card', 'w-3.5 h-3.5')} ${th('ชื่อบัตรเครดิต','Card name')}</label>
+            <input id="ex-card" class="input" list="ex-card-list" autocomplete="off" placeholder="${th('เช่น KBank Visa ••4321','e.g. KBank Visa ••4321')}" value="${escapeHtml(e.cardName || '')}">
+            <datalist id="ex-card-list">
+              ${suggestCards(tripId).map(c => `<option value="${escapeHtml(c)}"></option>`).join('')}
+            </datalist>
+            <p class="input-hint">${th('ใส่ชื่อบัตรไว้ เพื่อสรุปได้ว่าค่าใช้จ่ายอยู่บัตรไหน','Name the card so the summary can group spending per card')}</p>
+          </div>
+        </div>
+
+            <div id="payer-amounts"></div>
             <div class="input-group">
               <div class="flex items-center justify-between">
                 <label class="input-label">${icon('split', 'w-3.5 h-3.5')} ${th('ใครหารด้วย','Who shares')}</label>
@@ -4636,7 +4633,7 @@ async function renderExpenseAdd(params) {
               </div>
               <div id="share-tiles" class="tile-grid">
                 ${members.map(m => `
-                  <button type="button" class="tile ${(e.allocations ? (e.allocations.some(a => a.memberId === m.id && a.amountMinor > 0)) : true) ? 'tile-selected' : ''}" data-share="${m.id}" title="${escapeHtml(m.displayName)}">
+                  <button type="button" class="tile ${(e.allocations ? (e.allocations.some(a => a.memberId === m.id)) : true) ? 'tile-selected' : ''}" data-share="${m.id}" title="${escapeHtml(m.displayName)}">
                     <span class="flex items-center gap-2 min-w-0">
                       <span class="avatar w-8 h-8 text-xs" style="background:${m.color || 'var(--primary)'};width:32px;height:32px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                       <span class="text-sm font-medium truncate">${escapeHtml(m.displayName)}</span>
@@ -4660,7 +4657,7 @@ async function renderExpenseAdd(params) {
         <section class="form-section">
           <div class="form-section-head">
             <span class="form-section-icon">${icon('info', 'w-4 h-4')}</span>
-            <h3>${th('ข้อมูลเพิ่มเติม', 'More details')}</h3>
+            <h3>${th('หลักฐานและข้อมูลเพิ่มเติม (ไม่บังคับ)', 'Receipt & extra details (optional)')}</h3>
           </div>
           <div class="space-y-3">
         <div class="input-group">
@@ -4671,23 +4668,6 @@ async function renderExpenseAdd(params) {
           </select>
         </div>
 
-        <div class="grid grid-cols-2 gap-3">
-          <div class="input-group"><label class="input-label">${icon('credit-card', 'w-3.5 h-3.5')} ${th('วิธีจ่าย','Payment method')}</label>
-            <select id="ex-payment" class="input">
-              <option value="cash" ${(e.paymentMethod || 'cash') === 'cash' ? 'selected' : ''}>${th('เงินสด','Cash')}</option>
-              <option value="card" ${e.paymentMethod === 'card' ? 'selected' : ''}>${th('บัตรเครดิต','Card')}</option>
-              <option value="transfer" ${e.paymentMethod === 'transfer' ? 'selected' : ''}>${th('โอนเงิน','Transfer')}</option>
-            </select>
-          </div>
-          <div class="input-group" id="ex-card-group">
-            <label class="input-label">${icon('credit-card', 'w-3.5 h-3.5')} ${th('ชื่อบัตรเครดิต','Card name')}</label>
-            <input id="ex-card" class="input" list="ex-card-list" autocomplete="off" placeholder="${th('เช่น KBank Visa ••4321','e.g. KBank Visa ••4321')}" value="${escapeHtml(e.cardName || '')}">
-            <datalist id="ex-card-list">
-              ${suggestCards(tripId).map(c => `<option value="${escapeHtml(c)}"></option>`).join('')}
-            </datalist>
-            <p class="input-hint">${th('ใส่ชื่อบัตรไว้ เพื่อสรุปได้ว่าค่าใช้จ่ายอยู่บัตรไหน','Name the card so the summary can group spending per card')}</p>
-          </div>
-        </div>
 
         <div class="input-group">
           <label class="input-label">${icon('image-plus', 'w-3.5 h-3.5')} ${th('รูปใบเสร็จ (ไม่บังคับ)','Receipt photo (optional)')}</label>
@@ -4788,20 +4768,23 @@ async function renderExpenseAdd(params) {
     setReceiptPreview('');
   });
 
-  let selectedPayer = e.payerId || members[0]?.id || currentUser.uid;
+  const selectedPayers = new Set(initialPayers);
+  const payerAmounts = Object.fromEntries(initialPayments.map(p => [p.memberId, formatAmount(fromMinor(p.amountMinor, decimals), decimals)]));
   let selectedShare = new Set(members.filter(m => {
     if (!e.allocations) return true;
-    return e.allocations.some(a => a.memberId === m.id && a.amountMinor > 0);
+    return e.allocations.some(a => a.memberId === m.id);
   }).map(m => m.id));
-  let splitMethod = 'equal';
-  let customAllocations = {};
-  let lockedAllocations = new Set();   // IDs whose custom amount was manually set
-  let splitIncludesVatSc = true;        // true = custom amounts include VAT/SC, false = exclude
+  let splitMethod = e.splitMethod || (e.allocations?.length ? 'unequal' : 'equal');
+  let customAllocations = e.splitInputs || Object.fromEntries((e.allocations || []).map(a => [a.memberId, formatAmount(fromMinor(a.amountMinor, decimals), decimals)]));
+  let lockedAllocations = new Set(Object.keys(customAllocations));   // IDs whose custom amount was manually set
+  let splitIncludesVatSc = e.splitIncludesVatSc !== false;        // true = custom amounts include VAT/SC, false = exclude
 
   document.querySelectorAll('#payer-tiles [data-payer]').forEach(btn => btn.addEventListener('click', () => {
-    selectedPayer = btn.dataset.payer;
-    document.querySelectorAll('#payer-tiles .tile').forEach(t => t.classList.remove('tile-selected'));
-    btn.classList.add('tile-selected');
+    const id = btn.dataset.payer;
+    if (selectedPayers.has(id)) { selectedPayers.delete(id); delete payerAmounts[id]; }
+    else { selectedPayers.add(id); payerAmounts[id] = ''; }
+    btn.classList.toggle('tile-selected', selectedPayers.has(id));
+    renderPayers();
   }));
 
   document.querySelectorAll('#share-tiles [data-share]').forEach(btn => btn.addEventListener('click', () => {
@@ -4821,24 +4804,35 @@ async function renderExpenseAdd(params) {
   const netPreview = document.getElementById('net-preview');
   const thbPreview = document.getElementById('thb-preview');
 
+  bindMoneyInputs(document.getElementById('expense-form'));
+  document.querySelectorAll('[data-split]').forEach(b => b.classList.toggle('active', b.dataset.split === splitMethod));
+
   function readValues() {
-    const sub = parseFloat(document.getElementById('ex-subtotal').value) || 0;
-    const disc = parseFloat(document.getElementById('ex-discount').value) || 0;
-    const serv = parseFloat(document.getElementById('ex-service').value) || 0;
-    const tax = parseFloat(document.getElementById('ex-tax').value) || 0;
-    const rate = parseFloat(document.getElementById('ex-thb-rate').value) || 1;
     const cur = document.getElementById('ex-currency').value;
+    const dec = getCurrencyDecimals(cur);
+    const read = id => fromMinor(toMinor(parseCurrencyInput(document.getElementById(id).value), dec), dec);
+    const sub = read('ex-subtotal'), disc = read('ex-discount'), serv = read('ex-service'), tax = read('ex-tax');
+    const rate = cur === 'THB' ? 1 : parseFloat(document.getElementById('ex-thb-rate').value) || 0;
     const net = Math.max(0, sub - disc + serv + tax);
     return { sub, disc, serv, tax, rate, cur, net, netMinor: toMinor(net, getCurrencyDecimals(cur)) };
   }
 
   function updateNet() {
     const v = readValues();
-    if (netPreview) netPreview.innerHTML = `${icon('calculator', 'w-4 h-4')} ${t('netTotal')}: ${v.net.toFixed(getCurrencyDecimals(v.cur))} ${v.cur}`;
-    if (thbPreview) thbPreview.innerHTML = `${icon('banknote', 'w-4 h-4')} THB: ${(v.net * v.rate).toFixed(2)} <span class="opacity-70">(${th('เรท','rate')} ${v.rate})</span>`;
+    document.getElementById('ex-thb-rate').disabled = v.cur === 'THB';
+    if (v.cur === 'THB') document.getElementById('ex-thb-rate').value = '1';
+    if (netPreview) netPreview.innerHTML = `${icon('calculator', 'w-4 h-4')} ${t('netTotal')}: ${moneyHtml(v.netMinor, v.cur, v.rate)}`;
+    if (thbPreview) thbPreview.innerHTML = v.rate > 0 ? `${th('เรท','Rate')}: 1 ${v.cur} = ${formatAmount(v.rate, 4)} THB` : th('กรุณาระบุเรทแลกเป็นเงินบาทก่อนบันทึก','Enter the THB exchange rate before saving');
+    renderPayers();
     queueIcons();
     renderSplitArea();
   }
+
+  bind('ex-currency', 'change', () => {
+    const cur = document.getElementById('ex-currency').value;
+    document.getElementById('ex-thb-rate').value = cur === e.currency && e.thbRate ? e.thbRate : resolveTripThbRate(trip, expenseRates, cur) || '';
+    updateNet();
+  });
 
   ['ex-subtotal','ex-discount','ex-service','ex-tax','ex-currency','ex-thb-rate'].forEach(id => {
     const node = document.getElementById(id);
@@ -4857,14 +4851,14 @@ async function renderExpenseAdd(params) {
       return;
     }
     if (splitMethod === 'equal') {
-      const per = v.net / ids.length;
+      const equal = splitEqual(v.netMinor, ids.map(m => m.id));
       area.innerHTML = ids.map(m => `
         <div class="flex justify-between items-center text-sm p-2.5 rounded-xl gap-2" style="background: var(--bg-secondary);">
           <span class="flex items-center gap-2 min-w-0">
             <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${escapeHtml(getInitials(m.displayName))}</span>
             <span class="truncate">${escapeHtml(m.displayName)}</span>
           </span>
-          <span class="font-bold flex-shrink-0">${per.toFixed(dec)}</span>
+          <span class="font-bold flex-shrink-0">${moneyHtml(equal.find(a => a.memberId === m.id).amountMinor, v.cur, v.rate)}</span>
         </div>`).join('');
     } else {
       // ---- Custom split ----
@@ -4873,8 +4867,8 @@ async function renderExpenseAdd(params) {
         <div class="split-vat-toggle">
           <span class="text-[11px] font-bold flex-shrink-0">${icon('calculator', 'w-3.5 h-3.5')} ${th('ยอดที่กรอก','Amounts')}:</span>
           <div class="segmented" style="flex:1;min-height:28px;">
-            <button type="button" data-vatsc="include" class="segmented-item ${splitIncludesVatSc ? 'active' : ''}" style="font-size:11px;padding:4px 8px;">${th('รวม VAT/Service แล้ว','Incl. VAT/SC')}</button>
-            <button type="button" data-vatsc="exclude" class="segmented-item ${!splitIncludesVatSc ? 'active' : ''}" style="font-size:11px;padding:4px 8px;">${th('ยังไม่รวม VAT/SC','Excl. VAT/SC')}</button>
+            <button type="button" data-vatsc="include" class="segmented-item ${splitIncludesVatSc ? 'active' : ''}" style="font-size:11px;padding:4px 8px;">${th('ยอดสุทธิ (รวมทุกอย่างแล้ว)','Final amounts')}</button>
+            <button type="button" data-vatsc="exclude" class="segmented-item ${!splitIncludesVatSc ? 'active' : ''}" style="font-size:11px;padding:4px 8px;">${th('ยอดก่อนส่วนลด / VAT / SC','Before adjustments')}</button>
           </div>
         </div>`;
 
@@ -4890,7 +4884,7 @@ async function renderExpenseAdd(params) {
               <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;flex-shrink:0;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
               <span class="truncate text-xs font-medium" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
             </div>
-            <input data-alloc="${m.id}" class="input split-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${displayValue}" style="min-height:36px;padding:6px 10px;font-size:13px;">
+            <input data-alloc="${m.id}" aria-label="${escapeHtml(m.displayName)} ${th('ยอดที่กรอก','Entered amount')}" class="input split-input money-input" type="text" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${escapeHtml(displayValue)}" style="min-height:36px;padding:6px 10px;font-size:13px;">
             <button type="button" class="split-lock-btn ${isLocked ? 'is-locked' : ''}" data-lock="${m.id}" title="${isLocked ? th('ปลดล็อก — จะถูกระบบกระจายยอดอัตโนมัติ','Unlock — will be auto-distributed') : th('ล็อกยอดนี้ไว้ ไม่ให้ระบบแก้','Lock this amount')}">${icon(isLocked ? 'lock' : 'unlock', 'w-3 h-3')}</button>
             <span class="split-final ${isLocked ? '' : 'split-computed'}" data-alloc-final title="${isLocked ? '' : th('กระจายอัตโนมัติ','Auto-distributed')}">—</span>
           </div>`;
@@ -4903,7 +4897,8 @@ async function renderExpenseAdd(params) {
           <span data-split-hint></span>
         </div>`;
 
-      area.innerHTML = vatScToggle + rows + summaryHint;
+      area.innerHTML = vatScToggle + `<div class="split-columns"><span>${th('สมาชิก','Member')}</span><span>${th('ยอดที่กรอก','Input')}</span><span></span><span>${th('ยอดสุทธิ','Final share')}</span></div>` + rows + summaryHint + '<div data-split-warning role="alert" aria-live="polite"></div><div data-adjustment-summary class="split-adjustments"></div>';
+      bindMoneyInputs(area);
 
       // Bind VAT/SC toggle — rows stay, only the computed values change
       area.querySelectorAll('[data-vatsc]').forEach(btn => btn.addEventListener('click', () => {
@@ -4968,14 +4963,14 @@ async function renderExpenseAdd(params) {
     ids.forEach(m => {
       const entered = customAllocations[m.id];
       const isEntered = entered !== undefined && entered !== '';
-      if (isEntered) enteredSum += (parseFloat(entered) || 0);
+      if (isEntered) enteredSum += (parseCurrencyInput(entered) || 0);
       else if (!lockedAllocations.has(m.id)) unfilledCount++;
       const row = area.querySelector(`.split-row[data-member="${m.id}"]`);
       if (!row) return;
       const finalEl = row.querySelector('[data-alloc-final]');
       if (finalEl) {
         const val = computed[m.id] ?? 0;
-        finalEl.textContent = val > 0 ? val.toFixed(dec) : '—';
+        finalEl.innerHTML = moneyHtml(toMinor(val, dec), v.cur, v.rate);
         finalEl.classList.toggle('split-computed', !isEntered);
         finalEl.title = isEntered ? '' : th('กระจายอัตโนมัติ', 'Auto-distributed');
       }
@@ -4992,85 +4987,53 @@ async function renderExpenseAdd(params) {
         }
       }
     });
-    const remaining = v.net - enteredSum;
+    const result = customResult(v, ids);
+    const fmt = n => formatCurrency(n, v.cur);
     const hintText = area.querySelector('[data-split-hint]');
-    if (hintText) {
-      hintText.textContent = splitIncludesVatSc
-        ? (unfilledCount > 0
-          ? th(`กรอกแล้ว ${enteredSum.toFixed(dec)} • กระจายอัตโนมัติอีก ${remaining.toFixed(dec)} ให้ ${unfilledCount} คน`, `Entered ${enteredSum.toFixed(dec)} • auto-distributing ${remaining.toFixed(dec)} to ${unfilledCount} more`)
-          : th(`กรอกครบ ${enteredSum.toFixed(dec)} จาก ${v.net.toFixed(dec)}`, `Entered ${enteredSum.toFixed(dec)} of ${v.net.toFixed(dec)}`))
-        : (unfilledCount > 0
-          ? th(`กรอกยอดก่อน VAT/SC แล้ว ${enteredSum.toFixed(dec)} • ระบบจะบวก VAT/SC ให้ทีละคน`, `Entered ${enteredSum.toFixed(dec)} before VAT/SC • VAT/SC added per person`)
-          : th(`กรอกครบยอดก่อน VAT/SC ${enteredSum.toFixed(dec)} • ระบบบวก VAT/SC ให้อัตโนมัติ`, `All entered before VAT/SC ${enteredSum.toFixed(dec)} • VAT/SC added automatically`));
-    }
+    if (hintText) hintText.textContent = `${th('กรอกแล้ว','Entered')} ${fmt(result.enteredMinor)} • ${th('เป้าหมาย','Target')} ${fmt(splitIncludesVatSc ? v.netMinor : toMinor(v.sub, dec))}` + (result.unfilledCount ? ` • ${th('กระจายยอดที่เหลือให้','Remainder shared by')} ${result.unfilledCount} ${th('คน','people')}` : '');
+    const warning = area.querySelector('[data-split-warning]');
+    warning.className = result.valid ? '' : 'split-warning';
+    warning.textContent = result.valid ? '' : `${th('ยอดแบ่งไม่ตรง กรุณาตรวจสอบก่อนบันทึก','Split mismatch — check before saving')} • ${th('ส่วนต่าง','Difference')} ${fmt(Math.abs(result.differenceMinor))}`;
+    const summary = area.querySelector('[data-adjustment-summary]');
+    summary.innerHTML = splitIncludesVatSc ? '' : `<p>${th('กระจายตามสัดส่วนยอดก่อนปรับของแต่ละคน','Adjustments proportional to each person’s subtotal')}: ${th('ส่วนลด','Discount')} −${fmt(toMinor(v.disc, dec))} · Service Charge +${fmt(toMinor(v.serv, dec))} · VAT +${fmt(toMinor(v.tax, dec))}</p>` + result.rows.map(r => `<div><b>${escapeHtml(members.find(m => m.id === r.memberId)?.displayName || '')}</b><span>${fmt(r.subtotalMinor)} − ${fmt(r.discountMinor)} + ${fmt(r.serviceMinor)} + ${fmt(r.taxMinor)} = <b>${fmt(r.amountMinor)}</b></span></div>`).join('');
   }
 
-  /**
-   * Compute the final per-person allocation for custom split.
-   * - "Includes VAT/SC": entered amounts should sum to netTotal; unfilled persons
-   *   share whatever remains equally.
-   * - "Excludes VAT/SC": entered amounts are pre-tax subtotals; the system adds
-   *   a proportional share of (serviceCharge + tax - discount) on top.
-   */
-  function computeCustomAllocations(v, ids, dec) {
-    const result = {};
-    if (!ids.length) return result;
+  function customResult(v, ids) {
+    const dec = getCurrencyDecimals(v.cur);
+    return splitCustom({ subtotalMinor: toMinor(v.sub, dec), netTotalMinor: v.netMinor,
+      discountMinor: toMinor(v.disc, dec), serviceMinor: toMinor(v.serv, dec), taxMinor: toMinor(v.tax, dec),
+      includesAdjustments: splitIncludesVatSc,
+      entries: ids.map(m => ({ memberId: m.id, amountMinor: customAllocations[m.id] == null || customAllocations[m.id] === '' ? null : toMinor(parseCurrencyInput(customAllocations[m.id]), dec) })) });
+  }
 
-    if (splitIncludesVatSc) {
-      // Entered amounts are final (already include VAT/SC).
-      let filledSum = 0;
-      let unfilled = [];
-      for (const m of ids) {
-        const entered = customAllocations[m.id];
-        if (entered !== undefined && entered !== '') {
-          const amt = parseFloat(entered) || 0;
-          result[m.id] = amt;
-          filledSum += amt;
-        } else {
-          unfilled.push(m.id);
-        }
-      }
-      // Distribute remaining equally among unfilled persons
-      const remaining = v.net - filledSum;
-      if (unfilled.length > 0 && remaining > 0) {
-        const perUnfilled = remaining / unfilled.length;
-        for (const id of unfilled) result[id] = perUnfilled;
-      } else {
-        for (const id of unfilled) result[id] = 0;
-      }
-    } else {
-      // "Excludes VAT/SC": entered amounts are subtotals (before VAT/SC).
-      // The total adjustment = serviceCharge + tax - discount.
-      const adjustment = v.serv + v.tax - v.disc;
-      let filledSubtotal = 0;
-      let unfilled = [];
-      const subtotals = {};
-      for (const m of ids) {
-        const entered = customAllocations[m.id];
-        if (entered !== undefined && entered !== '') {
-          const sub = parseFloat(entered) || 0;
-          subtotals[m.id] = sub;
-          filledSubtotal += sub;
-        } else {
-          unfilled.push(m.id);
-        }
-      }
-      // If nothing was entered, distribute the base subtotal equally.
-      // The "base subtotal" for unfilled = (v.sub - filledSubtotal) / unfilledCount.
-      if (unfilled.length > 0) {
-        const remainingSub = Math.max(0, v.sub - filledSubtotal);
-        const perUnfilledSub = remainingSub / unfilled.length;
-        for (const id of unfilled) subtotals[id] = perUnfilledSub;
-      }
-      const totalSubtotal = Object.values(subtotals).reduce((s, x) => s + x, 0) || 1;
-      // Distribute the adjustment proportionally based on each person's subtotal share.
-      for (const m of ids) {
-        const sub = subtotals[m.id] || 0;
-        const share = totalSubtotal > 0 ? sub / totalSubtotal : 0;
-        result[m.id] = sub + (adjustment * share);
-      }
-    }
-    return result;
+  function computeCustomAllocations(v, ids, dec) {
+    return Object.fromEntries(customResult(v, ids).rows.map(r => [r.memberId, fromMinor(r.amountMinor, dec)]));
+  }
+
+  function readPayments(v) {
+    const ids = [...selectedPayers];
+    if (ids.length === 1) return [{ memberId: ids[0], amountMinor: v.netMinor }];
+    return ids.map(memberId => ({ memberId, amountMinor: toMinor(parseCurrencyInput(payerAmounts[memberId]), getCurrencyDecimals(v.cur)) }));
+  }
+
+  function refreshPayerTotal() {
+    const v = readValues();
+    const payments = readPayments(v);
+    const diff = v.netMinor - payments.reduce((n, p) => n + p.amountMinor, 0);
+    const hint = document.getElementById('payer-total-hint');
+    if (!hint) return;
+    hint.className = validatePayments(v.netMinor, payments) ? 'input-hint' : 'split-warning';
+    hint.textContent = `${th('ยอดผู้จ่ายรวม','Total paid')} ${formatCurrency(v.netMinor - diff, v.cur)} / ${formatCurrency(v.netMinor, v.cur)}` + (diff ? ` • ${th('ยอดยังไม่ตรง ส่วนต่าง','Mismatch, difference')} ${formatCurrency(Math.abs(diff), v.cur)}` : ' ✓');
+  }
+
+  function renderPayers() {
+    const area = document.getElementById('payer-amounts');
+    if (!area) return;
+    const v = readValues();
+    area.innerHTML = `<p class="input-hint">${th('เลือกผู้จ่ายได้หลายคน แล้วระบุยอดที่แต่ละคนจ่ายจริงให้รวมเท่ายอดสุทธิ','Select payers and enter what each paid. Payments must match the net total.')}</p>` + (selectedPayers.size > 1 ? members.filter(m => selectedPayers.has(m.id)).map(m => `<label class="payer-amount-row"><span>${escapeHtml(m.displayName)}</span><input class="input money-input" type="text" inputmode="decimal" data-payment="${m.id}" value="${escapeHtml(payerAmounts[m.id] || '')}" placeholder="0.00"><span>${v.cur}</span></label>`).join('') : '') + '<div id="payer-total-hint" aria-live="polite"></div>';
+    bindMoneyInputs(area);
+    area.querySelectorAll('[data-payment]').forEach(inp => inp.addEventListener('input', () => { payerAmounts[inp.dataset.payment] = inp.value; refreshPayerTotal(); }));
+    refreshPayerTotal();
   }
 
   document.querySelectorAll('[data-split]').forEach(btn => btn.addEventListener('click', () => {
@@ -5116,22 +5079,14 @@ async function renderExpenseAdd(params) {
       if (splitMethod === 'equal') {
         allocations = splitEqual(v.netMinor, ids);
       } else {
-        // Smart custom split: use computeCustomAllocations which handles
-        // auto-distribution and VAT/SC inclusion/exclusion.
-        const dec = getCurrencyDecimals(v.cur);
-        const sharedMembers = members.filter(m => selectedShare.has(m.id));
-        const computed = computeCustomAllocations(v, sharedMembers, dec);
-        allocations = ids.map(id => ({
-          memberId: id,
-          amountMinor: toMinor(computed[id] || 0, dec)
-        }));
-        const sum = allocations.reduce((s, a) => s + a.amountMinor, 0);
-        if (sum !== v.netMinor) {
-          const diff = v.netMinor - sum;
-          allocations[0].amountMinor += diff;
-          if (allocations[0].amountMinor < 0) throw new Error(th('ยอดที่หารไม่ตรงกับยอดสุทธิ', 'Split amounts do not match the net total'));
-        }
+        const result = customResult(v, members.filter(m => selectedShare.has(m.id)));
+        if (!result.valid) throw new Error(th('ยอดแบ่งไม่ตรง กรุณาแก้ไขยอดที่กรอกก่อนบันทึก','Split amounts do not match. Correct the amounts before saving.'));
+        allocations = result.rows.map(({ memberId, amountMinor }) => ({ memberId, amountMinor }));
       }
+      const payments = readPayments(v);
+      if (!validatePayments(v.netMinor, payments)) throw new Error(th('ยอดผู้จ่ายรวมต้องเท่ากับยอดสุทธิ และต้องเลือกผู้จ่ายอย่างน้อย 1 คน','Payments must match the net total. Select at least one payer.'));
+      if (v.cur !== 'THB' && (!Number.isFinite(v.rate) || !(v.rate > 0))) throw new Error(th('กรุณาระบุเรทแลกเป็นเงินบาท','Enter the THB exchange rate'));
+      if ([v.sub, v.disc, v.serv, v.tax].some(n => n < 0) || v.disc > v.sub) throw new Error(th('ยอดเงินต้องไม่ติดลบ และส่วนลดต้องไม่เกินยอดก่อนปรับ','Amounts must be non-negative and discount cannot exceed subtotal'));
 
       const payload = {
         title: document.getElementById('ex-title').value.trim(),
@@ -5146,9 +5101,13 @@ async function renderExpenseAdd(params) {
         currency: v.cur,
         baseCurrency,
         thbRate: v.rate,
-        thbMinor: Math.round(v.netMinor * v.rate),
+        thbMinor: toThbMinor(v.netMinor, v.cur, v.rate),
         isEstimated: document.getElementById('ex-type').value === 'estimated',
-        payerId: selectedPayer,
+        payerId: payments[0].memberId,
+        payments,
+        splitMethod,
+        splitIncludesVatSc,
+        splitInputs: customAllocations,
         allocations,
         paymentMethod: document.getElementById('ex-payment').value,
         cardName: document.getElementById('ex-payment').value === 'card'
@@ -5202,7 +5161,7 @@ async function renderExpenseAdd(params) {
       if (!isEdit) confetti({ y: 150 });
       // Only step back to the list if the form is still on screen: a save that
       // finishes late (log/photo upload) must not yank the user off another page.
-      if ((location.hash.split('?')[0] || '') === `#/trip/${tripId}/expenses/add`) {
+      if (location.hash === editorHash) {
         location.hash = `#/trip/${tripId}/expenses`;
       }
     } catch (err) {
@@ -5251,14 +5210,13 @@ async function renderSettlement(params) {
   let commentsAll = [];       // ความเห็น/ทักท้วงของทั้งทริป (ใช้ในใบเสร็จด้วย)
   let commentMap = new Map();
 
-  const money = (minor) => formatCurrency(minor || 0, currency);
+  const money = (minor) => formatCurrency(minor || 0, 'THB');
   // Same rate resolution as the rest of the app (trip → expense snapshots → saved).
   let thbRate = resolveTripThbRate(trip, [], currency);
   const thbOf = (minor) => {
-    const v = toThbMinor(minor, currency, thbRate);
-    return v == null ? '' : formatCurrency(v, 'THB');
+    return currency === 'THB' || !thbRate ? '' : formatCurrency(convertCurrency(minor, 'THB', currency, 1 / thbRate), currency);
   };
-  const thbTag = (minor) => currency === 'THB' ? '' : `<span class="thb-equiv">≈ ${thbOf(minor)}</span>`;
+  const thbTag = (minor) => currency === 'THB' ? '' : `<span class="money-secondary">≈ ${thbOf(minor)}</span>`;
   const methodLabel = (m) => m === 'card' ? th('บัตรเครดิต', 'Card') : m === 'transfer' ? th('โอนเงิน', 'Transfer') : th('เงินสด', 'Cash');
   const methodIcon = (m) => m === 'card' ? 'credit-card' : m === 'transfer' ? 'arrow-left-right' : 'banknote';
 
@@ -5339,7 +5297,7 @@ async function renderSettlement(params) {
           <div class="receipt-sub">${escapeHtml(trip?.name || '')} • ${escapeHtml(trip?.startDate || '')} → ${escapeHtml(trip?.endDate || '')}</div>
           <div class="receipt-meta">
             <span><b>${th('สมาชิก','Member')}:</b> ${escapeHtml(m.displayName)}${isMe ? ` (${th('คุณ','you')})` : ''}</span>
-            <span><b>${th('สกุล','Currency')}:</b> ${currency}${currency !== 'THB' ? ` • 1 ${currency} = ${escapeHtml(String(trip?.exchangeRateToTHB || 1))} THB` : ''}</span>
+            <span><b>${th('สกุล','Currency')}:</b> THB${currency !== 'THB' && thbRate ? ` • 1 ${currency} ≈ ${formatAmount(thbRate, 4)} THB` : ''}</span>
           </div>
         </div>
 
@@ -5378,7 +5336,7 @@ async function renderSettlement(params) {
                       ${commentBlock(i.expenseId)}
                     </td>
                     <td>${chip(i.method)}${i.cardName ? `<div class="rcpt-card">${icon('credit-card', 'w-3 h-3')} ${escapeHtml(i.cardName)}</div>` : ''}</td>
-                    <td class="num">${money(i.amountMinor)}${currency !== 'THB' && thbOf(i.amountMinor) ? `<div class="thb-equiv block">≈ ${thbOf(i.amountMinor)}</div>` : ''}</td>
+                    <td class="num">${money(i.amountMinor)}${currency !== 'THB' && thbOf(i.amountMinor) ? `<div class="money-secondary block">≈ ${thbOf(i.amountMinor)}</div>` : ''}</td>
                   </tr>`).join('')
                   : `<tr><td colspan="3" class="text-[var(--text-tertiary)]">${th('ยังไม่ได้จ่ายรายการใด','No payments recorded')}</td></tr>`}
               </tbody>
@@ -5406,7 +5364,7 @@ async function renderSettlement(params) {
               </tr></thead>
               <tbody>
                 ${shareItems.length ? shareItems.map(i => {
-                  const payer = state.membersMap[i.paidBy];
+                  const payer = { displayName: (i.payerIds || [i.paidBy]).map(id => state.membersMap[id]?.displayName || id).join(', ') };
                   return `
                   <tr>
                     <td>
@@ -5416,7 +5374,7 @@ async function renderSettlement(params) {
                       ${commentBlock(i.expenseId)}
                     </td>
                     <td>${escapeHtml(payer?.displayName || '—')}</td>
-                    <td class="num">${money(i.amountMinor)}${currency !== 'THB' && thbOf(i.amountMinor) ? `<div class="thb-equiv block">≈ ${thbOf(i.amountMinor)}</div>` : ''}</td>
+                    <td class="num">${money(i.amountMinor)}${currency !== 'THB' && thbOf(i.amountMinor) ? `<div class="money-secondary block">≈ ${thbOf(i.amountMinor)}</div>` : ''}</td>
                   </tr>`;
                 }).join('')
                   : `<tr><td colspan="3" class="text-[var(--text-tertiary)]">${th('ไม่มีส่วนที่ต้องรับผิดชอบ','No shares')}</td></tr>`}
@@ -5442,7 +5400,7 @@ async function renderSettlement(params) {
               </div>
               <div class="rcpt-sum-note">${positive
                 ? th('จะได้รับคืนจากเพื่อนในทริป','Gets this back from the group')
-                : th('ต้องจ่ายคืนให้เพื่อนในทริป','Owes this to the group')}${currency !== 'THB' && thbOf(m.netMinor) ? ` • ${th('คิดเป็นเงินไทย','in THB')} ${thbOf(Math.abs(m.netMinor))}` : ''}</div>
+                : th('ต้องจ่ายคืนให้เพื่อนในทริป','Owes this to the group')}${currency !== 'THB' && thbOf(m.netMinor) ? ` • ${th('ประมาณในสกุลหลัก','approx. in base currency')} ${thbOf(Math.abs(m.netMinor))}` : ''}</div>
             </div>
             ${flaggedCount(m) ? `<div class="rcpt-summary-comments">
               <div class="rcpt-summary-comments-title">${icon('message-square', 'w-3.5 h-3.5')} ${th('มีความเห็น/ข้อทักท้วง','Comments & questions')} • ${flaggedCount(m)} ${th('รายการ','items')}</div>
@@ -5549,10 +5507,10 @@ async function renderSettlement(params) {
       <div class="card p-5" id="settle-overview">
         <h4 class="font-bold text-sm mb-4 flex items-center gap-2">${icon('scale', 'w-4 h-4')} ${th('ภาพรวมทั้งทริป','Trip overview')}</h4>
         <div class="kpi-strip mb-4">
-          <div class="kpi-mini"><span class="kpi-mini-label">${th('จ่ายจริงรวม','Total paid')}</span><b>${money(totalPaid)}</b>${currency !== 'THB' ? `<span class="thb-equiv">≈ ${thbOf(totalPaid)}</span>` : ''}</div>
-          <div class="kpi-mini"><span class="kpi-mini-label">${th('เงินสด','Cash')}</span><b>${money(byMethod.cash)}</b>${currency !== 'THB' ? `<span class="thb-equiv">≈ ${thbOf(byMethod.cash)}</span>` : ''}</div>
-          <div class="kpi-mini"><span class="kpi-mini-label">${th('บัตร','Card')}</span><b>${money(byMethod.card)}</b>${currency !== 'THB' ? `<span class="thb-equiv">≈ ${thbOf(byMethod.card)}</span>` : ''}</div>
-          <div class="kpi-mini"><span class="kpi-mini-label">${th('โอน','Transfer')}</span><b>${money(byMethod.transfer)}</b>${currency !== 'THB' ? `<span class="thb-equiv">≈ ${thbOf(byMethod.transfer)}</span>` : ''}</div>
+          <div class="kpi-mini"><span class="kpi-mini-label">${th('จ่ายจริงรวม','Total paid')}</span><b>${money(totalPaid)}</b>${currency !== 'THB' ? `<span class="money-secondary">≈ ${thbOf(totalPaid)}</span>` : ''}</div>
+          <div class="kpi-mini"><span class="kpi-mini-label">${th('เงินสด','Cash')}</span><b>${money(byMethod.cash)}</b>${currency !== 'THB' ? `<span class="money-secondary">≈ ${thbOf(byMethod.cash)}</span>` : ''}</div>
+          <div class="kpi-mini"><span class="kpi-mini-label">${th('บัตร','Card')}</span><b>${money(byMethod.card)}</b>${currency !== 'THB' ? `<span class="money-secondary">≈ ${thbOf(byMethod.card)}</span>` : ''}</div>
+          <div class="kpi-mini"><span class="kpi-mini-label">${th('โอน','Transfer')}</span><b>${money(byMethod.transfer)}</b>${currency !== 'THB' ? `<span class="money-secondary">≈ ${thbOf(byMethod.transfer)}</span>` : ''}</div>
         </div>
         <table class="receipt-table">
           <thead><tr>
@@ -5565,9 +5523,9 @@ async function renderSettlement(params) {
             ${state.statements.map(m => `
               <tr>
                 <td>${escapeHtml(m.displayName)}</td>
-                <td class="num">${money(m.paidMinor)}</td>
-                <td class="num">${money(m.owedMinor)}</td>
-                <td class="num ${m.netMinor >= 0 ? 'receipt-positive' : 'receipt-negative'}">${m.netMinor >= 0 ? '+' : '−'}${money(Math.abs(m.netMinor))}</td>
+                <td class="num">${money(m.paidMinor)}${thbTag(m.paidMinor)}</td>
+                <td class="num">${money(m.owedMinor)}${thbTag(m.owedMinor)}</td>
+                <td class="num ${m.netMinor >= 0 ? 'receipt-positive' : 'receipt-negative'}">${m.netMinor >= 0 ? '+' : '−'}${money(Math.abs(m.netMinor))}${thbTag(Math.abs(m.netMinor))}</td>
               </tr>`).join('')}
           </tbody>
         </table>
@@ -5637,7 +5595,7 @@ async function renderSettlement(params) {
       `${th('รับ (จ่ายไป)','Received')}: ${money(statement.paidMinor)}`,
       `${th('หัก (ส่วนที่ต้องรับผิดชอบ)','Deducted')}: ${money(statement.owedMinor)}`,
       `${th('คงเหลือ','Balance')}: ${money(statement.netMinor)}${thbOf(statement.netMinor) ? ` (≈ ${thbOf(statement.netMinor)})` : ''}`,
-      ...statement.items.map(i => `• ${i.role === 'paid' ? '↑' : '↓'} ${i.title} ${i.amountMinor / Math.pow(10, getCurrencyDecimals(currency))} ${currency}`)
+      ...statement.items.map(i => `• ${i.role === 'paid' ? '↑' : '↓'} ${i.title} ${money(i.amountMinor)}`)
     ];
 
     document.querySelectorAll('[data-share-receipt]').forEach(btn => btn.addEventListener('click', async () => {
@@ -5679,7 +5637,7 @@ async function renderSettlement(params) {
         `${th('รับ (จ่ายไป)','Received')}: ${money(statement.paidMinor)}`,
         `${th('หัก (ส่วนที่ต้องรับผิดชอบ)','Deducted')}: ${money(statement.owedMinor)}`,
         `${th('คงเหลือ','Balance')}: ${money(statement.netMinor)}`,
-        ...statement.items.map(i => `• ${i.role === 'paid' ? '↑' : '↓'} ${i.title} ${i.amountMinor / Math.pow(10, getCurrencyDecimals(currency))} ${currency}`)
+        ...statement.items.map(i => `• ${i.role === 'paid' ? '↑' : '↓'} ${i.title} ${money(i.amountMinor)}`)
       ];
       try {
         await navigator.clipboard.writeText(lines.join('\n'));
@@ -5713,10 +5671,11 @@ async function renderSettlement(params) {
       commentMap = commentsByExpense(commentsAll);
       if (!document.getElementById('settlement-content')) return;
       const membersMap = Object.fromEntries(members.map(m => [m.id, m]));
-      const { balances, transactions } = calculateSettlement(expenses, members);
-      const statements = buildSettlementStatements(expenses, members);
+      const normalized = expensesInThb(expenses, trip);
+      const { balances, transactions } = calculateSettlement(normalized, members);
+      const statements = buildSettlementStatements(normalized, members);
       thbRate = resolveTripThbRate(trip, expenses, currency);
-      state = { expenses, members, membersMap, statements, balances, transactions };
+      state = { expenses: normalized, members, membersMap, statements, balances, transactions };
       renderView();
       // No rate anywhere → tell the user how to get the baht column.
       if (currency !== 'THB' && !(thbRate > 0)) {
@@ -6933,8 +6892,8 @@ async function renderSettings(params) {
       <div class="card p-5 space-y-4">
         <h3 class="font-bold flex items-center gap-2">${icon('piggy-bank', 'w-4 h-4')} ${th('งบประมาณ','Budget')}</h3>
         <div class="grid grid-cols-2 gap-3">
-          <div class="input-group"><label class="input-label">${icon('wallet', 'w-3.5 h-3.5')} ${th('งบประมาณรวม','Total budget')}</label><input id="s-budget-total" class="input" type="number" step="0.01" value="${trip?.budgetTotal ? (trip.budgetTotal/100) : ''}" placeholder="50000"><p class="input-hint">THB</p></div>
-          <div class="input-group"><label class="input-label">${icon('user', 'w-3.5 h-3.5')} ${th('งบต่อคน','Budget / person')}</label><input id="s-budget-per-person" class="input" type="number" step="0.01" value="${trip?.budgetPerPerson ? (trip.budgetPerPerson/100) : ''}" placeholder="10000"></div>
+          <div class="input-group"><label class="input-label">${icon('wallet', 'w-3.5 h-3.5')} ${th('งบประมาณรวม','Total budget')}</label><input id="s-budget-total" class="input money-input" type="text" inputmode="decimal" value="${trip?.budgetTotal ? formatAmount(fromMinor(trip.budgetTotal, getCurrencyDecimals(trip?.baseCurrency || 'THB')), getCurrencyDecimals(trip?.baseCurrency || 'THB')) : ''}" placeholder="50,000"><p class="input-hint">${trip?.baseCurrency || 'THB'}</p></div>
+          <div class="input-group"><label class="input-label">${icon('user', 'w-3.5 h-3.5')} ${th('งบต่อคน','Budget / person')}</label><input id="s-budget-per-person" class="input money-input" type="text" inputmode="decimal" value="${trip?.budgetPerPerson ? formatAmount(fromMinor(trip.budgetPerPerson, getCurrencyDecimals(trip?.baseCurrency || 'THB')), getCurrencyDecimals(trip?.baseCurrency || 'THB')) : ''}" placeholder="10,000"></div>
         </div>
         <div id="budget-compare" class="p-3 rounded-xl text-sm border" style="background: var(--bg-secondary); border-color: var(--border);"><div class="skeleton h-4"></div></div>
         <button id="save-budget" class="btn btn-secondary w-full">${icon('save', 'w-4 h-4')} ${th('บันทึกงบประมาณ','Save budget')}</button>
@@ -7014,22 +6973,26 @@ async function renderSettings(params) {
     reader.readAsDataURL(file);
   });
 
+  bindMoneyInputs(document);
   async function updateBudgetCompare() {
     const box = document.getElementById('budget-compare');
     if (!box) return;
     try {
       const { expenses } = await fetchSettlementData(tripId);
       if (isStale(token)) return;
-      const totalMinor = sumExpenses(expenses);
-      const budgetTotal = parseFloat(document.getElementById('s-budget-total').value) || 0;
-      const budgetPerPerson = parseFloat(document.getElementById('s-budget-per-person').value) || 0;
-      let html = `<div class="flex items-center gap-2">${icon('wallet', 'w-4 h-4')} <span>${th('ใช้ไป','Spent')}: <b>${formatCurrency(totalMinor, trip?.baseCurrency || 'THB')}</b></span></div>`;
+      const totalMinor = sumExpenses(expensesInThb(expenses, trip));
+      const code = document.getElementById('s-currency').value;
+      const rate = code === 'THB' ? 1 : parseCurrencyInput(document.getElementById('s-thb-rate').value);
+      const budgetTotal = parseCurrencyInput(document.getElementById('s-budget-total').value) || 0;
+      const budgetPerPerson = parseCurrencyInput(document.getElementById('s-budget-per-person').value) || 0;
+      let html = `<div class="flex items-center gap-2">${icon('wallet', 'w-4 h-4')} <span>${th('ใช้ไป','Spent')}: <b>${formatCurrency(totalMinor, 'THB')}</b></span></div>`;
       if (budgetTotal) {
-        const diff = budgetTotal * 100 - totalMinor;
-        const pct = Math.min(100, Math.round(totalMinor / (budgetTotal * 100) * 100));
-        html += `<div class="flex items-center gap-2 mt-2">${icon('pie-chart', 'w-4 h-4')} <span>${th('งบ','Budget')} ${budgetTotal.toLocaleString()} THB • ${diff >= 0 ? th(`เหลือ ${formatCurrency(diff, 'THB')}`, `${formatCurrency(diff, 'THB')} left`) : th(`เกิน ${formatCurrency(-diff, 'THB')}`, `${formatCurrency(-diff, 'THB')} over`)} (${pct}%)</span></div><div class="progress mt-2"><div class="progress-bar" style="width:${pct}%; ${diff < 0 ? 'background: var(--danger);' : ''}"></div></div>`;
+        const budgetMinor = toThbMinor(toMinor(budgetTotal, getCurrencyDecimals(code)), code, rate);
+        const diff = budgetMinor - totalMinor;
+        const pct = budgetMinor > 0 ? Math.min(100, Math.round(totalMinor / budgetMinor * 100)) : 0;
+        html += `<div class="flex items-center gap-2 mt-2">${icon('pie-chart', 'w-4 h-4')} <span>${th('งบ','Budget')} ${moneyHtml(toMinor(budgetTotal, getCurrencyDecimals(code)), code, rate)} • ${diff >= 0 ? th(`เหลือ ${formatCurrency(diff, 'THB')}`, `${formatCurrency(diff, 'THB')} left`) : th(`เกิน ${formatCurrency(-diff, 'THB')}`, `${formatCurrency(-diff, 'THB')} over`)} (${pct}%)</span></div><div class="progress mt-2"><div class="progress-bar" style="width:${pct}%; ${diff < 0 ? 'background: var(--danger);' : ''}"></div></div>`;
       }
-      if (budgetPerPerson) html += `<div class="flex items-center gap-2 mt-2">${icon('user', 'w-4 h-4')} <span>${th('งบต่อคน','Per person')} ${budgetPerPerson.toLocaleString()} THB</span></div>`;
+      if (budgetPerPerson) html += `<div class="flex items-center gap-2 mt-2">${icon('user', 'w-4 h-4')} <span>${th('งบต่อคน','Per person')} ${moneyHtml(toMinor(budgetPerPerson, getCurrencyDecimals(code)), code, rate)}</span></div>`;
       box.innerHTML = html;
       queueIcons();
     } catch {
@@ -7081,8 +7044,8 @@ async function renderSettings(params) {
 
   bind('save-settings', 'click', () => saveAll('save-settings'));
   bind('save-budget', 'click', () => saveAll('save-budget', {
-    budgetTotal: Math.round((parseFloat(document.getElementById('s-budget-total').value) || 0) * 100),
-    budgetPerPerson: Math.round((parseFloat(document.getElementById('s-budget-per-person').value) || 0) * 100)
+    budgetTotal: toMinor(parseCurrencyInput(document.getElementById('s-budget-total').value), getCurrencyDecimals(document.getElementById('s-currency').value)),
+    budgetPerPerson: toMinor(parseCurrencyInput(document.getElementById('s-budget-per-person').value), getCurrencyDecimals(document.getElementById('s-currency').value))
   }));
 
   document.querySelectorAll('.theme-option').forEach(btn => btn.addEventListener('click', () => {

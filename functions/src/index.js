@@ -386,13 +386,36 @@ export const recalculateSettlement = onCall(async (request) => {
   const expenses = expSnap.docs.map(d => d.data());
   const members = memSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
+  // Report and persist one common unit: Thai satang, just like the client.
+  const trip = (await db.collection('trips').doc(tripId).get()).data() || {};
+  for (const exp of expenses) {
+    const code = exp.currency || trip.baseCurrency || 'THB';
+    if (code === 'THB') continue;
+    const rate = Number(exp.thbRate) || (code === trip.baseCurrency ? Number(trip.exchangeRateToTHB) : 0);
+    if (!(rate > 0) || !Number.isFinite(rate)) throw new HttpsError('failed-precondition', `Missing ${code} to THB rate`);
+    const factor = ['JPY', 'KRW', 'VND'].includes(code) ? 100 : 1;
+    const originalTotal = exp.netTotalMinor;
+    const total = Math.round(originalTotal * factor * rate);
+    for (const key of ['allocations', 'payments']) {
+      if (!exp[key]?.length) continue;
+      const sum = exp[key].reduce((n, row) => n + row.amountMinor, 0);
+      exp[key] = exp[key].map(row => ({ ...row, amountMinor: Math.round(row.amountMinor * factor * rate) }));
+      if (sum === originalTotal) {
+        const largest = exp[key].reduce((a, b) => a.amountMinor >= b.amountMinor ? a : b);
+        largest.amountMinor += total - exp[key].reduce((n, row) => n + row.amountMinor, 0);
+      }
+    }
+    exp.netTotalMinor = total;
+  }
+
   // Calculate balances
   const balances = new Map();
   for (const m of members) balances.set(m.id, 0);
   for (const exp of expenses) {
-    const payer = exp.payerId || exp.paidBy;
-    if (!balances.has(payer)) balances.set(payer, 0);
-    balances.set(payer, balances.get(payer) + (exp.netTotalMinor||0));
+    const payments = exp.payments?.length ? exp.payments : [{ memberId: exp.payerId || exp.paidBy, amountMinor: exp.netTotalMinor || 0 }];
+    for (const payment of payments) {
+      balances.set(payment.memberId, (balances.get(payment.memberId) || 0) + payment.amountMinor);
+    }
     for (const alloc of exp.allocations||[]) {
       if (!balances.has(alloc.memberId)) balances.set(alloc.memberId, 0);
       balances.set(alloc.memberId, balances.get(alloc.memberId) - (alloc.amountMinor||0));
@@ -415,6 +438,7 @@ export const recalculateSettlement = onCall(async (request) => {
   const ref = await db.collection(`trips/${tripId}/settlements`).add({
     balances: balArray,
     transactions,
+    currency: 'THB',
     createdBy: uid,
     createdAt: FieldValue.serverTimestamp(),
     status: 'active'

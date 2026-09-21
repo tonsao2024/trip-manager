@@ -34,6 +34,7 @@ const ROUTES = [
   ['expenses', '#/trip/t1/expenses'],
   ['expenses-day', '#/trip/t1/expenses', '#expense-group-toggle [data-group="day"]'],
   ['expense-add', '#/trip/t1/expenses/add'],
+  ['expense-custom', '#/trip/t1/expenses/add', '[data-split="unequal"]', '#split-area'],
   ['settlement', '#/trip/t1/settlement'],
   ['settlement-receipts', '#/trip/t1/settlement', '#settle-views [data-view="receipts"]'],
   ['members', '#/trip/t1/members', null, '#members-list'],
@@ -131,6 +132,40 @@ async function main() {
     for (const [name, hash, tap, scrollTo] of ROUTES) {
       await page.evaluate((h) => window.__mobile.goto(h), hash);
       if (tap) await page.evaluate((sel) => window.__mobile.tap(sel), tap);
+      if (name === 'expense-custom') {
+        await page.evaluate(() => {
+          const set = (id, value) => { const el = document.getElementById(id); el.value = value; el.dispatchEvent(new Event('input', { bubbles: true })); };
+          set('ex-subtotal', '10000'); set('ex-discount', '500'); set('ex-service', '950'); set('ex-tax', '732');
+          document.querySelector('[data-vatsc="exclude"]').click();
+          document.querySelector('[data-payer]:not(.tile-selected)').click();
+        });
+        await page.type('[data-alloc]', '6000');
+        const focused = await page.evaluate(() => document.activeElement?.matches('[data-alloc]') && document.activeElement.value === '6,000');
+        if (!focused) problems.push(`${device.id}: custom input lost focus or did not group thousands`);
+        const rowOverflow = await page.evaluate(() => [...document.querySelectorAll('.split-row')].some(el => el.scrollWidth > el.clientWidth + 1));
+        if (rowOverflow) problems.push(`${device.id}: custom split row overflows`);
+        const overlaps = await page.evaluate(() => [...document.querySelectorAll('.split-row')].some(row => {
+          const input = row.querySelector('.split-input').getBoundingClientRect();
+          const lock = row.querySelector('.split-lock-btn').getBoundingClientRect();
+          const final = row.querySelector('.split-final').getBoundingClientRect();
+          return input.right > lock.left + 1 || lock.right > final.left + 1;
+        }));
+        if (overlaps) problems.push(`${device.id}: custom input, lock or final amount overlap`);
+      }
+      if (name === 'itinerary') {
+        await page.evaluate(() => window.__mobile.tap('#date-chips [data-date]'));
+        await page.waitForSelector('.itin-thumb');
+        const ratio = await page.evaluate(async () => {
+          const thumb = document.querySelector('.itin-thumb');
+          if (!thumb) return null;
+          const img = new Image();
+          img.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="900"><rect width="400" height="900" fill="#88aa99"/></svg>');
+          thumb.append(img); await img.decode();
+          const r = thumb.getBoundingClientRect();
+          return r.width / r.height;
+        });
+        if (ratio == null || Math.abs(ratio - 16 / 9) > .02) problems.push(`${device.id}: portrait source broke 16:9 (${ratio})`);
+      }
       if (scrollTo) {
         await page.evaluate((sel) => document.querySelector(sel)?.scrollIntoView({ block: 'start' }), scrollTo);
         await new Promise(r => setTimeout(r, 300));
@@ -146,7 +181,12 @@ async function main() {
       if (zoomed) problems.push(`${device.id}/${name}: the page is zoomed out (${info.layoutWidth} > ${device.width}) — content wider than the screen`);
       audit.forEach(a => problems.push(`${device.id}/${name}: ${a}`));
       const file = path.join(shotDir, `${device.id}-${name}.png`);
-      await page.screenshot({ path: file, fullPage: false });
+      if (name === 'expense-custom') {
+        const hideFixed = await page.addStyleTag({ content: '#app-header, #bottom-nav, .fab, .bottom-nav, .fuji-fab { visibility: hidden !important; }' });
+        await (await page.$('#split-area')).screenshot({ path: file });
+        await hideFixed.evaluate(el => el.remove());
+      }
+      else await page.screenshot({ path: file, fullPage: false });
       // Close any sheet this step opened so the next screen starts clean.
       await page.evaluate(() => document.querySelector('.bottom-sheet-backdrop')?.click());
       await new Promise(r => setTimeout(r, 300));

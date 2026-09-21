@@ -10,11 +10,11 @@ export function testThbConversion() {
 
   eq(toThbMinor(100000, 'THB', 1), 100000, 'THB is unchanged');
   // 0.24 THB per JPY: ¥1,000 = ฿240
-  eq(toThbMinor(1000, 'JPY', 0.24), 240, 'JPY → THB uses the trip rate');
+  eq(toThbMinor(1000, 'JPY', 0.24), 24000, 'JPY → THB uses the trip rate');
   eq(toThbMinor(0, 'JPY', 0.24), 0, 'zero stays zero');
   eq(toThbMinor(1000, 'JPY', 0), null, 'no rate → null (caller hides the line)');
   eq(toThbMinor(1000, 'JPY', null), null, 'null rate → null');
-  eq(toThbMinor(1234, 'JPY', 0.245), 302, 'rounds to the nearest satang');
+  eq(toThbMinor(1234, 'JPY', 0.245), 30233, 'rounds to the nearest satang');
 
   assert(formatThbLabel(24000).startsWith('≈'), 'label carries the ≈ sign');
   assert(/240/.test(formatThbLabel(24000)), 'label formats the amount');

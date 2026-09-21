@@ -561,7 +561,10 @@ const dirUrl = gmaps.googleMapsDirectionsUrl({ title: 'ทะเลสาบค�
 check(/google\.com\/maps\/dir\/.*destination=/.test(dirUrl), 'google maps: directions URL for a place with coordinates');
 const placeUrl = gmaps.googleMapsPlaceUrl({ title: 'ราเมง', address: 'Fujiyoshida, Yamanashi' });
 check(/google\.com\/maps\/search\/\?api=1&query=/.test(placeUrl) && placeUrl.includes('Fujiyoshida'), 'google maps: search URL falls back to the address');
-const navBtn = q('.itin-card [data-act="navigate"]');
+const savedMapsUrl = 'https://maps.app.goo.gl/example';
+check(gmaps.googleMapsPlaceUrl({ googleMapsUrl: savedMapsUrl, coordinates: '35,138' }) === savedMapsUrl, 'google maps: saved URL wins over coordinates');
+check(gmaps.googleMapsDirectionsUrl({ googleMapsUrl: savedMapsUrl, coordinates: '35,138' }) === savedMapsUrl, 'google maps: directions also use saved URL');
+const navBtn = q('.itin-card a.nav-link-btn');
 check(!!navBtn, 'google maps: navigate button on the itinerary card');
 check(!!q('.itin-card a.nav-link-btn[href*="google.com/maps"]'), 'google maps: inline "open in maps" link on the card');
 
@@ -1081,8 +1084,8 @@ console.log('\n▶ v10: dashboard shows the baht amount of the remaining budget'
   await waitFor(() => q('#kpi-budget'), { label: 'budget kpi' });
   await sleep(400);
   check(!!q('#kpi-budget-thb'), 'dashboard: งบคงเหลือ shows the baht equivalent');
-  check(/฿/.test(q('#kpi-budget-thb')?.textContent || ''), 'dashboard: the baht line uses the ฿ symbol');
-  check(q('#kpi-budget-thb')?.className.includes('thb-equiv--strong'), 'dashboard: baht amounts are styled to stand out');
+  check(/฿/.test(q('#kpi-budget')?.textContent || ''), 'dashboard: the main budget amount uses baht');
+  check(q('#kpi-budget-thb')?.className.includes('money-secondary'), 'dashboard: original currency is secondary to the main baht amount');
 }
 
 console.log('\n▶ v10: credit card name on an expense + per-card summary');
@@ -1546,6 +1549,55 @@ console.log('\n▶ v12: จอเล็ก (iPhone) — header ไม่ดั�
     'phone: the name block is not forced visible on phones');
   check(String(nameEl?.title || '').includes('สมชาย'), 'phone: the full name is kept as a tooltip on the avatar row');
   check(!!q('#user-avatar-btn'), 'phone: the avatar button is still there');
+}
+
+console.log('\n▶ grouped expense form, exact custom split, multiple payers');
+{
+  await goto('#/trip/t1/expenses/add');
+  await waitFor(() => q('#expense-form'), { label: 'expense improvements form' });
+  const input = (selector, value) => {
+    const el = q(selector); el.value = value;
+    el.dispatchEvent(new window.Event('input', { bubbles: true }));
+  };
+  q('#ex-currency').value = 'THB';
+  q('#ex-currency').dispatchEvent(new window.Event('change', { bubbles: true }));
+  input('#ex-title', 'ทดสอบหลายผู้จ่าย VAT ส่วนลด');
+  input('#ex-subtotal', '1000');
+  input('#ex-discount', '100'); input('#ex-service', '90'); input('#ex-tax', '69.30');
+  check(q('#ex-subtotal').value === '1,000', 'expense input: thousands separators while typing');
+  check(q('#net-preview .money-primary')?.textContent.includes('1,059.30'), 'expense preview: correct baht total');
+  check(qa('#expense-form .form-section').length === 4, 'expense form: four explicit groups');
+  await click('[data-split="unequal"]');
+  await click('[data-vatsc="exclude"]');
+  const allocs = qa('[data-alloc]');
+  input('[data-alloc="' + allocs[0].dataset.alloc + '"]', '600');
+  allocs.slice(1).forEach((el, i) => input('[data-alloc="' + el.dataset.alloc + '"]', i === 0 ? '400' : '0'));
+  check(!q('[data-split-warning]').textContent, 'custom split: exact subtotal valid');
+  check(q('[data-adjustment-summary]').textContent.includes('Service Charge') && q('[data-adjustment-summary]').textContent.includes('69.30'), 'custom split: VAT, discount and service breakdown shown');
+  input('[data-alloc="' + allocs[0].dataset.alloc + '"]', '500');
+  check(q('[data-split-warning]').textContent.includes('100.00'), 'custom split: live difference warning');
+  submit(q('#expense-form')); await sleep(160);
+  check(![...fsdb.__store.values()].some(e => e?.title === 'ทดสอบหลายผู้จ่าย VAT ส่วนลด'), 'custom split: mismatch is not saved or silently assigned to first member');
+  input('[data-alloc="' + allocs[0].dataset.alloc + '"]', '600');
+  const otherPayer = qa('[data-payer]').find(el => !el.classList.contains('tile-selected'));
+  await click(otherPayer);
+  const payers = qa('[data-payment]');
+  input('[data-payment="' + payers[0].dataset.payment + '"]', '600');
+  input('[data-payment="' + payers[1].dataset.payment + '"]', '400');
+  submit(q('#expense-form')); await sleep(160);
+  check(![...fsdb.__store.values()].some(e => e?.title === 'ทดสอบหลายผู้จ่าย VAT ส่วนลด'), 'multiple payers: mismatch blocks save');
+  input('[data-payment="' + payers[1].dataset.payment + '"]', '459.30');
+  submit(q('#expense-form'));
+  await waitFor(() => [...fsdb.__store.values()].some(e => e?.title === 'ทดสอบหลายผู้จ่าย VAT ส่วนลด'), { label: 'multiple payer expense saved' });
+  const [savedPath, saved] = [...fsdb.__store.entries()].find(([k,v]) => v?.title === 'ทดสอบหลายผู้จ่าย VAT ส่วนลด');
+  check(saved.payments?.length === 2 && saved.payments.reduce((s,p) => s+p.amountMinor,0) === 105930, 'multiple payers: exact contributions persisted');
+  check(saved.allocations[0].amountMinor === 63558, 'custom split: proportional final amount persisted');
+  await goto('#/trip/t1/expenses/add?id=' + savedPath.split('/').pop());
+  await waitFor(() => qa('[data-payment]').length === 2, { label: 'edited multiple payer expense' });
+  check(q('[data-split="unequal"]').classList.contains('active'), 'edit: custom split method restored');
+  check(q('[data-vatsc="exclude"]').classList.contains('active'), 'edit: adjustment mode restored');
+  check(parseFloat(q('[data-alloc]').value.replace(/,/g,'')) === 600, 'edit: original before-adjustment amount restored');
+  check(q('[data-payment]').value === '600.00', 'edit: actual payment amount restored');
 }
 
 console.log('\n▶ delete the whole trip (UI)');
