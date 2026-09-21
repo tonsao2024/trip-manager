@@ -1,5 +1,6 @@
+import { expensesInThb } from '../utils/currency.js';
 import { db, serverTimestamp } from '../firebase.js';
-import { collection, doc, getDocs, addDoc, query, where, limit } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { collection, doc, getDoc, getDocs, addDoc, query, where, limit } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { calculateSettlement } from '../utils/settlement.js';
 import { fetchAllExpenses } from '../expenses/index.js';
 import { listMembers } from '../members/index.js';
@@ -22,10 +23,12 @@ export async function fetchSettlementData(tripId, { fresh = false } = {}) {
 
 export async function recalculateAndSaveSettlement(tripId, userId) {
   const { expenses, members } = await fetchSettlementData(tripId);
-  const { balances, transactions } = calculateSettlement(expenses, members);
+  const trip = (await getDoc(doc(db, 'trips', tripId))).data();
+  const { balances, transactions } = calculateSettlement(expensesInThb(expenses, trip), members);
   const ref = await addDoc(collection(db, `trips/${tripId}/settlements`), {
     balances,
     transactions,
+    currency: 'THB',
     createdBy: userId,
     createdAt: serverTimestamp(),
     status: 'pending'

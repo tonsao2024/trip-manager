@@ -1,3 +1,4 @@
+import { expensePayments } from './payments.js';
 /**
  * Settlement algorithm - minimize transactions
  * Net balance = Paid - Owed
@@ -10,9 +11,10 @@ export function calculateNetBalances(expenses, members) {
 
   for (const exp of expenses) {
     if (exp.status === 'voided') continue;
-    const payer = exp.payerId || exp.paidBy;
-    if (!balances.has(payer)) balances.set(payer, 0);
-    balances.set(payer, balances.get(payer) + exp.netTotalMinor);
+    for (const payment of expensePayments(exp)) {
+      const payer = payment.memberId;
+      balances.set(payer, (balances.get(payer) || 0) + payment.amountMinor);
+    }
 
     for (const alloc of exp.allocations || []) {
       if (!balances.has(alloc.memberId)) balances.set(alloc.memberId, 0);
@@ -99,22 +101,25 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
     const payerId = exp.payerId || exp.paidBy;
     const method = ['cash', 'card', 'transfer'].includes(exp.paymentMethod) ? exp.paymentMethod : 'other';
 
-    const payerRow = ensure(payerId);
-    payerRow.paidMinor += total;
-    payerRow.paidByMethod[method] += total;
-    payerRow.paidCount += 1;
-    payerRow.items.push({
-      expenseId: exp.id,
-      title: exp.title || '',
-      date: exp.date || '',
-      role: 'paid',
-      method,
-      cardName: exp.cardName || '',
-      hasReceipt: Boolean(exp.receiptImage || exp.receiptUrl),
-      estimated: Boolean(exp.isEstimated),
-      amountMinor: total,
-      currency: exp.currency || null
-    });
+    for (const payment of expensePayments(exp)) {
+      const total = payment.amountMinor;
+      const payerRow = ensure(payment.memberId);
+      payerRow.paidMinor += total;
+      payerRow.paidByMethod[method] += total;
+      payerRow.paidCount += 1;
+      payerRow.items.push({
+        expenseId: exp.id,
+        title: exp.title || '',
+        date: exp.date || '',
+        role: 'paid',
+        method,
+        cardName: exp.cardName || '',
+        hasReceipt: Boolean(exp.receiptImage || exp.receiptUrl),
+        estimated: Boolean(exp.isEstimated),
+        amountMinor: total,
+        currency: exp.currency || null
+      });
+    }
 
     for (const alloc of exp.allocations || []) {
       const share = Number(alloc.amountMinor) || 0;
@@ -122,13 +127,14 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
       const row = ensure(alloc.memberId);
       row.owedMinor += share;
       row.shareCount += 1;
-      if (alloc.memberId !== payerId || share !== total) {
+      if (expensePayments(exp).length > 1 || alloc.memberId !== payerId || share !== total) {
         row.items.push({
           expenseId: exp.id,
           title: exp.title || '',
           date: exp.date || '',
           role: 'share',
           paidBy: payerId,
+          payerIds: expensePayments(exp).map(p => p.memberId),
           method,
           cardName: exp.cardName || '',
           hasReceipt: Boolean(exp.receiptImage || exp.receiptUrl),
@@ -169,8 +175,10 @@ export function cardSummary(expenses = [], membersMap = {}) {
     row.totalMinor += amount;
     row.count += 1;
     if (e.isEstimated) row.estimatedMinor += amount;
-    const holder = membersMap[e.payerId || e.paidBy]?.displayName;
-    if (holder && !row.holders.includes(holder)) row.holders.push(holder);
+    for (const p of expensePayments(e)) {
+      const holder = membersMap[p.memberId]?.displayName;
+      if (holder && !row.holders.includes(holder)) row.holders.push(holder);
+    }
     if (!row.currency && e.currency) row.currency = e.currency;
   }
   return [...rows.values()].sort((a, b) => b.totalMinor - a.totalMinor);
@@ -198,7 +206,7 @@ export function transactionSources(tx, expenses = []) {
   const rows = [];
   for (const e of expenses) {
     if (!e || (e.status || 'active') === 'voided') continue;
-    if (e.payerId !== tx.to) continue;
+    if (!expensePayments(e).some(p => p.memberId === tx.to && p.amountMinor > 0)) continue;
     const share = (e.allocations || []).find(a => a.memberId === tx.from);
     if (!share) continue;
     rows.push({

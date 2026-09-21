@@ -4,7 +4,7 @@ import { invalidateExpensesCache } from '../expenses/index.js';
 import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, writeBatch, query, where, orderBy, limit, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { recalculateSchedule, detectOverlaps, validateItineraryItem } from '../utils/scheduling.js';
 import { dayjs } from '../utils/date.js';
-import { toMinor, getCurrencyDecimals, calculateNetTotal } from '../utils/currency.js';
+import { toThbMinor, toMinor, getCurrencyDecimals, calculateNetTotal } from '../utils/currency.js';
 import { splitEqual } from '../utils/split.js';
 
 /* ------------------------------------------------------------------ *
@@ -53,6 +53,7 @@ export function buildEstimateExpensePayload(item, { trip = null, payerId = null,
     date: item.date,
     category: item.estimateCategory || 'general',
     payerId: finalPayer,
+    payments: finalPayer ? [{ memberId: finalPayer, amountMinor: netTotalMinor }] : [],
     allocations,
     subtotalMinor: netTotalMinor,
     discountMinor: 0,
@@ -64,7 +65,7 @@ export function buildEstimateExpensePayload(item, { trip = null, payerId = null,
     currency,
     exchangeRate: thbRate,
     baseCurrency: trip?.baseCurrency || 'THB',
-    convertedMinor: Math.round(netTotalMinor * thbRate),
+    convertedMinor: toThbMinor(netTotalMinor, currency, thbRate),
     paymentMethod: 'cash',
     cardId: null,
     itineraryItemId: item.id || null,
@@ -75,7 +76,7 @@ export function buildEstimateExpensePayload(item, { trip = null, payerId = null,
     actualMinor: 0,
     budgetCategory: item.estimateCategory || 'general',
     thbRate,
-    thbMinor: Math.round(netTotalMinor * thbRate),
+    thbMinor: toThbMinor(netTotalMinor, currency, thbRate),
     source: 'itinerary-estimate',
     notes: item.notes || ''
   };

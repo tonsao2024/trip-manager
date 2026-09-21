@@ -1,6 +1,7 @@
+import { expensePayments } from './payments.js';
 // Excel (SheetJS) import/export — itinerary template + expenses, bilingual headers.
 // Everything here is pure-ish (no Firestore writes) so it can be unit tested.
-import { getCurrencyDecimals, toMinor, fromMinor } from './currency.js';
+import { toThbMinor, expensesInThb, getCurrencyDecimals, toMinor, fromMinor } from './currency.js';
 import { splitEqual } from './split.js';
 import { EXPENSE_CATEGORIES as EXPENSE_CATEGORY_DEFS, ITINERARY_CATEGORIES as ITINERARY_CATEGORY_DEFS, normalizeCategory, categoryLabel } from './categories.js';
 
@@ -287,7 +288,7 @@ export function expenseToRow(expense, members = [], items = [], lang = 'th') {
     tax: fromMinor(expense.taxMinor || 0, getCurrencyDecimals(expense.currency || 'THB')),
     netTotal: fromMinor(expense.netTotalMinor || 0, getCurrencyDecimals(expense.currency || 'THB')),
     rate: expense.thbRate ?? 1,
-    payer: expense.payerId ? memberName(expense.payerId) : '',
+    payer: expensePayments(expense).map(p => memberName(p.memberId)).join(', '),
     sharedWith: participantIds.map(memberName).filter(Boolean).join(', '),
     amounts: (expense.allocations || []).filter(a => a.amountMinor > 0)
       .map(a => `${memberName(a.memberId)}=${fromMinor(a.amountMinor, getCurrencyDecimals(expense.currency || 'THB'))}`).join(', '),
@@ -331,10 +332,9 @@ function memberSummaryRows(expenses, members, lang = 'th') {
   ]];
   const stats = new Map(members.map(m => [m.id, { paid: 0, share: 0 }]));
   expenses.forEach(e => {
-    const amount = e.thbMinor || e.netTotalMinor || 0;
-    if (e.payerId) {
-      if (!stats.has(e.payerId)) stats.set(e.payerId, { paid: 0, share: 0 });
-      stats.get(e.payerId).paid += amount;
+    for (const payment of expensePayments(e)) {
+      if (!stats.has(payment.memberId)) stats.set(payment.memberId, { paid: 0, share: 0 });
+      stats.get(payment.memberId).paid += payment.amountMinor;
     }
     (e.allocations || []).forEach(a => {
       if (!stats.has(a.memberId)) stats.set(a.memberId, { paid: 0, share: 0 });
@@ -373,6 +373,7 @@ function memberRows(members, lang = 'th') {
 
 function aoaToSheet(XLSX, rows, columns) {
   const ws = XLSX.utils.aoa_to_sheet(rows);
+  for (const cell of Object.values(ws)) if (cell?.t === 'n') cell.z = '#,##0.##';
   if (columns?.length) ws['!cols'] = columns.map(c => ({ wch: c.width || 16 }));
   ws['!freeze'] = { xSplit: 0, ySplit: 1 };
   return ws;
@@ -399,8 +400,9 @@ export async function buildWorkbook({ trip, items = [], expenses = [], members =
   if (include === 'all' || include === 'expenses') {
     const objs = expenses.map(e => expenseToRow(e, members, items, lang));
     add(lang === 'th' ? 'ค่าใช้จ่าย' : 'Expenses', rowsFromObjects(XLSX, objs, EXPENSE_COLUMNS), EXPENSE_COLUMNS);
-    add(lang === 'th' ? 'สรุปหมวดหมู่' : 'Category summary', categorySummaryRows(expenses, lang), []);
-    add(lang === 'th' ? 'สรุปต่อคน' : 'Per-person summary', memberSummaryRows(expenses, members, lang), []);
+    const normalized = expensesInThb(expenses, trip);
+    add(lang === 'th' ? 'สรุปหมวดหมู่' : 'Category summary', categorySummaryRows(normalized, lang), []);
+    add(lang === 'th' ? 'สรุปต่อคน' : 'Per-person summary', memberSummaryRows(normalized, members, lang), []);
   }
   add(lang === 'th' ? 'ข้อมูลทริป' : 'Trip info', infoRows({ trip, lang, kind: include }), []);
   add(lang === 'th' ? 'สมาชิก' : 'Members', memberRows(members, lang), [{ width: 22 }, { width: 18 }, { width: 14 }, { width: 30 }]);
@@ -631,7 +633,7 @@ export function importExpenseRows(rows, { trip, members = [], items = [], lang =
       taxMinor,
       netTotalMinor: netMinor,
       thbRate: rate,
-      thbMinor: Math.round(netMinor * rate),
+      thbMinor: toThbMinor(netMinor, currency, rate),
       payerId,
       allocations,
       description: String(row.description ?? '').trim(),

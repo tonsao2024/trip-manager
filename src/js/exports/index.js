@@ -1,3 +1,5 @@
+import { expensePayments } from '../utils/payments.js';
+import { formatCurrency, toThbMinor } from '../utils/currency.js';
 // Export helpers — PNG / PDF / clipboard text.
 //
 // html2canvas 1.4.x cannot parse modern colour syntax: Chromium serialises every
@@ -210,13 +212,14 @@ export async function exportToPdf(elementId, filename = 'export.pdf', orientatio
 }
 
 export function copyExpenseAsLineText(expense, membersMap) {
-  const payer = membersMap[expense.payerId] || { displayName: 'Unknown' };
-  const total = (expense.netTotalMinor / 100).toFixed(2);
+  const payer = { displayName: expensePayments(expense).map(p => `${membersMap[p.memberId]?.displayName || p.memberId}: ${formatCurrency(p.amountMinor, expense.currency)}`).join(', ') };
+  const baht = toThbMinor(expense.netTotalMinor, expense.currency, expense.thbRate);
+  const total = (expense.currency !== 'THB' && baht != null ? `${formatCurrency(baht, 'THB')} (≈ ${formatCurrency(expense.netTotalMinor, expense.currency)})` : formatCurrency(expense.netTotalMinor, expense.currency));
   const allocText = (expense.allocations || []).map(a => {
     const m = membersMap[a.memberId] || { displayName: a.memberId };
-    return `${m.displayName}: ${(a.amountMinor / 100).toFixed(2)}`;
+    return `${m.displayName}: ${formatCurrency(a.amountMinor, expense.currency)}`;
   }).join(', ');
-  const text = `💰 ${expense.title} - ${total} ${expense.currency}\nจ่ายโดย: ${payer.displayName}\nแบ่ง: ${allocText}\nวันที่: ${expense.date}`;
+  const text = `💰 ${expense.title} - ${total}\nจ่ายโดย: ${payer.displayName}\nแบ่ง: ${allocText}\nวันที่: ${expense.date}`;
   return text;
 }
 
@@ -224,7 +227,7 @@ export function copySettlementAsLineText(transactions, membersMap, currency = 'T
   return transactions.map(t => {
     const from = membersMap[t.from]?.displayName || t.from;
     const to = membersMap[t.to]?.displayName || t.to;
-    const amt = (t.amountMinor / 100).toFixed(2);
-    return `${from} → ${to}: ${amt} ${currency}`;
+    const amt = formatCurrency(t.amountMinor, currency);
+    return `${from} → ${to}: ${amt}`;
   }).join('\n');
 }

@@ -1,3 +1,4 @@
+import { escapeHtml } from './sanitize.js';
 /**
  * Currency utilities - always store as minor units (satang/cent) to avoid float
  */
@@ -17,9 +18,9 @@ export function formatCurrency(minor, currency = 'THB', locale = 'th-TH') {
   const decimals = getCurrencyDecimals(currency);
   const major = fromMinor(minor, decimals);
   try {
-    return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(major);
+    return new Intl.NumberFormat(locale, { style: 'currency', currency, useGrouping: true }).format(major);
   } catch {
-    return `${major.toFixed(decimals)} ${currency}`;
+    return `${formatAmount(major, decimals)} ${currency}`;
   }
 }
 
@@ -72,12 +73,12 @@ export function convertCurrency(amountMinor, fromCurrency, toCurrency, rate) {
  * `rate` = how many THB 1 unit of `currency` is worth (trip.exchangeRateToTHB).
  * Returns null when there is no usable rate (caller can then hide the THB line).
  */
-export function toThbMinor(minor, currency = 'THB', rate = 1) {
+export function toThbMinor(minor, currency = 'THB', rate = 0) {
   const value = Number(minor) || 0;
   if (!currency || currency === 'THB') return value;
   const r = Number(rate) || 0;
-  if (r <= 0) return null;
-  return Math.round(value * r);
+  if (!Number.isFinite(r) || r <= 0) return null;
+  return convertCurrency(value, currency, 'THB', r);
 }
 
 /** "≈ ฿7,680.00" — short label used next to a foreign-currency amount. */
@@ -108,7 +109,7 @@ export function effectiveThbRate(expense, trip) {
 export function resolveTripThbRate(trip, expenses = [], currency = null) {
   const code = currency || trip?.baseCurrency || 'THB';
   if (!code || code === 'THB') return 1;
-  const explicit = Number(trip?.exchangeRateToTHB);
+  const explicit = !trip?.baseCurrency || code === trip.baseCurrency ? Number(trip?.exchangeRateToTHB) : 0;
   if (explicit > 0) return explicit;
   const rates = (expenses || [])
     .filter(e => !e?.currency || e.currency === code)
@@ -128,4 +129,43 @@ export function rememberThbRate(currency, rate) {
   const r = Number(rate);
   if (!currency || currency === 'THB' || !(r > 0)) return;
   try { localStorage.setItem(`fuji_rate_${currency}`, String(r)); } catch { /* ignore */ }
+}
+
+/** Grouped decimal amounts, including editable money fields. */
+export function formatAmount(value, decimals = 2) {
+  return Number(value || 0).toLocaleString('en-US', { useGrouping: true, minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
+/** Baht is the headline; the original currency is always retained underneath. */
+export function moneyHtml(minor, currency = 'THB', rate = 0) {
+  const baht = toThbMinor(minor, currency, rate);
+  if (currency === 'THB') return `<span class="money-primary">${escapeHtml(formatCurrency(minor, 'THB'))}</span>`;
+  return `<span class="money-pair"><span class="money-primary">${baht == null ? 'ยังไม่มีเรท THB' : '≈ ' + escapeHtml(formatCurrency(baht, 'THB'))}</span><span class="money-secondary">${escapeHtml(formatCurrency(minor, currency))}</span></span>`;
+}
+
+/** Normalize before aggregating: never add yen, cents and satang together.
+ * Returned copies are for reports only, not persisted. Round allocations and
+ * payments together to keep a balanced ledger after conversion.
+ */
+export function expensesInThb(expenses, trip) {
+  return expenses.map(e => {
+    const code = e.currency || trip?.baseCurrency || 'THB';
+    const rate = code === 'THB' ? 1 : Number(e.thbRate) || resolveTripThbRate(trip, expenses, code);
+    const total = toThbMinor(e.netTotalMinor, code, rate);
+    if (total == null) throw new Error(`กรุณาตั้งเรท ${code} → THB เพื่อคำนวณยอดรวม`);
+    const convertRows = rows => {
+      if (!rows?.length) return rows || [];
+      const converted = rows.map(r => ({ ...r, amountMinor: toThbMinor(r.amountMinor, code, rate) }));
+      const diff = total - converted.reduce((s, r) => s + r.amountMinor, 0);
+      // Correct rounding only when the original ledger itself was balanced.
+      if (rows.reduce((s, r) => s + r.amountMinor, 0) === e.netTotalMinor) {
+        const largest = converted.reduce((best, r) => r.amountMinor > best.amountMinor ? r : best);
+        largest.amountMinor += diff;
+      }
+      return converted;
+    };
+    return { ...e, originalExpense: e, currency: 'THB', netTotalMinor: total, thbMinor: total, thbRate: 1,
+      allocations: convertRows(e.allocations),
+      ...(e.payments?.length ? { payments: convertRows(e.payments) } : {}) };
+  });
 }

@@ -209,6 +209,8 @@ export function getMapLayer(containerId) {
 
 /** Universal Google Maps directions link (works on mobile app + desktop). */
 export function googleMapsDirectionsUrl(item) {
+  const savedUrl = String(item?.googleMapsUrl || '').trim();
+  if (/^https?:\/\//i.test(savedUrl)) return savedUrl;
   const pos = getItemLatLng(item);
   const query = pos ? `${pos.lat},${pos.lng}` : (item?.address || item?.title || '');
   if (!query) return '';
@@ -219,6 +221,8 @@ export function googleMapsDirectionsUrl(item) {
 
 /** Search / "open in maps" link for a place. */
 export function googleMapsPlaceUrl(item) {
+  const savedUrl = String(item?.googleMapsUrl || '').trim();
+  if (/^https?:\/\//i.test(savedUrl)) return savedUrl;
   const pos = getItemLatLng(item);
   if (pos) return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${pos.lat},${pos.lng}`)}`;
   const q = item?.googleMapsUrl || item?.address || item?.title || '';

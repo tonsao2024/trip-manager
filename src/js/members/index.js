@@ -1,3 +1,4 @@
+import { expensePayments } from '../utils/payments.js';
 // Members — list / create / update / delete.
 // Member accounts are created entirely in the browser: the PIN is hashed with
 // PBKDF2-SHA256 and stored on the member document, plus a public username → trip
@@ -219,7 +220,7 @@ export async function countMemberReferences(tripId, memberId) {
     const exps = await getDocs(query(collection(db, `trips/${tripId}/expenses`), limit(300)));
     exps.docs.forEach(d => {
       const data = d.data();
-      if (data.payerId === memberId) result.expensesPaid++;
+      if (expensePayments(data).some(p => p.memberId === memberId)) result.expensesPaid++;
       if ((data.allocations || []).some(a => a.memberId === memberId && a.amountMinor)) result.expensesShared++;
     });
     const items = await getDocs(query(collection(db, `trips/${tripId}/itineraryItems`), limit(300)));
