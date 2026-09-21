@@ -6,6 +6,7 @@ import { recalculateSchedule, detectOverlaps, validateItineraryItem } from '../u
 import { dayjs } from '../utils/date.js';
 import { toThbMinor, toMinor, getCurrencyDecimals, calculateNetTotal } from '../utils/currency.js';
 import { splitEqual } from '../utils/split.js';
+import { stayNights as computeStayNights } from '../utils/stays.js';
 
 /* ------------------------------------------------------------------ *
  * Estimate → expense bridging (item cost flows into the expense book)
@@ -42,17 +43,23 @@ export function buildEstimateExpensePayload(item, { trip = null, payerId = null,
   const shareIds = (item.estimateShareWith && item.estimateShareWith.length)
     ? item.estimateShareWith
     : (members.length ? members.map(m => m.id) : []);
-  const finalPayer = payerId || item.estimatePayerId || shareIds[0] || null;
+  // "ยังไม่ระบุเจ้าภาพ" — a planned estimate nobody has volunteered to front yet.
+  // It stays OUT of balances/receipts until a real payer is assigned, instead of
+  // silently pinning the bill on the admin or the first member.
+  const pending = item.estimatePayerPending === true || item.estimatePayerId === '__pending';
+  const finalPayer = pending ? null : (payerId || item.estimatePayerId || shareIds[0] || null);
   const targets = shareIds.length ? shareIds : (finalPayer ? [finalPayer] : []);
   const allocations = targets.length ? splitEqual(amountMinor, targets) : [];
   const thbRate = Number(trip?.exchangeRateToTHB) > 0 ? Number(trip.exchangeRateToTHB) : 1;
   const netTotalMinor = calculateNetTotal({ subtotalMinor: amountMinor });
+  const stayNightsCount = computeStayNights(item);
   return {
     title: item.title || 'ประมาณการ',
     description: item.description || (item.address ? `ประมาณการจากแผน: ${item.address}` : 'ประมาณการจากแผนการเดินทาง'),
     date: item.date,
     category: item.estimateCategory || 'general',
     payerId: finalPayer,
+    payerPending: !finalPayer,
     payments: finalPayer ? [{ memberId: finalPayer, amountMinor: netTotalMinor }] : [],
     allocations,
     subtotalMinor: netTotalMinor,
@@ -78,7 +85,10 @@ export function buildEstimateExpensePayload(item, { trip = null, payerId = null,
     thbRate,
     thbMinor: toThbMinor(netTotalMinor, currency, thbRate),
     source: 'itinerary-estimate',
-    notes: item.notes || ''
+    notes: item.notes || '',
+    stayCheckIn: item.stayCheckIn || '',
+    stayCheckOut: item.stayCheckOut || '',
+    stayNights: stayNightsCount
   };
 }
 
@@ -214,8 +224,11 @@ async function addItineraryItemInner(tripId, data, userId) {
     estimateCurrency: data.estimateCurrency || '',
     estimateCategory: data.estimateCategory || '',
     estimatePayerId: data.estimatePayerId || '',
+    estimatePayerPending: data.estimatePayerPending === true,
     estimateShareWith: data.estimateShareWith || [],
     estimateAutoAdd: data.estimateAutoAdd !== false,
+    stayCheckIn: data.stayCheckIn || '',
+    stayCheckOut: data.stayCheckOut || '',
     createdBy: userId,
     updatedBy: userId,
     createdAt: serverTimestamp(),
@@ -267,8 +280,11 @@ async function saveItineraryItemInner(tripId, data, userId, itemId = null, { tri
       estimateCurrency: data.estimateCurrency || '',
       estimateCategory: data.estimateCategory || '',
       estimatePayerId: data.estimatePayerId || '',
+      estimatePayerPending: data.estimatePayerPending === true,
       estimateShareWith: data.estimateShareWith || [],
-      estimateAutoAdd: data.estimateAutoAdd !== false
+      estimateAutoAdd: data.estimateAutoAdd !== false,
+      stayCheckIn: data.stayCheckIn || '',
+      stayCheckOut: data.stayCheckOut || ''
     }, userId);
   } else {
     id = await addItineraryItem(tripId, data, userId);

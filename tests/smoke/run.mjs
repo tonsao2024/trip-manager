@@ -827,16 +827,17 @@ console.log('\n▶ v9: clear-bill receipts (received / deducted / balance + per-
     .filter(([k]) => k.startsWith('trips/t1/expenses/'))
     .map(([, v]) => v.title)
     .filter(Boolean);
-  // Read the paid / share tables by DOM position (an earlier "หัก" in the summary
-  // must not be mistaken for the deductions section when splitting the text).
-  const tables = [...me.querySelectorAll('table.receipt-table')];
-  const rowsText = (t) => [...(t?.querySelectorAll('tbody tr') || [])].map(r => r.textContent).join(' \u0001 ');
-  const paidText = rowsText(tables[0]);
-  const shareText = rowsText(tables[1]);
+  // v13 redesign: paid / share items are compact rows inside labelled sections
+  // (no longer <table>s). Read each section's rows so text from the hero or the
+  // balance block can't be mistaken for the paid / share lists. Folded rows
+  // (hidden behind "show all") still carry their text, so nothing is missed.
+  const sectionRows = (sel) => [...(me.querySelector(sel)?.querySelectorAll('.rcpt-row') || [])].map(r => r.textContent).join(' \u0001 ');
+  const paidText = sectionRows('[data-receipt-section="received"]');
+  const shareText = sectionRows('[data-receipt-section="deduct"]');
   const paidListed = tripExpenseTitles.some(t => paidText.includes(t));
   const sharedListed = tripExpenseTitles.some(t => shareText.includes(t));
   check(paidListed, 'settlement: the items this member paid are listed');
-  check(sharedListed || /ไม่ต้องรับผิดชอบ|No share|^-+$/.test(shareText.trim()) || tables[1]?.querySelector('thead')?.textContent.includes('จ่ายโดย'), 'settlement: shares show which bill they belong to');
+  check(sharedListed || /ไม่มีส่วนที่ต้องรับผิดชอบ|ไม่ต้องรับผิดชอบ|No share/.test(me.querySelector('[data-receipt-section="deduct"]')?.textContent || '') || /จ่ายโดย|paid by/.test(shareText), 'settlement: shares show which bill they belong to');
   check(/\d{4}-\d{2}-\d{2}/.test(txt), 'settlement: rows carry the expense date');
   check(/าจโดย|จ่ายโดย/.test(txt), 'settlement: shares name who paid');
   check(/THB|฿/.test(txt), 'settlement: baht equivalent present');
@@ -1088,8 +1089,14 @@ console.log('\n▶ v10: dashboard shows the baht amount of the remaining budget'
   check(q('#kpi-budget-thb')?.className.includes('money-secondary'), 'dashboard: original currency is secondary to the main baht amount');
 }
 
-console.log('\n▶ v10: credit card name on an expense + per-card summary');
+console.log('\n▶ v13: managed card dropdown on an expense + per-card summary');
 {
+  // v13: cards live on the trip as a managed list — the form offers a dropdown
+  // of those cards (no free-typed names, so no bogus card can slip in).
+  const t = { ...fsdb.__dump('trips/t1'), cards: [{ id: 'c1', name: 'KBank Visa', holderId: 'u1', bank: 'KBank', last4: '4321' }] };
+  fsdb.__seed('trips/t1', t);
+  await click('#refresh-btn').catch(() => {});
+  await sleep(120);
   await goto('#/trip/t1/expenses/add');
   await waitFor(() => q('#ex-title'), { label: 'expense form' });
   window.document.getElementById('ex-title').value = 'มื้อค่ำท่องเที่ยว';
@@ -1100,14 +1107,24 @@ console.log('\n▶ v10: credit card name on an expense + per-card summary');
   pay.dispatchEvent(new window.Event('change', { bubbles: true }));
   await sleep(60);
   check(!q('#ex-card-group').classList.contains('hidden'), 'cards: choosing บัตรเครดิต reveals the card field');
-  check(!!q('#ex-card-list'), 'cards: previously used cards are offered as suggestions');
-  window.document.getElementById('ex-card').value = 'KBank Visa ••4321';
+  const sel = q('#ex-card');
+  check(sel?.tagName === 'SELECT', 'cards: the card field is a dropdown (free-typed names are gone)');
+  const optValues = [...(sel?.options || [])].map(o => o.value);
+  check(optValues.includes('KBank Visa') && optValues.includes('__manage'), 'cards: the trip’s managed cards are offered (plus “add / manage cards”)');
+
+  // v13 guard: a card payment without picking a managed card must NOT save.
+  submit(q('#expense-form'));
+  await sleep(300);
+  check(![...fsdb.__store.values()].some(e => e?.title === 'มื้อค่ำท่องเที่ยว'), 'cards: a card payment without a picked card is refused');
+
+  sel.value = 'KBank Visa';
+  sel.dispatchEvent(new window.Event('change', { bubbles: true }));
   check(!!q('#ex-receipt-file'), 'receipt photo: the expense form offers a photo upload');
   submit(q('#expense-form'));
   await waitFor(() => [...fsdb.__store.values()].some(e => e?.title === 'มื้อค่ำท่องเที่ยว'), { timeout: 6000, label: 'expense with card' }).catch(() => {});
   const saved = [...fsdb.__store.values()].find(e => e?.title === 'มื้อค่ำท่องเที่ยว');
   check(!!saved, 'cards: the expense was saved');
-  check(saved?.cardName === 'KBank Visa ••4321', `cards: the card name is stored on the expense (${saved?.cardName || 'missing'})`);
+  check(saved?.cardName === 'KBank Visa', `cards: the card name is stored on the expense (${saved?.cardName || 'missing'})`);
   check(saved?.paymentMethod === 'card', 'cards: the payment method stays บัตรเครดิต');
   check((window.localStorage.getItem('fuji_cards:t1') || '').includes('KBank Visa'), 'cards: the card is remembered for the next expense');
 

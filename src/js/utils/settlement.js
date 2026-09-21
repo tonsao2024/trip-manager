@@ -11,6 +11,9 @@ export function calculateNetBalances(expenses, members) {
 
   for (const exp of expenses) {
     if (exp.status === 'voided') continue;
+    // No host yet ("ยังไม่ระบุเจ้าภาพ") — nobody paid, so it cannot be part of
+    // any balance until a payer is assigned.
+    if (exp.payerPending) continue;
     for (const payment of expensePayments(exp)) {
       const payer = payment.memberId;
       balances.set(payer, (balances.get(payer) || 0) + payment.amountMinor);
@@ -96,6 +99,7 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
 
   for (const exp of expenses || []) {
     if (exp.status === 'voided') continue;
+    if (exp.payerPending) continue;   // no host yet → not part of any receipt
     if (!includeEstimated && exp.isEstimated) continue;
     const total = Number(exp.netTotalMinor) || 0;
     const payerId = exp.payerId || exp.paidBy;
@@ -191,6 +195,15 @@ export function transactionBreakdown(statement) {
 }
 
 /**
+ * Estimates that nobody has hosted yet ("ยังไม่ระบุเจ้าภาพ"). They are excluded
+ * from balances/receipts until a payer is assigned, but must stay visible so the
+ * group can decide who fronts the money.
+ */
+export function pendingPayerExpenses(expenses = []) {
+  return (expenses || []).filter(e => e && e.payerPending && (e.status || 'active') !== 'voided');
+}
+
+/**
  * "จ่ายคืนจากค่าอะไร" — the expense shares that make up one transfer.
  *
  * Lists the expenses the creditor paid for, restricted to the debtor's share, so
@@ -206,6 +219,7 @@ export function transactionSources(tx, expenses = []) {
   const rows = [];
   for (const e of expenses) {
     if (!e || (e.status || 'active') === 'voided') continue;
+    if (e.payerPending) continue;
     if (!expensePayments(e).some(p => p.memberId === tx.to && p.amountMinor > 0)) continue;
     const share = (e.allocations || []).find(a => a.memberId === tx.from);
     if (!share) continue;

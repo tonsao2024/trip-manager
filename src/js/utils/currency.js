@@ -136,11 +136,39 @@ export function formatAmount(value, decimals = 2) {
   return Number(value || 0).toLocaleString('en-US', { useGrouping: true, minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
-/** Baht is the headline; the original currency is always retained underneath. */
+/** The original-currency amount rendered as a small chip (¥10,000). */
+export function origChipHtml(minor, currency) {
+  return `<span class="money-orig">${escapeHtml(formatCurrency(minor, currency))}</span>`;
+}
+
+/** Chip holding a pre-formatted secondary text (e.g. the trip-currency label). */
+export function origTextChipHtml(text) {
+  if (!text) return '';
+  return `<span class="money-orig">${escapeHtml(text)}</span>`;
+}
+
+/**
+ * Dual-currency display (v13 redesign): the baht amount is the headline and the
+ * original currency rides BESIDE it as a chip — never stacked on top of it.
+ */
 export function moneyHtml(minor, currency = 'THB', rate = 0) {
-  const baht = toThbMinor(minor, currency, rate);
   if (currency === 'THB') return `<span class="money-primary">${escapeHtml(formatCurrency(minor, 'THB'))}</span>`;
-  return `<span class="money-pair"><span class="money-primary">${baht == null ? 'ยังไม่มีเรท THB' : '≈ ' + escapeHtml(formatCurrency(baht, 'THB'))}</span><span class="money-secondary">${escapeHtml(formatCurrency(minor, currency))}</span></span>`;
+  const baht = toThbMinor(minor, currency, rate);
+  const orig = origChipHtml(minor, currency);
+  if (baht == null) {
+    return `<span class="money-dual">${orig}<span class="money-norate">${escapeHtml('ยังไม่มีเรท THB')}</span></span>`;
+  }
+  return `<span class="money-dual"><span class="money-primary">${escapeHtml(formatCurrency(baht, 'THB'))}</span><span class="money-eq">≈</span>${orig}</span>`;
+}
+
+/**
+ * Same dual layout, but built from a THB amount plus an already-formatted
+ * secondary label (used where totals were normalized to baht first).
+ */
+export function thbPlusLabelHtml(thbMinor, secondaryLabel) {
+  const primary = `<span class="money-primary">${escapeHtml(formatCurrency(thbMinor || 0, 'THB'))}</span>`;
+  if (!secondaryLabel) return primary;
+  return `<span class="money-dual">${primary}<span class="money-eq">≈</span>${origTextChipHtml(secondaryLabel)}</span>`;
 }
 
 /** Normalize before aggregating: never add yen, cents and satang together.
