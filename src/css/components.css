@@ -2400,3 +2400,253 @@ html, body { max-width: 100%; overflow-x: clip; }
 .split-vat-toggle .segmented { width: 100%; min-width: 0; }
 .split-vat-toggle .segmented-item { white-space: normal; min-width: 0; flex: 1; }
 #expense-form .input { box-sizing: border-box; min-width: 0; }
+
+/* ==================================================================
+   v13 — dual-currency display, mood faces, my-wallet, receipt v2,
+   hotel stays, duration units, pending payer, budgets, trip cards.
+   ================================================================== */
+
+/* ---------- 1) Dual currency: baht headline + original as a chip ---------- */
+.money-dual {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  flex-wrap: wrap; justify-content: flex-end;
+  max-width: 100%; vertical-align: middle;
+}
+.money-orig {
+  display: inline-flex; align-items: center;
+  padding: 1px 8px; border-radius: 999px;
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  font-size: 10.5px; font-weight: 700; color: var(--text-secondary);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.money-eq { font-size: 10px; font-weight: 700; color: var(--text-tertiary); }
+.money-norate { font-size: 10px; font-weight: 700; color: var(--warning); white-space: nowrap; }
+/* Inside the (always light) receipt the chip must stay light too */
+.receipt .money-orig { background: #f3f4f6; border-color: #e5e7eb; color: #4b5563; }
+.receipt .money-primary { color: #111827; }
+.receipt .money-eq { color: #9ca3af; }
+.export-flat .receipt .money-orig { background: #f3f4f6 !important; border-color: #d1d5db !important; color: #374151 !important; }
+.export-flat .receipt .money-primary { color: #111827 !important; }
+
+/* ---------- 2) Animated mood faces (dashboard comparisons) ---------- */
+.mood-face { display: inline-grid; place-items: center; position: relative; flex-shrink: 0; line-height: 0; }
+.mood-face svg { width: 100%; height: 100%; display: block; animation: moodPop .55s cubic-bezier(.16,1,.3,1) backwards; }
+.mood-face svg * { transform-box: fill-box; transform-origin: center; }
+.mood-face .mood-eyes { animation: moodBlink 4.6s ease-in-out infinite; }
+.mood-great svg { animation: moodPop .55s cubic-bezier(.16,1,.3,1) backwards, moodFloat 3.2s ease-in-out .6s infinite; }
+.mood-good svg { animation: moodPop .55s cubic-bezier(.16,1,.3,1) backwards, moodFloat 4.4s ease-in-out .6s infinite; }
+.mood-think svg { animation: moodPop .55s cubic-bezier(.16,1,.3,1) backwards, moodTilt 3.4s ease-in-out .6s infinite; }
+.mood-meh svg { animation: moodPop .55s cubic-bezier(.16,1,.3,1) backwards; }
+.mood-worry svg { animation: moodPop .55s cubic-bezier(.16,1,.3,1) backwards, moodTilt 2.1s ease-in-out .6s infinite; }
+.mood-sad svg { animation: moodPop .55s cubic-bezier(.16,1,.3,1) backwards, moodDroop 3.4s ease-in-out .6s infinite; }
+.mood-panic svg { animation: moodPop .55s cubic-bezier(.16,1,.3,1) backwards, moodShake 1.5s ease-in-out .6s infinite; }
+.mood-worry .mood-sweat, .mood-panic .mood-sweat { animation: moodDrip 1.7s ease-in-out infinite; }
+.mood-sad .mood-tear { animation: moodDrip 2.3s ease-in-out infinite; }
+@keyframes moodPop { 0% { transform: scale(.4) rotate(-10deg); opacity: 0; } 70% { transform: scale(1.12) rotate(3deg); } 100% { transform: scale(1) rotate(0); opacity: 1; } }
+@keyframes moodBlink { 0%, 91%, 100% { transform: scaleY(1); } 94.5% { transform: scaleY(.08); } }
+@keyframes moodFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes moodTilt { 0%,100% { transform: rotate(0deg); } 30% { transform: rotate(-7deg); } 70% { transform: rotate(5deg); } }
+@keyframes moodDroop { 0%,100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(2px) rotate(-3deg); } }
+@keyframes moodShake { 0%,100% { transform: translateX(0) rotate(0); } 20% { transform: translateX(-2px) rotate(-4deg); } 40% { transform: translateX(2px) rotate(4deg); } 60% { transform: translateX(-1.5px) rotate(-3deg); } 80% { transform: translateX(1.5px) rotate(2deg); } }
+@keyframes moodDrip { 0%,100% { transform: translateY(0); opacity: .9; } 50% { transform: translateY(1.6px); opacity: .55; } }
+@media (prefers-reduced-motion: reduce) {
+  .mood-face svg, .mood-face svg * { animation: none !important; }
+}
+/* Face floats in the corner of a KPI tile */
+.kpi-mood { position: absolute; top: 10px; right: 10px; z-index: 2; pointer-events: none; line-height: 0; }
+.compare-mood-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; border-radius: 14px;
+  background: var(--bg-secondary); border: 1px solid var(--border);
+}
+.compare-mood-text { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); line-height: 1.45; }
+
+/* ---------- 3) My wallet (dashboard: trip total vs my totals vs my budget) ---------- */
+.my-wallet-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, 1fr); }
+@media (min-width: 900px) { .my-wallet-grid { grid-template-columns: repeat(4, 1fr); } }
+.my-wallet-tile {
+  position: relative; min-width: 0;
+  padding: 12px 14px; border-radius: 14px;
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 3px;
+}
+.my-wallet-tile.is-me { border-color: color-mix(in srgb, var(--primary-raw) 45%, var(--border)); background: var(--primary-light); }
+.my-wallet-label {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 800; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.my-wallet-label svg { width: 12px; height: 12px; }
+.my-wallet-default { font-style: normal; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.my-wallet-value { font-size: 19px; font-weight: 800; font-family: var(--font-display); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; line-height: 1.2; }
+.my-wallet-sub { font-size: 10.5px; color: var(--text-secondary); }
+.my-wallet-sub b { font-variant-numeric: tabular-nums; }
+.my-wallet-tile .money-dual { justify-content: flex-start; }
+
+/* ---------- 4) Receipt v2 (settlement): hero balance + calm rows ---------- */
+.rcpt-member-bar { flex-wrap: wrap; }
+.rcpt-hero {
+  margin-left: auto; display: flex; align-items: center; gap: 10px;
+  padding: 8px 13px; border-radius: 14px; flex-shrink: 0; text-align: right;
+}
+.rcpt-hero.is-positive { background: #ecfdf5; border: 1px solid #a7f3d0; color: #047857; }
+.rcpt-hero.is-negative { background: #fff1f2; border: 1px solid #fecdd3; color: #be123c; }
+.rcpt-hero-face { flex-shrink: 0; line-height: 0; }
+.rcpt-hero-label { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; opacity: .8; }
+.rcpt-hero-amount { font-size: 21px; font-weight: 800; font-family: var(--font-display); font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
+.rcpt-hero-sub { font-size: 10.5px; font-weight: 600; opacity: .75; }
+.export-flat .receipt .rcpt-hero.is-positive { background: #ecfdf5 !important; border-color: #a7f3d0 !important; color: #047857 !important; }
+.export-flat .receipt .rcpt-hero.is-negative { background: #fff1f2 !important; border-color: #fecdd3 !important; color: #be123c !important; }
+.rcpt-hint { display: flex; align-items: center; gap: 6px; margin: 8px 2px 0; font-size: 10.5px; color: var(--text-tertiary); }
+.rcpt-hint svg { width: 12px; height: 12px; flex-shrink: 0; }
+
+.rcpt-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 2px; border-bottom: 1px dashed #e5e7eb; }
+.rcpt-row:last-of-type { border-bottom: 0; }
+.rcpt-row-main { flex: 1; min-width: 0; }
+.rcpt-row-title { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; font-size: 12px; font-weight: 700; color: #1f2937; overflow-wrap: anywhere; }
+.rcpt-row-sub { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 10px; color: #6b7280; margin-top: 2px; }
+.rcpt-row-sub svg { width: 10px; height: 10px; }
+.rcpt-row-side { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+.rcpt-row-amount { font-size: 12.5px; font-weight: 800; color: #111827; font-variant-numeric: tabular-nums; text-align: right; }
+.rcpt-row-amount .money-primary { font-size: 12.5px; }
+.rcpt-mini-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 6px; border-radius: 999px;
+  background: #f3f4f6; border: 1px solid #e5e7eb; color: #6b7280;
+  font-size: 9px; font-weight: 800;
+}
+.rcpt-mini-badge svg { width: 9px; height: 9px; }
+.rcpt-mini-badge--est { background: #fffbeb; border-color: #fde68a; color: #b45309; }
+.export-flat .receipt .rcpt-mini-badge { background: #f3f4f6 !important; border-color: #d1d5db !important; color: #374151 !important; }
+.export-flat .receipt .rcpt-mini-badge--est { background: #fffbeb !important; border-color: #fde68a !important; color: #b45309 !important; }
+
+/* One subtle dispute affordance per row — lights up when it has comments */
+.rcpt-dispute {
+  position: relative; display: grid; place-items: center;
+  width: 26px; height: 26px; border-radius: 999px;
+  border: 1px dashed #d1d5db; background: #fff; color: #9ca3af;
+  cursor: pointer; opacity: .7;
+  transition: opacity .18s ease, border-color .18s ease, color .18s ease, background .18s ease, transform .18s ease;
+}
+.rcpt-dispute svg { width: 13px; height: 13px; }
+.rcpt-dispute:hover { opacity: 1; border-style: solid; border-color: #0284c7; color: #0284c7; background: #f0f9ff; transform: scale(1.08); }
+.rcpt-dispute.has-comments { opacity: 1; border-style: solid; border-color: #7dd3fc; background: #e0f2fe; color: #0369a1; }
+.rcpt-dispute-count {
+  position: absolute; top: -5px; right: -5px;
+  min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px;
+  background: #0284c7; color: #fff;
+  font-size: 9px; font-weight: 800; display: grid; place-items: center;
+}
+.rcpt-showall {
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  width: 100%; margin-top: 8px; padding: 6px;
+  border-radius: 10px; border: 1px dashed #d1d5db;
+  background: #f9fafb; color: #4b5563;
+  font-size: 11px; font-weight: 700; cursor: pointer;
+  transition: border-color .15s ease, color .15s ease, background .15s ease;
+}
+.rcpt-showall:hover { border-color: #0284c7; color: #0369a1; background: #f0f9ff; }
+.rcpt-showall svg { width: 13px; height: 13px; transition: transform .2s ease; }
+.rcpt-showall.is-expanded svg { transform: rotate(180deg); }
+.rcpt-chips-line { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.rcpt-method-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 9px; border-radius: 999px;
+  background: #f9fafb; border: 1px solid #e5e7eb;
+  font-size: 10.5px; color: #374151; max-width: 100%;
+}
+.rcpt-method-chip b { font-weight: 800; color: #111827; font-variant-numeric: tabular-nums; }
+.rcpt-method-chip i { font-style: normal; color: #9ca3af; font-size: 9.5px; }
+.rcpt-method-chip svg { width: 11px; height: 11px; }
+.rcpt-method-chip--card { background: #faf5ff; border-color: #ddd6fe; }
+.rcpt-empty { font-size: 11px; color: #9ca3af; padding: 6px 2px; }
+.rcpt-block-total .money-dual { justify-content: flex-end; }
+.rcpt-block-total .money-primary { font-size: 13px; }
+@media (max-width: 520px) {
+  .rcpt-hero { margin-left: 0; width: 100%; justify-content: flex-end; }
+  .rcpt-hero-amount { font-size: 18px; }
+}
+
+/* ---------- 5) Transactions strip: expand / collapse all ---------- */
+.tx-row { padding: 12px; border-radius: 14px; background: var(--bg-secondary); border: 1px solid var(--border); }
+.tx-tool-btn { min-height: 26px; padding: 2px 9px; font-size: 10.5px; }
+.tx-sources { display: grid; gap: 0; }
+.tx-source-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 2px; border-bottom: 1px dashed var(--border); }
+.tx-source-row:last-child { border-bottom: 0; }
+
+/* ---------- 6) Pending payer ("ยังไม่ระบุเจ้าภาพ") ---------- */
+.badge-pending {
+  display: inline-flex; align-items: center; gap: 3px;
+  background: var(--warning-light); color: var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+}
+.pending-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px; border-radius: 12px;
+  background: var(--bg-secondary);
+  border: 1px dashed color-mix(in srgb, var(--warning) 55%, var(--border));
+}
+.tile-pending { border-style: dashed; }
+.tile-pending.tile-selected { border-style: solid; }
+.estimate-line .badge-pending { background: #fffbeb; }
+
+/* ---------- 7) Hotel stays in the itinerary ---------- */
+.badge-stay {
+  display: inline-flex; align-items: center; gap: 3px;
+  background: #eef2ff; color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+.itin-card--stay { border-color: color-mix(in srgb, #6366f1 40%, var(--border)); }
+.itin-card--stay-return {
+  border: 1.5px dashed color-mix(in srgb, #6366f1 50%, var(--border));
+  background: color-mix(in srgb, #6366f1 5%, var(--card, var(--bg)));
+}
+.step-num--stay { background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; box-shadow: none; }
+.step-num--stay svg { width: 15px; height: 15px; }
+.estimate-line--stay {
+  background: color-mix(in srgb, #6366f1 8%, transparent);
+  border-color: color-mix(in srgb, #6366f1 26%, transparent);
+}
+.estimate-line--stay > svg { color: #6366f1; }
+[data-theme="dark"] .badge-stay { background: rgba(99,102,241,.16); color: #a5b4fc; border-color: rgba(99,102,241,.4); }
+[data-theme="dark"] .step-num--stay { background: rgba(99,102,241,.16); color: #a5b4fc; border-color: rgba(99,102,241,.4); }
+[data-theme="dark"] .itin-card--stay-return { background: rgba(99,102,241,.07); }
+
+/* ---------- 8) Duration / travel with a minute–hour unit ---------- */
+.unit-input-row { display: flex; gap: 6px; align-items: stretch; }
+.unit-input-row .input { flex: 1 1 auto; min-width: 0; }
+.unit-input-row .unit-select { flex: 0 0 auto; width: 88px; padding-left: 8px; padding-right: 6px; font-size: 12px; }
+@media (max-width: 380px) { .unit-input-row .unit-select { width: 74px; } }
+
+/* ---------- 9) Budgets: per-member rows + consistency checks ---------- */
+.member-budget-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 12px;
+  background: var(--bg-secondary); border: 1px solid var(--border);
+}
+.member-budget-input { max-width: 140px; text-align: right; min-height: 34px; padding: 4px 10px; font-size: 12.5px; }
+.budget-check {
+  display: grid; gap: 5px; padding: 8px 10px; border-radius: 10px;
+  background: var(--warning-light); border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  color: var(--text); font-size: 11.5px;
+}
+.budget-check-row { display: flex; align-items: flex-start; gap: 6px; }
+.budget-check-row svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 2px; color: var(--warning); }
+.budget-member-list { display: grid; gap: 8px; }
+.budget-member-head { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; color: var(--text-secondary); }
+.budget-member-head svg { width: 13px; height: 13px; }
+.budget-member-row {
+  display: grid; gap: 4px; padding: 8px 10px; border-radius: 12px;
+  background: var(--surface, var(--bg)); border: 1px solid var(--border);
+}
+.budget-member-name { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; min-width: 0; }
+.budget-member-name i { font-style: normal; font-weight: 600; color: var(--text-tertiary); font-size: 10px; }
+.budget-member-nums { font-size: 10.5px; color: var(--text-secondary); }
+.budget-member-nums b { font-variant-numeric: tabular-nums; }
+
+/* ---------- 10) Trip card manager rows ---------- */
+.card-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 12px;
+  background: var(--bg-secondary); border: 1px solid var(--border);
+}

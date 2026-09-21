@@ -43,11 +43,22 @@
   "themeColor": "#8b5cf6",
   "status": "active",
   "memberUids": ["uid1","uid2"],
+  "budgetTotal": 1000000,
+  "budgetPerPerson": 250000,
+  "memberBudgets": { "uid1": 300000, "uid2": 250000 },
+  "cards": [
+    { "id": "c1", "name": "KBank Visa", "holderId": "uid1", "bank": "KBank", "last4": "4321" }
+  ],
   "createdAt": "serverTimestamp",
   "updatedAt": "serverTimestamp",
   "createdBy": "uid"
 }
 ```
+
+- `budgetTotal` / `budgetPerPerson` / `memberBudgets` (v13): budgets in **minor units**;
+  `memberBudgets` maps memberId → that person's own budget, shown on the dashboard wallet.
+- `cards` (v13): the managed credit-card list every member picks from in the expense form
+  (add/edit/delete in Settings → cards), so card names can't be free-typed.
 
 ### trips/{tripId}/members/{memberId}
 ```json
@@ -87,11 +98,28 @@
   "notes": "...",
   "status": "planned|current|completed|skipped|cancelled",
   "expenseId": null,
+  "stayCheckIn": "2027-11-10",
+  "stayCheckOut": "2027-11-13",
+  "estimateAmount": 45000,
+  "estimateCurrency": "JPY",
+  "estimateCategory": "hotel",
+  "estimatePayerId": "",
+  "estimatePayerPending": true,
+  "estimateShareWith": ["uid1","uid2"],
+  "estimateAutoAdd": true,
   "createdBy": "uid",
   "updatedBy": "uid",
   "version": 1
 }
 ```
+
+- `stayCheckIn` / `stayCheckOut` (v13): the item is a hotel stay spanning several nights.
+  The plan view repeats it on every night ("กลับเข้าพัก" virtual cards, id `<itemId>@stay-<date>`,
+  never persisted) and the ONE entered price is split per night (`splitStayMinor`).
+- `estimateAmount` is in **major units** (converted with the trip currency's decimals).
+- `estimatePayerPending` (v13): `true` → nobody fronts this estimate yet; the synced expense
+  gets `payerId: null`, `payerPending: true` and stays out of every balance until a payer is
+  assigned. `estimatePayerId: "__pending"` is the form-side alias for the same state.
 
 ### trips/{tripId}/expenses/{expenseId}
 ```json
@@ -100,7 +128,8 @@
   "description": "...",
   "date": "2027-11-10",
   "category": "transport",
-  "payerId": "uid",
+  "payerId": "uid | null",
+  "payerPending": false,
   "allocations": [
     {"memberId": "uid1", "amountMinor": 5000},
     {"memberId": "uid2", "amountMinor": 5000}
@@ -125,6 +154,11 @@
   "updatedBy": "uid"
 }
 ```
+
+- `payerPending` (v13): `true` → the expense has **no host yet** (`payerId: null`, empty
+  `payments`). It is listed under "ยังไม่ระบุเจ้าภาพ" on the settlement page and excluded
+  from net balances, statements and transactions until a payer is assigned; saving it
+  through the expense editor with a real payer clears the flag.
 
 ### Expense groups (v9) — `trips/{tripId}/categories/{categoryId}`
 

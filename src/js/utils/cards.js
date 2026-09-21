@@ -52,6 +52,61 @@ export function suggestCards(tripId, expenses = []) {
   return [...seen.values()];
 }
 
+/* ------------------------------------------------------------------ *
+ * Managed trip cards (v13) — stored on the trip document (`trip.cards`)
+ * so every member picks from the SAME dropdown and nobody can type a
+ * random card name. Shape: { id, name, holderId?, bank?, last4? }.
+ * ------------------------------------------------------------------ */
+
+let cardSeq = 0;
+export function newCardId() {
+  cardSeq = (cardSeq + 1) % 100000;
+  return `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}${cardSeq}`;
+}
+
+/** Sanitized card list of a trip (always an array of well-formed objects). */
+export function tripCards(trip) {
+  const list = Array.isArray(trip?.cards) ? trip.cards : [];
+  return list
+    .filter(c => c && String(c.name || '').trim())
+    .map(c => ({
+      id: String(c.id || newCardId()),
+      name: String(c.name).trim(),
+      holderId: c.holderId || '',
+      bank: c.bank || '',
+      last4: String(c.last4 || '').replace(/[^0-9]/g, '').slice(-4)
+    }));
+}
+
+/** Add or update (by id) one card; duplicate names are merged. */
+export function upsertTripCard(cards, card) {
+  const list = tripCards({ cards });
+  const clean = {
+    id: card?.id || newCardId(),
+    name: String(card?.name || '').trim(),
+    holderId: card?.holderId || '',
+    bank: card?.bank || '',
+    last4: String(card?.last4 || '').replace(/[^0-9]/g, '').slice(-4)
+  };
+  if (!clean.name) return list;
+  const byName = list.findIndex(c => c.name.toLowerCase() === clean.name.toLowerCase());
+  const byId = list.findIndex(c => c.id === clean.id);
+  if (byId >= 0) list[byId] = { ...list[byId], ...clean };
+  else if (byName >= 0) list[byName] = { ...list[byName], ...clean, id: list[byName].id };
+  else list.push(clean);
+  return list;
+}
+
+export function removeTripCard(cards, id) {
+  return tripCards({ cards }).filter(c => c.id !== id);
+}
+
+/** Display label: "KBank Visa ••4321" (+ nothing else — holder shown separately). */
+export function tripCardLabel(card) {
+  const last4 = card?.last4 ? ` ••${card.last4}` : '';
+  return `${card?.name || ''}${last4}`.trim();
+}
+
 function blobToDataURL(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
