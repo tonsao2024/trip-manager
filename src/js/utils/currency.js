@@ -197,3 +197,23 @@ export function expensesInThb(expenses, trip) {
       ...(e.payments?.length ? { payments: convertRows(e.payments) } : {}) };
   });
 }
+
+/**
+ * Distribute budget equally across members in major units (Baht).
+ * Given total and/or perPerson and memberCount, calculates per-person and total budget in THB.
+ */
+export function distributeBudgetEqually({ total = 0, perPerson = 0, memberCount = 0 }) {
+  if (memberCount <= 0) return { perPerson: 0, total: 0 };
+  const tot = Number(total) || 0;
+  const pp = Number(perPerson) || 0;
+  if (tot > 0) {
+    const amount = Math.round((tot / memberCount) * 100) / 100;
+    return { perPerson: amount, total: tot };
+  }
+  if (pp > 0) {
+    const calcTotal = Math.round(pp * memberCount * 100) / 100;
+    return { perPerson: pp, total: calcTotal };
+  }
+  return { perPerson: 0, total: 0 };
+}
+

@@ -22,9 +22,10 @@
   sums exactly to the bill. Invalid totals cannot be silently charged to the
   first participant. Final-amount mode does not apply the adjustments again.
 - Baht is primary on dashboard, itinerary, expenses and settlement. The source or
-  configured trip currency is secondary. Budget fields use the selected trip
-  currency and its minor-unit precision. Editable amounts group thousands without
-  replacing the focused input. The ledger continues to store numeric integers.
+  configured trip currency is secondary. Budget fields use Thai Baht (THB) and
+  its satang minor-unit precision, with an equal-distribution button for convenience.
+  Editable amounts group thousands without replacing the focused input.
+  The ledger continues to store numeric integers.
 - Deploy the updated Cloud Functions together with the frontend if using the
   callable settlement endpoint; saved settlements now explicitly carry
   `currency: 'THB'`. This change does not migrate existing expense documents.
