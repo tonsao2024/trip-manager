@@ -4,7 +4,7 @@ import { invalidateExpensesCache } from '../expenses/index.js';
 import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, writeBatch, query, where, orderBy, limit, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { recalculateSchedule, detectOverlaps, validateItineraryItem } from '../utils/scheduling.js';
 import { dayjs } from '../utils/date.js';
-import { toThbMinor, toMinor, getCurrencyDecimals, calculateNetTotal } from '../utils/currency.js';
+import { toThbMinor, toMinor, getCurrencyDecimals, calculateNetTotal, resolveTripThbRate } from '../utils/currency.js';
 import { splitEqual } from '../utils/split.js';
 import { stayNights as computeStayNights } from '../utils/stays.js';
 
@@ -50,7 +50,10 @@ export function buildEstimateExpensePayload(item, { trip = null, payerId = null,
   const finalPayer = pending ? null : (payerId || item.estimatePayerId || shareIds[0] || null);
   const targets = shareIds.length ? shareIds : (finalPayer ? [finalPayer] : []);
   const allocations = targets.length ? splitEqual(amountMinor, targets) : [];
-  const thbRate = Number(trip?.exchangeRateToTHB) > 0 ? Number(trip.exchangeRateToTHB) : 1;
+  // Rate for the estimate's OWN currency (trip base rate, extra trip currency
+  // rates, then known snapshots) — falls back to 1 only when nothing is known.
+  const resolvedRate = resolveTripThbRate(trip, [], currency);
+  const thbRate = resolvedRate > 0 ? resolvedRate : 1;
   const netTotalMinor = calculateNetTotal({ subtotalMinor: amountMinor });
   const stayNightsCount = computeStayNights(item);
   return {

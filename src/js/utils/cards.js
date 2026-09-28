@@ -116,6 +116,15 @@ function blobToDataURL(blob) {
   });
 }
 
+/** Reject if `promise` does not settle in time (a hung upload must fall back). */
+function withTimeout(promise, ms, message) {
+  let timer = null;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); })
+  ]).finally(() => clearTimeout(timer));
+}
+
 /**
  * Store a receipt photo for an expense.
  *
@@ -123,13 +132,18 @@ function blobToDataURL(blob) {
  * not published / offline) the (compressed) image is inlined into the expense
  * document instead, so the feature still works everywhere.
  *
+ * Never hangs: the Storage upload races a timeout and falls back to inline, and
+ * the inline image is shrunk until its base64 form leaves headroom under
+ * Firestore's ~1 MB document limit (otherwise the save itself would be rejected).
+ *
  * @returns {Promise<{url:string, storage:'storage'|'inline'|'none', warning?:string}>}
  */
 export async function uploadReceiptImage(tripId, expenseId, file) {
   if (!file) return { url: '', storage: 'none' };
   let blob;
   try {
-    blob = await compressImage(file, 1200, 0.72);
+    // A decoded image event that never fires must not wedge the whole save.
+    blob = await withTimeout(compressImage(file, 1200, 0.72), 20000, 'receipt image compress timed out');
   } catch (e) {
     console.warn('receipt compress failed', e?.message || e);
     return { url: '', storage: 'none', warning: (e?.message || 'compress failed') };
@@ -139,8 +153,10 @@ export async function uploadReceiptImage(tripId, expenseId, file) {
     try {
       const path = `trips/${tripId}/receipts/${expenseId || Date.now()}_${Date.now()}.webp`;
       const ref = storageRef(storage, path);
-      await uploadBytes(ref, blob);
-      const url = await getDownloadURL(ref);
+      const url = await withTimeout((async () => {
+        await uploadBytes(ref, blob);
+        return getDownloadURL(ref);
+      })(), 30000, 'receipt upload timed out');
       return { url, storage: 'storage' };
     } catch (e) {
       console.warn('receipt upload failed → inline', e?.code || e?.message);
@@ -148,9 +164,17 @@ export async function uploadReceiptImage(tripId, expenseId, file) {
   }
 
   try {
-    if (blob.size > 700 * 1024) {
-      const smaller = await compressImage(new File([blob], 'receipt.webp', { type: 'image/webp' }), 900, 0.6);
-      if (smaller.size <= 700 * 1024) blob = smaller;
+    // Firestore documents cap at ~1 MB and base64 inflates by ~37% — keep the
+    // inlined photo well under that so "save with receipt" never gets rejected.
+    const INLINE_LIMIT = 600 * 1024;
+    if (blob.size > INLINE_LIMIT) {
+      for (const [maxWidth, quality] of [[900, 0.6], [700, 0.5], [500, 0.45]]) {
+        try {
+          const smaller = await compressImage(file, maxWidth, quality);
+          if (smaller.size < blob.size) blob = smaller;
+          if (blob.size <= INLINE_LIMIT) break;
+        } catch { break; }
+      }
     }
     const url = await blobToDataURL(blob);
     return {

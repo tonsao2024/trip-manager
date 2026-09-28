@@ -258,11 +258,14 @@ firebase emulators:start --only firestore,auth,functions,storage
 - Place photos render as a **fixed 16:9 rounded thumbnail on the right** of each itinerary card
 - Map never re-inits a live container (`LoadedMap` WeakMap registry) — adding coordinates keeps the map alive
 - **Animated countdown**: a runner sprints towards Mt. Fuji, getting closer (and faster) as the start date nears
-- Single-page **dashboard**: hero, countdown scene, 4 KPI tiles, today/up-next, spend by category,
-  estimate-vs-actual, member paid/share board, recent expenses
+- Single-page **dashboard**: hero, countdown scene, 4 KPI tiles, today/up-next, spend by category
+  (every category in the system, even ones with no spending yet), estimate-vs-actual, member paid/share board, recent expenses
 - Smart scheduling recalc, overlap warning, drag-drop reorder in edit mode
 - Timezone correct BKK/TYO/Trip
-- Map with numbered day-coloured markers + polyline, CARTO→OSM→Esri tile fallback, dark mode tile
+- Map with numbered day-coloured markers + polyline, CARTO→OSM→Esri tile fallback, dark mode tile;
+  **tapping an itinerary card always pans the map to that place's pin** (CARTO raster key embedded → no watermark)
+- **Multi-currency trips**: Settings → "สกุลเงินที่ใช้ในทริป" adds each extra currency the trip spends in
+  with its own rate to THB; totals, budgets, estimates and expense forms pick the rate up automatically
 - Expense from itinerary, service/card fee, net preview
 - Split equal/unequal/percent/shares/itemized, sum matches, remainder distributed
 - Settlement minimal transactions, copy LINE, export PNG/PDF

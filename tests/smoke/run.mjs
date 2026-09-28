@@ -57,6 +57,26 @@ window.print = () => {};
 window.HTMLAnchorElement.prototype.click = function () {};
 if (!window.URL.createObjectURL) window.URL.createObjectURL = () => 'blob:smoke';
 if (!window.URL.revokeObjectURL) window.URL.revokeObjectURL = () => {};
+// jsdom never fires image load events, so `compressImage` would hang forever.
+// Make `new Image()` report an error instead — real browsers always fire load
+// or error — so receipt uploads fail fast (the app must cope either way).
+// Only the Image() constructor is touched; <img> elements in jsdom use
+// HTMLImageElement.prototype and keep their normal behaviour.
+{
+  const imgProto = window.Image.prototype;
+  if (!imgProto.__smokeErrorOnSrc) {
+    Object.defineProperty(imgProto, 'src', {
+      configurable: true,
+      get() { return this.__src || ''; },
+      set(v) {
+        this.__src = v;
+        const self = this;
+        setTimeout(() => { try { self.onerror && self.onerror(new window.Event('error')); } catch { /* ignore */ } }, 0);
+      }
+    });
+    imgProto.__smokeErrorOnSrc = true;
+  }
+}
 window.matchMedia = window.matchMedia || (() => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
 window.Element.prototype.scrollIntoView = function () {};
 window.Element.prototype.animate = function () { return { finished: Promise.resolve(), cancel() {}, onfinish: null }; };
@@ -191,6 +211,7 @@ await waitFor(() => (window.document.getElementById('kpi-total')?.textContent ||
 check((window.document.getElementById('kpi-total')?.textContent || '').trim() !== '--', 'dashboard: totals computed');
 check(!!q('#member-board-content .member-row'), 'dashboard: member paid/share board');
 check(!!q('#category-stats .progress, #category-stats [style*="width"]'), 'dashboard: category bars');
+check((q('#category-stats')?.querySelectorAll('.progress').length || 0) >= 9, 'dashboard: every system category listed (even without spending)');
 check(!!q('#recent-expenses .expense-row'), 'dashboard: recent expenses');
 check(!!q('#upnext-list .step-num, #upnext-list .empty-state'), 'dashboard: up-next list');
 check(!errors.some(e => e.includes("Cannot set properties of null")), 'dashboard: no innerHTML-on-null errors');
@@ -214,6 +235,15 @@ check(/\.itin-thumb \{[^}]*aspect-ratio: 16 \/ 9/.test(thumbCss) && /\.itin-thum
 check(/\.itin-card \{ display: flex/.test(thumbCss), 'itinerary: card is a flex row so the thumb sits on the right');
 check(!!q('#map, .map-frame'), 'itinerary: map container present');
 check(qa('[data-act="edit"], [data-action="edit"], .icon-btn').length > 0, 'itinerary: per-item edit/delete buttons');
+
+// tapping a place card must steer the map to that place's pinned coordinates
+const leafletFocus = await import(stub('leaflet.mjs'));
+await waitFor(() => leafletFocus.__created.maps.length > 0, { label: 'itinerary map instance' }).catch(() => {});
+const focusMap = leafletFocus.__created.maps[leafletFocus.__created.maps.length - 1];
+const focusedOnPin = () => (focusMap.__setViews || []).some(v => Array.isArray(v.center) && Number(v.center[0]) === 35.5171 && (v.zoom || 0) >= 15);
+if (q('.itin-card')) q('.itin-card').click();
+await waitFor(focusedOnPin, { timeout: 3000, label: 'map focused on the tapped pin' }).catch(() => {});
+check(focusedOnPin(), "map: tapping an itinerary card pans the map to that pin (zoom >= 15)");
 
 // open edit form for the first item (still on the "all days" view)
 const editBtn = qa('.itin-card [data-act="edit"]')[0] || qa('[data-act="edit"]')[0];
@@ -301,6 +331,32 @@ window.document.getElementById('s-name').value = 'ทริปฟูจิ 2027 
 await click('#save-settings');
 await sleep(200);
 check((fsdb.__dump('trips/t1') || {}).name === 'ทริปฟูจิ 2027 (แก้ไข)', 'settings: trip update persists');
+
+// multi-currency: add an extra currency + its THB rate from trip settings
+check(!!q('#add-trip-currency') && !!q('#trip-currency-rows'), 'settings: multi-currency manager present');
+check(qa('.trip-currency-row').length === 0, 'settings: trip starts with no extra currencies');
+await click('#add-trip-currency');
+check(qa('.trip-currency-row').length === 1, 'settings: add-currency row appears');
+{
+  const curRow = qa('.trip-currency-row').pop();
+  curRow.querySelector('.trip-cur-code').value = 'EUR';
+  curRow.querySelector('.trip-cur-rate').value = '38';
+  await click('#save-settings');
+  await sleep(300);
+  const savedTrip = fsdb.__dump('trips/t1') || {};
+  check(Array.isArray(savedTrip.tripCurrencies) && savedTrip.tripCurrencies.includes('EUR'), 'settings: trip currencies persisted');
+  check(Number((savedTrip.currencyRates || {}).EUR) === 38, 'settings: extra exchange rate persisted');
+
+  // the expense form must offer the added currency and prefill ITS rate
+  await goto('#/trip/t1/expenses/add');
+  await waitFor(() => q('#ex-currency'), { label: 'expense form (multi-currency)' });
+  const curSel = q('#ex-currency');
+  check([...curSel.options].some(o => o.value === 'EUR'), 'multi-currency: added currency offered in the expense form');
+  curSel.value = 'EUR';
+  curSel.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await sleep(60);
+  check(String(q('#ex-thb-rate').value) === '38', 'multi-currency: expense form prefills the trip rate for the added currency');
+}
 
 console.log('\n▶ settlement & more');
 await goto('#/trip/t1/settlement');
@@ -554,6 +610,7 @@ check(/opentopomap|Topo_Map/.test(leafletStub.__lastTileUrl()?.__url || ''), 'ma
 await click('#map-layer-bar [data-layer="map"]');
 await sleep(250);
 check(/cartocdn/.test(leafletStub.__lastTileUrl()?.__url || ''), 'map: back to the street map layer');
+check(/key=cb1_/.test(leafletStub.__lastTileUrl()?.__url || ''), 'map: CARTO tiles carry the CARTO API key (no watermark)');
 
 console.log('\n▶ v5: Google Maps navigation links');
 const gmaps = await import(pathToFileURL(path.join(outDir, 'maps/index.js')).href);
@@ -1615,6 +1672,34 @@ console.log('\n▶ grouped expense form, exact custom split, multiple payers');
   check(q('[data-vatsc="exclude"]').classList.contains('active'), 'edit: adjustment mode restored');
   check(parseFloat(q('[data-alloc]').value.replace(/,/g,'')) === 600, 'edit: original before-adjustment amount restored');
   check(q('[data-payment]').value === '600.00', 'edit: actual payment amount restored');
+}
+
+console.log('\n▶ expense with a receipt photo — must save, and the upload toast must never stick');
+{
+  await goto('#/trip/t1/expenses/add');
+  await waitFor(() => q('#expense-form'), { label: 'expense form (receipt)' });
+  const inputR = (selector, value) => {
+    const el = q(selector); el.value = value;
+    el.dispatchEvent(new window.Event('input', { bubbles: true }));
+  };
+  q('#ex-currency').value = 'THB';
+  q('#ex-currency').dispatchEvent(new window.Event('change', { bubbles: true }));
+  inputR('#ex-title', 'ค่ากาแฟพร้อมใบเสร็จ');
+  inputR('#ex-subtotal', '120');
+  // pick a photo the same way the file input does
+  const receiptFileInput = q('#ex-receipt-file');
+  const photo = new window.File([new Uint8Array([137, 80, 78, 71])], 'receipt.png', { type: 'image/png' });
+  Object.defineProperty(receiptFileInput, 'files', { value: [photo], configurable: true });
+  receiptFileInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await sleep(120);
+  check(!!q('#ex-receipt-preview') && !q('#ex-receipt-preview').classList.contains('hidden'), 'receipt: preview shown after choosing a photo');
+
+  submit(q('#expense-form'));
+  await waitFor(() => [...fsdb.__store.entries()].some(([k, v]) => v?.title === 'ค่ากาแฟพร้อมใบเสร็จ' && k.includes('/expenses/')), { timeout: 6000, label: 'expense with receipt saved' });
+  check([...fsdb.__store.entries()].filter(([k, v]) => v?.title === 'ค่ากาแฟพร้อมใบเสร็จ' && k.includes('/expenses/')).length === 1, 'receipt: exactly one expense saved per submit');
+  // the "กำลังอัปโหลดรูปใบเสร็จ…" toast must close itself once the step finishes
+  await waitFor(() => qa('.toast.toast-loading').length === 0, { timeout: 4000, label: 'upload toast to close' }).catch(() => {});
+  check(qa('.toast.toast-loading').length === 0, 'receipt: no loading toast left behind after the save/upload (ไม่ค้าง "กำลังอัปโหลดรูปใบเสร็จ")');
 }
 
 console.log('\n▶ delete the whole trip (UI)');

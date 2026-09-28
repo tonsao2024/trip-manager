@@ -1,21 +1,26 @@
-// Maps v4 — Leaflet + free tile providers (NO API key required, ever)
+// Maps v4 — Leaflet + free tile providers
 // Key fixes in v4:
 //  • "Map container is already initialized" can never happen again — every map is
 //    registered per container element and reused / destroyed safely.
 //  • The container node is never wiped while a live map owns it (loading states use
 //    an overlay instead), so markers always keep rendering.
 //  • Auto invalidateSize on resize / when the container becomes visible.
+//  • CARTO raster tiles carry the trip's CARTO key (`key=` param) so the
+//    "API key required" watermark never shows up.
 // Provider order: CARTO (light: Voyager / dark: Dark Matter) → OpenStreetMap → Esri World Street Map
 
-// Base maps the user can switch between (keyless, all CORS-friendly)
+// CARTO Basemaps raster key — appended to every CARTO tile URL as `?key=`.
+export const CARTO_API_KEY = 'cb1_40yb_1_3281af0bd5f0a306f9b8893a';
+
+// Base maps the user can switch between (all CORS-friendly)
 export const BASE_LAYERS = [
   {
     id: 'map',
     name: 'แผนที่',
     en: 'Map',
     icon: 'map',
-    light: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    light: `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
+    dark: `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`,
     attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
     maxZoom: 20
   },
@@ -362,10 +367,14 @@ export function refreshMapTheme(map, L) {
   } catch {}
   const el = map.getContainer?.();
   const entry = el ? MAP_REGISTRY.get(el) : null;
-  const layerId = options.layerId || getStoredLayerId();
+  const layerId = entry?.layerId || getStoredLayerId();
   const def = getLayerDef(layerId);
-  entry.layerId = def.id;
-  entry.tile = buildTileLayer(map, L, def, entry, { withFallback: def.id === 'map' });
+  if (entry) {
+    entry.layerId = def.id;
+    entry.tile = buildTileLayer(map, L, def, entry, { withFallback: def.id === 'map' });
+  } else {
+    buildTileLayer(map, L, def, null, { withFallback: def.id === 'map' });
+  }
 }
 
 function parseCoord(value) {
@@ -417,6 +426,9 @@ export function addItineraryMarkers(map, L, items, dayColors, opts = {}) {
       popupAnchor: [0, -34]
     });
     const marker = L.marker([lat, lng], { icon, riseOnHover: true }).addTo(layer);
+    // Tag the pin so the list → map focus can find & open the right popup.
+    marker._fujiItemId = item.id;
+    marker._fujiMasterId = item.masterId || null;
     const thumb = item.imageUrl
       ? `<div class="map-popup-thumb"><img src="${escapePopupText(item.imageUrl)}" alt="" onerror="this.parentElement.style.display='none'"></div>`
       : '';
@@ -467,12 +479,34 @@ export async function renderItineraryMap(containerId, items, options = {}) {
   return { map, L, ...result };
 }
 
-export function focusItineraryItem(containerId, items, itemId) {
+/**
+ * Steer the map to an itinerary item's pinned coordinates and open its popup.
+ * Works for virtual "back to hotel" cards too (they resolve to their master pin).
+ * Returns false when there is no map or the item has no coordinates.
+ */
+export function focusItineraryItem(containerId, items, itemId, { zoom = 16, openPopup = true } = {}) {
   const map = getMap(containerId);
-  if (!map) return false;
-  const item = (items || []).find(i => i.id === itemId);
+  if (!map || !itemId) return false;
+  const list = items || [];
+  const item = list.find(i => i.id === itemId)
+    || list.find(i => i.masterId === itemId)
+    || { id: itemId };
   const pos = getItemLatLng(item);
   if (!pos) return false;
-  try { map.setView([pos.lat, pos.lng], 15, { animate: true }); } catch { return false; }
+  try {
+    // Always head for the pin — keep a close zoom but never zoom out past 15.
+    map.setView([pos.lat, pos.lng], Math.max(15, Math.min(zoom, map.getMaxZoom() || 18)), { animate: true });
+  } catch { return false; }
+  if (openPopup) {
+    try {
+      const el = map.getContainer?.();
+      const entry = el ? MAP_REGISTRY.get(el) : null;
+      const wantIds = [item.masterId, item.id, itemId].filter(Boolean);
+      const layers = entry?.markers?.getLayers?.() || [];
+      const marker = layers.find(l => wantIds.includes(l._fujiItemId))
+        || layers.find(l => wantIds.includes(l._fujiMasterId));
+      marker?.openPopup?.();
+    } catch { /* popup is a bonus — focus still happened */ }
+  }
   return true;
 }

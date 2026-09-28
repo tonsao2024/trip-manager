@@ -891,7 +891,9 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 .kpi-mini b { font-size: 17px; font-family: var(--font-display); }
 
 /* ---------- Itinerary card with fixed 16:9 rounded thumbnail on the right ---------- */
-.itin-card { display: flex; align-items: stretch; gap: 12px; padding: 14px; }
+/* Tapping a card focuses the map on that place's pin (see app.js focusItemOnMap). */
+.itin-card { display: flex; align-items: stretch; gap: 12px; padding: 14px; cursor: pointer; }
+.itin-card.cursor-move { cursor: move; }
 .itin-body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; }
 .itin-thumb {
   position: relative;
