@@ -98,8 +98,10 @@ export function effectiveThbRate(expense, trip) {
 /**
  * The THB rate to use for a trip.
  *
- * Priority: the trip's own rate → the median snapshot saved on its expenses
- * (`thbRate`) → the rate stored in the browser for this currency. Returns 0 when
+ * Priority: the trip's own rate (base currency) → a per-currency rate saved on
+ * the trip (`currencyRates`, set in trip settings when the trip spends more
+ * than one currency) → the median snapshot saved on its expenses (`thbRate`) →
+ * the rate stored in the browser for this currency. Returns 0 when
  * nothing is known, so callers can tell "no rate" apart from "1:1".
  *
  * @param {object|null} trip
@@ -111,6 +113,9 @@ export function resolveTripThbRate(trip, expenses = [], currency = null) {
   if (!code || code === 'THB') return 1;
   const explicit = !trip?.baseCurrency || code === trip.baseCurrency ? Number(trip?.exchangeRateToTHB) : 0;
   if (explicit > 0) return explicit;
+  // Extra currencies added on the trip ("สกุลเงินในทริป") carry their own rate.
+  const tripRate = Number(trip?.currencyRates?.[code]);
+  if (tripRate > 0) return tripRate;
   const rates = (expenses || [])
     .filter(e => !e?.currency || e.currency === code)
     .map(e => Number(e?.thbRate))
@@ -129,6 +134,25 @@ export function rememberThbRate(currency, rate) {
   const r = Number(rate);
   if (!currency || currency === 'THB' || !(r > 0)) return;
   try { localStorage.setItem(`fuji_rate_${currency}`, String(r)); } catch { /* ignore */ }
+}
+
+/**
+ * Every currency a trip may spend in: base + currencies explicitly added in
+ * trip settings (`tripCurrencies` / `currencyRates`) + the standard list.
+ * @returns {string[]} unique codes, base first
+ */
+export function tripCurrencyList(trip, extraDefaults = []) {
+  const seen = new Set();
+  const out = [];
+  const push = (c) => {
+    const code = String(c || '').trim().toUpperCase();
+    if (code && !seen.has(code)) { seen.add(code); out.push(code); }
+  };
+  push(trip?.baseCurrency || 'THB');
+  (trip?.tripCurrencies || []).forEach(push);
+  Object.keys(trip?.currencyRates || {}).forEach(push);
+  ['THB', 'JPY', 'USD', 'EUR', 'KRW', 'SGD', 'GBP', 'CNY', 'HKD', 'AUD', 'TWD', 'VND', ...extraDefaults].forEach(push);
+  return out;
 }
 
 /** Grouped decimal amounts, including editable money fields. */

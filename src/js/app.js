@@ -30,7 +30,7 @@ import { fetchSettlementData, recalculateAndSaveSettlement } from './settlement/
 
 import { listMembers, createMember, updateMember, deleteMember, countMemberReferences, mapFunctionError, MEMBER_ROLES } from './members/index.js';
 import { dayjs, getCurrentTimes, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay, parseDurationInput } from './utils/date.js';
-import { expensesInThb, convertCurrency, formatCurrency, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually } from './utils/currency.js';
+import { expensesInThb, convertCurrency, formatCurrency, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually, tripCurrencyList } from './utils/currency.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses } from './utils/settlement.js';
 import { splitCustom, splitEqual } from './utils/split.js';
 import { escapeHtml } from './utils/sanitize.js';
@@ -1450,7 +1450,7 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
   let currentAspect = 16 / 9;
 
   const options = (list, selected) => list.map(v => `<option value="${v}" ${selected === v ? 'selected' : ''}>${v.replace('_', ' ')}</option>`).join('');
-  const currencyOptions = (selected) => TRIP_CURRENCIES.map(c => `<option value="${c}" ${selected === c ? 'selected' : ''}>${c}</option>`).join('');
+  const currencyOptions = (selected) => tripCurrencyList(trip).map(c => `<option value="${c}" ${selected === c ? 'selected' : ''}>${c}</option>`).join('');
 
   const sheet = showBottomSheet(`
     <div class="space-y-3">
@@ -2675,8 +2675,11 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
     }));
   bind('upnext-add', 'click', () => { location.hash = `#/trip/${tripId}/itinerary?action=add`; });
 
-  /* ---- Category stats ---- */
+  /* ---- Category stats: EVERY category the system knows, spend or not ---- */
   const byCategory = {};
+  // Seed with every group (built-in + this trip's custom ones) so the board
+  // always lists the full system, even categories with no expenses yet.
+  getAllExpenseCategories().forEach(c => { byCategory[c.id] = { actual: 0, estimate: 0, count: 0 }; });
   expenses.forEach(e => {
     const cat = e.category || 'general';
     if (!byCategory[cat]) byCategory[cat] = { actual: 0, estimate: 0, count: 0 };
@@ -2684,24 +2687,35 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
     else byCategory[cat].actual += e.netTotalMinor || 0;
     byCategory[cat].count++;
   });
-  const catEntries = Object.entries(byCategory).sort((a, b) => (b[1].actual + b[1].estimate) - (a[1].actual + a[1].estimate));
+  // Spent categories first (biggest → smallest), the empty ones keep system order.
+  const catEntries = Object.entries(byCategory).sort((a, b) => {
+    const ta = a[1].actual + a[1].estimate;
+    const tb = b[1].actual + b[1].estimate;
+    if (ta !== tb) return tb - ta;
+    if (a[1].count !== b[1].count) return b[1].count - a[1].count;
+    return 0;
+  });
   const catMax = Math.max(1, ...catEntries.map(([, v]) => v.actual + v.estimate));
   const grand = catEntries.reduce((s, [, v]) => s + v.actual + v.estimate, 0) || 1;
-  setHtml('category-stats', catEntries.length ? catEntries.map(([cat, v]) => {
+  const spentCats = catEntries.filter(([, v]) => v.actual + v.estimate > 0).length;
+  setHtml('category-stats', catEntries.length ? `
+    <p class="text-[10px] text-[var(--text-tertiary)] mb-1">${icon('layout-grid', 'w-3 h-3 inline')} ${th(`ครบทุกหมวดในระบบ`, 'All categories in the system')} • ${spentCats}/${catEntries.length} ${th('หมวดมีรายจ่าย', 'with spending')}</p>
+    ${catEntries.map(([cat, v]) => {
     const total = v.actual + v.estimate;
     const pct = Math.round((total / grand) * 100);
+    const empty = !total;
     return `
-      <div class="py-2">
+      <div class="py-2" style="${empty ? 'opacity:.62;' : ''}">
         <div class="flex justify-between items-center text-sm gap-2">
           <span class="meta-line truncate">${icon(categoryIcon(cat), 'w-3.5 h-3.5')} ${escapeHtml(categoryLabel(cat, lang))} <span class="text-[10px] text-[var(--text-tertiary)]">• ${v.count}</span></span>
           <span class="font-bold flex-shrink-0">${fmt(total)} <span class="text-[10px] font-normal text-[var(--text-tertiary)]">${pct}%</span>${thbTag(total)}</span>
         </div>
         <div class="progress mt-1.5" style="height:6px;">
-          <div class="progress-bar progress-striped" style="width:${Math.max(3, Math.round(total / catMax * 100))}%; background:${categoryColor(cat)};"></div>
+          <div class="progress-bar progress-striped" style="width:${empty ? 0 : Math.max(3, Math.round(total / catMax * 100))}%; background:${categoryColor(cat)};"></div>
         </div>
-        ${v.estimate ? `<div class="text-[10px] text-[var(--text-tertiary)] mt-0.5">${icon('hourglass', 'w-3 h-3 inline')} ${th('ประมาณการ','est.')} ${fmt(v.estimate)}${v.actual ? ` • ${th('จ่ายจริง','actual')} ${fmt(v.actual)}` : ''}</div>` : ''}
+        ${v.estimate ? `<div class="text-[10px] text-[var(--text-tertiary)] mt-0.5">${icon('hourglass', 'w-3 h-3 inline')} ${th('ประมาณการ','est.')} ${fmt(v.estimate)}${v.actual ? ` • ${th('จ่ายจริง','actual')} ${fmt(v.actual)}` : ''}</div>` : (empty ? `<div class="text-[10px] text-[var(--text-tertiary)] mt-0.5">${th('ยังไม่มีรายการ','No expenses yet')}</div>` : '')}
       </div>`;
-  }).join('') : `<p class="text-sm text-[var(--text-secondary)]">${t('noData')}</p>`);
+  }).join('')}` : `<p class="text-sm text-[var(--text-secondary)]">${t('noData')}</p>`);
 
   /* ---- Estimated vs actual ---- */
   const estPct = totalMinor ? Math.round((estimatedMinor / totalMinor) * 100) : 0;
@@ -2893,7 +2907,7 @@ async function renderItinerary(params) {
               </div></div>
             </div>
             <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
-              <p class="text-[10px] text-[var(--text-tertiary)] flex items-center gap-1">${icon('info', 'w-3 h-3')} ${th('ไม่ต้องใช้ API key • เส้นประ = ลำดับที่ไป • กดปุ่มนำทางบนการ์ดเพื่อเปิด Google Maps','No API key needed • dashed line = visit order • tap 🧭 on a card to open Google Maps')}</p>
+              <p class="text-[10px] text-[var(--text-tertiary)] flex items-center gap-1">${icon('info', 'w-3 h-3')} ${th('กดการ์ดสถานที่ → แผนที่มุ่งไปที่หมุด • เส้นประ = ลำดับที่ไป • กดปุ่มนำทางบนการ์ดเพื่อเปิด Google Maps','Tap a place card → the map focuses its pin • dashed line = visit order • tap 🧭 on a card to open Google Maps')}</p>
               <div class="flex items-center gap-2">
                 <span id="map-count" class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:var(--bg-secondary);">0 ${th('หมุด','pins')}</span>
                 <button id="map-fit-btn" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:2px 8px;">${icon('maximize', 'w-3 h-3')} ${th('พอดีจอ','Fit')}</button>
@@ -2915,6 +2929,9 @@ async function renderItinerary(params) {
   let mapVisible = true;
   let mapReady = false;
   let visibleItems = [];
+  // Set when a card was tapped before the map finished drawing — applied right
+  // after the pins land so the map always ends up on the tapped place.
+  let pendingFocus = null;
   let members = [];
 
   try {
@@ -3071,6 +3088,13 @@ async function renderItinerary(params) {
       if (fit && located.length) {
         setTimeout(() => refreshMapSize('map'), 200);
       }
+      // A card was tapped while the map was still drawing → head to that pin now.
+      if (pendingFocus) {
+        const target = pendingFocus;
+        pendingFocus = null;
+        const { focusItineraryItem } = await import('./maps/index.js');
+        setTimeout(() => focusItineraryItem('map', [target], target.id), 90);
+      }
     } catch (e) {
       console.error('Map failed', e);
       mapStatus('error', e.message || String(e));
@@ -3079,6 +3103,56 @@ async function renderItinerary(params) {
   }
 
   if (mapVisible) setTimeout(() => refreshMap(visibleItems), 220);
+
+  /**
+   * "กดการ์ดสถานที่ → แผนที่มุ่งไปที่หมุดเสมอ" (task #1).
+   * Resolves the place (virtual stay nights resolve to their master hotel pin),
+   * makes sure the map is on screen, then pans + opens the pin's popup.
+   */
+  async function resolveFocusItem(itemId) {
+    if (!itemId) return null;
+    let target = visibleItems.find(i => i.id === itemId) || visibleItems.find(i => i.masterId === itemId);
+    if (target?.coordinates) return target;
+    // The pin may live on a day that is not currently shown — look in the full plan.
+    try {
+      const all = await fetchItinerary(tripId, null);
+      const masterId = target?.masterId || itemId;
+      const found = (all || []).find(i => i.id === itemId) || (all || []).find(i => i.id === masterId);
+      if (found?.coordinates) return found;
+    } catch { /* offline → fall through */ }
+    return null;
+  }
+
+  async function focusItemOnMap(itemId) {
+    const target = await resolveFocusItem(itemId);
+    if (!target) return; // nothing pinned for this place
+    // Never leave the user staring at a hidden map.
+    if (!mapVisible) {
+      mapVisible = true;
+      document.getElementById('map-card')?.classList.remove('hidden');
+      document.getElementById('itin-layout')?.classList.remove('map-hidden');
+      const btn = document.getElementById('toggle-map-btn');
+      if (btn) btn.className = 'btn btn-primary btn-sm';
+      setTimeout(async () => {
+        fitMapToViewport();
+        const { refreshMapSize } = await import('./maps/index.js');
+        refreshMapSize('map');
+      }, 120);
+    }
+    try {
+      const { focusItineraryItem, getMap } = await import('./maps/index.js');
+      if (!getMap('map') || !focusItineraryItem('map', [target], target.id)) {
+        // Map not created yet (or pin not drawn yet) → apply once it is.
+        pendingFocus = target;
+        if (!mapReady) refreshMap(visibleItems);
+      }
+      // On phones the map column sits above the list — bring it into view so
+      // the pan to the pin is actually visible.
+      if (window.matchMedia?.('(max-width: 1023px)')?.matches) {
+        document.getElementById('map-card')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+      }
+    } catch (e) { console.warn('[Itinerary] map focus failed', e?.message); }
+  }
 
   // Re-theme the tiles when the palette/mode changes. Registered once per render
   // but removed on route change so handlers never stack up.
@@ -3724,6 +3798,15 @@ async function renderItinerary(params) {
         if (btn.dataset.act === 'status') await changeStatus(item);
       }));
 
+      // Tapping anywhere on a place card sends the map straight to that pin —
+      // every item, every time (buttons/links inside the card keep their own jobs).
+      listEl.querySelectorAll('.itin-card').forEach(card => {
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('a, button, input, textarea, select, label, .itin-more-menu')) return;
+          focusItemOnMap(card.dataset.id);
+        });
+      });
+
       // Close dropdown menus when tapping anywhere else on the page
       const closeMenus = () => {
         listEl?.querySelectorAll('.itin-more-menu.is-open').forEach(m => {
@@ -3933,7 +4016,7 @@ async function renderItinerary(params) {
               <div class="grid grid-cols-3 gap-2">
                 <div class="input-group col-span-2"><label class="input-label text-[12px]">${icon('banknote', 'w-3.5 h-3.5')} ${th('จำนวนเงิน','Amount')}</label><input id="it-estimate-amount" class="input money-input" type="text" inputmode="decimal" value="${it.estimateAmount == null ? '' : formatAmount(it.estimateAmount, getCurrencyDecimals(it.estimateCurrency || currency))}" placeholder="0.00"></div>
                 <div class="input-group"><label class="input-label text-[12px]">${icon('coins', 'w-3.5 h-3.5')} ${th('สกุลเงิน','Currency')}</label>
-                  <select id="it-estimate-currency" class="input">${['THB','JPY','USD','EUR','KRW','TWD','SGD'].map(c => `<option value="${c}" ${(it.estimateCurrency || currency) === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
+                  <select id="it-estimate-currency" class="input">${tripCurrencyList(trip, [it.estimateCurrency, currency]).map(c => `<option value="${c}" ${(it.estimateCurrency || currency) === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
                 </div>
               </div>
               <div class="input-group"><label class="input-label text-[12px]">${icon('tag', 'w-3.5 h-3.5')} ${th('หมวดค่าใช้จ่าย','Expense category')}</label>
@@ -4807,7 +4890,7 @@ async function renderExpenseAdd(params) {
             <div class="grid grid-cols-3 gap-3">
               <div class="input-group col-span-2"><label class="input-label">${icon('banknote', 'w-3.5 h-3.5')} ${th('ยอดก่อนส่วนลด / VAT / Service Charge','Subtotal before adjustments')} *</label><input id="ex-subtotal" class="input money-input" type="text" inputmode="decimal" required placeholder="0.00" value="${amount(e.subtotalMinor)}"></div>
               <div class="input-group"><label class="input-label">${icon('coins', 'w-3.5 h-3.5')} ${th('สกุลเงิน','Currency')}</label>
-                <select id="ex-currency" class="input">${['THB','JPY','USD','EUR','KRW','TWD','SGD','GBP','CNY','HKD','AUD','VND'].map(c => `<option value="${c}" ${currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
+                <select id="ex-currency" class="input">${tripCurrencyList(trip, [e.currency]).map(c => `<option value="${c}" ${currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
               </div>
             </div>
 
@@ -5413,21 +5496,34 @@ async function renderExpenseAdd(params) {
         user: me
       });
 
+      // The expense itself is already saved — close the save spinner BEFORE the
+      // photo step so a slow upload can never look like "saving" is stuck.
+      tLoad.close();
+
       // Receipt photo: uploaded after save (needs the expense id) and stored on
       // the document. Storage when available, inlined image otherwise.
       if (pendingReceiptFile && savedId) {
-        toast.loading(th('กำลังอัปโหลดรูปใบเสร็จ…','Uploading receipt photo…'));
-        const res = await uploadReceiptImage(tripId, savedId, pendingReceiptFile);
-        if (res.url) {
-          await updateExpense(tripId, savedId, { receiptImage: res.url, receiptStorage: res.storage }, currentUser.uid, me);
-          if (res.storage === 'inline') toast.info(th('เก็บรูปไว้ในเอกสารของทริปนี้','Photo stored inside the trip document'));
-        } else {
-          toast.warning(th('อัปโหลดรูปไม่สำเร็จ — บันทึกค่าใช้จ่ายไว้แล้ว','Photo upload failed — the expense was still saved'));
+        const tUpload = toast.loading(th('กำลังอัปโหลดรูปใบเสร็จ…', 'Uploading receipt photo…'));
+        try {
+          const res = await uploadReceiptImage(tripId, savedId, pendingReceiptFile);
+          if (res.url) {
+            await updateExpense(tripId, savedId, { receiptImage: res.url, receiptStorage: res.storage }, currentUser.uid, me);
+            if (res.storage === 'inline') toast.info(th('เก็บรูปไว้ในเอกสารของทริปนี้', 'Photo stored inside the trip document'));
+          } else {
+            toast.warning(th('อัปโหลดรูปไม่สำเร็จ — บันทึกค่าใช้จ่ายไว้แล้ว', 'Photo upload failed — the expense was still saved'));
+          }
+        } catch (photoErr) {
+          // The expense is saved already — a photo failure must never block finishing.
+          console.warn('receipt save failed', photoErr);
+          toast.warning(th('อัปโหลดรูปใบเสร็จไม่สำเร็จ — บันทึกค่าใช้จ่ายไว้แล้ว', 'Receipt photo failed — the expense was still saved'));
+        } finally {
+          tUpload.close();
         }
       } else if (isEdit && receiptCleared) {
-        await updateExpense(tripId, savedId, { receiptImage: '', receiptStorage: 'none' }, currentUser.uid, me);
+        try {
+          await updateExpense(tripId, savedId, { receiptImage: '', receiptStorage: 'none' }, currentUser.uid, me);
+        } catch (e) { console.warn('clear receipt failed', e?.message); }
       }
-      tLoad.close();
       toast.success(isEdit ? th('บันทึกการแก้ไขแล้ว', 'Saved') : th('บันทึกค่าใช้จ่ายแล้ว', 'Expense saved'));
       if (!isEdit) confetti({ y: 150 });
       // Only step back to the list if the form is still on screen: a save that
@@ -7347,6 +7443,10 @@ async function renderSettings(params) {
     { code: 'HKD', name: th('ดอลลาร์ฮ่องกง', 'HK Dollar') }, { code: 'AUD', name: th('ดอลลาร์ออสเตรเลีย', 'AU Dollar') },
     { code: 'TWD', name: th('ดอลลาร์ไต้หวัน', 'Taiwan Dollar') }, { code: 'VND', name: th('ดองเวียดนาม', 'Vietnamese Dong') }
   ];
+  // Currencies added for this trip stay selectable as the base currency too.
+  tripCurrencyList(trip).forEach(code => {
+    if (!currencies.some(c => c.code === code)) currencies.push({ code, name: code });
+  });
   const pastels = themes.filter(x => x.type !== 'gradient');
   const gradients = themes.filter(x => x.type === 'gradient');
 
@@ -7385,6 +7485,13 @@ async function renderSettings(params) {
           <div class="input-group"><label class="input-label">${icon('flag', 'w-3.5 h-3.5')} ${th('สถานะทริป','Trip status')}</label>
             <select id="trip-status" class="input">${['draft','active','completed','archived'].map(st => `<option value="${st}" ${(trip?.status || 'draft') === st ? 'selected' : ''}>${st}</option>`).join('')}</select>
           </div>
+        </div>
+        <!-- Multi-currency: extra currencies this trip spends in + their THB rates -->
+        <div class="input-group">
+          <label class="input-label">${icon('coins', 'w-3.5 h-3.5')} ${th('สกุลเงินที่ใช้ในทริป (เพิ่มได้)','Currencies used in the trip (add more)')}</label>
+          <div id="trip-currency-rows" class="space-y-2"></div>
+          <button type="button" id="add-trip-currency" class="btn btn-secondary btn-sm mt-2 text-xs">${icon('plus', 'w-3.5 h-3.5')} ${th('เพิ่มสกุลเงิน','Add currency')}</button>
+          <p class="input-hint">${th('เมื่อทริปใช้เงินมากกว่าสกุลหลัก ให้เพิ่มสกุลที่ใช้แล้วตั้งเรท 1 สกุล = กี่ THB ระบบจะใช้แปลงยอดรวม งบประมาณ และรายการประมาณการให้อัตโนมัติ','When the trip spends more than its base currency, add each currency and set how much 1 unit is worth in THB — totals, budgets and estimates convert automatically')}</p>
         </div>
         <div class="input-group">
           <label class="input-label">${icon('image', 'w-3.5 h-3.5')} ${t('coverImage')}</label>
@@ -7519,6 +7626,69 @@ async function renderSettings(params) {
   });
 
   bindMoneyInputs(document);
+
+  /* ---- Extra trip currencies (multi-currency trips) + their THB rates ---- */
+  const tripCurHost = document.getElementById('trip-currency-rows');
+  const tripCurRowHtml = (code, rate) => {
+    const options = tripCurrencyList(trip, [code])
+      .map(c => `<option value="${c}" ${c === code ? 'selected' : ''}>${c}</option>`).join('');
+    const val = Number(rate) > 0 ? Number(rate) : '';
+    return `
+      <div class="flex gap-2 items-center trip-currency-row">
+        <select class="input flex-1 trip-cur-code" style="min-height:38px;" aria-label="${th('สกุลเงิน','Currency')}">${options}</select>
+        <input class="input flex-1 trip-cur-rate" type="number" step="0.0001" min="0" inputmode="decimal" placeholder="1 = ? THB" style="min-height:38px;" value="${val}" aria-label="${th('เรทเป็น THB','Rate to THB')}">
+        <button type="button" class="btn btn-ghost btn-sm trip-cur-remove" title="${th('ลบสกุลเงินนี้','Remove this currency')}" style="min-height:36px;">${icon('trash-2', 'w-3.5 h-3.5')}</button>
+      </div>`;
+  };
+  const readTripCurrencyRows = () =>
+    [...(tripCurHost?.querySelectorAll('.trip-currency-row') || [])].map(row => ({
+      code: String(row.querySelector('.trip-cur-code')?.value || '').trim().toUpperCase(),
+      rate: parseFloat(row.querySelector('.trip-cur-rate')?.value) || 0
+    }));
+  const renderTripCurrencyRows = (rows) => {
+    if (!tripCurHost) return;
+    tripCurHost.innerHTML = rows.length
+      ? rows.map(r => tripCurRowHtml(r.code, r.rate)).join('')
+      : `<p class="text-xs text-[var(--text-secondary)]">${th('ยังไม่มีสกุลเงินเพิ่มเติม — ทริปใช้สกุลหลักอย่างเดียว','No extra currencies — the trip uses only its base currency')}</p>`;
+    queueIcons();
+  };
+  renderTripCurrencyRows(
+    (trip?.tripCurrencies || []).map(code => ({
+      code,
+      rate: Number(trip?.currencyRates?.[code]) > 0 ? Number(trip.currencyRates[code]) : resolveTripThbRate(trip, [], code)
+    }))
+  );
+  bind('add-trip-currency', 'click', () => {
+    const rows = readTripCurrencyRows();
+    const used = new Set(rows.map(r => r.code).filter(Boolean));
+    const base = trip?.baseCurrency || 'THB';
+    const next = tripCurrencyList(trip).find(c => c !== base && !used.has(c)) || 'JPY';
+    const rate = resolveTripThbRate(trip, [], next);
+    renderTripCurrencyRows([...rows, { code: next, rate: rate > 0 ? rate : '' }]);
+  });
+  tripCurHost?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.trip-cur-remove');
+    if (!btn) return;
+    const rowEls = [...tripCurHost.querySelectorAll('.trip-currency-row')];
+    const idx = rowEls.indexOf(btn.closest('.trip-currency-row'));
+    if (idx < 0) return;
+    const rows = readTripCurrencyRows();
+    rows.splice(idx, 1);
+    renderTripCurrencyRows(rows);
+  });
+  /** Payload fields for the save buttons: de-duped currencies + their rates. */
+  function readTripCurrencyFields() {
+    const base = document.getElementById('s-currency')?.value || trip?.baseCurrency || 'THB';
+    const byCode = new Map();
+    for (const r of readTripCurrencyRows()) {
+      if (r.code && r.code !== base) byCode.set(r.code, r);
+    }
+    return {
+      tripCurrencies: [...byCode.keys()],
+      currencyRates: Object.fromEntries([...byCode.entries()].map(([code, r]) => [code, r.rate > 0 ? r.rate : 0]))
+    };
+  }
+
   /** Read the per-member budgets currently typed in the form (minor units in THB satang). */
   function readMemberBudgets() {
     const out = {};
@@ -7716,6 +7886,8 @@ async function renderSettings(params) {
         baseCurrency: document.getElementById('s-currency').value,
         timezone: document.getElementById('s-tz').value,
         exchangeRateToTHB: parseFloat(document.getElementById('s-thb-rate').value) || 1,
+        // Extra currencies used in this trip + their THB rates (multi-currency)
+        ...readTripCurrencyFields(),
         themeColor: document.getElementById('s-color').value,
         status: document.getElementById('trip-status').value,
         ...extra

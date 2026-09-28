@@ -39,6 +39,9 @@
   "endDate": "2027-11-14",
   "timezone": "Asia/Tokyo",
   "baseCurrency": "JPY",
+  "exchangeRateToTHB": 0.24,
+  "tripCurrencies": ["USD", "THB"],
+  "currencyRates": { "USD": 36.5, "THB": 0.24 },
   "coverImage": "https://...",
   "themeColor": "#8b5cf6",
   "status": "active",
@@ -57,6 +60,10 @@
 
 - `budgetTotal` / `budgetPerPerson` / `memberBudgets` / `budgetCurrency` (v13): budgets in **THB minor units (satang)**;
   `memberBudgets` maps memberId → that person's own budget, shown on the dashboard wallet.
+- `exchangeRateToTHB` / `tripCurrencies` / `currencyRates` (multi-currency): `exchangeRateToTHB` converts the base
+  currency to THB; when the trip spends more than one currency, Settings → "สกุลเงินที่ใช้ในทริป" adds each extra
+  currency to `tripCurrencies` with its own rate in `currencyRates` (1 unit → THB). Rate lookup order:
+  base rate → `currencyRates[code]` → median `thbRate` snapshot on the trip's expenses → browser cache.
 - `cards` (v13): the managed credit-card list every member picks from in the expense form
   (add/edit/delete in Settings → cards), so card names can't be free-typed.
 
