@@ -5,6 +5,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+// --- CDN shim: map `https://esm.sh/…` imports to the locally installed copies ---
+import { register } from 'node:module';
+register('./cdn-loader.mjs', import.meta.url);
+
 // --- minimal browser shims used by the pure modules under test ---
 globalThis.window = globalThis.window || globalThis;
 globalThis.localStorage = globalThis.localStorage || {

@@ -8,7 +8,7 @@ export const seedTrip = {
   endDate: "2027-11-14",
   timezone: "Asia/Tokyo",
   baseCurrency: "JPY",
-  themeColor: "#8b5cf6",
+  themeColor: "#1d4ed8",
   status: "active"
 };
 

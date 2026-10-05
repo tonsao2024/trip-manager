@@ -175,7 +175,7 @@ async function approveJoinRequestInner(tripId, uid, request, role, permissions) 
     authType: 'account',
     loginReady: true,
     permissions,
-    color: request.color || '#8bb89a',
+    color: request.color || '#1d4ed8',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     addedFrom: 'join-request'

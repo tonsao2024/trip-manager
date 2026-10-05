@@ -22,7 +22,7 @@ users/{uid} { role: super_admin|trip_admin|member, displayName, email, pinHash? 
 
 loginAccounts/{normalizedUsername} { pinHash (bcrypt), memberUid, tripId, failedAttempts }
 
-trips/{tripId} { name, description, country, city, startDate, endDate, timezone, baseCurrency, coverImage, themeColor, status, memberUids[], createdAt, updatedBy }
+trips/{tripId} { name, description, country, city, startDate, endDate, timezone, baseCurrency, coverImage, status, memberUids[], createdAt, updatedBy, themeColor? (legacy — the brand colour is fixed now) }
 
 trips/{tripId}/members/{memberId} { uid, displayName, username, role, color, avatar, status, permissions: { canEditItinerary, canEditExpense, canManageMembers }, order }
 
@@ -45,6 +45,10 @@ trips/{tripId}/settings/{settingId} { key, value }
 trips/{tripId}/activityLogs/{logId} { action, target, by, before, after, timestamp }
 
 trips/{tripId}/imports/{importId} { filename, rows, errors, status, createdBy }
+
+trips/{tripId}/checklists/{listId} { title, kind: packing|todo, icon, color, order, items: [{ id, text, done, assignee, doneBy, doneAt }], createdBy, updatedBy }
+trips/{tripId}/ideas/{ideaId} { title, description, address, coordinates, imageUrl, link, status: idea|planned|in_plan|dropped, votes: { memberId: true }, estimatedCostMinor, currency, createdBy, createdAt }
+trips/{tripId}/reservations/{reservationId} { type: flight|train|bus|hotel|restaurant|car|activity|other, title, provider, confirmation, date, startTime, endTime, checkIn, checkOut, address, coordinates, seat, costMinor, currency, notes, url, createdBy, createdAt }
 ```
 
 Money stored as minor units (satang/cent) to avoid float errors.
@@ -271,9 +275,19 @@ firebase emulators:start --only firestore,auth,functions,storage
 - Settlement minimal transactions, copy LINE, export PNG/PDF
 - **Excel import/export for itinerary + expenses (templates, bilingual headers) — trip admins only**
 - Import template CSV/XLSX/JSON with validation
-- Dark/Light mode persisted, 12 themes + gradient themes
+- Dark/Light/Auto mode persisted; **one fixed “True tone” brand palette (blue + yellow)** — the old
+  ชุดสี picker (12 themes + gradients, per-trip colours) is gone, so every screen shares the same look
 - Security rules block cross-trip access
 - No PWA elements
+- **Prep checklists** (packing + to-do, ready-made templates, per-item assignee, shared progress)
+- **Ideas board** — anyone suggests a place, everyone votes, winners are added to the day plan in one tap
+- **Booking tracker** — flights / hotels / trains / restaurants / cars with confirmation codes, seats,
+  cost, “next booking” countdown, copy-code button and `.ics` export
+- **Weather at a glance** — Open-Meteo forecast chips on the dashboard and on each itinerary day header
+  (best-effort: hidden when the trip is out of the forecast window or the network is offline)
+- **Route optimiser** — “จัดลำดับเส้นทาง” reorders a day's places (nearest-neighbour, timed stops keep
+  their slot), previews *before → after km* and saves real distance
+- **Calendar export** — itinerary, bookings or the whole trip as an RFC-5545 `.ics` file
 - GitHub Pages deployable
 - Animated, mobile-first UI: bottom nav, FAB, scroll reveal, confetti, count-up KPIs
 - **One login screen only** (v9): Google sign-in or email/password — the old username + PIN screen is gone.
@@ -341,11 +355,44 @@ firebase emulators:start --only firestore,auth,functions,storage
 - Tests: `tests/unit/thb.test.js`, `tests/unit/categories.test.js`, `tests/unit/statement.test.js`
   (now 13 + 1 skipped) and three new smoke blocks (THB everywhere, group CRUD, receipts + exports).
 
+### v16 changes — “one app for the whole trip”
+
+The reference product for this round was [Wanderlog](https://wanderlog.com/) (it could not be fetched
+from the build sandbox, so the comparison uses its publicly known feature set). Ground already covered
+here: collaborative itinerary, day planner with reordering, place photos + map, expense splitting,
+document storage, Excel import/export. What was still missing became this release:
+
+| Wanderlog capability | What was added here |
+| --- | --- |
+| Packing / to-do checklists | `/trip/:id/prep` — `trips/{id}/checklists`, 6 ready-made templates (packing tropical/cold/city/camp, before-you-go, documents, safety), per-item assignee, live progress ring |
+| “Places to visit” ideas + voting | `/trip/:id/ideas` — `trips/{id}/ideas`, votes, statuses, trending sort, budget estimate, **“add to plan”** sheet that writes a real itinerary item |
+| Reservation / booking tracking | `/trip/:id/bookings` — `trips/{id}/reservations`, 7 booking types, confirmation code + copy button, seat, cost, check-in/out, “next booking” countdown, warnings for missing details |
+| Calendar export | `.ics` (RFC 5545, with folding + escaping) for the itinerary, the bookings or everything, on the Export page and on the bookings page |
+| Weather while planning | Open-Meteo forecast chips (3 h cache, never throws) on the dashboard and per itinerary day |
+| Route optimisation | Nearest-neighbour day reordering with a before/after km preview and a Google Maps deep link; timed stops never move |
+| Trip-tools home widgets | Dashboard `#dash-tools`: prep progress, weather strip, next bookings, top-voted ideas |
+
+Design-system notes:
+
+- **Colour themes removed.** `--primary-raw #1d4ed8`, `--grad-2 #3b82f6`, `--brand-yellow-raw #ffc81e`,
+  `--brand-ink-raw #17203a`; every shade is derived with `color-mix()` so light **and** dark mode stay
+  readable from one palette. `data-color` and `fuji_color_theme` are actively cleared on boot, and the
+  Appearance sheet now only offers Light / Dark / Auto (`.mode-option`).
+- Yellow is an **accent duo** partner: it never carries white body text (`--on-accent #2b2100`), and
+  readable yellow-family text uses `--brand-yellow-ink`.
+- Legacy colour debt was re-mapped as well: member colour defaults, the category colour picker, day
+  hues, map fallbacks, confetti and the image-cropper guides all use the brand family now.
+- Firestore rules for the three new collections follow the existing model: every member can read and
+  create/update; only an admin (or the author) can delete.
+
 ## Tests
 
 ```
 # Pure logic suites (no browser, no network):
-node tests/node-runner.mjs          # settlement, split, currency, THB, groups, statements, countdown, Excel, colors, invite codes, diagnostics
+node tests/node-runner.mjs          # settlement, split, currency, THB, groups, statements, countdown,
+                                    # scheduling, Excel, colors, invite codes, diagnostics,
+                                    # + v16: prep checklists, ideas, reservations, weather, route, .ics
+                                    # (tests/cdn-loader.mjs maps the CDN dayjs/xlsx imports to node_modules)
 
 # Browser suites:
 open tests/runner.html              # same suites + scheduling (needs CDN access)
@@ -358,7 +405,12 @@ node tests/smoke/run.mjs
 npm install --no-save puppeteer-core @sparticuz/chromium tailwindcss@3 html2canvas jspdf dayjs
 node tests/browser/export-check.mjs     # export pipeline renders the real PNGs
 node tests/browser/mobile-check.mjs     # iPhone 16/14 Pro Max + SE + desktop layout
+MOBILE_MODE=dark node tests/browser/mobile-check.mjs   # same screens in dark mode (own screenshot folder)
 ```
+
+The Chromium runs need the browser's shared libraries; when `@sparticuz/chromium` is used on a
+minimal image, unpack `node_modules/@sparticuz/chromium/bin/al2023.tar.br` and export
+`LD_LIBRARY_PATH=/tmp/al2023/lib` (the script passes the same path to the browser process).
 
 `tests/browser/mobile-check.mjs` renders every route (and a few overlays) at phone sizes and
 fails when a screen is wider than the phone — on mobile that makes the browser zoom the whole
@@ -369,7 +421,9 @@ rows, or when a long name/email spills out of its card. Screenshots land in
 `tests/smoke/` copies `src/js` into `tests/smoke/.build/` and rewrites only the CDN import
 specifiers (Firebase → in-memory stub, dayjs/xlsx → npm packages, Leaflet/Sortable → stubs),
 so the real application code runs end-to-end: dashboard, countdown, map refresh, estimate →
-expense sync, member/document/expense CRUD, Excel round-trip, permissions and trip deletion.
+expense sync, member/document/expense CRUD, Excel round-trip, permissions, trip deletion and the
+v16 blocks (prep checklists, ideas + add-to-plan, bookings + `.ics`, dashboard tool tiles and the
+route optimiser writing a new order through `reorderItinerary`).
 
 ## Performance
 

@@ -1,15 +1,15 @@
 // Shared category definitions for expenses + itinerary (single source of truth)
 
 export const EXPENSE_CATEGORIES = [
-  { id: 'food', th: 'อาหาร', en: 'Food', icon: 'utensils-crossed', color: '#e0a17a' },
-  { id: 'transport', th: 'เดินทาง', en: 'Transport', icon: 'train-front', color: '#8aa8b5' },
-  { id: 'stay', th: 'ที่พัก/โรงแรม', en: 'Stay / Hotel', icon: 'bed-double', color: '#a48fc0' },
-  { id: 'ticket', th: 'ค่าเข้า/ตั๋ว', en: 'Ticket / Entrance', icon: 'ticket', color: '#8bb89a' },
-  { id: 'activity', th: 'กิจกรรม', en: 'Activity', icon: 'ferris-wheel', color: '#e0b17a' },
-  { id: 'shopping', th: 'ช้อปปิ้ง/ของฝาก', en: 'Shopping', icon: 'shopping-bag', color: '#d391ab' },
-  { id: 'insurance', th: 'ประกัน/วีซ่า', en: 'Insurance / Visa', icon: 'shield-check', color: '#7fa9b8' },
-  { id: 'fee', th: 'ค่าธรรมเนียม', en: 'Fees', icon: 'receipt', color: '#b0a17a' },
-  { id: 'general', th: 'อื่นๆ', en: 'Others', icon: 'package', color: '#9aa79c' }
+  { id: 'food', th: 'อาหาร', en: 'Food', icon: 'utensils-crossed', color: '#f59e0b' },
+  { id: 'transport', th: 'เดินทาง', en: 'Transport', icon: 'train-front', color: '#2563eb' },
+  { id: 'stay', th: 'ที่พัก/โรงแรม', en: 'Stay / Hotel', icon: 'bed-double', color: '#7c3aed' },
+  { id: 'ticket', th: 'ค่าเข้า/ตั๋ว', en: 'Ticket / Entrance', icon: 'ticket', color: '#0ea5e9' },
+  { id: 'activity', th: 'กิจกรรม', en: 'Activity', icon: 'ferris-wheel', color: '#ffc81e' },
+  { id: 'shopping', th: 'ช้อปปิ้ง/ของฝาก', en: 'Shopping', icon: 'shopping-bag', color: '#f43f5e' },
+  { id: 'insurance', th: 'ประกัน/วีซ่า', en: 'Insurance / Visa', icon: 'shield-check', color: '#0d9488' },
+  { id: 'fee', th: 'ค่าธรรมเนียม', en: 'Fees', icon: 'receipt', color: '#64748b' },
+  { id: 'general', th: 'อื่นๆ', en: 'Others', icon: 'package', color: '#94a3b8' }
 ];
 
 export const ITINERARY_CATEGORIES = [

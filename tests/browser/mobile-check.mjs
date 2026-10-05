@@ -17,7 +17,10 @@ import { appDir, outRoot } from './mobile-build.mjs';
 
 const here = import.meta.dirname;
 const root = path.resolve(here, '../..');
-const shotDir = path.join(outRoot, 'mobile');
+// MOBILE_MODE=dark|light forces the stored appearance mode (screenshots land in
+// tests/browser/out/mobile-dark/ so they never overwrite the default set).
+const FORCE_MODE = ['light', 'dark', 'auto'].includes(process.env.MOBILE_MODE) ? process.env.MOBILE_MODE : '';
+const shotDir = path.join(outRoot, FORCE_MODE ? `mobile-${FORCE_MODE}` : 'mobile');
 const PORT = Number(process.env.MOBILE_PORT || 8098);
 
 // iPhone 16 Pro Max is 440×956, 14 Pro Max 430×932, SE 375×667 — the small end
@@ -40,6 +43,11 @@ const ROUTES = [
   ['members', '#/trip/t1/members', null, '#members-list'],
   ['member-form', '#/trip/t1/members', '#add-member-btn'],
   ['documents', '#/trip/t1/documents'],
+  ['prep', '#/trip/t1/prep', null, '#prep-lists'],
+  ['ideas', '#/trip/t1/ideas', null, '#ideas-list'],
+  ['bookings', '#/trip/t1/bookings', null, '#booking-next'],
+  ['export', '#/trip/t1/export', null, '#ics-all'],
+  ['appearance', '#/trip/t1/dashboard', ['#user-avatar-btn', '#appearance-btn']],
   ['more', '#/trip/t1/more'],
   ['settings', '#/trip/t1/settings']
 ];
@@ -122,16 +130,24 @@ async function main() {
     page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.log(`   [console.${m.type()}]`, m.text().slice(0, 200)); });
     page.on('requestfailed', (r) => console.log('   [req failed]', r.url().replace('http://127.0.0.1:8098',''), r.failure()?.errorText));
     page.on('response', (r) => { if (r.status() >= 400) console.log('   [http', r.status() + ']', r.url().replace('http://127.0.0.1:8098','')); });
+    if (FORCE_MODE) {
+      await page.evaluateOnNewDocument((mode) => {
+        try { localStorage.setItem('fuji_theme', mode); } catch { /* ignore */ }
+      }, FORCE_MODE);
+    }
     await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'load' });
     if (thaiCss) {
       await page.addStyleTag({ content: `${thaiCss}*, *::before, *::after { font-family: 'Noto Sans Thai Check', system-ui, sans-serif !important; }` });
     }
     await page.waitForFunction(() => window.__mobile?.ready, { timeout: 30000 });
 
-    console.log(`\n— ${device.id} (${device.width}×${device.height}) —`);
+    console.log(`\n— ${device.id} (${device.width}×${device.height})${FORCE_MODE ? ` · ${FORCE_MODE} mode` : ''} —`);
     for (const [name, hash, tap, scrollTo] of ROUTES) {
       await page.evaluate((h) => window.__mobile.goto(h), hash);
-      if (tap) await page.evaluate((sel) => window.__mobile.tap(sel), tap);
+      // `tap` may be one selector or a chain of them (open a sheet, then a button in it).
+      for (const sel of [].concat(tap || [])) {
+        if (sel) await page.evaluate((s) => window.__mobile.tap(s), sel);
+      }
       if (name === 'expense-custom') {
         await page.evaluate(() => {
           const set = (id, value) => { const el = document.getElementById(id); el.value = value; el.dispatchEvent(new Event('input', { bubbles: true })); };
@@ -212,7 +228,7 @@ async function main() {
         layout: window.innerWidth, client: document.documentElement.clientWidth
       };
     });
-    console.log(`\n— desktop 1280×900 —`);
+    console.log(`\n— desktop 1280×900${FORCE_MODE ? ` · ${FORCE_MODE} mode` : ''} —`);
     console.log(`  ${desk.shown ? '✓' : '✗'} header name visible again (${desk.text || 'empty'}) layout=${desk.layout}/${desk.client}`);
     if (!desk.shown) problems.push('desktop: the user name is hidden even on a wide screen');
     if (desk.layout > desk.client + 1) problems.push('desktop: the page is wider than the window');

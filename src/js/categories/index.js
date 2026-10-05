@@ -23,8 +23,8 @@ export const CATEGORY_ICON_CHOICES = [
 ];
 
 export const CATEGORY_COLOR_CHOICES = [
-  '#e0a17a', '#8aa8b5', '#a48fc0', '#8bb89a', '#e0b17a', '#d391ab', '#7fa9b8',
-  '#b0a17a', '#9aa79c', '#6ea8fe', '#f2a65a', '#e57373'
+  '#1d4ed8', '#3b82f6', '#0ea5e9', '#6366f1', '#0d9488', '#0f9d6b',
+  '#ffc81e', '#f59e0b', '#eab308', '#f97316', '#a855f7', '#dc4b4b'
 ];
 
 export function slugifyCategoryId(label) {

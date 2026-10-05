@@ -303,7 +303,7 @@ export async function createTrip(data, userId) {
     timezone: data.timezone || 'Asia/Bangkok',
     baseCurrency: data.baseCurrency || 'THB',
     coverImage: coverImageUrl,
-    themeColor: data.themeColor || '#8bb89a',
+    themeColor: data.themeColor || '#1d4ed8', // True-tone brand (v16)
     status: 'draft',
     memberUids: [userId],
     // Members join by typing this code; the admin approves the request.
@@ -323,7 +323,7 @@ export async function createTrip(data, userId) {
         displayName: data.creatorName || 'Admin',
         role: 'trip_admin',
         status: 'active',
-        color: payload.themeColor,
+        color: '#1d4ed8', // member colour default (brand blue)
         avatar: '',
         permissions: { canEditItinerary: true, canEditExpense: true, canManageMembers: true },
         createdAt: serverTimestamp(),
@@ -372,7 +372,9 @@ export async function updateTrip(tripId, updates) {
 const TRIP_SUBCOLLECTIONS = [
   'itineraryItems', 'expenses', 'members', 'documents', 'categories',
   'cards', 'exchangeRates', 'settings', 'imports', 'activityLogs',
-  'notes', 'joinRequests', 'settlements', 'comments', 'activity'
+  'notes', 'joinRequests', 'settlements', 'comments', 'activity',
+  // v16 trip tools
+  'checklists', 'ideas', 'reservations'
 ];
 
 /**
@@ -439,7 +441,7 @@ export async function duplicateTrip(sourceTrip, userId, { nameSuffix = ' (สำ
     timezone: sourceTrip.timezone || 'Asia/Bangkok',
     baseCurrency: sourceTrip.baseCurrency || 'THB',
     coverImage: sourceTrip.coverImage || '',
-    themeColor: sourceTrip.themeColor || '#8bb89a',
+    themeColor: sourceTrip.themeColor || '#1d4ed8',
     creatorName: 'Admin'
   }, userId);
 
