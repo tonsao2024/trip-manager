@@ -1,0 +1,464 @@
+/* ============================================================================
+   Fuji Trip Planner — v17 “Sky light” interface refresh
+   ----------------------------------------------------------------------------
+   Loaded after components.css. It re-shapes the shared components (cards, nav,
+   chips, tiles, sheets) into the brighter, rounder product look and adds the
+   styles for the v17 additions: Explore place guides, calendar view, booking
+   text import, trip sharing, the offline strip and the demo (preview) banner.
+   Everything is derived from tokens.css, so light & dark stay in sync.
+   ========================================================================== */
+
+/* ---------------------------------------------------------------- *
+ * 1. Surfaces & type — airy cards, ink headings, softer shadows
+ * ---------------------------------------------------------------- */
+.card {
+  border-width: 1px;
+  border-color: var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+.card:hover { border-color: color-mix(in srgb, var(--primary-raw) 18%, var(--border)); }
+.card-hover:hover { box-shadow: var(--shadow-md); border-color: color-mix(in srgb, var(--primary-raw) 30%, var(--border)); }
+.card-bento { border-radius: var(--radius-lg); }
+.card-glass { border-color: color-mix(in srgb, #fff 55%, transparent); }
+
+.text-strong, .page-title { color: var(--text-strong); }
+.page-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-size: 24px;
+  line-height: 1.15;
+}
+.section-title, .theme-section-title {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+/* Soft tinted section surfaces (new helpers) */
+.surface-mist { background: var(--mist-tint); border-color: color-mix(in srgb, var(--brand-mist-raw) 40%, var(--border)); }
+.surface-sand { background: var(--sand-tint); border-color: color-mix(in srgb, var(--brand-yellow-raw) 35%, var(--border)); }
+.surface-sky  { background: var(--primary-light); border-color: color-mix(in srgb, var(--primary-raw) 24%, var(--border)); }
+
+/* ---------------------------------------------------------------- *
+ * 2. Buttons — pill, softer, with a gentle lift
+ * ---------------------------------------------------------------- */
+.btn { border-radius: var(--radius-full); font-weight: 650; }
+.btn-primary {
+  background: var(--gradient-primary);
+  box-shadow: var(--shadow-primary);
+  border-color: transparent;
+}
+.btn-primary:hover:not(:disabled) { box-shadow: 0 12px 28px color-mix(in srgb, var(--primary-raw) 38%, transparent); }
+.btn-secondary {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: var(--shadow-xs);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary-raw) 6%, var(--surface));
+  border-color: color-mix(in srgb, var(--primary-raw) 26%, var(--border));
+}
+.btn-accent { background: var(--gradient-sun); color: var(--on-accent); }
+.btn-soft { background: var(--primary-light); color: var(--primary-strong); border-color: color-mix(in srgb, var(--primary-raw) 18%, transparent); }
+.btn-soft:hover:not(:disabled) { background: color-mix(in srgb, var(--primary-raw) 16%, var(--surface)); }
+.btn-lg { border-radius: var(--radius-full); }
+
+/* ---------------------------------------------------------------- *
+ * 3. Inputs, chips & segmented controls
+ * ---------------------------------------------------------------- */
+.input { border-width: 1px; border-radius: var(--radius); background: var(--surface); }
+.input:focus { box-shadow: 0 0 0 4px var(--primary-soft); }
+select.input { border-radius: var(--radius); }
+
+.chip { border-width: 1px; background: var(--surface); }
+.chip-active { background: var(--gradient-primary); box-shadow: 0 6px 16px color-mix(in srgb, var(--primary-raw) 32%, transparent); }
+.chip-ghost { background: transparent; border-color: transparent; box-shadow: none; }
+
+.segmented { background: var(--bg-secondary); border-width: 1px; }
+.segmented-item.active { color: var(--text-strong); box-shadow: var(--shadow-sm); }
+
+/* ---------------------------------------------------------------- *
+ * 4. Header + navigation — floating glass bar with a soft active pill
+ * ---------------------------------------------------------------- */
+#app-header {
+  border-bottom: 1px solid var(--border-light);
+  box-shadow: none;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+}
+#app-header .logo-badge { box-shadow: 0 8px 20px color-mix(in srgb, var(--primary-raw) 28%, transparent); }
+
+/* Desktop nav = pill toolbar */
+.desktop-nav {
+  gap: 6px;
+  padding: 10px 16px 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.desktop-nav::-webkit-scrollbar { display: none; }
+.desktop-nav .menu-item {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+  min-height: 38px;
+  padding: 8px 14px;
+}
+.desktop-nav .menu-item:hover { background: var(--bg-secondary); color: var(--text-strong); transform: none; }
+.desktop-nav .menu-item.active,
+.desktop-nav .menu-item.chip-active {
+  background: var(--surface);
+  color: var(--primary-strong);
+  border-color: color-mix(in srgb, var(--primary-raw) 22%, var(--border));
+  box-shadow: var(--shadow-xs);
+}
+[data-theme="dark"] .desktop-nav .menu-item.chip-active { color: var(--primary); }
+
+/* Mobile bottom nav = floating rounded bar with an active pill */
+.bottom-nav {
+  bottom: 14px; left: 12px; right: 12px;
+  height: 66px;
+  border-radius: var(--radius-xl);
+  border-width: 1px;
+  border-color: color-mix(in srgb, var(--primary-raw) 12%, var(--border));
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  box-shadow: 0 18px 40px rgba(55,70,86,0.18), 0 2px 6px rgba(55,70,86,0.06);
+  padding: 6px;
+}
+[data-theme="dark"] .bottom-nav { box-shadow: 0 18px 44px rgba(0,0,0,0.6); }
+.bottom-nav-item {
+  border-radius: var(--radius-lg);
+  gap: 3px;
+  padding: 6px 10px;
+  min-width: 56px;
+  color: var(--text-tertiary);
+}
+.bottom-nav-item.active {
+  color: var(--primary-strong);
+  background: var(--primary-light);
+  transform: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary-raw) 16%, transparent);
+}
+[data-theme="dark"] .bottom-nav-item.active { color: var(--primary); }
+.bottom-nav-item.active::before { display: none; }
+
+/* FAB — sky glow with an amber rim (was a hard yellow border) */
+.fab {
+  border: 3px solid color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: 0 14px 30px color-mix(in srgb, var(--primary-raw) 38%, transparent), 0 0 0 1px color-mix(in srgb, var(--brand-yellow-raw) 55%, transparent);
+}
+
+/* ---------------------------------------------------------------- *
+ * 5. Cards: hero, KPI, tiles, list rows
+ * ---------------------------------------------------------------- */
+.hero-card {
+  border-radius: var(--radius-xl);
+  box-shadow: 0 18px 44px color-mix(in srgb, var(--hero-color, var(--primary-raw)) 32%, transparent);
+  border-color: color-mix(in srgb, #fff 22%, transparent);
+}
+.hero-overlay { background: linear-gradient(to top, rgba(13,19,33,0.74) 2%, rgba(13,19,33,0.3) 46%, rgba(13,19,33,0.08) 100%); }
+.hero-content { padding: 22px; }
+
+.kpi-tile {
+  border-radius: var(--radius-lg);
+  border-color: var(--border-light);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--primary-raw) 5%, var(--card)) 0%, var(--card) 62%);
+  box-shadow: var(--shadow-xs);
+}
+.kpi-tile::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 14px; right: 14px;
+  height: 3px;
+  border-radius: 0 0 6px 6px;
+  background: var(--gradient-primary);
+  opacity: 0.85;
+}
+.kpi-tile:hover { border-color: color-mix(in srgb, var(--primary-raw) 26%, var(--border)); }
+.kpi-icon { border-radius: 14px; }
+.kpi-value { color: var(--text-strong); font-weight: 700; letter-spacing: -0.02em; }
+
+.tile { border-radius: var(--radius-md); }
+.badge { border-radius: var(--radius-full); font-weight: 650; }
+.progress { height: 9px; border: none; background: color-mix(in srgb, var(--primary-raw) 10%, var(--bg-secondary)); }
+.progress-bar { box-shadow: 0 0 12px color-mix(in srgb, var(--primary-raw) 40%, transparent); }
+
+/* Page scene header → bright “ticket” with a colour wash */
+.page-scene {
+  border-radius: var(--radius-lg);
+  border-color: color-mix(in srgb, var(--primary-raw) 16%, var(--border-light));
+  background:
+    linear-gradient(115deg,
+      color-mix(in srgb, var(--grad-1) 16%, var(--surface)) 0%,
+      color-mix(in srgb, var(--grad-2) 12%, var(--surface)) 52%,
+      color-mix(in srgb, var(--brand-yellow-raw) 12%, var(--surface)) 100%);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Icon bubbles used across pages */
+.row-icon { border-radius: 14px; }
+
+/* ---------------------------------------------------------------- *
+ * 6. Sheets, modals, toasts — rounder, calmer
+ * ---------------------------------------------------------------- */
+.bottom-sheet, .sheet-panel, .modal-card { border-radius: var(--radius-xl) var(--radius-xl) 0 0; }
+.modal-card { border-radius: var(--radius-lg); }
+.toast { border-radius: var(--radius-md); border-left-width: 0; border: 1px solid var(--border-light); box-shadow: var(--shadow-lg); }
+.toast-success { box-shadow: var(--shadow-lg), inset 4px 0 0 var(--success); }
+.toast-error { box-shadow: var(--shadow-lg), inset 4px 0 0 var(--danger); }
+.toast-warning { box-shadow: var(--shadow-lg), inset 4px 0 0 var(--warning); }
+.toast-loading { box-shadow: var(--shadow-lg), inset 4px 0 0 var(--primary); }
+.toast-info { box-shadow: var(--shadow-lg), inset 4px 0 0 var(--info); }
+
+/* Avatar ring */
+.avatar { border: 2px solid var(--surface); box-shadow: 0 4px 12px color-mix(in srgb, var(--text) 14%, transparent); }
+
+/* ---------------------------------------------------------------- *
+ * 7. Explore — curated place guides (“ชวนไปที่นี่”)
+ * ---------------------------------------------------------------- */
+.explore-hero {
+  position: relative;
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  overflow: hidden;
+  background:
+    radial-gradient(at 88% 12%, color-mix(in srgb, var(--brand-yellow-raw) 30%, transparent) 0%, transparent 55%),
+    linear-gradient(120deg, color-mix(in srgb, var(--grad-1) 92%, #0d1b3a) 0%, var(--grad-2) 100%);
+  color: #fff;
+  box-shadow: 0 18px 40px color-mix(in srgb, var(--primary-raw) 30%, transparent);
+}
+.explore-hero h2 { font-family: var(--font-display); font-weight: 700; letter-spacing: -0.02em; }
+.explore-hero .eh-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 11px; border-radius: var(--radius-full);
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.3);
+  font-size: 11px; font-weight: 700;
+  color: #fff;
+}
+.explore-search { position: relative; }
+.explore-search .input { padding-left: 42px; background: var(--surface); }
+.explore-search svg {
+  position: absolute; left: 15px; top: 50%; transform: translateY(-50%);
+  width: 17px; height: 17px; color: var(--text-tertiary);
+}
+.guide-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 720px) { .guide-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+.place-card {
+  display: flex; gap: 12px; align-items: stretch;
+  padding: 13px;
+  border-radius: var(--radius-md);
+  background: var(--card);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-xs);
+  transition: transform 0.2s cubic-bezier(0.16,1,0.3,1), box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.place-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: color-mix(in srgb, var(--primary-raw) 26%, var(--border)); }
+.place-thumb {
+  flex: 0 0 auto; width: 74px; height: 74px; border-radius: var(--radius);
+  display: grid; place-items: center;
+  background: var(--gradient-mist);
+  color: var(--steel-ink);
+  border: 1px solid color-mix(in srgb, var(--brand-mist-raw) 45%, var(--border));
+}
+.place-thumb svg { width: 26px; height: 26px; }
+.place-thumb--amber { background: linear-gradient(140deg, var(--brand-yellow-tint), color-mix(in srgb, var(--brand-yellow-raw) 30%, #fff)); color: var(--brand-yellow-ink); border-color: var(--brand-yellow-line); }
+.place-thumb--sky { background: linear-gradient(140deg, var(--primary-light), color-mix(in srgb, var(--primary-raw) 22%, #fff)); color: var(--primary-strong); border-color: color-mix(in srgb, var(--primary-raw) 26%, var(--border)); }
+.place-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.place-title { font-weight: 700; font-size: 14.5px; color: var(--text-strong); line-height: 1.25; }
+.place-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.45; }
+.place-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.place-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: var(--radius-full);
+  font-size: 10.5px; font-weight: 700;
+  background: var(--bg-secondary); color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+}
+.place-chip svg { width: 12px; height: 12px; }
+.place-chip--cost { background: var(--brand-yellow-tint); color: var(--brand-yellow-ink); border-color: var(--brand-yellow-line); }
+.place-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+
+/* “Recommended for this trip” ribbon */
+.reco-strip {
+  display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 8px;
+  scrollbar-width: none;
+}
+.reco-strip::-webkit-scrollbar { display: none; }
+.reco-card {
+  flex: 0 0 auto; width: 210px;
+  padding: 13px; border-radius: var(--radius-md);
+  background: var(--surface); border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-xs);
+}
+.reco-card b { display: block; font-size: 13.5px; color: var(--text-strong); }
+.reco-card p { font-size: 11.5px; color: var(--text-secondary); margin-top: 3px; line-height: 1.4; }
+
+/* ---------------------------------------------------------------- *
+ * 8. Calendar view of the plan (เดือน/วัน)
+ * ---------------------------------------------------------------- */
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.cal-head {
+  text-align: center; font-size: 10.5px; font-weight: 800; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--text-tertiary); padding: 2px 0;
+}
+.cal-cell {
+  min-height: 74px; padding: 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  background: var(--surface);
+  display: flex; flex-direction: column; gap: 4px;
+  cursor: pointer;
+  transition: transform 0.16s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  text-align: left;
+}
+.cal-cell:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--primary-raw) 30%, var(--border)); box-shadow: var(--shadow-xs); }
+.cal-cell.is-outside { opacity: 0.42; background: var(--bg-secondary); }
+.cal-cell.is-trip { background: linear-gradient(180deg, color-mix(in srgb, var(--primary-raw) 8%, var(--surface)), var(--surface)); border-color: color-mix(in srgb, var(--primary-raw) 20%, var(--border)); }
+.cal-cell.is-today { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+.cal-day { font-size: 12px; font-weight: 800; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.cal-cell.is-today .cal-day { color: var(--primary-strong); }
+.cal-cell.is-trip .cal-day::after { content: ''; }
+.cal-pill {
+  display: block; font-size: 10px; font-weight: 700;
+  padding: 2px 6px; border-radius: 7px;
+  background: var(--primary-light); color: var(--primary-strong);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cal-pill--amber { background: var(--brand-yellow-tint); color: var(--brand-yellow-ink); }
+.cal-pill--mist { background: var(--mist-tint); color: var(--mist-ink); }
+.cal-more { font-size: 9.5px; font-weight: 700; color: var(--text-tertiary); }
+.cal-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--text-secondary); }
+
+/* ---------------------------------------------------------------- *
+ * 9. Booking import (paste a confirmation e-mail) + share sheet
+ * ---------------------------------------------------------------- */
+.import-drop {
+  border: 1.5px dashed color-mix(in srgb, var(--primary-raw) 34%, var(--border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--primary-raw) 4%, var(--surface));
+  padding: 14px;
+}
+.import-textarea { min-height: 170px; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; }
+.parsed-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; border-radius: var(--radius-sm);
+  background: var(--bg-secondary); border: 1px solid var(--border-light);
+  font-size: 12.5px;
+}
+.parsed-row span:first-child { color: var(--text-secondary); font-weight: 600; }
+.parsed-row b { color: var(--text-strong); text-align: right; overflow-wrap: anywhere; }
+
+.share-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.share-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  padding: 15px 10px; border-radius: var(--radius-md);
+  background: var(--surface); border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-xs);
+  font-size: 12px; font-weight: 650; color: var(--text);
+  cursor: pointer; text-align: center;
+  transition: transform 0.18s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.share-tile:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); border-color: color-mix(in srgb, var(--primary-raw) 28%, var(--border)); }
+.share-tile .row-icon { width: 40px; height: 40px; border-radius: 15px; }
+.share-code {
+  font-family: var(--font-mono); font-size: 22px; font-weight: 800; letter-spacing: 0.24em;
+  color: var(--primary-strong);
+}
+[data-theme="dark"] .share-code { color: var(--primary); }
+
+/* ---------------------------------------------------------------- *
+ * 10. Offline / sync strip + demo banner
+ * ---------------------------------------------------------------- */
+.offline-strip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 13px; border-radius: var(--radius-full);
+  background: var(--warning-bg);
+  border: 1px solid color-mix(in srgb, var(--warning) 34%, transparent);
+  color: var(--text);
+  font-size: 12px; font-weight: 600;
+}
+.offline-strip svg { width: 15px; height: 15px; color: var(--warning); }
+
+/* Demo strip (the offline “ตัวอย่างฟังก์ชันครบ” build) — calm slate bar with an
+   amber dot, so it is obviously not part of the real UI but stays on-palette. */
+.demo-banner {
+  position: sticky; top: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 16px;
+  background: #22303d;
+  color: #f2f7fd;
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.005em;
+  box-shadow: 0 6px 18px rgba(34,48,61,0.28);
+}
+.demo-banner .demo-dot {
+  width: 8px; height: 8px; border-radius: 9999px; flex: none;
+  background: var(--brand-yellow-raw);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand-yellow-raw) 26%, transparent);
+}
+.demo-banner b { font-weight: 800; color: #fff; }
+.demo-banner > span:not(.demo-dot) { color: rgba(242,247,253,0.82); }
+/* Version / “last updated” stamp shown on the login screen, the More page and
+   the Settings “About” card (single source: src/js/utils/buildInfo.js). */
+.build-stamp {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  margin-top: 18px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.01em;
+  color: var(--text-tertiary);
+}
+.build-stamp svg { opacity: 0.75; }
+#about-card .build-stamp { justify-content: flex-start; margin-top: 6px; }
+
+.demo-banner .demo-stamp { font-size: 10.5px; font-variant-numeric: tabular-nums; color: rgba(242,247,253,0.55); }
+.demo-banner .demo-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 12px; border-radius: var(--radius-full);
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.28);
+  color: #fff; font-weight: 700; font-size: 11.5px;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.demo-banner .demo-btn:hover { background: rgba(255,255,255,0.22); border-color: rgba(255,255,255,0.42); }
+.demo-banner svg { width: 14px; height: 14px; }
+
+/* ---------------------------------------------------------------- *
+ * 11. Small screens — keep the new pieces readable
+ * ---------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .guide-grid { grid-template-columns: minmax(0, 1fr); }
+  .place-thumb { width: 62px; height: 62px; }
+  .place-thumb svg { width: 22px; height: 22px; }
+  .cal-cell { min-height: 62px; padding: 5px; }
+  .cal-pill { font-size: 9px; }
+  .share-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .demo-banner { font-size: 11px; padding: 7px 10px; }
+}
+
+/* Print: the itinerary / calendar should come out clean (Web version export) */
+@media print {
+  #app-header, .bottom-nav, .fab, .toast-container, #bg-decor, .demo-banner, .no-print { display: none !important; }
+  body { background: #fff; padding: 0 !important; }
+  .card { box-shadow: none !important; border-color: #d8e0e8 !important; break-inside: avoid; }
+  .page-scene { background: none !important; }
+}
+
+/* ---------------------------------------------------------------- *
+ * 12. New page scenes (explore / calendar) + page-scene motion
+ * ---------------------------------------------------------------- */
+.ps-compass-body { fill: color-mix(in srgb, var(--grad-2) 24%, var(--surface)); stroke: var(--primary-strong); stroke-width: 2.4; }
+.ps-compass-needle { fill: var(--brand-yellow); stroke: var(--primary-strong); stroke-width: 1.6; }
+.ps-compass-pin { fill: var(--primary-strong); }
+.ps-spark path { fill: var(--brand-yellow); }
+.ps-spark-1 { animation: psPulse 3.4s ease-in-out infinite; transform-origin: 132px 27px; }
+.ps-spark-2 { animation: psPulse 4.2s ease-in-out infinite .4s; transform-origin: 166px 48px; }
+.ps-cal-body { fill: color-mix(in srgb, var(--grad-2) 18%, var(--surface)); stroke: var(--primary-strong); stroke-width: 2.4; }
+.ps-cal-top { stroke: var(--primary-strong); stroke-width: 2.4; }
+.ps-cal-hang { stroke: var(--brand-yellow); stroke-width: 3; stroke-linecap: round; }
+.ps-cal-dots circle { fill: color-mix(in srgb, var(--primary-raw) 45%, transparent); }
+.ps-cal-today { fill: var(--brand-yellow); stroke: var(--primary-strong); stroke-width: 1.6; }
