@@ -719,7 +719,7 @@ console.log('\n▶ v9: expense groups can be added, edited and deleted');
   window.document.getElementById('cat-th').value = 'นวด/สปา';
   window.document.getElementById('cat-en').value = 'Massage / Spa';
   q('#cat-icons [data-icon="heart-pulse"]').click();
-  q('#cat-colors [data-color="#0d9488"]').click();
+  q('#cat-colors [data-color="#3f9d94"]').click();   // v17 palette (teal)'s replacement
   await click('#cat-save');
   await waitFor(() => [...fsdb.__store.keys()].some(k => k.startsWith('trips/t1/categories/')), { timeout: 6000, label: 'group saved' }).catch(() => {});
   const savedCat = [...fsdb.__store.entries()].find(([k]) => k.startsWith('trips/t1/categories/'));
@@ -1852,6 +1852,147 @@ console.log('\n▶ v16 exports page — calendar (.ics)');
   await sleep(500);
   check(qa('.toast.toast-error').length <= errsBefore, 'exports: “everything” .ics exported cleanly');
   check(qa('.toast').some(t => /ส่งออก \d+ กิจกรรม|Exported \d+ events/.test(t.textContent || '')), 'exports: “everything” reports how many events were written');
+}
+
+console.log('\n▶ v17 explore — curated place guides (ไกด์ชวนไปที่นี่)');
+{
+  const errsBeforeExplore = qa('.toast.toast-error').length;
+  await goto('#/trip/t1/explore');
+  await waitFor(() => q('#explore-list .place-card'), { label: 'explore page' });
+  const placeCount = qa('.place-card').length;
+  check(placeCount >= 5, `explore: guide places render (${placeCount})`);
+  check(!!q('#explore-hero') && !!q('.explore-hero'), 'explore: hero + search block');
+  check(qa('#explore-cats .chip').length >= 5, 'explore: category chips with counts');
+  check(qa('#explore-reco .reco-card').length >= 1, 'explore: “suggested for this trip” strip');
+  check(!!q('#explore-dest'), 'explore: destination switcher');
+
+  // category filter narrows the list
+  await click('#explore-cats [data-cat="food"]');
+  await sleep(120);
+  const foodCount = qa('.place-card').length;
+  check(foodCount >= 1 && foodCount < placeCount, `explore: category filter narrows the list (${foodCount}/${placeCount})`);
+  await click('#explore-cats [data-cat="all"]');
+  await sleep(120);
+
+  // free-text search
+  const search = q('#explore-search');
+  search.value = 'ทะเลสาบ';
+  search.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await sleep(140);
+  check(qa('.place-card').length >= 1, 'explore: search finds Thai keywords');
+  check(text$().includes('ทะเลสาบ'), 'explore: search result rendered');
+  search.value = 'zzzz-no-such-place';
+  search.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await sleep(140);
+  check(qa('.place-card').length === 0, 'explore: no match → empty state');
+  search.value = '';
+  search.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await sleep(140);
+
+  // save a guide place to the voting board
+  const ideasBefore = [...fsdb.__store.keys()].filter(k => k.startsWith('trips/t1/ideas/')).length;
+  await click('.place-card [data-idea]');
+  await waitFor(() => [...fsdb.__store.keys()].filter(k => k.startsWith('trips/t1/ideas/')).length > ideasBefore,
+    { timeout: 6000, label: 'explore → ideas' });
+  check(true, 'explore: “save as idea” writes to the ideas board');
+
+  // add a guide place straight to the day plan
+  await click('.place-card [data-plan]');
+  await waitFor(() => q('#atp-ok'), { label: 'add-to-plan sheet' });
+  const planTitle = q('#atp-ok').closest('.space-y-4')?.querySelector('p.text-xs')?.textContent?.trim() || '';
+  await click('#atp-ok');
+  await waitFor(() => [...fsdb.__store.entries()].some(([k, v]) => k.includes('/itineraryItems/') && String(v?.title || '').length > 2
+    && /ไกด์|guide/i.test(String(v?.notes || ''))), { timeout: 6000, label: 'explore → itinerary' });
+  check(true, `explore: “add to plan” created an itinerary item (${planTitle.slice(0, 24)})`);
+  check(qa('.toast.toast-error').length <= errsBeforeExplore, 'explore: no error toast along the way');
+}
+
+console.log('\n▶ v17 calendar — the plan on a month grid (ปฏิทินทริป)');
+{
+  await goto('#/trip/t1/calendar');
+  await waitFor(() => q('#cal-grid .cal-cell'), { label: 'calendar page' });
+  check(qa('#cal-grid .cal-cell').length === 42, 'calendar: 6 × 7 grid');
+  check(!!q('#cal-label'), 'calendar: month heading');
+  const labelBefore = q('#cal-label').textContent;
+  await click('#cal-next');
+  await sleep(120);
+  check(q('#cal-label').textContent !== labelBefore, 'calendar: next month moves the view');
+  await click('#cal-prev');
+  await sleep(120);
+  check(q('#cal-label').textContent === labelBefore, 'calendar: previous month comes back');
+  check(qa('#cal-weekdays .cal-head').length === 7, 'calendar: weekday header');
+  const tripCells = qa('.cal-cell.is-trip');
+  check(tripCells.length >= 2, `calendar: trip days highlighted (${tripCells.length})`);
+  check(qa('.cal-pill').length >= 1, 'calendar: planned items shown as pills');
+  tripCells[0].click();
+  await waitFor(() => q('#cal-detail'), { label: 'day detail' });
+  check(!!q('#cal-detail .card'), 'calendar: tapping a day opens its detail panel');
+  check(!!q('#cal-detail a[href*="itinerary"]'), 'calendar: detail links back to the plan');
+  check(!!q('#cal-print'), 'calendar: print / PDF button');
+}
+
+console.log('\n▶ v17 share — invite link, LINE message & summary');
+{
+  await goto('#/trip/t1/more');
+  await waitFor(() => q('#share-more'), { label: 'more menu share button' });
+  await click('#share-more');
+  await waitFor(() => q('[data-share="copy"]'), { label: 'share sheet' });
+  check(qa('.share-tile').length >= 6, 'share: tile grid');
+  check(!!q('.share-code'), 'share: invite code banner');
+  const code = q('.share-code')?.textContent?.trim() || '';
+  check(/^[A-Z0-9]{3}-?[A-Z0-9]{3}$/.test(code), `share: readable invite code (${code})`);
+  const errsBeforeShare = qa('.toast.toast-error').length;
+  // clipboard is unavailable in jsdom → the manual-copy fallback must appear, not an error
+  await click('[data-share="copy"]');
+  await waitFor(() => q('#copy-fallback-text'), { timeout: 4000, label: 'manual copy fallback' });
+  check(q('#copy-fallback-text').value.includes('#/trips?invite='), 'share: fallback box carries the invite link');
+  check(qa('.toast.toast-error').length <= errsBeforeShare, 'share: no error toast when the clipboard is blocked');
+  await click('#copy-fallback-close');
+  await sleep(120);
+  // the summary/plan buttons must produce text, not an error
+  await click('[data-share="summary"]');
+  await sleep(300);
+  check(qa('.toast.toast-error').length <= errsBeforeShare, 'share: trip summary built without an error');
+  check(!q('#copy-fallback-text') || (q('#copy-fallback-text')?.value || '').length > 20, 'share: trip summary has content');
+}
+
+console.log('\n▶ v17 booking import — paste a confirmation e-mail');
+{
+  await goto('#/trip/t1/bookings');
+  await waitFor(() => q('#booking-import-btn'), { label: 'bookings toolbar' });
+  await click('#booking-import-btn');
+  await waitFor(() => q('#bi-text'), { label: 'import sheet' });
+  check(!!q('#bi-sample'), 'import: sample text button');
+  await click('#bi-sample');
+  await sleep(80);
+  check((q('#bi-text').value || '').length > 40, 'import: sample filled in');
+  await click('#bi-parse');
+  await waitFor(() => q('#bi-result .parsed-row'), { label: 'parsed fields' });
+  const rows = qa('.parsed-row').length;
+  check(rows >= 6, `import: fields recognised (${rows})`);
+  check(!q('#bi-save').disabled, 'import: save button enabled after parsing');
+  const before = [...fsdb.__store.keys()].filter(k => k.startsWith('trips/t1/reservations/')).length;
+  await click('#bi-save');
+  await waitFor(() => [...fsdb.__store.keys()].filter(k => k.startsWith('trips/t1/reservations/')).length > before,
+    { timeout: 6000, label: 'import → reservation' });
+  const imported = [...fsdb.__store.entries()].filter(([k]) => k.startsWith('trips/t1/reservations/')).map(([, v]) => v).find(v => /TG615|XT4K9P/.test(JSON.stringify(v)));
+  check(!!imported, 'import: reservation written with the parsed code');
+  check(imported?.confirmation === 'XT4K9P', `import: confirmation code stored (${imported?.confirmation})`);
+  check(imported?.type === 'flight' && imported?.from === 'BKK' && imported?.to === 'NRT', 'import: flight route detected');
+  check(Number(imported?.costMinor) === 2450000 && imported?.currency === 'THB', 'import: cost read from the text');
+  await sleep(200);
+  check(text$().includes('XT4K9P'), 'import: card appears on the bookings page');
+}
+
+console.log('\n▶ v17 offline strip + palette lock');
+{
+  check(!!window.document.getElementById('offline-strip-wrap'), 'offline: strip container exists in the shell');
+  check(!/fuji_color_theme/.test(String(window.localStorage.getItem('fuji_color_theme') || '')), 'palette: no colour-theme key stored');
+  const css = fs.readFileSync(path.join(root, 'src/css/tokens.css'), 'utf8');
+  check(/#2f6fe4/.test(css) && /#f0ae52/.test(css), 'palette: “Sky light” brand colours in tokens.css');
+  check(!/#1d4ed8/.test(css) && !/#ffc81e/.test(css), 'palette: old True-tone colours gone');
+  const refresh = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
+  check(/\.explore-hero/.test(refresh) && /\.cal-cell/.test(refresh) && /\.demo-banner/.test(refresh), 'styles: v17 component sheet covers the new pages');
 }
 
 console.log('\n▶ delete the whole trip (UI)');

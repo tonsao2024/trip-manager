@@ -2,6 +2,15 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
+> **v17 “Sky light” — updated 5 Oct 2026.** One fixed sky-blue/amber palette (the colour-theme picker is
+> gone for good), a repainted mobile **and** desktop UI, plus the Wanderlog gaps: place guides, a month
+> **calendar**, **share/invite**, **booking import from e-mail** and an **offline strip**.
+> Live: <https://tonsao2024.github.io/trip-manager/> •
+> full-feature offline demo: <https://tonsao2024.github.io/trip-manager/demo/> •
+> screenshots: [`docs/preview/`](docs/preview/index.html).
+> The app shows the same build date (from `src/js/utils/buildInfo.js`) on the sign-in screen, the More
+> page and Settings → About.
+
 **Stack:** HTML5, CSS3, ES Modules, Tailwind CDN, Firebase (Auth, Firestore, Storage, Functions), Leaflet, Chart.js, Day.js, html2canvas+jsPDF (lazy), SheetJS (lazy), Lucide Icons.
 
 **No PWA:** No manifest, no service worker. Only Firestore offline persistence for resilience.
@@ -275,8 +284,10 @@ firebase emulators:start --only firestore,auth,functions,storage
 - Settlement minimal transactions, copy LINE, export PNG/PDF
 - **Excel import/export for itinerary + expenses (templates, bilingual headers) — trip admins only**
 - Import template CSV/XLSX/JSON with validation
-- Dark/Light/Auto mode persisted; **one fixed “True tone” brand palette (blue + yellow)** — the old
-  ชุดสี picker (12 themes + gradients, per-trip colours) is gone, so every screen shares the same look
+- Dark/Light/Auto mode persisted; **one fixed “Sky light” brand palette** — sky blue `#2f6fe4` →
+  `#64a1da`, amber `#f0ae52`, sage mist `#abc1bf`, steel `#639cb5`, slate ink `#374656` on airy
+  `#f5f8fc` surfaces (v17 repaint; the v16 blue/yellow “True tone” values are gone). The old ชุดสี
+  picker (12 themes + gradients, per-trip colours) no longer exists, so every screen shares one look
 - Security rules block cross-trip access
 - No PWA elements
 - **Prep checklists** (packing + to-do, ready-made templates, per-item assignee, shared progress)
@@ -385,6 +396,49 @@ Design-system notes:
 - Firestore rules for the three new collections follow the existing model: every member can read and
   create/update; only an admin (or the author) can delete.
 
+### v17 changes — “Sky light” repaint + the last Wanderlog gaps
+
+Design system (mobile **and** desktop share it):
+
+- **No colour themes at all.** `src/css/tokens.css` is now the single palette: sky blue `#2f6fe4` →
+  `#64a1da`, amber `#f0ae52`, sage mist `#abc1bf`, steel `#639cb5`, slate ink `#374656` on airy
+  `#f5f8fc` surfaces; dark mode is ink `#0d0f14`. `initTheme()` keeps clearing `data-color` and
+  `fuji_color_theme`, and the Appearance sheet only offers Light / Dark / Auto.
+- **`src/css/refresh.css`** — a new layer loaded after `components.css` that restyles the shell
+  (header, nav, FAB, cards, sheets, toasts) and defines the new page components.
+- **`src/js/utils/brand.js`** is the only place brand colour exists in JS; every module imports from it
+  (member colours, category swatches, day hues, confetti, canvas/export fallbacks).
+- A generated offline demo of the whole app lives in **`demo/`** (see below), and
+  `docs/preview/index.html` is the public before/after page with v17 screenshots.
+
+Feature parity with the Wanderlog list (2026 review):
+
+| Wanderlog capability | v17 implementation |
+| --- | --- |
+| Inspiration guides you can add from in one tap | `#/trip/:id/explore` — `utils/explore.js` ships a curated library (13 cities / 81 places) with category filters, free-text search, “near your plan” recommendations and one-tap **add to plan / save as idea** |
+| Month calendar of the whole trip | `#/trip/:id/calendar` — `utils/calendarView.js` builds a 6×7 grid, highlights trip days + today, shows per-day pills, day detail, print/PDF (`?print=1`) and “add a stop on this day” |
+| Invite & share | `openShareSheet()` — invite link + readable code (`ABC-123`), LINE/WhatsApp/Telegram, copy trip summary, copy day-by-day plan, native share, print |
+| Import reservations from e-mail | `openBookingImport()` on the Bookings page — `utils/bookingImport.js` parses Thai/English confirmations (dates incl. Buddhist years, times, flight numbers, PNR, airports, price) and shows a confidence score before saving a real reservation |
+| Offline access | `#offline-strip-wrap` strip with online/offline + Firestore-cache state and a retry button (Firestore persistence stays on) |
+| Unlimited attachments | documents + receipt uploads already existed; the demo disables uploads because it has no Storage |
+
+Housekeeping:
+
+- Desktop nav now carries 13 entries (adds **ชวนไปที่นี่** and **ปฏิทิน**); the More page links to the
+  demo + the Settings “About” card shows the version, palette and **last-updated date**.
+- Tests: `tests/node-runner.mjs` now runs **94 checks** (adds explore, booking-import, calendar, share
+  and build-info suites) and `tests/smoke/run.mjs` gained a v17 block that drives the new pages end to
+  end (guide → idea → plan, calendar navigation, share fallback, e-mail import → reservation, palette lock).
+
+### Offline demo (`demo/`)
+
+`node tools/preview/standalone.mjs` generates a self-contained copy of the app with the CDNs swapped for
+local stand-ins (in-memory Firestore/Auth, pre-built Tailwind, local fonts, a stylised map) and a seeded
+sample trip (“ทริปฟูจิ 2027”: 7 stops, 4 expenses, a flight booking, checklists, ideas, notes).
+It needs no internet, no Firebase project and no login, and it deploys with the repo — GitHub Pages
+serves it at `/demo/`. PNG/PDF export and file uploads are intentionally disabled there; everything
+else is the real app code.
+
 ## Tests
 
 ```
@@ -392,6 +446,7 @@ Design-system notes:
 node tests/node-runner.mjs          # settlement, split, currency, THB, groups, statements, countdown,
                                     # scheduling, Excel, colors, invite codes, diagnostics,
                                     # + v16: prep checklists, ideas, reservations, weather, route, .ics
+                                    # + v17: explore guides, booking import, calendar grid, share, build info
                                     # (tests/cdn-loader.mjs maps the CDN dayjs/xlsx imports to node_modules)
 
 # Browser suites:

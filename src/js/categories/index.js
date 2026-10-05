@@ -22,10 +22,7 @@ export const CATEGORY_ICON_CHOICES = [
   'heart-pulse', 'dog', 'sparkles', 'map-pin', 'umbrella', 'wallet', 'phone'
 ];
 
-export const CATEGORY_COLOR_CHOICES = [
-  '#1d4ed8', '#3b82f6', '#0ea5e9', '#6366f1', '#0d9488', '#0f9d6b',
-  '#ffc81e', '#f59e0b', '#eab308', '#f97316', '#a855f7', '#dc4b4b'
-];
+export { CATEGORY_COLOR_CHOICES } from '../utils/brand.js';
 
 export function slugifyCategoryId(label) {
   const base = String(label || '')

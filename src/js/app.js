@@ -34,6 +34,8 @@ import { expensesInThb, convertCurrency, formatCurrency, formatAmount, parseCurr
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses } from './utils/settlement.js';
 import { splitCustom, splitEqual } from './utils/split.js';
 import { escapeHtml } from './utils/sanitize.js';
+import { APP_VERSION, APP_PALETTE, APP_UPDATED_ISO, appUpdatedLabel, appBuildLabel } from './utils/buildInfo.js';
+import { BRAND, BRAND_PRIMARY, MEMBER_COLORS, DAY_HUES } from './utils/brand.js';
 import { showBottomSheet, showModal } from './components/modal.js';
 import { confirmAction, promptAction } from './components/confirm.js';
 import { mountCountdown, computeCountdown, countdownHeadline } from './components/countdown.js';
@@ -78,6 +80,20 @@ import {
   reservationToItineraryPayload, durationBetween, reservationWarnings
 } from './reservations/index.js';
 import { fetchDailyForecast, forecastForDates, datesBetween, weatherTip, weatherTone, isForecastRelevant } from './utils/weather.js';
+import {
+  DESTINATIONS, EXPLORE_CATEGORIES, destinationById, destinationPlaces, searchPlaces,
+  matchDestinations, exploreCategoryCounts, suggestForTrip, bestTimeLabel, bestTimeIcon,
+  suggestedTime, placeToIdeaPayload, placeToPlanDraft, libraryStats
+} from './utils/explore.js';
+import { parseConfirmationText, draftToReservation, confidenceLabel } from './utils/bookingImport.js';
+import {
+  buildMonthGrid, shiftMonth, monthShort, defaultMonthFor, tripMonths, itemsForDay,
+  calendarSummary, parseISODate
+} from './utils/calendarView.js';
+import {
+  inviteLink, inviteMessage, lineShareUrl, tripSummaryText, itineraryText,
+  printPlanUrl, formatCode, appBaseUrl
+} from './utils/share.js';
 import { buildIcs, downloadIcs, itineraryToEvents, reservationsToEvents } from './utils/ics.js';
 import { optimizeDayOrder, dayDirectionsUrl, travelTimeLabel, hasCoords, coordOf } from './utils/route.js';
 import { t, setLang, getLang } from './utils/i18n.js';
@@ -478,14 +494,7 @@ let currentTrip = null;
 // The old "ชุดสี" picker (9 pastel + 8 gradient presets) was removed on purpose:
 // the app now always uses the brand colours below, and only light / dark / auto
 // remain selectable. `data-color` is no longer written to <html>.
-const BRAND = Object.freeze({
-  name: 'True tone',
-  blue: '#1d4ed8',
-  blueLight: '#3b82f6',
-  yellow: '#ffc81e',
-  navy: '#17203a'
-});
-const BRAND_PRIMARY = BRAND.blue;
+/* Palette lives in utils/brand.js (v17 “Sky light” — one fixed brand, no picker). */
 
 const MODE_ICONS = { light: 'sun', dark: 'moon', auto: 'monitor' };
 const MODE_LABELS = { light: 'สว่าง', dark: 'มืด', auto: 'อัตโนมัติ' };
@@ -502,6 +511,18 @@ function resolveMode(mode) {
 function effectiveTheme() {
   return document.documentElement.getAttribute('data-theme') || 'light';
 }
+/**
+ * The build identity lives in utils/buildInfo.js. index.html carries the same
+ * values so crawlers/preview images see them without JS; keep them in sync here
+ * (and a unit test fails if `app-updated` drifts).
+ */
+function syncBuildMeta() {
+  const meta = document.querySelector('meta[name="app-updated"]');
+  if (meta && meta.getAttribute('content') !== APP_UPDATED_ISO) meta.setAttribute('content', APP_UPDATED_ISO);
+  const version = document.querySelector('meta[name="app-version"]');
+  if (version && version.getAttribute('content') !== APP_VERSION) version.setAttribute('content', APP_VERSION);
+}
+
 function updateMetaThemeColor() {
   const meta = document.getElementById('meta-theme-color');
   if (!meta) return;
@@ -551,6 +572,7 @@ function initTheme() {
   localStorage.removeItem('fuji_color_theme');
   document.documentElement.setAttribute('data-theme', resolveMode(getStoredMode()));
   updateMetaThemeColor();
+  syncBuildMeta();
   // Defer icon updates until DOM/lucide ready
   setTimeout(() => { updateModeIcons(); renderIcons(); }, 120);
 }
@@ -586,6 +608,8 @@ function renderDesktopNav() {
     { label: t('dashboard'), path: `${base}/dashboard`, icon: 'layout-dashboard' },
     { label: t('itinerary'), path: `${base}/itinerary`, icon: 'map-pinned' },
     { label: t('ideas'), path: `${base}/ideas`, icon: 'lightbulb' },
+    { label: getLang() === 'th' ? 'ชวนไปที่นี่' : 'Explore', path: `${base}/explore`, icon: 'compass' },
+    { label: getLang() === 'th' ? 'ปฏิทิน' : 'Calendar', path: `${base}/calendar`, icon: 'calendar-days' },
     { label: t('bookings'), path: `${base}/bookings`, icon: 'ticket' },
     { label: t('prep'), path: `${base}/prep`, icon: 'clipboard-check' },
     { label: t('expenses'), path: `${base}/expenses`, icon: 'wallet' },
@@ -1048,7 +1072,8 @@ if (isFirebaseConfigured && !currentUser) {
 
 /**
  * Appearance sheet — light / dark / auto only.
- * (The colour-set picker was removed: the app is fixed to the True-tone brand.)
+ * (The colour-set picker was removed: the app always uses the Sky-light brand,
+ *  so there is nothing to pick besides the mode.)
  */
 function showAppearanceSheet() {
   const mode = getStoredMode();
@@ -1065,9 +1090,9 @@ function showAppearanceSheet() {
       <span class="brand-sun">${icon('sun', 'w-4 h-4')}</span>
       <div class="flex-1 min-w-0">
         <p class="text-xs font-bold">${getLang() === 'th' ? 'ชุดสีของแอป' : 'App brand colours'}</p>
-        <p class="text-[11px] text-[var(--text-secondary)]">${getLang() === 'th' ? 'น้ำเงิน–เหลือง (True tone) ใช้เหมือนกันทุกหน้า' : 'Blue + yellow (True tone), the same on every screen'}</p>
+        <p class="text-[11px] text-[var(--text-secondary)]">${getLang() === 'th' ? 'ฟ้า–ทราย–เขียวมิสต์ (Sky light) ใช้เหมือนกันทุกหน้า' : 'Sky light — sky blue, sunset amber, sage mist. The same on every screen'}</p>
       </div>
-      <span class="flex gap-1"><span style="width:18px;height:18px;border-radius:9999px;background:${BRAND.blue};display:inline-block;"></span><span style="width:18px;height:18px;border-radius:9999px;background:${BRAND.yellow};display:inline-block;"></span></span>
+      <span class="flex gap-1"><span style="width:18px;height:18px;border-radius:9999px;background:${BRAND.blue};display:inline-block;box-shadow:0 0 0 1px rgba(0,0,0,.06);"></span><span style="width:18px;height:18px;border-radius:9999px;background:${BRAND.blueLight};display:inline-block;box-shadow:0 0 0 1px rgba(0,0,0,.06);"></span><span style="width:18px;height:18px;border-radius:9999px;background:${BRAND.mist};display:inline-block;box-shadow:0 0 0 1px rgba(0,0,0,.06);"></span><span style="width:18px;height:18px;border-radius:9999px;background:${BRAND.yellow};display:inline-block;box-shadow:0 0 0 1px rgba(0,0,0,.06);"></span></span>
     </div>
 
     <div class="theme-section-title">${icon('contrast', 'w-3.5 h-3.5')} ${getLang() === 'th' ? 'โหมดการแสดงผล' : 'Appearance'}</div>
@@ -1112,6 +1137,8 @@ const routes = [
   { path: '/trip/:tripId/import', handler: renderImportExport },
   { path: '/trip/:tripId/export', handler: renderImportExport },
   { path: '/trip/:tripId/settings', handler: renderSettings },
+  { path: '/trip/:tripId/explore', handler: renderExplore },
+  { path: '/trip/:tripId/calendar', handler: renderCalendar },
   { path: '/trip/:tripId/more', handler: renderMore },
 ];
 
@@ -1170,6 +1197,7 @@ if (isEarlyBlocked) {
   setTimeout(() => { if (!isFirebaseConfigured) renderConfigNeeded(); }, 200);
 }
 setTimeout(addHeaderControls, 100);
+initOfflineStrip();
 
 refreshBtn?.addEventListener('click', () => {
   syncState.set('syncing');
@@ -1309,6 +1337,11 @@ function renderLogin() {
               ? 'สมาชิกใช้บัญชี Google ของตัวเองได้ — แอดมินทริปเป็นคนอนุมัติให้เข้าร่วมแต่ละทริป'
               : 'Members sign in with their own Google account — the trip admin approves each trip.'}
           </p>
+        </div>
+
+        <p class="build-stamp text-center" data-build-stamp>
+          ${icon('info', 'w-3 h-3')} ${escapeHtml(appBuildLabel(lang))}
+        </p>
         </div>
       </div>
     </div>
@@ -2798,6 +2831,8 @@ async function renderItinerary(params) {
         <div class="btn-row">
           <button id="view-all-btn" class="btn btn-secondary btn-sm">${icon('calendar-days', 'w-4 h-4')} <span id="view-all-label">${th('ดูทั้งหมด','View all')}</span></button>
           <button id="toggle-map-btn" class="btn btn-primary btn-sm">${icon('map', 'w-4 h-4')} ${th('แผนที่','Map')}</button>
+          <a href="#/trip/${tripId}/calendar" class="btn btn-secondary btn-sm">${icon('calendar-days', 'w-4 h-4')} ${th('ปฏิทิน','Calendar')}</a>
+          <button id="itin-share-btn" class="btn btn-secondary btn-sm">${icon('share-2', 'w-4 h-4')} ${th('แชร์','Share')}</button>
           <button id="export-png-btn" class="btn btn-secondary btn-sm" title="${th('PNG ทั้งแผน','Whole-plan PNG')}">${icon('image', 'w-4 h-4')} PNG</button>
           <button id="export-day-png-btn" class="btn btn-secondary btn-sm" title="${th('PNG เฉพาะวันนี้','PNG for one day')}">${icon('calendar-down', 'w-4 h-4')} PNG ${th('รายวัน','per day')}</button>
           <button id="optimize-route-btn" class="btn btn-secondary btn-sm" title="${th('จัดลำดับสถานที่ในวันให้สั้นที่สุด','Reorder this day to the shortest route')}">${icon('route', 'w-4 h-4')} ${th('จัดเส้นทาง','Route')}</button>
@@ -2894,7 +2929,6 @@ async function renderItinerary(params) {
   const dayColors = {};
   // Day colours follow the True-tone brand: blue → yellow → supporting cool hues,
   // so day 1 is the brand blue and day 2 the brand yellow.
-  const DAY_HUES = [222, 45, 199, 262, 158, 25, 240, 205, 280, 12];
   tripDays.forEach((d, i) => { dayColors[dayjs(d).format('YYYY-MM-DD')] = `hsl(${DAY_HUES[i % DAY_HUES.length]},68%,46%)`; });
 
   const chipsEl = document.getElementById('date-chips');
@@ -6384,7 +6418,7 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
         <div class="input-group">
           <label class="input-label">${th('สี','Colour')}</label>
           <div class="chip-row" id="cat-colors">
-            ${CATEGORY_COLOR_CHOICES.map(col => `<button type="button" class="chip ${((existing?.color || '#1d4ed8') === col) ? 'chip-active' : ''}" data-color="${col}" style="background:${col}22; border-color:${col};">${icon('circle', 'w-3 h-3')} ${col}</button>`).join('')}
+            ${CATEGORY_COLOR_CHOICES.map(col => `<button type="button" class="chip ${((existing?.color || BRAND_PRIMARY) === col) ? 'chip-active' : ''}" data-color="${col}" style="background:${col}22; border-color:${col};">${icon('circle', 'w-3 h-3')} ${col}</button>`).join('')}
           </div>
         </div>
         <div id="cat-preview" class="diag-row"></div>
@@ -6639,7 +6673,7 @@ function openMemberForm(tripId, member = null, { onSaved } = {}) {
               ${MEMBER_ROLES.map(r => `<option value="${r.id}" ${(m.role || 'member') === r.id ? 'selected' : ''}>${lang==='th'?r.th:r.en}</option>`).join('')}
             </select>
           </div>
-          <div class="input-group"><label class="input-label">${icon('palette', 'w-3.5 h-3.5')} ${th('สีประจำตัว','Color')}</label><input id="m-color" type="color" value="${m.color || '#1d4ed8'}" class="w-full h-11 rounded-xl cursor-pointer border" style="border-color:var(--border);"></div>
+          <div class="input-group"><label class="input-label">${icon('palette', 'w-3.5 h-3.5')} ${th('สีประจำตัว','Color')}</label><input id="m-color" type="color" value="${m.color || BRAND_PRIMARY}" class="w-full h-11 rounded-xl cursor-pointer border" style="border-color:var(--border);"></div>
         </div>
         <div class="input-group"><label class="input-label">${icon('image', 'w-3.5 h-3.5')} ${th('รูปโปรไฟล์ (URL)','Photo URL')}</label><input id="m-photo" class="input" placeholder="https://..." autocomplete="off" value="${escapeHtml(m.photoURL || '')}"></div>
         ${isEdit ? `
@@ -7676,6 +7710,20 @@ async function renderSettings(params) {
         </div>
         <p class="text-[10px] text-[var(--text-tertiary)] font-mono">Trip ID: ${escapeHtml(tripId)}</p>
       </div>
+
+      <div class="card p-5 space-y-2" id="about-card">
+        <h3 class="font-bold flex items-center gap-2">${icon('info', 'w-4 h-4')} ${th('เกี่ยวกับแอป','About')}</h3>
+        <div class="flex items-center gap-3 flex-wrap text-xs">
+          <span class="badge badge-planned">${icon('sparkles', 'w-3 h-3')} ${escapeHtml(APP_VERSION)} • ${escapeHtml(APP_PALETTE)}</span>
+          <span class="text-[var(--text-secondary)]" data-build-stamp>${icon('calendar-check', 'w-3.5 h-3.5')} ${escapeHtml(appUpdatedLabel(lang))}</span>
+        </div>
+        <p class="text-[11px] text-[var(--text-secondary)]">${th('ชุดสีถูกออกแบบใหม่ทั้งชุด (ไม่มีตัวเลือกชุดสี) — เลือกได้เฉพาะโหมดสว่าง/มืด/อัตโนมัติ','One fixed brand palette (no colour picker) — only light / dark / auto can be chosen.')}</p>
+        <div class="btn-row">
+          <a class="btn btn-secondary btn-sm" href="${appBaseUrl()}demo/" target="_blank" rel="noopener">${icon('external-link', 'w-4 h-4')} ${th('ตัวอย่างฟังก์ชันครบ','Full-feature demo')}</a>
+          <a class="btn btn-ghost btn-sm" href="${appBaseUrl()}docs/ARCHITECTURE.md" target="_blank" rel="noopener">${icon('file-text', 'w-4 h-4')} ${th('เอกสารระบบ','Docs')}</a>
+        </div>
+        <p class="text-[10px] text-[var(--text-tertiary)] font-mono">build ${escapeHtml(APP_UPDATED_ISO)} • ${escapeHtml(APP_VERSION)}</p>
+      </div>
     </div>
   `;
   queueIcons();
@@ -8360,9 +8408,36 @@ async function copyToClipboard(text, okTh = 'คัดลอกแล้ว', ok
     toast.success(getLang() === 'th' ? okTh : okEn);
     return true;
   } catch {
-    toast.error(getLang() === 'th' ? 'คัดลอกไม่สำเร็จ' : 'Copy failed');
+    copyFallbackSheet(value, getLang() === 'th' ? okTh : okEn);
     return false;
   }
+}
+
+/**
+ * Copy can be blocked (http, in-app browsers, iOS webviews).  Instead of an
+ * error we show the text in a pre-selected box so a long-press still copies it.
+ */
+function copyFallbackSheet(text, label = '') {
+  const th = (a, b) => (getLang() === 'th' ? a : b);
+  const sheet = showBottomSheet(`
+    <div class="space-y-3">
+      <div class="flex items-start gap-3">
+        <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);">${icon('clipboard-copy', 'w-5 h-5')}</div>
+        <div class="min-w-0">
+          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${th('คัดลอกอัตโนมัติไม่ได้','Automatic copy is blocked')}</h3>
+          <p class="text-xs text-[var(--text-secondary)] mt-0.5">${th('เลือกข้อความด้านล่างแล้วกด “คัดลอก” อีกครั้งได้เลย','The text below is already selected — copy it from the menu')}</p>
+        </div>
+      </div>
+      <div class="input-group">
+        <label class="input-label">${icon('link', 'w-3.5 h-3.5')} ${escapeHtml(label || th('ข้อความ','Text'))}</label>
+        <textarea id="copy-fallback-text" class="input import-textarea" readonly style="min-height:120px;"></textarea>
+      </div>
+      <button class="btn btn-primary w-full" id="copy-fallback-close">${th('ปิด','Close')}</button>
+    </div>`);
+  const ta = sheet.sheet.querySelector('#copy-fallback-text');
+  if (ta) { ta.value = text; ta.focus(); ta.select(); try { ta.setSelectionRange(0, text.length); } catch { /* ignore */ } }
+  sheet.sheet.querySelector('#copy-fallback-close')?.addEventListener('click', () => sheet.close());
+  return sheet;
 }
 
 /** Small progress bar used by the prep page + dashboard widget. */
@@ -8499,7 +8574,7 @@ async function renderPrep(params) {
       <div class="card p-4" data-list="${list.id}">
         <div class="flex items-start justify-between gap-2 flex-wrap">
           <div class="flex items-center gap-2 min-w-0">
-            <span class="row-icon" style="width:36px;height:36px;border-radius:12px;background:${escapeHtml(list.color || '#1d4ed8')}1f;color:${escapeHtml(list.color || '#1d4ed8')};">${icon(list.icon || (list.kind === 'todo' ? 'list-checks' : 'luggage'), 'w-4 h-4')}</span>
+            <span class="row-icon" style="width:36px;height:36px;border-radius:12px;background:${escapeHtml(list.color || BRAND_PRIMARY)}1f;color:${escapeHtml(list.color || BRAND_PRIMARY)};">${icon(list.icon || (list.kind === 'todo' ? 'list-checks' : 'luggage'), 'w-4 h-4')}</span>
             <div class="min-w-0">
               <h3 class="font-bold text-sm truncate">${escapeHtml(list.title || '')}</h3>
               <p class="text-[11px] text-[var(--text-secondary)]">${p.done}/${p.total} • ${list.kind === 'todo' ? t('todo') : t('packing')}</p>
@@ -8704,7 +8779,7 @@ async function renderPrep(params) {
     const tLoad = toast.loading(th('กำลังสร้าง...', 'Creating...'));
     try {
       const items = [{ id: `${Date.now().toString(36)}`, text: '', done: false, assignee: null }].filter(i => i.text);
-      const payload = { title: String(name).trim(), kind: 'packing', icon: 'luggage', color: '#1d4ed8', order: lists.length, items: items.length ? items : [{ id: `${Date.now().toString(36)}a`, text: th('รายการแรก','First item'), done: false, assignee: null }] };
+      const payload = { title: String(name).trim(), kind: 'packing', icon: 'luggage', color: BRAND_PRIMARY, order: lists.length, items: items.length ? items : [{ id: `${Date.now().toString(36)}a`, text: th('รายการแรก','First item'), done: false, assignee: null }] };
       const id = await createChecklist(tripId, payload, currentUser?.uid);
       lists.push({ id, ...payload });
       tLoad.close();
@@ -9064,6 +9139,7 @@ async function renderBookings(params) {
         })}
         <div class="btn-row">
           <button id="booking-ics-btn" class="btn btn-secondary btn-sm">${icon('calendar-plus', 'w-4 h-4')} ${t('exportCalendar')}</button>
+          <button id="booking-import-btn" class="btn btn-secondary btn-sm">${icon('mail-plus', 'w-4 h-4')} ${th('นำเข้าจากอีเมล','Import e-mail')}</button>
           <button id="booking-add-btn" class="btn btn-primary btn-sm">${icon('plus', 'w-4 h-4')} ${t('addBooking')}</button>
         </div>
       </div>
@@ -9367,6 +9443,7 @@ async function renderBookings(params) {
   bindBookingActions(document.getElementById('booking-next'));
 
   bind('booking-add-btn', 'click', () => openBookingForm(null));
+  bind('booking-import-btn', 'click', () => openBookingImport(tripId, { onSaved: () => renderBookings(params) }));
   bind('booking-ics-btn', 'click', () => {
     if (!reservations.length) return toast.error(th('ยังไม่มีการจองให้ส่งออก', 'No reservations to export'));
     const events = reservationsToEvents(reservations, { lang });
@@ -9379,6 +9456,685 @@ async function renderBookings(params) {
   initReveal(appEl);
 }
 
+/* ================================================================== *
+ * EXPLORE — curated place guides (v17)
+ * “Add places from guides with 1 click” — the Wanderlog feature our
+ * app was still missing. Each place can go to the voting board or
+ * straight into the day plan, with the typical cost pre-filled.
+ * ================================================================== */
+async function renderExplore(params) {
+  const tripId = params.tripId;
+  const token = beginRender();
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  await loadTrip(tripId);
+  if (isStale(token)) return;
+  const trip = currentTrip;
+  const baseCurrency = trip?.baseCurrency || 'THB';
+
+  let members = [];
+  let items = [];
+  let ideas = [];
+  let expenses = [];
+  await Promise.all([
+    listMembers(tripId).then(m => { members = m || []; currentTripMembers = members; }).catch(() => {}),
+    fetchItinerary(tripId).then(i => { items = i || []; }).catch(() => {}),
+    listIdeas(tripId).then(i => { ideas = i || []; }).catch(() => {}),
+    fetchAllExpenses(tripId).then(e => { expenses = e || []; }).catch(() => {})
+  ]);
+  if (isStale(token)) return;
+
+  const matches = matchDestinations(trip, 4);
+  const exploreParams = new URLSearchParams(location.hash.split('?')[1] || '');
+  const wantedDest = exploreParams.get('dest');
+  let destId = (wantedDest && destinationById(wantedDest)) ? wantedDest : (matches[0]?.destination?.id || DESTINATIONS[0].id);
+  let category = exploreParams.get('category') || 'all';
+  let query = exploreParams.get('q') || '';
+  const stats = libraryStats();
+
+  /** place price in the trip currency when a rate is known (else 0). */
+  function rateToBase(fromCurrency) {
+    const from = String(fromCurrency || baseCurrency).toUpperCase();
+    const base = String(baseCurrency).toUpperCase();
+    if (from === base) return 1;
+    const toThb = resolveTripThbRate(trip, expenses, from);
+    if (!(toThb > 0)) return null;
+    if (base === 'THB') return toThb;
+    const baseToThb = resolveTripThbRate(trip, expenses, base);
+    if (!(baseToThb > 0)) return null;
+    return toThb / baseToThb;
+  }
+
+  function costChip(place) {
+    if (!Number(place.cost)) return `<span class="place-chip">${icon('circle-slash', 'w-3 h-3')} ${th('ฟรี', 'Free')}</span>`;
+    const own = formatCurrency(toMinor(Number(place.cost), getCurrencyDecimals(place.currency)), place.currency);
+    const rate = rateToBase(place.currency);
+    const converted = rate ? formatCurrency(toMinor(Number(place.cost) * rate, getCurrencyDecimals(baseCurrency)), baseCurrency) : '';
+    return `<span class="place-chip place-chip--cost">${icon('coins', 'w-3 h-3')} ${escapeHtml(own)}${converted && place.currency !== baseCurrency ? ` <span style="opacity:.75">≈ ${escapeHtml(converted)}</span>` : ''}</span>`;
+  }
+
+  appEl.innerHTML = `
+    <div class="page-enter max-w-[1100px] mx-auto space-y-5" id="explore-root">
+      ${renderPageScene('explore', {
+        lang,
+        title: `${icon('compass', 'w-5 h-5')} ${th('ชวนไปที่นี่','Explore places')}`,
+        subtitle: th(`ไกด์แนะนำสถานที่ ${stats.places} แห่งใน ${stats.destinations} เมือง — กดครั้งเดียวเพิ่มเข้าแผนหรือให้ทั้งทีมโหวต`,
+                    `${stats.places} hand-picked places in ${stats.destinations} cities — one tap to plan or to let the group vote`)
+      })}
+
+      <div class="explore-hero">
+        <div class="flex items-start justify-between gap-3 flex-wrap" id="explore-hero"></div>
+        <div class="explore-search mt-3">
+          ${icon('search', 'w-4 h-4')}
+          <input id="explore-search" class="input" placeholder="${th('ค้นหาสถานที่ในไกด์…','Search the guides…')}" value="${escapeHtml(query)}">
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 flex-wrap">
+        <div class="chip-row flex-1" id="explore-cats"></div>
+        <select id="explore-dest" class="input text-xs" style="max-width:210px;min-height:38px;">
+          ${DESTINATIONS.map(d => `<option value="${d.id}" ${d.id === destId ? 'selected' : ''}>${escapeHtml(lang === 'th' ? `${d.cityTh} • ${d.countryTh}` : `${d.city} • ${d.country}`)}</option>`).join('')}
+        </select>
+      </div>
+
+      <section id="explore-reco"></section>
+      <section>
+        <h3 class="font-bold text-sm mb-2 flex items-center gap-2">
+          <span class="row-icon" style="width:28px;height:28px;border-radius:10px;">${icon('layout-grid', 'w-4 h-4')}</span>
+          ${th('สถานที่ทั้งหมด','All places')} <span id="explore-count" class="badge badge-planned text-[10px]">0</span>
+        </h3>
+        <div id="explore-list" class="guide-grid"></div>
+      </section>
+
+      <p class="text-[10px] text-[var(--text-tertiary)] text-center">
+        ${icon('info', 'w-3 h-3 inline')}
+        ${th('ไกด์ชุดนี้เก็บไว้ในแอป ใช้ได้แม้ไม่มีเน็ต • เพิ่มเมือง/สถานที่ของทีมเองได้ในหน้า “ไอเดียสถานที่”',
+             'The guides ship with the app and work offline • Add your own places on the ideas board')}
+      </p>
+    </div>
+  `;
+  queueIcons();
+
+  function pool() {
+    const dest = destinationById(destId);
+    const base = searchPlaces(query, { destinationId: query ? (destId || null) : destId }).map(r => r.place);
+    const list = base.filter(p => category === 'all' || p.category === category);
+    return list;
+  }
+
+  function paintReco() {
+    const box = document.getElementById('explore-reco');
+    if (!box) return;
+    const recos = suggestForTrip({
+      places: destinationPlaces(destId),
+      itinerary: items,
+      ideas,
+      limit: 6
+    });
+    if (!recos.length) { box.innerHTML = ''; return; }
+    box.innerHTML = `
+      <h3 class="font-bold text-sm mb-2 flex items-center gap-2">
+        <span class="row-icon" style="width:28px;height:28px;border-radius:10px;background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);">${icon('wand-sparkles', 'w-4 h-4')}</span>
+        ${th('แนะนำสำหรับทริปนี้','Suggested for this trip')}
+        <span class="text-[10px] text-[var(--text-tertiary)] font-medium">${th('เรียงจากใกล้จุดที่วางไว้','ranked by distance to your plan')}</span>
+      </h3>
+      <div class="reco-strip">
+        ${recos.map(r => `
+          <div class="reco-card">
+            <span class="place-chip" style="background:var(--primary-light);color:var(--primary-strong);border-color:transparent;">${icon(categoryIcon(r.place.category), 'w-3 h-3')} ${escapeHtml(categoryLabel(r.place.category, lang))}</span>
+            <b class="mt-1.5">${escapeHtml(lang === 'th' ? r.place.name.th : r.place.name.en)}</b>
+            <p>${escapeHtml(lang === 'th' ? r.reasonTh : r.reasonEn)}</p>
+            <div class="flex gap-2 mt-2">
+              <button class="btn btn-primary btn-sm flex-1" style="min-height:32px;font-size:11.5px;" data-plan="${r.place.id}" data-dest="${destId}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>
+              <button class="btn btn-secondary btn-sm" style="min-height:32px;font-size:11.5px;" data-idea="${r.place.id}" data-dest="${destId}" title="${th('เก็บเป็นไอเดีย','Save as idea')}">${icon('lightbulb', 'w-3.5 h-3.5')}</button>
+            </div>
+          </div>`).join('')}
+      </div>`;
+    queueIcons();
+  }
+
+  function paintCats() {
+    const box = document.getElementById('explore-cats');
+    if (!box) return;
+    const all = destinationPlaces(destId);
+    const counts = exploreCategoryCounts(all);
+    box.innerHTML = counts.map(c => `
+      <button class="chip ${category === c.id ? 'chip-active' : ''}" data-cat="${c.id}">
+        ${icon(c.icon, 'w-3.5 h-3.5')} ${escapeHtml(lang === 'th' ? c.th : c.en)} <span style="opacity:.7">${c.count}</span>
+      </button>`).join('');
+    queueIcons();
+  }
+
+  function paintList() {
+    const box = document.getElementById('explore-list');
+    if (!box) return;
+    const places = pool();
+    const countEl = document.getElementById('explore-count');
+    if (countEl) countEl.textContent = String(places.length);
+    if (!places.length) {
+      box.innerHTML = `<div class="col-span-full">${renderEmptyState({
+        icon: 'search-x',
+        title: th('ไม่พบสถานที่ที่ตรงกับคำค้น','No place matches that search'),
+        desc: th('ลองคำอื่น หรือเลือกเมืองอื่นจากรายการด้านบน','Try another keyword or pick a different city above')
+      })}</div>`;
+      queueIcons();
+      return;
+    }
+    box.innerHTML = places.map((place, idx) => `
+      <div class="place-card" data-place="${place.id}">
+        <span class="place-thumb ${idx % 3 === 1 ? 'place-thumb--amber' : idx % 3 === 2 ? 'place-thumb--sky' : ''}">${icon(categoryIcon(place.category), 'w-6 h-6')}</span>
+        <div class="place-body">
+          <div class="place-title">${escapeHtml(lang === 'th' ? place.name.th : place.name.en)}</div>
+          <p class="place-desc">${escapeHtml(lang === 'th' ? place.note.th : place.note.en)}</p>
+          <div class="place-meta">
+            <span class="place-chip">${icon('map-pin', 'w-3 h-3')} ${escapeHtml(place.area || '')}</span>
+            <span class="place-chip">${icon(bestTimeIcon(place.best), 'w-3 h-3')} ${escapeHtml(bestTimeLabel(place.best, lang))}</span>
+            <span class="place-chip">${icon('clock', 'w-3 h-3')} ${Math.round((Number(place.durationMinutes) || 60) / 60 * 10) / 10} ${th('ชม.','h')}</span>
+            ${costChip(place)}
+          </div>
+          <div class="place-actions">
+            <button class="btn btn-primary btn-sm" style="min-height:32px;font-size:11.5px;" data-plan="${place.id}" data-dest="${destId}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>
+            <button class="btn btn-secondary btn-sm" style="min-height:32px;font-size:11.5px;" data-idea="${place.id}" data-dest="${destId}">${icon('lightbulb', 'w-3.5 h-3.5')} ${th('เก็บเป็นไอเดีย','Save as idea')}</button>
+            <a class="btn btn-ghost btn-sm" style="min-height:32px;font-size:11.5px;" href="${escapeHtml(googleMapsPlaceUrl(place.area, place.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${t('map')}</a>
+          </div>
+        </div>
+      </div>`).join('');
+    queueIcons();
+  }
+
+  function repaint() { paintCats(); paintList(); queueIcons(); }
+
+  function findPlace(placeId, fromDestId) {
+    return destinationPlaces(fromDestId || destId).find(p => p.id === placeId) || null;
+  }
+
+  async function saveAsIdea(place) {
+    if (!place) return;
+    const tLoad = toast.loading(th('กำลังบันทึกเป็นไอเดีย...', 'Saving as an idea…'));
+    try {
+      await createIdea(tripId, placeToIdeaPayload(place, { baseCurrency, rate: rateToBase(place.currency) }), currentUser?.uid || null);
+      ideas.push({ title: place.name.th, status: 'idea' });
+      tLoad.close();
+      toast.success(th('เก็บเข้าบอร์ดไอเดียแล้ว — ให้ทีมโหวตได้เลย', 'Saved to the ideas board — the group can vote now'));
+      celebrateFrom(null);
+      paintReco();
+    } catch (e) {
+      tLoad.close();
+      toast.error(e.message || String(e));
+    }
+  }
+
+  function planPlace(place) {
+    if (!place) return;
+    openAddToPlanSheet({
+      trip,
+      title: lang === 'th' ? place.name.th : place.name.en,
+      subtitle: `${icon('info', 'w-3 h-3')} ${escapeHtml(th(`ไกด์แนะนำ: ${lang === 'th' ? place.note.th : place.note.en}`, `Guide tip: ${place.note.en}`))}`,
+      defaultDate: trip?.startDate || '',
+      defaultTime: suggestedTime(place),
+      category: normalizeCategory(place.category),
+      onConfirm: async ({ date, startAt, category: cat }) => {
+        const tLoad = toast.loading(th('กำลังเพิ่มเข้าแผน...', 'Adding to the plan…'));
+        try {
+          const rate = rateToBase(place.currency);
+          const draft = placeToPlanDraft(place, { date, startAt, category: cat, baseCurrency, rate });
+          const payload = {
+            title: draft.title,
+            description: draft.description,
+            date: draft.date,
+            startAt: new Date(`${draft.date}T${draft.startAt || '09:00'}`),
+            durationMinutes: draft.durationMinutes,
+            travelToNextMinutes: 0,
+            category: draft.category,
+            address: draft.address,
+            coordinates: draft.coordinates || '',
+            notes: th('เพิ่มจากไกด์ Explore (v17)', 'Added from the Explore guide (v17)'),
+            status: 'planned',
+            estimateAmount: rate ? Number(place.cost) || 0 : 0,
+            estimateCurrency: rate ? (place.currency || baseCurrency) : '',
+            estimateCategory: normalizeCategory(place.category),
+            estimateShareWith: members.map(m => m.id),
+            estimateAutoAdd: true
+          };
+          const { id } = await saveItineraryItem(tripId, payload, currentUser?.uid || null, null, { trip, members });
+          items.push({ id, title: draft.title, date: draft.date, coordinates: draft.coordinates || '', category: draft.category });
+          logActivity(tripId, { type: 'itinerary', targetId: id, title: draft.title, detail: th('เพิ่มจากไกด์ Explore', 'Added from the Explore guide'), user: actor() }).catch(() => {});
+          tLoad.close();
+          toast.success(th('เพิ่มเข้าแผนแล้ว', 'Added to the plan'));
+          celebrateFrom(null);
+          paintReco();
+        } catch (e) {
+          tLoad.close();
+          toast.error(e.message || String(e));
+          return false;
+        }
+        return true;
+      }
+    });
+  }
+
+  function paintHero() {
+    const box = document.getElementById('explore-hero');
+    if (!box) return;
+    const dest = destinationById(destId);
+    const chips = [...matches];
+    if (!chips.some(c => c.destination.id === destId)) {
+      const current = destinationById(destId);
+      if (current) chips.unshift({ destination: current, score: 0 });
+    }
+    box.innerHTML = `
+      <div class="min-w-0">
+        <span class="eh-chip">${icon('sparkles', 'w-3 h-3')} ${th('ไกด์พร้อมใช้','Ready-made guide')}</span>
+        <h2 class="text-lg sm:text-xl mt-2 leading-tight">${escapeHtml(th('ที่เที่ยวที่คัดมาแล้วสำหรับทริปนี้','Places picked for this trip'))}</h2>
+        <p class="text-[12px] mt-1" style="color:rgba(255,255,255,.86)">${escapeHtml(dest ? (lang === 'th' ? dest.tagline.th : dest.tagline.en) : '')}</p>
+      </div>
+      <div class="flex items-center gap-2 flex-wrap">
+        ${chips.map(c => `
+          <button class="eh-chip" data-dest-chip="${c.destination.id}" style="${c.destination.id === destId ? 'background:rgba(255,255,255,.36);' : ''}">
+            ${icon('map-pin', 'w-3 h-3')} ${escapeHtml(lang === 'th' ? c.destination.cityTh : c.destination.city)}
+          </button>`).join('')}
+      </div>`;
+    queueIcons();
+    box.querySelectorAll('[data-dest-chip]').forEach(btn => btn.addEventListener('click', (e) => {
+      const id = e.currentTarget.getAttribute('data-dest-chip');
+      if (!id || id === destId) return;
+      destId = id; category = 'all';
+      const destSel = document.getElementById('explore-dest');
+      if (destSel) destSel.value = id;
+      paintHero(); paintReco(); repaint();
+    }));
+  }
+
+  paintHero(); paintReco(); repaint();
+  bind('explore-cats', 'click', (e) => {
+    const btn = e.target.closest('[data-cat]');
+    if (!btn) return;
+    category = btn.getAttribute('data-cat');
+    repaint();
+  });
+  document.getElementById('explore-dest')?.addEventListener('change', (e) => { destId = e.target.value; repaint(); paintReco(); });
+  document.getElementById('explore-search')?.addEventListener('input', (e) => { query = e.target.value.trim(); paintList(); });
+  // delegated: the card list is re-painted on every filter/search, so the
+  // buttons must be handled from the page root instead of bound one by one
+  bind('explore-root', 'click', (e) => {
+    const planBtn = e.target.closest('[data-plan]');
+    if (planBtn) {
+      planPlace(findPlace(planBtn.getAttribute('data-plan'), planBtn.getAttribute('data-dest') || destId));
+      return;
+    }
+    const ideaBtn = e.target.closest('[data-idea]');
+    if (ideaBtn) saveAsIdea(findPlace(ideaBtn.getAttribute('data-idea'), ideaBtn.getAttribute('data-dest') || destId));
+  });
+}
+
+/* ================================================================== *
+ * CALENDAR — the plan on a month grid (v17)
+ * ================================================================== */
+async function renderCalendar(params) {
+  const tripId = params.tripId;
+  const token = beginRender();
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  await loadTrip(tripId);
+  if (isStale(token)) return;
+  const trip = currentTrip;
+  const urlParams = new URLSearchParams(location.hash.split('?')[1] || '');
+  const autoPrint = urlParams.get('print') === '1';
+
+  let items = [];
+  try { items = await fetchItinerary(tripId); } catch (e) { console.warn(e?.message); }
+  if (isStale(token)) return;
+
+  const months = tripMonths(trip);
+  const fallback = defaultMonthFor(trip);
+  let view = months[0] || fallback;
+  let selected = trip?.startDate || '';
+  const summary = calendarSummary(trip, items);
+  const today = dayjs().format('YYYY-MM-DD');
+
+  appEl.innerHTML = `
+    <div class="page-enter max-w-[1000px] mx-auto space-y-5">
+      ${renderPageScene('calendar', {
+        lang,
+        title: `${icon('calendar-days', 'w-5 h-5')} ${th('ปฏิทินทริป','Trip calendar')}`,
+        subtitle: th(`${summary.days} วัน • ${summary.stops} จุดหมาย — เห็นภาพรวมทั้งเดือนในหน้าเดียว`,
+                    `${summary.days} days • ${summary.stops} stops — the whole month at a glance`)
+      })}
+
+      <div class="card p-3 flex items-center justify-between gap-2 flex-wrap no-print">
+        <div class="flex items-center gap-1">
+          <button id="cal-prev" class="icon-btn" title="${th('เดือนก่อน','Previous month')}">${icon('chevron-left', 'w-4 h-4')}</button>
+          <b id="cal-label" class="text-sm px-2" style="font-family:var(--font-display);min-width:132px;text-align:center;display:inline-block;"></b>
+          <button id="cal-next" class="icon-btn" title="${th('เดือนถัดไป','Next month')}">${icon('chevron-right', 'w-4 h-4')}</button>
+          <button id="cal-today" class="btn btn-ghost btn-sm">${th('วันนี้','Today')}</button>
+        </div>
+        <div class="btn-row">
+          ${months.map(m => `<button class="chip" data-month="${m.year}-${m.month}">${escapeHtml(monthShort(m.month, lang))}</button>`).join('')}
+          <a class="btn btn-secondary btn-sm" href="#/trip/${tripId}/itinerary">${icon('list-ordered', 'w-4 h-4')} ${th('แบบไทม์ไลน์','Timeline')}</a>
+          <button id="cal-print" class="btn btn-primary btn-sm">${icon('printer', 'w-4 h-4')} ${th('พิมพ์ / PDF','Print / PDF')}</button>
+        </div>
+      </div>
+
+      <div class="card p-3 sm:p-4">
+        <div class="cal-grid mb-1" id="cal-weekdays"></div>
+        <div class="cal-grid" id="cal-grid"></div>
+        <div class="cal-legend mt-3">
+          <span>${icon('square', 'w-3 h-3 inline')} ${th('วันของทริป','Trip day')}</span>
+          <span><span class="cal-pill" style="display:inline-block;">${th('มีแผน','planned')}</span></span>
+          <span>${icon('circle-dot', 'w-3 h-3 inline')} ${th('วันนี้','Today')}</span>
+        </div>
+      </div>
+
+      <div id="cal-detail"></div>
+    </div>
+  `;
+  queueIcons();
+
+  function paint() {
+    const grid = buildMonthGrid(view.year, view.month, { trip, items, today, lang, maxPills: 3 });
+    const label = document.getElementById('cal-label');
+    if (label) label.textContent = grid.label;
+    const weekdays = document.getElementById('cal-weekdays');
+    if (weekdays) weekdays.innerHTML = grid.weekdays.map(w => `<div class="cal-head">${escapeHtml(w)}</div>`).join('');
+    const box = document.getElementById('cal-grid');
+    if (!box) return;
+    box.innerHTML = grid.weeks.map(week => week.map(cell => {
+      const cls = ['cal-cell'];
+      if (!cell.inMonth) cls.push('is-outside');
+      if (cell.inTrip) cls.push('is-trip');
+      if (cell.isToday) cls.push('is-today');
+      const pills = cell.pills.map((p, i) => `<span class="cal-pill ${i === 1 ? 'cal-pill--amber' : i === 2 ? 'cal-pill--mist' : ''}">${escapeHtml(String(p.title).slice(0, 22))}</span>`).join('');
+      return `<button class="${cls.join(' ')}" data-day="${cell.iso}">
+        <span class="cal-day">${cell.inMonth ? cell.day : `<span style="opacity:.6">${cell.day}</span>`}</span>
+        ${pills}
+        ${cell.extra ? `<span class="cal-more">+${cell.extra} ${th('รายการ','more')}</span>` : ''}
+      </button>`;
+    }).join('')).join('');
+    queueIcons();
+  }
+
+  function paintDetail() {
+    const box = document.getElementById('cal-detail');
+    if (!box) return;
+    if (!selected) { box.innerHTML = ''; return; }
+    const dayItems = itemsForDay(items, selected);
+    const dayIdx = Math.max(0, (trip?.startDate ? dayjs(selected).diff(dayjs(trip.startDate), 'day') : 0));
+    box.innerHTML = `
+      <div class="card p-4">
+        <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
+          <h3 class="font-bold text-sm flex items-center gap-2">
+            <span class="step-num">${dayjs(selected).format('DD')}</span>
+            ${escapeHtml(formatDate(selected, lang, trip?.timezone))}
+            <span class="badge badge-planned text-[10px]">${th('วันที่','Day')} ${dayIdx + 1}</span>
+          </h3>
+          <div class="btn-row">
+            <a class="btn btn-secondary btn-sm" href="#/trip/${tripId}/itinerary?date=${selected}">${icon('map-pinned', 'w-4 h-4')} ${th('เปิดในแผน','Open in the plan')}</a>
+            <button class="btn btn-accent btn-sm" id="cal-add">${icon('plus', 'w-4 h-4')} ${t('addPlace')}</button>
+          </div>
+        </div>
+        ${dayItems.length ? `<div class="space-y-2">${dayItems.map(i => `
+          <div class="flex items-center gap-3 p-2.5 rounded-2xl" style="background:var(--bg-secondary);border:1px solid var(--border-light);">
+            <span class="text-[11px] font-mono font-bold w-12 flex-shrink-0" style="color:var(--primary-strong);">${escapeHtml(String(i.startAt || '').slice(11, 16) || '--:--')}</span>
+            <span class="row-icon" style="width:28px;height:28px;border-radius:10px;">${icon(categoryIcon(normalizeCategory(i.category)), 'w-3.5 h-3.5')}</span>
+            <span class="min-w-0 flex-1">
+              <b class="block text-[13px] truncate">${escapeHtml(i.title || '')}</b>
+              ${i.address ? `<span class="text-[11px] text-[var(--text-secondary)] truncate block">${escapeHtml(i.address)}</span>` : ''}
+            </span>
+            ${i.coordinates ? `<a class="icon-btn" href="${escapeHtml(googleMapsPlaceUrl(i.address, i.coordinates))}" target="_blank" rel="noopener" title="${t('map')}">${icon('navigation', 'w-3.5 h-3.5')}</a>` : ''}
+          </div>`).join('')}</div>`
+        : renderEmptyState({
+            icon: 'calendar-x',
+            title: th('วันนี้ยังไม่มีแผน','Nothing planned for this day'),
+            desc: th('กด “เพิ่มสถานที่” เพื่อเริ่มใส่อย่างแรกของวันนี้','Tap “Add place” to start filling this day'),
+            actionHtml: `<button id="cal-empty-add" class="btn btn-primary btn-sm mt-2">${icon('plus', 'w-4 h-4')} ${t('addPlace')}</button>`
+          })}
+      </div>`;
+    queueIcons();
+    bind('cal-add', 'click', () => { location.hash = `#/trip/${tripId}/itinerary?action=add&date=${selected}`; });
+    bind('cal-empty-add', 'click', () => { location.hash = `#/trip/${tripId}/itinerary?action=add&date=${selected}`; });
+  }
+
+  bind('cal-prev', 'click', () => { view = shiftMonth(view.year, view.month, -1); paint(); });
+  bind('cal-next', 'click', () => { view = shiftMonth(view.year, view.month, 1); paint(); });
+  bind('cal-today', 'click', () => { const t = dayjs().format('YYYY-MM-DD'); selected = t; view = { year: Number(t.slice(0, 4)), month: Number(t.slice(5, 7)) }; paint(); paintDetail(); });
+  bind('cal-print', 'click', () => window.print());
+  document.querySelectorAll('[data-month]').forEach(btn => btn.addEventListener('click', (e) => {
+    const [y, m] = e.currentTarget.getAttribute('data-month').split('-').map(Number);
+    view = { year: y, month: m }; paint();
+  }));
+  bind('cal-grid', 'click', (e) => {
+    const cell = e.target.closest('[data-day]');
+    if (!cell) return;
+    selected = cell.getAttribute('data-day');
+    const parsed = parseISODate(selected);
+    if (parsed && (parsed.year !== view.year || parsed.month !== view.month)) view = { year: parsed.year, month: parsed.month };
+    paint(); paintDetail();
+  });
+
+  paint(); paintDetail();
+  if (autoPrint) setTimeout(() => window.print(), 700);
+}
+
+/* ================================================================== *
+ * SHARE — invite link, LINE, summary & print (v17)
+ * ================================================================== */
+async function openShareSheet(trip = null) {
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const t0 = trip || currentTrip;
+  if (!t0?.id) { toast.error(th('ยังไม่มีทริปที่เลือก', 'No trip selected')); return; }
+  const tripId = t0.id;
+  const code = t0.inviteCode || '';
+  const link = inviteLink(code);
+  const message = inviteMessage({ trip: t0, inviteCode: code, inviter: currentUserDisplayName(), lang });
+
+  const sheet = showBottomSheet(`
+    <div class="space-y-4">
+      <div class="flex items-start gap-3">
+        <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('share-2', 'w-5 h-5')}</div>
+        <div class="min-w-0">
+          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${th('ชวนเพื่อนเข้าทริป','Invite your friends')}</h3>
+          <p class="text-xs text-[var(--text-secondary)] mt-0.5">${th('ทุกคนเห็นแผนเดียวกันแบบเรียลไทม์ — แชร์ค่าใช้จ่ายและโหวตที่เที่ยวได้ทันที','Everyone sees the same plan live — split costs and vote on places together')}</p>
+        </div>
+      </div>
+
+      <div class="card p-4 text-center" style="background:var(--surface-2);">
+        <p class="text-[11px] font-bold uppercase tracking-wide text-[var(--text-tertiary)]">${th('รหัสเชิญเข้าร่วมทริป','Trip invite code')}</p>
+        <p class="share-code my-1">${escapeHtml(formatCode(code) || '—')}</p>
+        <p class="text-[11px] text-[var(--text-secondary)]">${th('ให้เพื่อนล็อกอิน แล้วกรอกรหัสนี้ที่หน้า “ทริปของฉัน”','Ask them to sign in and type this code on “My trips”')}</p>
+      </div>
+
+      <div class="share-grid">
+        <button class="share-tile" data-share="copy">${icon('link', 'w-4 h-4')} ${th('คัดลอกลิงก์เชิญ','Copy invite link')}</button>
+        <button class="share-tile" data-share="line">${icon('message-circle', 'w-4 h-4')} ${th('แชร์ผ่าน LINE','Share on LINE')}</button>
+        <button class="share-tile" data-share="code">${icon('key-round', 'w-4 h-4')} ${th('คัดลอกรหัส','Copy code')}</button>
+        <button class="share-tile" data-share="message">${icon('clipboard-list', 'w-4 h-4')} ${th('คัดลอกข้อความชวน','Copy invite message')}</button>
+        <button class="share-tile" data-share="summary">${icon('receipt-text', 'w-4 h-4')} ${th('คัดลอกสรุปทริป','Copy trip summary')}</button>
+        <button class="share-tile" data-share="plan">${icon('file-text', 'w-4 h-4')} ${th('คัดลอกแผนรายวัน','Copy day-by-day plan')}</button>
+      </div>
+
+      <div class="flex gap-2">
+        <button class="btn btn-secondary flex-1" data-share="print">${icon('printer', 'w-4 h-4')} ${th('พิมพ์ / บันทึก PDF','Print / save PDF')}</button>
+        <button class="btn btn-secondary flex-1" id="share-native">${icon('smartphone', 'w-4 h-4')} ${th('แชร์…','Share…')}</button>
+      </div>
+      <p class="text-[10px] text-[var(--text-tertiary)] text-center">${icon('shield-check', 'w-3 h-3 inline')} ${th('ลิงก์ชี้มาที่แอปนี้ — คนที่ไม่มีสิทธิ์จะเข้าได้เฉพาะหน้าเข้าสู่ระบบ','The link points at this app — people without access only reach the sign-in screen')}</p>
+    </div>
+  `);
+  queueIcons();
+
+  async function summaryText() {
+    let members = []; let items = []; let expenses = [];
+    try { members = await listMembers(tripId); } catch {}
+    try { items = await fetchItinerary(tripId); } catch {}
+    try { expenses = await fetchAllExpenses(tripId); } catch {}
+    const total = expenses.filter(e => e.status !== 'voided').reduce((sum, e) => sum + (Number(e.netTotalMinor) || 0), 0);
+    return tripSummaryText({ trip: t0, members, items, expenses, totalMinor: total, currency: t0.baseCurrency || 'THB', lang });
+  }
+  async function planText() {
+    let items = [];
+    try { items = await fetchItinerary(tripId); } catch {}
+    let members = [];
+    try { members = await listMembers(tripId); } catch {}
+    return itineraryText({ trip: t0, items, members, lang });
+  }
+
+  sheet.sheet.querySelectorAll('[data-share]').forEach(btn => btn.addEventListener('click', async (e) => {
+    const kind = e.currentTarget.getAttribute('data-share');
+    if (kind === 'copy') return copyToClipboard(link, 'คัดลอกลิงก์เชิญแล้ว', 'Invite link copied');
+    if (kind === 'code') return copyToClipboard(formatCode(code), 'คัดลอกรหัสเชิญแล้ว', 'Invite code copied');
+    if (kind === 'message') return copyToClipboard(message, 'คัดลอกข้อความชวนแล้ว', 'Invite message copied');
+    if (kind === 'line') { window.open(lineShareUrl(message), '_blank', 'noopener'); return; }
+    if (kind === 'summary') return copyToClipboard(await summaryText(), 'คัดลอกสรุปทริปแล้ว', 'Trip summary copied');
+    if (kind === 'plan') return copyToClipboard(await planText(), 'คัดลอกแผนรายวันแล้ว', 'Day-by-day plan copied');
+    if (kind === 'print') { sheet.close(); location.hash = printPlanUrl(tripId).replace(/^.*#/, '#'); return; }
+  }));
+
+  bind('share-native', 'click', async () => {
+    if (navigator.share) {
+      try { await navigator.share({ title: t0.name || 'Trip', text: message, url: link }); return; } catch { /* cancelled */ }
+    } else {
+      copyToClipboard(message);
+    }
+  });
+}
+
+/* ================================================================== *
+ * BOOKING IMPORT — paste a confirmation e-mail (v17)
+ * ================================================================== */
+function openBookingImport(tripId, { onSaved = null } = {}) {
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const currency = currentTrip?.baseCurrency || 'THB';
+  let draft = null;
+
+  const sheet = showBottomSheet(`
+    <div class="space-y-4">
+      <div class="flex items-start gap-3">
+        <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--gradient-duo);color:#fff;">${icon('mail-plus', 'w-5 h-5')}</div>
+        <div class="min-w-0">
+          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${th('นำเข้าจากอีเมลยืนยันการจอง','Import from a confirmation e-mail')}</h3>
+          <p class="text-xs text-[var(--text-secondary)] mt-0.5">${th('คัดลอกข้อความจากอีเมล/แอปจอง แล้ววางที่นี่ ระบบจะอ่านวันเวลา รหัส และราคาให้','Paste the text of a booking e-mail — the app reads the dates, codes and price for you')}</p>
+        </div>
+      </div>
+
+      <div class="import-drop">
+        <div class="input-group">
+          <label class="input-label">${icon('clipboard-paste', 'w-3.5 h-3.5')} ${th('ข้อความยืนยันการจอง','Confirmation text')}</label>
+          <textarea id="bi-text" class="input import-textarea" placeholder="${th('วางข้อความอีเมลตรงนี้…','Paste the e-mail text here…')}"></textarea>
+        </div>
+        <div class="flex gap-2 mt-2">
+          <button class="btn btn-secondary btn-sm" id="bi-sample">${icon('wand-2', 'w-4 h-4')} ${th('ใส่ตัวอย่าง','Use a sample')}</button>
+          <button class="btn btn-primary btn-sm flex-1" id="bi-parse">${icon('scan-text', 'w-4 h-4')} ${th('อ่านข้อความ','Read the text')}</button>
+        </div>
+      </div>
+
+      <div id="bi-result"></div>
+
+      <div class="flex gap-2">
+        <button class="btn btn-secondary flex-1" id="bi-cancel">${t('cancel')}</button>
+        <button class="btn btn-primary flex-1" id="bi-save" disabled>${icon('save', 'w-4 h-4')} ${th('บันทึกเป็นการจอง','Save booking')}</button>
+      </div>
+      <p class="text-[10px] text-[var(--text-tertiary)] text-center">${icon('lock', 'w-3 h-3 inline')} ${th('ข้อความถูกอ่านในเครื่องคุณเท่านั้น ไม่ถูกส่งไปที่ไหน','The text is parsed on your device only — nothing is uploaded')}</p>
+    </div>
+  `);
+  queueIcons();
+
+  const sample = th(
+    `การยืนยันการจอง — Thai Airways
+เที่ยวบิน TG 615
+จาก: Bangkok (BKK) ถึง: Tokyo (NRT)
+วันที่ 12 เม.ย. 2569 เวลา 07:45 - 15:20
+ที่นั่ง 32A | Confirmation: XT4K9P
+ผู้โดยสาร: SOMCHAI P.
+ราคารวม 24,500 THB`,
+    `Booking confirmation — Thai Airways
+Flight TG 615
+From: Bangkok (BKK) To: Tokyo (NRT)
+Date 12 Apr 2026 07:45 - 15:20
+Seat 32A | Confirmation: XT4K9P
+Passenger: SOMCHAI P.
+Total 24,500 THB`
+  );
+
+  function paintResult() {
+    const box = document.getElementById('bi-result');
+    const saveBtn = document.getElementById('bi-save');
+    if (!box) return;
+    if (!draft) { box.innerHTML = ''; if (saveBtn) saveBtn.disabled = true; return; }
+    const tone = confidenceLabel(draft.confidence);
+    const toneVar = tone.tone === 'success' ? 'var(--success)' : tone.tone === 'warning' ? 'var(--warning)' : 'var(--danger)';
+    box.innerHTML = `
+      <div class="card p-3" style="border-color:color-mix(in srgb, ${toneVar} 40%, var(--border));">
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <b class="text-xs">${icon('scan-text', 'w-3.5 h-3.5 inline')} ${th('พบข้อมูล','Recognised')}</b>
+          <span class="badge text-[10px]" style="background:color-mix(in srgb, ${toneVar} 14%, transparent); color:${toneVar}; border-color:color-mix(in srgb, ${toneVar} 30%, transparent);">${escapeHtml(lang === 'th' ? tone.th : tone.en)} • ${draft.confidence}%</span>
+        </div>
+        <div class="space-y-1.5">
+          ${draft.recognised.map(r => `<div class="parsed-row"><span>${escapeHtml(r.label)}</span><b>${escapeHtml(r.value)}</b></div>`).join('')}
+        </div>
+      </div>`;
+    queueIcons();
+    if (saveBtn) saveBtn.disabled = !draft.title;
+  }
+
+  bind('bi-sample', 'click', () => {
+    const ta = document.getElementById('bi-text');
+    if (ta) { ta.value = sample; }
+  });
+  bind('bi-parse', 'click', () => {
+    const text = String(document.getElementById('bi-text')?.value || '');
+    if (!text.trim()) return toast.error(th('วางข้อความก่อน แล้วกดอ่าน', 'Paste the text first'));
+    draft = parseConfirmationText(text, { baseCurrency: currency, fallbackDate: currentTrip?.startDate || '' });
+    paintResult();
+    if (!draft.recognised.length) toast.warning(th('อ่านไม่เจอข้อมูล — ลองวางข้อความให้ครบขึ้น', 'Nothing recognised — try pasting more of the e-mail'));
+    else toast.success(th(`อ่านได้ ${draft.recognised.length} ฟิลด์`, `Found ${draft.recognised.length} fields`));
+  });
+  bind('bi-cancel', 'click', () => sheet.close());
+  bind('bi-save', 'click', async () => {
+    if (!draft) return;
+    const tLoad = toast.loading(th('กำลังบันทึก...', 'Saving…'));
+    try {
+      const payload = draftToReservation(draft, { baseCurrency: currency });
+      await createReservation(tripId, payload, currentUser?.uid || null);
+      tLoad.close();
+      toast.success(th('บันทึกการจองจากอีเมลแล้ว', 'Booking imported'));
+      celebrateFrom(null);
+      sheet.close();
+      if (typeof onSaved === 'function') onSaved(payload);
+    } catch (e) {
+      tLoad.close();
+      toast.error(e.message || String(e));
+    }
+  });
+}
+
+/* ================================================================== *
+ * Offline strip — “no wifi, no problem” (v17)
+ * ================================================================== */
+function initOfflineStrip() {
+  const wrap = document.getElementById('offline-strip-wrap');
+  if (!wrap) return;
+  const paint = () => {
+    const offline = (typeof navigator !== 'undefined' && navigator.onLine === false) || syncState.status === 'offline';
+    if (!offline) { wrap.hidden = true; wrap.innerHTML = ''; return; }
+    wrap.hidden = false;
+    wrap.innerHTML = `
+      <div class="offline-strip">
+        ${icon('wifi-off', 'w-4 h-4')}
+        <span class="flex-1 min-w-0">${getLang() === 'th'
+          ? 'ออฟไลน์อยู่ — ยังดู/แก้แผนได้ ข้อมูลจะซิงก์ให้เองเมื่อกลับมาออนไลน์'
+          : 'You are offline — you can keep editing; changes sync when you are back online'}</span>
+        <button class="btn btn-ghost btn-sm" id="offline-retry">${icon('refresh-cw', 'w-3.5 h-3.5')} ${getLang() === 'th' ? 'ลองใหม่' : 'Retry'}</button>
+      </div>`;
+    queueIcons();
+    bind('offline-retry', 'click', () => location.reload());
+  };
+  window.addEventListener('online', paint);
+  window.addEventListener('offline', paint);
+  try { syncState.subscribe(paint); } catch { /* older build */ }
+  paint();
+}
+
 function renderMore(params) {
   const tripId = params.tripId;
   const lang = getLang();
@@ -9389,6 +10145,8 @@ function renderMore(params) {
     { href: `#/trip/${tripId}/members`, icon: 'users', label: t('members') },
     { href: `#/trip/${tripId}/prep`, icon: 'clipboard-check', label: t('prep') },
     { href: `#/trip/${tripId}/ideas`, icon: 'lightbulb', label: t('ideas') },
+    { href: `#/trip/${tripId}/explore`, icon: 'compass', label: lang==='th' ? 'ชวนไปที่นี่ (ไกด์สถานที่)' : 'Explore (place guides)' },
+    { href: `#/trip/${tripId}/calendar`, icon: 'calendar-days', label: lang==='th' ? 'ปฏิทินทริป' : 'Trip calendar' },
     { href: `#/trip/${tripId}/bookings`, icon: 'ticket', label: t('bookings') },
     { href: `#/trip/${tripId}/documents`, icon: 'folder', label: lang==='th' ? 'เอกสารสำคัญ' : 'Documents' },
     { href: `#/trip/${tripId}/import`, icon: 'package', label: t('importExport') },
@@ -9408,6 +10166,23 @@ function renderMore(params) {
             <span class="text-[var(--text-tertiary)] group-hover:translate-x-0.5 transition-transform">${icon('chevron-right', 'w-4 h-4')}</span>
           </a>
         `).join('')}
+        <button id="share-more" class="card card-hover p-4 w-full flex items-center justify-between gap-3" style="text-decoration:none; border-color: color-mix(in srgb, var(--primary-raw) 30%, var(--border));">
+          <span class="flex items-center gap-3">
+            <span class="row-icon" style="background:var(--gradient-primary); color:#fff;">${icon('share-2', 'w-4 h-4')}</span>
+            <span class="font-semibold text-sm">${lang==='th' ? 'ชวนเพื่อนเข้าทริป / แชร์' : 'Invite friends / share'}</span>
+          </span>
+          <span style="color: var(--primary-strong);">${icon('chevron-right', 'w-4 h-4')}</span>
+        </button>
+        <a href="${appBaseUrl()}demo/" target="_blank" rel="noopener" class="card card-hover p-4 flex items-center justify-between gap-3" style="text-decoration:none; color:inherit; border-color: color-mix(in srgb, var(--brand-yellow-raw) 45%, var(--border));">
+          <span class="flex items-center gap-3 min-w-0">
+            <span class="row-icon" style="background:var(--brand-yellow-tint); color:var(--brand-yellow-ink);">${icon('sparkles', 'w-4 h-4')}</span>
+            <span class="min-w-0">
+              <span class="font-semibold text-sm block">${lang==='th' ? 'ตัวอย่างฟังก์ชันครบ (demo)' : 'Full-feature demo'}</span>
+              <span class="text-[10.5px] text-[var(--text-tertiary)] block">${lang==='th' ? 'เปิดทริปตัวอย่างพร้อมข้อมูลครบ ไม่ต้องล็อกอิน' : 'Sample trip with data — no sign-in needed'}</span>
+            </span>
+          </span>
+          <span class="text-[var(--text-tertiary)]">${icon('external-link', 'w-4 h-4')}</span>
+        </a>
         <button id="logout-more" class="card p-4 w-full flex items-center justify-between gap-3" style="text-decoration:none; border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); background: var(--danger-bg);">
           <span class="flex items-center gap-3" style="color: var(--danger);">
             <span class="row-icon" style="background: transparent; color: var(--danger);">${icon('log-out', 'w-4 h-4')}</span>
@@ -9422,8 +10197,12 @@ function renderMore(params) {
         <p class="text-[10px] text-[var(--text-tertiary)] mt-1 font-mono">UID: ${escapeHtml(currentUser?.uid?.slice(0,12) || '')}...</p>
       </div>
       <p class="text-center text-[10px] text-[var(--text-tertiary)]">${icon('info', 'w-3 h-3 inline')} ${lang==='th' ? 'แตะโลโก้ Fuji Planner มุมซ้ายบน เพื่อไปหน้ารายการทริป' : 'Tap the Fuji Planner logo (top-left) to reach your trips'}</p>
+      <p class="build-stamp text-center" data-build-stamp>
+        ${icon('sparkles', 'w-3 h-3')} ${escapeHtml(appBuildLabel(lang))}
+      </p>
     </div>
   `;
+  bind('share-more', 'click', () => openShareSheet(currentTrip));
   document.getElementById('logout-more').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     btn.disabled = true;

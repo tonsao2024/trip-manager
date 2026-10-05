@@ -6,11 +6,28 @@ Fuji Trip Planner is a static SPA hosted on GitHub Pages, backed entirely by Fir
 ## Frontend
 - **SPA Router**: Hash-based, lightweight, no library. Routes defined in `src/js/app.js` + `router.js`.
 - **State**: Current user from Firebase Auth, current trip from localStorage + Firestore doc.
-- **UI**: Tailwind CDN + custom `tokens.css` (one fixed “True tone” palette: blue `#1d4ed8` →
-  `#3b82f6`, accent yellow `#ffc81e`; every shade derived with `color-mix()`). Bento-grid for the
-  dashboard, card-based elsewhere. Lucide icons. Only Light / Dark / Auto is user-selectable —
-  the old colour-theme (ชุดสี) presets and the per-trip colour were removed in v16.
+- **UI**: Tailwind CDN + custom `tokens.css` (**v17 “Sky light”** — one fixed palette: sky blue
+  `#2f6fe4` → `#64a1da`, amber `#f0ae52`, sage mist `#abc1bf`, steel `#639cb5`, slate ink `#374656`;
+  every shade derived with `color-mix()`). `src/css/refresh.css` (loaded after `components.css`)
+  restyles the shell and defines the new-page components. Bento-grid for the dashboard, card-based
+  elsewhere. Lucide icons. Only Light / Dark / Auto is user-selectable — the old colour-theme (ชุดสี)
+  presets and the per-trip colour were removed in v16, and `data-color` / `fuji_color_theme` are
+  cleared on boot.
+- **Brand colour in JS**: `src/js/utils/brand.js` is the single source (`BRAND`, `BRAND_PRIMARY`,
+  `BRAND_GRADIENT*`, `MEMBER_COLORS`, `CATEGORY_COLOR_CHOICES`, `CONFETTI_COLORS`, `DAY_HUES`,
+  `memberColorAt()`, `isKnownBrandColor()`). Nothing else hardcodes a brand hex.
+- **Build identity**: `src/js/utils/buildInfo.js` holds the version, palette name and the
+  “last updated” date rendered on the sign-in screen, the More page and the Settings “About” card
+  (`<meta name="app-updated">` in `index.html` mirrors it; `tests/unit/buildInfo.test.js` guards drift).
 - **Lazy Loading**: Leaflet, html2canvas, jsPDF, SheetJS loaded via dynamic import only when needed.
+- **Feature modules**: `src/js/{prep,ideas,reservations,categories,…}` each own their Firestore
+  collection + UI helpers; pure logic lives in `src/js/utils/` (`explore.js` place-guide library,
+  `bookingImport.js` confirmation parser, `calendarView.js` month grid, `share.js` invite/summary
+  builders, `scheduling.js`, `settlement.js`, `route.js`, `ics.js`, `weather.js`).
+- **Offline demo**: `demo/` is generated (`node tools/preview/standalone.mjs`) — the same app with the
+  CDNs swapped for local stand-ins (in-memory Firestore/Auth, pre-built Tailwind, local fonts, a map
+  stub) plus a seeded sample trip. `docs/preview/index.html` is the public before/after + screenshots
+  page linked from Settings.
 - **Offline**: Firestore IndexedDB persistence enabled, but no PWA manifest/SW.
 
 ## Firebase Services

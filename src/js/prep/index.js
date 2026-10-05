@@ -4,6 +4,7 @@
 // re-exported here so views only need a single import.
 // ─────────────────────────────────────────────────────────────────────────────
 import { db, serverTimestamp } from '../firebase.js';
+import { BRAND_PRIMARY } from '../utils/brand.js';
 import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 export {
@@ -40,7 +41,7 @@ export async function createChecklist(tripId, data = {}, uid = null) {
     title: String(data.title || '').trim() || 'เช็กลิสต์',
     kind: data.kind === 'todo' ? 'todo' : 'packing',
     icon: data.icon || (data.kind === 'todo' ? 'list-checks' : 'luggage'),
-    color: data.color || '#1d4ed8',
+    color: data.color || BRAND_PRIMARY,
     order: Number.isFinite(data.order) ? data.order : Date.now(),
     items,
     createdBy: uid,

@@ -408,7 +408,7 @@ export function addItineraryMarkers(map, L, items, dayColors, opts = {}) {
   const layer = entry?.markers || L.layerGroup().addTo(map);
   layer.clearLayers();
 
-  const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary-raw').trim() || '#1d4ed8';
+  const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary-raw').trim() || '#2f6fe4';
   const latlngs = [];
   const markers = [];
 

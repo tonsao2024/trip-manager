@@ -1,0 +1,12 @@
+<svg viewBox="0 0 200 140" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Fuji">
+  <defs>
+    <linearGradient id="fujiGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="50%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#ec4899"/>
+    </linearGradient>
+  </defs>
+  <path d="M10 130 L100 10 L190 130 Z" fill="url(#fujiGrad)"/>
+  <path d="M70 50 L100 10 L130 50 L115 60 L100 40 L85 60 Z" fill="white" opacity="0.95"/>
+  <ellipse cx="100" cy="135" rx="80" ry="5" fill="black" opacity="0.08"/>
+</svg>

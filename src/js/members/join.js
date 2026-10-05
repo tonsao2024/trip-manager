@@ -11,6 +11,7 @@
  * the member access from then on.
  */
 import { db, serverTimestamp } from '../firebase.js';
+import { BRAND_PRIMARY } from '../utils/brand.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, limit
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -175,7 +176,7 @@ async function approveJoinRequestInner(tripId, uid, request, role, permissions) 
     authType: 'account',
     loginReady: true,
     permissions,
-    color: request.color || '#1d4ed8',
+    color: request.color || BRAND_PRIMARY,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     addedFrom: 'join-request'
