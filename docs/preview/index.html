@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fuji Trip Planner v16 — ก่อน / หลัง (ตัวอย่างหน้าจอ)</title>
+<style>
+  :root{
+    --blue:#1d4ed8; --blue2:#3b82f6; --yellow:#ffc81e; --navy:#17203a;
+    --ink:#17203a; --ink2:#56617c; --line:#dbe3f2; --bg:#f4f7fd; --card:#ffffff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Noto Sans Thai","IBM Plex Sans Thai",system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.6}
+  header.top{background:linear-gradient(135deg,var(--blue) 0%,var(--blue2) 100%);color:#fff;padding:28px 20px 34px}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+  header.top h1{margin:0 0 6px;font-size:24px;letter-spacing:-.2px}
+  header.top p{margin:0;opacity:.92;font-size:14px}
+  .pill{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.16);
+    border:1px solid rgba(255,255,255,.3);border-radius:999px;padding:4px 12px;font-size:12px;margin-bottom:14px}
+  .pill .dot{width:12px;height:12px;border-radius:999px;background:var(--yellow);display:inline-block}
+  main{padding:26px 0 60px}
+  h2{font-size:18px;margin:38px 0 6px;display:flex;align-items:center;gap:10px}
+  h2 .num{width:26px;height:26px;border-radius:9px;background:var(--blue);color:#fff;font-size:13px;
+    display:inline-flex;align-items:center;justify-content:center}
+  h2 .num.y{background:var(--yellow);color:#2b2100}
+  .lead{color:var(--ink2);font-size:14px;margin:0 0 16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;
+    box-shadow:0 6px 22px rgba(23,32,74,.06);margin-bottom:18px}
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .triple{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .quad{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+  figure{margin:0}
+  figure img{width:100%;border-radius:14px;border:1px solid var(--line);display:block;background:#fff}
+  figcaption{font-size:12.5px;color:var(--ink2);margin-top:8px}
+  figcaption b{color:var(--ink)}
+  .tag{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:2px 9px;margin-right:6px}
+  .tag.old{background:#e9edf6;color:#5b6580}
+  .tag.new{background:color-mix(in srgb,var(--blue) 12%,#fff);color:var(--blue)}
+  .tag.y{background:color-mix(in srgb,var(--yellow) 26%,#fff);color:#7a5800}
+  table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0 4px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--ink2)}
+  tr:last-child td{border-bottom:none}
+  code{background:#eef2fb;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:12.5px}
+  .swatches{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 4px}
+  .sw{width:96px;border-radius:12px;overflow:hidden;border:1px solid var(--line);font-size:11px;text-align:center}
+  .sw .c{height:46px}
+  .sw .n{padding:5px 4px;background:#fff;color:var(--ink2)}
+  .note{background:color-mix(in srgb,var(--yellow) 16%,#fff);border:1px solid color-mix(in srgb,var(--yellow) 45%,#fff);
+    border-radius:14px;padding:12px 14px;font-size:13.5px;color:#5c4300}
+  footer{border-top:1px solid var(--line);padding:18px 0 0;color:var(--ink2);font-size:12.5px}
+  @media (max-width:900px){ .triple,.quad{grid-template-columns:1fr 1fr} }
+  @media (max-width:620px){ .pair,.triple,.quad{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <span class="pill"><span class="dot"></span> Fuji Trip Planner · v16 preview</span>
+    <h1>แก้อะไรไปบ้าง — ดูจากภาพจริงก่อนตัดสินใจ</h1>
+    <p>ภาพทั้งหมดคือหน้าจอจริงของแอป (รันใน Chromium ขนาด iPhone 14 Pro Max 430×932) ไม่ใช่ภาพ mock-up ·
+       รูป “ก่อน” มาจาก commit ก่อนหน้า (438c44d) รูป “หลัง” มาจาก branch งานนี้ (0e85a1b)</p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <h2><span class="num">1</span> ชุดสี: จาก “เลือกได้ 12 ธีม” → “True tone” เดียว (น้ำเงิน + เหลือง)</h2>
+  <p class="lead">ตัวเลือกชุดสีเดิม (Sage / Sakura / Ocean Mist / Aurora … 12 แบบ) ถูกถอดออกทั้งหมด
+     เหลือพาเลตต์เดียวที่ล็อกกับแบรนด์ และเหลือให้เลือกแค่ <b>สว่าง / มืด / อัตโนมัติ</b></p>
+
+  <div class="pair">
+    <figure>
+      <img src="before/old-theme-picker.png" alt="หน้าจอเลือกชุดสีแบบเดิม">
+      <figcaption><span class="tag old">ก่อน</span><b>แผงเลือกชุดสี 12 ธีม</b> — เพรียวลม 9 สี + 9 แบบ gradient
+        (Sage, Fuji Mist, Sakura Dust, Aurora, Sunburst…) พร้อมปุ่มธีมบน header</figcaption>
+    </figure>
+    <figure>
+      <img src="after/new-appearance-dark.png" alt="หน้าจอ Appearance ใหม่">
+      <figcaption><span class="tag new">หลัง</span><b>แผง Appearance</b> — ล็อกสีแบรนด์ (น้ำเงิน+เหลือง) ให้ดูเป็นตัวอย่าง
+        แล้วเหลือแค่ 3 ปุ่ม โหมด: สว่าง / มืด / อัตโนมัติ (พร้อมปุ่ม Done)</figcaption>
+    </figure>
+  </div>
+
+  <div class="pair">
+    <figure>
+      <img src="before/old-dashboard-light.png" alt="แดชบอร์ดโหมดสว่างแบบเดิม">
+      <figcaption><span class="tag old">ก่อน</span> แดชบอร์ด · โหมดสว่าง — โทนเขียว Sage + ม่วง Sakura Dust</figcaption>
+    </figure>
+    <figure>
+      <img src="after/new-dashboard-light.png" alt="แดชบอร์ดโหมดสว่างใหม่">
+      <figcaption><span class="tag new">หลัง</span> แดชบอร์ด · โหมดสว่าง — น้ำเงิน True Blue เป็นหลัก เหลืองเป็นสีเน้น
+        (ริบบิ้นบนการ์ด, ตัวเลข KPI, ไฟความคืบหน้า)</figcaption>
+    </figure>
+  </div>
+
+  <div class="pair">
+    <figure>
+      <img src="before/old-dashboard-dark.png" alt="แดชบอร์ดโหมดมืดแบบเดิม">
+      <figcaption><span class="tag old">ก่อน</span> แดชบอร์ด · โหมดมืด — ยังเห็นโทนเขียว/ส้มจากชุดสีเดิม</figcaption>
+    </figure>
+    <figure>
+      <img src="after/new-dashboard-dark.png" alt="แดชบอร์ดโหมดมืดใหม่">
+      <figcaption><span class="tag new">หลัง</span> แดชบอร์ด · โหมดมืด — พื้นหลัง navy ที่ผสมน้ำเงินแบรนด์
+        ทุกเฉดผสมจากสีเดียวกันด้วย <code>color-mix()</code> จึงอ่านง่ายทั้งสองโหมด</figcaption>
+    </figure>
+  </div>
+
+  <div class="card">
+    <h3 style="margin:0 0 4px;font-size:15px">พาเลตต์ที่ใช้จริง</h3>
+    <div class="swatches">
+      <div class="sw"><div class="c" style="background:#1d4ed8"></div><div class="n">#1d4ed8<br>True Blue</div></div>
+      <div class="sw"><div class="c" style="background:#3b82f6"></div><div class="n">#3b82f6<br>gradient end</div></div>
+      <div class="sw"><div class="c" style="background:#ffc81e"></div><div class="n">#ffc81e<br>accent</div></div>
+      <div class="sw"><div class="c" style="background:#17203a"></div><div class="n">#17203a<br>brand ink</div></div>
+      <div class="sw"><div class="c" style="background:#0b1020"></div><div class="n">#0b1020<br>dark bg</div></div>
+    </div>
+    <table>
+      <tr><th>กติกาที่ตั้งไว้</th><th>เหตุผล</th></tr>
+      <tr><td>ห้ามใช้ตัวอักษรสีขาวบนเหลืองทึบ</td><td>เหลืองอมส้ม #ffc81e ตัดกับขาวแล้วอ่านไม่ออก → ใช้ <code>--on-accent #2b2100</code></td></tr>
+      <tr><td>ข้อความน้ำเงินบนพื้นสว่างใช้ <code>--primary-strong</code></td><td>ให้ค่า contrast ผ่าน AA โดยไม่ต้องเปลี่ยนสีแบรนด์</td></tr>
+      <tr><td>เหลืองเป็น “คู่หู” ไม่ใช่สีหลัก</td><td>ใช้เน้น (ริบบิ้น, ป้าย, ปุ่ม accent, หลอดความคืบหน้า) ไม่ทาเต็มหน้าจอ</td></tr>
+      <tr><td>สีที่ยังต้องมีหลายสี (หมวดค่าใช้จ่าย, สีประจำวัน, สีสมาชิก)</td><td>เปลี่ยนจากพาสเทลเดิมมาเป็นตระกูลเดียวกับแบรนด์ (ดูข้อ 3)</td></tr>
+    </table>
+  </div>
+
+  <h2><span class="num y">2</span> ฟังก์ชันใหม่รอบนี้ (เทียบกับ Wanderlog)</h2>
+  <p class="lead">เทียบกับ wanderlog.com (ดึงหน้าเว็บจากในเครื่องไม่ได้ ใช้ชุดฟีเจอร์ที่เป็นที่รู้จักของเขาเป็น checklist)
+     — ที่มีอยู่แล้ว: แผนเที่ยว, แผนที่, รูปสถานที่, หารค่าใช้จ่าย, เอกสาร, Excel
+     — ที่ยังขาดและเพิ่มรอบนี้: เช็กลิสต์, กระดานโหวตสถานที่, ระบบจอง, ปฏิทิน .ics, พยากรณ์อากาศ, จัดลำดับเส้นทาง</p>
+
+  <div class="triple">
+    <figure>
+      <img src="after/new-prep-light.png" alt="หน้าเตรียมตัว">
+      <figcaption><span class="tag new">ใหม่</span><b>เตรียมตัว (Prep)</b><br>
+        <code>/trip/:id/prep</code> — เช็กลิสต์ของที่ต้องเตรียม + สิ่งที่ต้องทำ
+        มีเทมเพลตสำเร็จรูป 6 แบบ (เขตร้อน/หนาว/เมือง/แคมป์, ก่อนออกเดินทาง, เอกสาร, ความปลอดภัย)
+        ติ๊กแล้วบันทึกทันที ระบุผู้รับผิดชอบรายชิ้นได้ ทุกคนในทริปเห็นตรงกัน</figcaption>
+    </figure>
+    <figure>
+      <img src="after/new-ideas-light.png" alt="หน้ากระดานไอเดีย">
+      <figcaption><span class="tag new">ใหม่</span><b>ไอเดียสถานที่ (Ideas)</b><br>
+        <code>/trip/:id/ideas</code> — ใครก็เสนอสถานที่ได้ ทุกคนโหวต
+        เรียงตามคะแนน/ใหม่สุด/ราคา และปุ่ม <b>“เพิ่มเข้าแผน”</b> ที่เขียนเป็นรายการในแผนเที่ยวจริง ๆ ให้เลย</figcaption>
+    </figure>
+    <figure>
+      <img src="after/new-bookings-light.png" alt="หน้าการจอง">
+      <figcaption><span class="tag new">ใหม่</span><b>การจอง (Bookings)</b><br>
+        <code>/trip/:id/bookings</code> — เที่ยวบิน/โรงแรม/รถไฟ/ร้านอาหาร/รถเช่า
+        เก็บรหัสยืนยัน (มีปุ่มคัดลอก), ที่นั่ง, ค่าใช้จ่าย, เวลาเช็คอิน และการ์ด “การจองถัดไป” นับถอยหลัง</figcaption>
+    </figure>
+  </div>
+
+  <div class="quad" style="margin-top:4px">
+    <figure>
+      <img src="after/new-export-light.png" alt="หน้าส่งออก">
+      <figcaption><span class="tag new">ใหม่</span> <b>ปฏิทิน .ics</b> — ส่งออกแผน/การจอง/ทั้งทริป
+        เป็นไฟล์มาตรฐาน RFC 5545 นำเข้า Google ปฏิทิน หรือ Apple ปฏิทินได้เลย</figcaption>
+    </figure>
+    <figure>
+      <img src="after/new-ideas-dark.png" alt="กระดานไอเดียโหมดมืด">
+      <figcaption><span class="tag new">ใหม่</span> หน้าจอใหม่ทั้งหมดใช้พาเลตต์เดียวกันทั้งโหมดสว่างและมืด</figcaption>
+    </figure>
+    <figure>
+      <img src="after/new-dashboard-light.png" alt="วิดเจ็ตใหม่บนแดชบอร์ด">
+      <figcaption><span class="tag new">ใหม่</span> <b>วิดเจ็ตแดชบอร์ด</b> — ความคืบหน้าการเตรียมตัว, พยากรณ์อากาศ,
+        การจองถัดไป และไอเดียที่โหวตสูงสุด</figcaption>
+    </figure>
+    <figure>
+      <img src="before/old-more-light.png" alt="หน้าเมนูเพิ่มเติมแบบเดิม">
+      <figcaption><span class="tag old">ก่อน</span> เมนู “เพิ่มเติม” ก่อนหน้านี้มีแค่หน้าเดิม ๆ — ตอนนี้มีทางเข้า
+        เตรียมตัว / ไอเดีย / การจอง เพิ่มทั้งในเมนูและ nav ด้านบน</figcaption>
+    </figure>
+  </div>
+
+  <div class="card">
+    <table>
+      <tr><th>สิ่งที่เพิ่ม</th><th>อยู่ตรงไหน</th><th>ข้อมูลเก็บที่</th></tr>
+      <tr><td>เช็กลิสต์ + เทมเพลต 6 แบบ + ผู้รับผิดชอบรายชิ้น</td><td><code>/trip/:id/prep</code></td><td><code>trips/{id}/checklists</code></td></tr>
+      <tr><td>กระดานไอเดีย + โหวต + เพิ่มเข้าแผน</td><td><code>/trip/:id/ideas</code></td><td><code>trips/{id}/ideas</code></td></tr>
+      <tr><td>การจอง 7 ประเภท + รหัสยืนยัน + คัดลอก</td><td><code>/trip/:id/bookings</code></td><td><code>trips/{id}/reservations</code></td></tr>
+      <tr><td>ส่งออกปฏิทิน .ics (แผน / การจอง / ทั้งทริป)</td><td>หน้า Export + หน้าการจอง</td><td>ไฟล์ในเครื่องผู้ใช้</td></tr>
+      <tr><td>พยากรณ์อากาศ (Open-Meteo, แคช 3 ชม., ไม่พังเวลาเน็ตหลุด)</td><td>แดชบอร์ด + หัววันในแผนเที่ยว</td><td>ไม่เก็บ (ดึงสด)</td></tr>
+      <tr><td>จัดลำดับเส้นทางต่อวัน (ก่อน → หลัง กม.)</td><td>ปุ่มในแผนเที่ยว</td><td>เขียนทับ <code>order</code> ของแผน</td></tr>
+    </table>
+  </div>
+
+  <h2><span class="num">3</span> งานสีที่ตามเก็บให้หมด + ของที่พังและแก้ไป</h2>
+  <div class="pair">
+    <div class="card">
+      <h3 style="margin:0 0 8px;font-size:15px">สีที่ยังค้างจากธีมเดิม</h3>
+      <table>
+        <tr><th>จุด</th><th>เดิม</th><th>ใหม่</th></tr>
+        <tr><td>สีเริ่มต้นของสมาชิกใหม่</td><td>เขียว <code>#8bb89a</code></td><td>น้ำเงิน <code>#1d4ed8</code></td></tr>
+        <tr><td>ตัวเลือกสีหมวดค่าใช้จ่าย</td><td>พาสเทล 12 สี</td><td>ตระกูลแบรนด์ 12 สี</td></tr>
+        <tr><td>สีหมวดเริ่มต้น 9 หมวด</td><td>พาสเทลเดิม</td><td>แมปกับแบรนด์/คู่สีที่กลมกลืน</td></tr>
+        <tr><td>เส้นบอกตำแหน่งในตัวครอปรูป</td><td>เขียวเดิม</td><td>น้ำเงินแบรนด์</td></tr>
+        <tr><td>คอนเฟตตี/ตกแต่ง</td><td>ม่วง-เขียว-ชมพู</td><td>น้ำเงิน-เหลือง-ฟ้า</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 8px;font-size:15px">บั๊กที่เจอตอนตรวจงาน (แก้แล้ว)</h3>
+      <table>
+        <tr><th>อาการ</th><th>สาเหตุ</th></tr>
+        <tr><td>ลากสลับลำดับแผน / จัดเส้นทาง ใช้ไม่ได้ในวันที่จุดแรกไม่มีเวลา</td>
+          <td><code>recalculateSchedule</code> โยน error <code>First item must have startAt</code> — แก้ให้คงเวลาที่มีอยู่และไม่พัง</td></tr>
+        <tr><td>จัดลำดับเส้นทางไม่เห็นพิกัดเลย</td>
+          <td>ตัวคำนวณรองรับแต่พิกัดแบบ object แต่ข้อมูลจริงเก็บเป็นสตริง <code>"lat,lng"</code> — เพิ่มตัวแปลง <code>coordOf()</code></td></tr>
+        <tr><td>กดจัดลำดับแล้วขึ้นว่า “ดีอยู่แล้ว” ตลอด</td>
+          <td>ของเดิมย้ายจุดที่มีเวลาทั้งหมดไปท้ายวัน ทำให้เส้นทางยาวขึ้น (40 กม. → 120 กม.) แล้วถูกยกเลิก — เขียนใหม่เป็นจัดเฉพาะช่วงที่ไม่ติดเวลา และยอมแพ้ถ้าไม่ดีขึ้น</td></tr>
+        <tr><td>ลบทริปแล้วข้อมูลใหม่ค้างอยู่</td><td>รายการ <code>checklists / ideas / reservations</code> ไม่ได้อยู่ในลิสต์ลบของทริป</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h2><span class="num y">4</span> ยืนยันว่าของเดิมยังทำงาน</h2>
+  <div class="card">
+    <table>
+      <tr><th>ชุดทดสอบ</th><th>คำสั่ง</th><th>ผลล่าสุด</th></tr>
+      <tr><td>ยูนิตเทสต์ (ไม่ใช้เบราว์เซอร์)</td><td><code>node tests/node-runner.mjs</code></td><td>62 ผ่าน / 0 ตก</td></tr>
+      <tr><td>Smoke test ทั้งแอป (DOM จริง, Firebase ปลอม)</td><td><code>node tests/smoke/run.mjs</code></td><td>ผ่านทั้งหมด, ไม่มี error หลุด</td></tr>
+      <tr><td>เช็คหน้าจอมือถือด้วย Chromium จริง</td><td><code>node tests/browser/mobile-check.mjs</code></td><td>ผ่านทุกหน้า iPhone 16/14 Pro Max/SE + เดสก์ท็อป (รวมโหมดมืด)</td></tr>
+    </table>
+    <div class="note" style="margin-top:12px">
+      หมายเหตุ: การสลับ <b>สว่าง/มืด/อัตโนมัติ</b> ยังอยู่ครบ (ตามที่ตกลง) — ที่ถูกถอดคือ “การเลือกชุดสี” เท่านั้น
+      และสีของทริป (themeColor) เดิมยังอยู่ในฐานข้อมูลแบบอ่านไม่ใช้ ไม่ได้ลบข้อมูลใคร
+    </div>
+  </div>
+
+  <footer>
+    รูปทั้งหมดมาจาก <code>tests/browser/out/</code> และถูกคัดลอกมาไว้ใน <code>docs/preview/</code> เพื่อให้ดูย้อนหลังได้ ·
+    สร้างอัตโนมัติจากสคริปต์ ไม่ได้ตัดต่อภาพ
+  </footer>
+</main>
+</body>
+</html>

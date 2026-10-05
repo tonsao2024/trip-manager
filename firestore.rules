@@ -215,6 +215,31 @@ service cloud.firestore {
         allow delete: if isAuthenticated();
       }
 
+      // Prep checklists (v16): packing lists + to-do lists for the trip.
+      // Every member can tick, add and rename; the app keeps the list tidy.
+      match /checklists/{checklistId} {
+        allow read: if isTripMember(tripId);
+        allow create: if isTripMember(tripId);
+        allow update: if isTripMember(tripId);
+        allow delete: if isTripMember(tripId) && (isTripAdmin(tripId) || resource.data.createdBy == request.auth.uid);
+      }
+
+      // Ideas board (v16): places the group wants to visit, with votes.
+      // Members may create, anyone may vote/edit; delete by the author or an admin.
+      match /ideas/{ideaId} {
+        allow read: if isTripMember(tripId);
+        allow create: if isTripMember(tripId) && request.resource.data.createdBy == request.auth.uid;
+        allow update: if isTripMember(tripId);
+        allow delete: if isTripMember(tripId) && (isTripAdmin(tripId) || !('createdBy' in resource.data) || resource.data.createdBy == request.auth.uid);
+      }
+
+      // Reservations (v16): flights, hotels, trains, cars — with confirmation codes.
+      match /reservations/{reservationId} {
+        allow read: if isTripMember(tripId);
+        allow create, update: if isTripMember(tripId);
+        allow delete: if isTripMember(tripId) && (isTripAdmin(tripId) || !('createdBy' in resource.data) || resource.data.createdBy == request.auth.uid);
+      }
+
       // Comments attached to an expense (flag / question an item).
       // Any member of the trip may write one; it may be edited or removed by the
       // person who wrote it, or by a trip admin (moderation).

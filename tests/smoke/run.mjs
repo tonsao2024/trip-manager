@@ -719,7 +719,7 @@ console.log('\n▶ v9: expense groups can be added, edited and deleted');
   window.document.getElementById('cat-th').value = 'นวด/สปา';
   window.document.getElementById('cat-en').value = 'Massage / Spa';
   q('#cat-icons [data-icon="heart-pulse"]').click();
-  q('#cat-colors [data-color="#a48fc0"]').click();
+  q('#cat-colors [data-color="#0d9488"]').click();
   await click('#cat-save');
   await waitFor(() => [...fsdb.__store.keys()].some(k => k.startsWith('trips/t1/categories/')), { timeout: 6000, label: 'group saved' }).catch(() => {});
   const savedCat = [...fsdb.__store.entries()].find(([k]) => k.startsWith('trips/t1/categories/'));
@@ -1700,6 +1700,158 @@ console.log('\n▶ expense with a receipt photo — must save, and the upload to
   // the "กำลังอัปโหลดรูปใบเสร็จ…" toast must close itself once the step finishes
   await waitFor(() => qa('.toast.toast-loading').length === 0, { timeout: 4000, label: 'upload toast to close' }).catch(() => {});
   check(qa('.toast.toast-loading').length === 0, 'receipt: no loading toast left behind after the save/upload (ไม่ค้าง "กำลังอัปโหลดรูปใบเสร็จ")');
+}
+
+console.log('\n▶ v16 trip tools — prep checklists');
+{
+  await goto('#/trip/t1/prep');
+  await waitFor(() => q('#prep-template-btn'), { label: 'prep page' });
+  check(!!q('#prep-lists'), 'prep: page renders the lists container');
+  await click('#prep-template-btn');
+  await waitFor(() => q('[data-tpl="packing-tropical"]'), { label: 'template sheet' });
+  check(qa('[data-tpl]').length >= 6, 'prep: ready-made templates offered');
+  await click('[data-tpl="packing-tropical"]');
+  await waitFor(() => q('.check-item'), { label: 'checklist created from template' });
+  check(qa('.check-item').length >= 8, 'prep: template items created');
+  check([...fsdb.__store.keys()].some(k => k.startsWith('trips/t1/checklists/')), 'prep: checklist stored in Firestore');
+  const beforeToggle = qa('.check-item.is-done').length;
+  await click('.check-item .check-box');
+  await sleep(160);
+  check(qa('.check-item.is-done').length === beforeToggle + 1, 'prep: ticking an item marks it done');
+  const stored = [...fsdb.__store.entries()].find(([k]) => k.startsWith('trips/t1/checklists/'));
+  check((stored?.[1]?.items || []).some(i => i.done === true), 'prep: tick persisted to Firestore');
+
+  // add a custom item to the first list, then remove the last one again
+  const input = q('[data-add-input]');
+  input.value = 'พาวเวอร์แบงก์';
+  input.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await click('[data-act="add-item"]');
+  await waitFor(() => [...fsdb.__store.values()].some(c => (c?.items || []).some(i => i.text === 'พาวเวอร์แบงก์')), { timeout: 6000, label: 'custom item saved' });
+  check(text$().includes('พาวเวอร์แบงก์'), 'prep: custom item added to the list');
+  const beforeRemove = qa('.check-item').length;
+  await click('.check-item .icon-btn-danger');
+  await sleep(200);
+  check(qa('.check-item').length === beforeRemove - 1, 'prep: removing an item updates the list');
+}
+
+console.log('\n▶ v16 trip tools — ideas board (vote + add to plan)');
+{
+  await goto('#/trip/t1/ideas');
+  await waitFor(() => q('#idea-add-btn'), { label: 'ideas page' });
+  check(!!q('#idea-stats'), 'ideas: summary tiles');
+  await click('#idea-add-btn');
+  await waitFor(() => q('#idea-title'), { label: 'idea form' });
+  q('#idea-title').value = 'ทะเลสาบคาวากุจิ';
+  q('#idea-address').value = 'Kawaguchiko';
+  await click('#idea-save');
+  await waitFor(() => q('.idea-card'), { label: 'idea card' });
+  check(qa('.idea-card').length === 1, 'ideas: idea saved');
+  check(text$().includes('ทะเลสาบคาวากุจิ'), 'ideas: title rendered');
+
+  const votesBefore = q('.idea-card .vote-btn')?.textContent?.trim();
+  await click('.idea-card .vote-btn');
+  await sleep(160);
+  check(!!q('.idea-card'), 'ideas: voting re-renders the board');
+  check(typeof votesBefore === 'string', 'ideas: vote button shows a count');
+
+  await click('.idea-card [data-act="plan"]');
+  await waitFor(() => q('#atp-ok'), { label: 'add-to-plan sheet' });
+  check(!!q('#atp-date'), 'ideas: day picker offered');
+  await click('#atp-ok');
+  await waitFor(() => [...fsdb.__store.entries()].some(([k, v]) => k.includes('/itineraryItems/') && v?.title === 'ทะเลสาบคาวากุจิ'), { timeout: 6000, label: 'idea → itinerary item' });
+  check(true, 'ideas: “add to plan” created the itinerary item');
+  await sleep(160);
+  check(text$().includes('อยู่ในแผน') || text$().includes('In the plan'), 'ideas: card switches to “in the plan”');
+}
+
+console.log('\n▶ v16 trip tools — bookings + calendar export');
+{
+  await goto('#/trip/t1/bookings');
+  await waitFor(() => q('#booking-add-btn'), { label: 'bookings page' });
+  check(!!q('#booking-next'), 'bookings: “next booking” card');
+  await click('#booking-add-btn');
+  await waitFor(() => q('#bk-title'), { label: 'booking form' });
+  q('#bk-title').value = 'TG676 BKK→NRT';
+  q('#bk-confirm').value = 'ABC123';
+  q('#bk-start').value = '08:15';
+  q('#bk-end').value = '16:00';
+  await click('#bk-save');
+  await waitFor(() => q('.booking-card'), { label: 'booking card' });
+  check(qa('.booking-card').length === 1, 'bookings: reservation saved');
+  check(text$().includes('ABC123'), 'bookings: confirmation code shown');
+  check(!!q('[data-copy]'), 'bookings: copy-code button present');
+  check([...fsdb.__store.keys()].some(k => k.startsWith('trips/t1/reservations/')), 'bookings: stored in Firestore');
+  const errorsBeforeIcs = qa('.toast.toast-error').length;
+  await click('#booking-ics-btn');
+  await sleep(200);
+  check(qa('.toast.toast-error').length <= errorsBeforeIcs, 'bookings: .ics export produced no error toast');
+  check(qa('.toast').some(t => /ส่งออก|export/i.test(t.textContent || '')), 'bookings: .ics export reported success');
+}
+
+console.log('\n▶ v16 trip tools — dashboard widgets');
+{
+  await goto('#/trip/t1/dashboard');
+  await waitFor(() => q('#dash-tools .tool-tile'), { label: 'dashboard tool tiles' });
+  check(qa('#dash-tools .tool-tile').length === 3, 'dashboard: prep / ideas / bookings tiles');
+  check(!!q('#dash-tools a[href="#/trip/t1/prep"]'), 'dashboard: prep tile links to the page');
+}
+
+console.log('\n▶ v16 itinerary — route optimiser (จัดลำดับเส้นทาง)');
+{
+  // A fresh, deliberately zig-zagged day: hotel → far NE → E → N (backtracking).
+  const ZDAY = TRIP.endDate;
+  const zig = [
+    ['z1', '35.3905,138.9331'],              // hotel — kept as the day's first stop
+    ['z2', '35.4500,139.0000'],              // far north-east
+    ['z3', '35.3905,139.0000'],              // east
+    ['z4', '35.4500,138.9331'],              // north
+    ['zt', '35.4780,138.9700']               // timed anchor (kept in place)
+  ];
+  zig.forEach(([id, coords], i) => fsdb.__seed(`trips/t1/itineraryItems/${id}`, {
+    title: `จุดที่ ${i + 1}`, date: ZDAY, order: i, category: 'sightseeing', status: 'planned',
+    startAt: id === 'zt' ? new Date(`${ZDAY}T15:00:00+09:00`) : null,
+    address: '', coordinates: coords, description: '', createdAt: now
+  }));
+
+  await goto(`#/trip/t1/itinerary?date=${ZDAY}`);
+  await waitFor(() => q('#optimize-route-btn'), { label: 'optimise button' });
+  check(!!q('#optimize-route-btn'), 'itinerary: “optimise route” button present');
+  await click('#optimize-route-btn');
+  await waitFor(() => q('#route-apply'), { timeout: 8000, label: 'optimiser preview sheet' });
+  check(!!q('#route-apply'), 'itinerary: optimiser previews a shorter order');
+  const preview = q('#route-apply')?.closest('.bottom-sheet')?.textContent || '';
+  check(/km/.test(preview), 'itinerary: preview shows the distance saved');
+  check(/Google Maps/i.test(preview), 'itinerary: preview links the new order on Google Maps');
+  check(/จุดที่ 5/.test(preview), 'itinerary: the timed stop is part of the previewed route');
+
+  const before = fsdb.__dump('trips/t1/itineraryItems/z1')?.order;
+  await click('#route-apply');
+  await waitFor(() => {
+    const o = zig.map(([id]) => fsdb.__dump(`trips/t1/itineraryItems/${id}`)?.order);
+    return new Set(o).size === zig.length && o.join(',') !== zig.map((_, i) => i).join(',');
+  }, { timeout: 8000, label: 'reordered items' });
+  const after = zig.map(([id]) => fsdb.__dump(`trips/t1/itineraryItems/${id}`)?.order);
+  check(after.join(',') !== zig.map((_, i) => i).join(','), 'itinerary: applying rewrote the stored order');
+  check(fsdb.__dump('trips/t1/itineraryItems/z1')?.order === 0, 'itinerary: the day still starts at the hotel');
+  const ztOrder = fsdb.__dump('trips/t1/itineraryItems/zt')?.order;
+  const z4Order = fsdb.__dump('trips/t1/itineraryItems/z4')?.order;
+  check(typeof before === 'number' && typeof ztOrder === 'number', 'itinerary: order values are numbers again');
+  check(ztOrder === 4 || ztOrder > z4Order, 'itinerary: the timed stop keeps its slot at the end of the day');
+}
+
+console.log('\n▶ v16 exports page — calendar (.ics)');
+{
+  await goto('#/trip/t1/export');
+  await waitFor(() => q('#ics-all'), { label: 'exports page' });
+  check(!!q('#ics-all') && !!q('#ics-itinerary') && !!q('#ics-bookings'), 'exports: three .ics buttons');
+  const errsBefore = qa('.toast.toast-error').length;
+  await click('#ics-itinerary');
+  await waitFor(() => qa('.toast').some(t => /ส่งออก/.test(t.textContent || '')), { timeout: 6000, label: 'ics toast' });
+  check(qa('.toast.toast-error').length <= errsBefore, 'exports: itinerary .ics built without an error');
+  await click('#ics-all');
+  await sleep(500);
+  check(qa('.toast.toast-error').length <= errsBefore, 'exports: “everything” .ics exported cleanly');
+  check(qa('.toast').some(t => /ส่งออก \d+ กิจกรรม|Exported \d+ events/.test(t.textContent || '')), 'exports: “everything” reports how many events were written');
 }
 
 console.log('\n▶ delete the whole trip (UI)');

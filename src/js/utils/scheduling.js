@@ -35,19 +35,25 @@ export function recalculateSchedule(items, changedItemId, options = {}) {
     startIdx = idx;
   }
 
-  // Ensure startAt exists for first item
+  // Chain the schedule from the given anchor. A day is allowed to start with an
+  // untimed stop (“เที่ยวเช้าตามใจ”) — in that case there is nothing to chain
+  // from, so the stored times are kept instead of failing the whole reorder
+  // (this also keeps drag-and-drop + the route optimiser working on such days).
   for (let i = startIdx; i < result.length; i++) {
     const curr = result[i];
     if (i === 0) {
-      if (!curr.startAt) throw new Error('First item must have startAt');
+      if (!curr.startAt) continue; // nothing to anchor the day on
     } else {
       const prev = result[i-1];
-      const prevEnd = dayjs(prev.startAt).add(prev.durationMinutes || 0, 'minute');
-      const travel = prev.travelToNextMinutes || 0;
-      curr.startAt = prevEnd.add(travel, 'minute').toDate();
+      if (prev.startAt) {
+        const prevEnd = dayjs(prev.startAt).add(prev.durationMinutes || 0, 'minute');
+        const travel = prev.travelToNextMinutes || 0;
+        curr.startAt = prevEnd.add(travel, 'minute').toDate();
+      }
+      // else: chain broken by an untimed stop — keep this item's own time
     }
-    // Calculate endAt
-    curr.endAt = dayjs(curr.startAt).add(curr.durationMinutes || 0, 'minute').toDate();
+    // Calculate endAt for every stop that actually has a start time
+    if (curr.startAt) curr.endAt = dayjs(curr.startAt).add(curr.durationMinutes || 0, 'minute').toDate();
   }
 
   return result;

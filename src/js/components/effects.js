@@ -54,7 +54,7 @@ export function countUp(el, to, { duration = 700, formatter = (v) => String(Math
 }
 
 /* ---------------- Confetti burst ---------------- */
-const CONFETTI_COLORS = ['#8bb89a', '#f97316', '#8b5cf6', '#ec4899', '#06b6d4', '#fbbf24'];
+const CONFETTI_COLORS = ['#1d4ed8', '#3b82f6', '#ffc81e', '#f59e0b', '#0ea5e9', '#6366f1'];
 
 function confettiLayer() {
   let layer = document.getElementById('confetti-layer');

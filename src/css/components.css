@@ -52,7 +52,7 @@ svg.lucide, i[data-lucide] + svg { flex-shrink: 0; display: inline-block; vertic
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 4px;
-  background: var(--gradient-primary);
+  background: var(--gradient-duo);
   background-size: 200% 200%;
   animation: gradientPan 6s ease infinite;
 }
@@ -309,7 +309,7 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
   display: grid; place-items: center;
   box-shadow: 0 8px 24px color-mix(in srgb, var(--primary-raw) 42%, transparent), var(--shadow-lg);
   z-index: 35;
-  border: 2px solid rgba(255,255,255,0.35);
+  border: 2.5px solid color-mix(in srgb, var(--brand-yellow-raw) 88%, #fff);
   cursor: pointer;
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -644,85 +644,48 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 }
 .timeline-item:hover .timeline-dot { transform: scale(1.2); box-shadow: 0 0 0 6px var(--primary-light); }
 
-/* ---------------- Theme picker ---------------- */
-.theme-section-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-tertiary);
-  margin: 18px 0 10px;
-}
-.theme-section-title svg { width: 14px; height: 14px; color: var(--primary-strong); }
-[data-theme="dark"] .theme-section-title svg { color: var(--primary); }
-.theme-section-title::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-.theme-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-}
-@media (min-width: 480px) { .theme-grid { grid-template-columns: repeat(4, 1fr); } }
-.theme-option {
-  position: relative;
-  border-radius: var(--radius);
-  border: 2.5px solid transparent;
-  cursor: pointer;
-  transition: transform 0.25s cubic-bezier(0.16,1,0.3,1), box-shadow 0.25s ease, border-color 0.25s ease;
-  overflow: hidden;
+/* ---------------- Brand accents (True tone: blue + yellow) ---------------- */
+/* The palette picker was removed — the app is fixed to the brand colours, so
+   this block only holds the reusable brand bits (accent buttons, ribbons, …). */
+.brand-ribbon {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: var(--radius-full);
+  background: var(--gradient-duo); color: #fff;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.02em;
   box-shadow: var(--shadow-sm);
-  padding: 0;
-  aspect-ratio: 1.35;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  color: #fff;
-  min-width: 0;
 }
-.theme-option:hover { transform: translateY(-3px) scale(1.03); box-shadow: var(--shadow-md); }
-.theme-option:active { transform: scale(0.97); }
-.theme-option.active { border-color: var(--text); box-shadow: var(--shadow-lg); }
-.theme-option .theme-swatch-icon {
-  width: 30px; height: 30px;
-  border-radius: var(--radius-full);
-  background: rgba(255,255,255,0.22);
-  backdrop-filter: blur(4px);
+.brand-ribbon svg { width: 13px; height: 13px; }
+.brand-sun {
+  width: 34px; height: 34px; border-radius: var(--radius-full);
+  background: var(--gradient-sun); color: var(--on-accent);
   display: grid; place-items: center;
-  animation: iconPop 0.4s cubic-bezier(0.16,1,0.3,1) backwards;
+  box-shadow: var(--shadow-accent);
 }
-.theme-option .theme-swatch-icon svg { width: 16px; height: 16px; }
-.theme-option .theme-name {
-  background: rgba(255,255,255,0.92);
-  color: #333;
-  padding: 2px 9px;
-  border-radius: var(--radius-full);
-  font-size: 10px;
-  font-weight: 800;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 92%;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+.brand-sun svg { width: 18px; height: 18px; }
+.brand-underline {
+  position: relative;
 }
-.theme-option.active::after {
-  content: '';
-  position: absolute;
-  top: 6px; right: 6px;
-  width: 20px; height: 20px;
-  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232e7d4f' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center/12px no-repeat;
-  border-radius: var(--radius-full);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-  animation: popIn 0.3s cubic-bezier(0.16,1,0.3,1);
+.brand-underline::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -3px; height: 3px;
+  border-radius: 2px; background: var(--gradient-sun);
 }
+.btn-accent {
+  background: var(--gradient-sun);
+  color: var(--on-accent);
+  border-color: color-mix(in srgb, var(--brand-yellow-raw) 45%, transparent);
+  box-shadow: var(--shadow-accent);
+  font-weight: 700;
+}
+.btn-accent:hover:not(:disabled) { transform: translateY(-1.5px); box-shadow: 0 8px 22px color-mix(in srgb, var(--brand-yellow-raw) 48%, transparent); }
+.chip-accent {
+  background: var(--brand-yellow-tint);
+  border-color: var(--brand-yellow-line);
+  color: var(--brand-yellow-ink);
+}
+.chip-accent:hover { border-color: var(--brand-yellow-strong); color: var(--brand-yellow-ink); }
+[data-theme="dark"] .chip-accent { color: var(--brand-yellow-ink); }
+.text-brand-yellow { color: var(--brand-yellow-ink); }
+[data-theme="dark"] .text-brand-yellow { color: var(--brand-yellow); }
 
 /* Mode (light/dark/auto) option buttons */
 .mode-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -1188,7 +1151,7 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 
 /* --- shared scene parts --- */
 .ps-ground { stroke: color-mix(in srgb, var(--grad-1) 45%, var(--border)); stroke-width: 2; fill: none; }
-.ps-sun-slow { fill: color-mix(in srgb, var(--grad-1) 55%, #fff); animation: psPulse 6s ease-in-out infinite; }
+.ps-sun-slow { fill: var(--brand-yellow); animation: psPulse 6s ease-in-out infinite; }
 .ps-bob { animation: psBob 2.4s ease-in-out infinite; }
 .ps-head { fill: color-mix(in srgb, var(--grad-2) 45%, #fff); }
 .ps-body { fill: var(--primary-strong); }
@@ -1650,7 +1613,7 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
   width: 100%;
   transform: scaleX(0);
   transform-origin: 0 50%;
-  background: var(--gradient-primary, linear-gradient(90deg, #8bb89a, #6ea8fe));
+  background: var(--gradient-primary, linear-gradient(90deg, #1d4ed8, #3b82f6));
   opacity: 0;
   pointer-events: none;
   z-index: 9999;
@@ -2652,3 +2615,125 @@ html, body { max-width: 100%; overflow-x: clip; }
   padding: 8px 10px; border-radius: 12px;
   background: var(--bg-secondary); border: 1px solid var(--border);
 }
+
+/* --- prep: suitcase + checklist ticks --- */
+.ps-check { animation: psPop 2.8s ease-in-out infinite; transform-origin: center; }
+.ps-check circle { fill: none; stroke: var(--grad-2); stroke-width: 2; }
+.ps-check path { fill: none; stroke: var(--brand-yellow-strong); stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; }
+.ps-check-1 { transform-origin: 140px 30px; }
+.ps-check-2 { animation-delay: 0.4s; transform-origin: 170px 46px; }
+.ps-check-3 { animation-delay: 0.8s; transform-origin: 196px 26px; }
+
+/* --- ideas: lightbulb + vote bubble --- */
+.ps-bulb-glass { fill: var(--brand-yellow); }
+.ps-bulb-base { fill: var(--primary-strong); }
+.ps-bulb-filament { fill: none; stroke: var(--primary-strong); stroke-width: 2.4; stroke-linecap: round; }
+.ps-bulb-rays { stroke: var(--brand-yellow-strong); stroke-width: 2; stroke-linecap: round; animation: psPulse 2.6s ease-in-out infinite; }
+.ps-vote-body { fill: var(--grad-1); }
+.ps-vote-up { fill: none; stroke: #fff; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.ps-vote { animation: psBob 3s ease-in-out infinite 0.3s; transform-origin: center; }
+
+/* --- bookings: ticket + plane --- */
+.ps-ticket-body { fill: var(--grad-1); }
+.ps-ticket-line { stroke: rgba(255,255,255,0.45); stroke-width: 2; stroke-dasharray: 3 4; }
+.ps-ticket-code { stroke: rgba(255,255,255,0.85); stroke-width: 2.6; stroke-linecap: round; }
+.ps-plane-2 { animation: psPlane 13s linear infinite; }
+
+/* =========================================================
+   v16 — Trip tools: prep checklists • ideas board • bookings
+   ========================================================= */
+
+/* Progress bar (prep page + dashboard widget) */
+.tool-progress {
+  height: 10px; border-radius: 9999px; overflow: hidden;
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+}
+.tool-progress > span {
+  display: block; height: 100%; border-radius: 9999px;
+  transition: width 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Dashboard quick tiles */
+.tool-tile { display: block; }
+
+/* ---- Checklists ---- */
+.check-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.check-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--border-light);
+  transition: background 0.2s ease, opacity 0.2s ease;
+}
+.check-item:hover { background: var(--surface-3); }
+.check-item.is-done { opacity: 0.62; }
+.check-item.is-done .check-text { text-decoration: line-through; color: var(--text-tertiary); }
+.check-box {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 9px;
+  border: 2px solid color-mix(in srgb, var(--primary) 45%, var(--border));
+  background: var(--surface); color: #fff;
+  display: grid; place-items: center; cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+}
+.check-box:hover { transform: scale(1.06); border-color: var(--primary); }
+.check-item.is-done .check-box { background: var(--gradient-primary); border-color: transparent; }
+.check-text {
+  flex: 1 1 auto; min-width: 0; font-size: 13.5px; font-weight: 500;
+  cursor: text; overflow-wrap: anywhere;
+}
+.check-assignee {
+  flex: 0 0 auto; max-width: 132px; font-size: 11px; padding: 4px 6px;
+  border-radius: 9px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text-secondary);
+  min-height: 30px;
+}
+.add-item-row { display: flex; gap: 8px; align-items: center; }
+.add-item-row .input { min-height: 38px; }
+[data-theme="dark"] .check-item { background: var(--surface-2); }
+
+/* ---- Ideas board ---- */
+.idea-card { overflow: visible; }
+.vote-btn {
+  flex: 0 0 auto; width: 46px; min-height: 52px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  border-radius: 14px; border: 1.5px solid var(--border);
+  background: var(--surface-2); color: var(--text-secondary);
+  font-weight: 800; font-size: 13px; cursor: pointer;
+  transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+.vote-btn:hover { transform: translateY(-2px); border-color: var(--brand-yellow-strong); }
+.vote-btn.is-voted {
+  background: var(--gradient-sun); color: var(--on-accent);
+  border-color: color-mix(in srgb, var(--brand-yellow-raw) 45%, transparent);
+  box-shadow: var(--shadow-accent);
+}
+.vote-pill {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 9px; border-radius: 9999px;
+  background: var(--brand-yellow-tint); border: 1px solid var(--brand-yellow-line);
+  color: var(--brand-yellow-ink); font-size: 11px; font-weight: 800;
+}
+
+/* ---- Bookings ---- */
+.booking-card { overflow: visible; }
+.booking-card .chip { cursor: pointer; }
+
+/* ---- Weather ---- */
+.weather-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+.weather-strip::-webkit-scrollbar { display: none; }
+.weather-chip {
+  flex: 0 0 auto; display: inline-flex; flex-direction: column; align-items: center; gap: 2px;
+  min-width: 62px; padding: 8px 10px; border-radius: 14px;
+  border: 1px solid var(--border); background: var(--bg-secondary);
+  color: var(--text-secondary); font-weight: 700;
+}
+.weather-chip-day { font-size: 10px; font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase; }
+.weather-chip svg { width: 18px; height: 18px; }
+.weather-chip-temp { font-size: 13px; font-variant-numeric: tabular-nums; }
+.weather-chip-temp small { font-size: 10px; opacity: 0.7; font-weight: 600; }
+.weather-chip-rain { display: inline-flex; align-items: center; gap: 2px; font-size: 9.5px; }
+.weather-chip--mini {
+  flex-direction: row; min-width: 0; padding: 2px 8px; gap: 4px;
+  border-radius: 9999px; font-size: 10.5px;
+}
+.weather-chip--mini[hidden] { display: none; }
+.weather-chip--mini svg { width: 13px; height: 13px; }

@@ -152,6 +152,45 @@ const SCENES = {
       <circle class="ps-lock" cx="76" cy="58" r="3.4"/>
     </g>`,
 
+  /* ---------------- Prep: suitcase + checklist ticks ---------------- */
+  prep: (kind) => `
+    ${sun()}${fujiBackdrop(kind, { opacity: 0.22, y: 6 })}${ground()}
+    <g class="ps-suitcase ps-bob">
+      <rect x="44" y="40" width="58" height="36" rx="8"/>
+      <path class="ps-handle" d="M63 40 v -6 a 6 6 0 0 1 6 -6 h 8 a 6 6 0 0 1 6 6 v 6"/>
+      <path class="ps-strap" d="M68 42 v 32"/>
+      <circle class="ps-lock" cx="73" cy="58" r="3.4"/>
+    </g>
+    <g class="ps-check ps-check-1"><circle cx="140" cy="30" r="10"/><path d="M135 30 l 3.4 3.6 l 7 -8"/></g>
+    <g class="ps-check ps-check-2"><circle cx="170" cy="46" r="10"/><path d="M165 46 l 3.4 3.6 l 7 -8"/></g>
+    <g class="ps-check ps-check-3"><circle cx="196" cy="26" r="9"/><path d="M191.5 26 l 3 3.2 l 6.4 -7"/></g>`,
+
+  /* ---------------- Ideas: lightbulb + upvote bubble ---------------- */
+  ideas: (kind) => `
+    ${sun()}${fujiBackdrop(kind, { opacity: 0.25, y: 5 })}${ground()}
+    <g class="ps-bulb ps-bob">
+      <circle class="ps-bulb-glass" cx="86" cy="36" r="16"/>
+      <path class="ps-bulb-base" d="M79 52 h 14 v 6 h -14 z"/>
+      <path class="ps-bulb-filament" d="M78 38 q 8 -10 16 0"/>
+      <path class="ps-bulb-rays" d="M86 10 v -6 M62 22 l -5 -4 M110 22 l 5 -4"/>
+    </g>
+    <g class="ps-vote">
+      <path class="ps-vote-body" d="M138 24 h 40 a 8 8 0 0 1 8 8 v 18 a 8 8 0 0 1 -8 8 h -16 l -12 10 v -10 h -12 a 8 8 0 0 1 -8 -8 v -18 a 8 8 0 0 1 8 -8 z"/>
+      <path class="ps-vote-up" d="M150 42 l 7 -9 l 7 9 M157 33 v 14"/>
+    </g>
+    <g class="ps-pin ps-pin-b"><path d="M196 10 c 7 0 12 5 12 12 c 0 8 -12 22 -12 22 s -12 -14 -12 -22 c 0 -7 5 -12 12 -12 z"/><circle cx="196" cy="22" r="4.2" fill="#fff"/></g>`,
+
+  /* ---------------- Bookings: ticket + plane ---------------- */
+  bookings: (kind) => `
+    ${sun()}${fujiBackdrop(kind, { opacity: 0.22, y: 6 })}${ground()}
+    <g class="ps-plane ps-plane-2"><path d="M0 0 l 26 8 l -26 8 l 5 -8 z"/><path class="ps-plane-wing" d="M10 8 l 8 8 l 4 -8 z"/></g>
+    <path class="ps-cloud" d="M112 24 q 6 -8 14 -2 q 6 -4 10 2 z"/>
+    <g class="ps-ticket ps-bob">
+      <path class="ps-ticket-body" d="M34 40 h 88 a 10 10 0 0 1 10 10 v 3 a 7 7 0 0 0 0 12 v 3 a 10 10 0 0 1 -10 10 h -88 a 10 10 0 0 1 -10 -10 v -3 a 7 7 0 0 0 0 -12 v -3 a 10 10 0 0 1 10 -10 z"/>
+      <path class="ps-ticket-line" d="M96 42 v 36"/>
+      <path class="ps-ticket-code" d="M44 52 h 40 M44 62 h 26"/>
+    </g>`,
+
   /* ---------------- Map / places ---------------- */
   map: (kind) => `
     ${sun()}${fujiBackdrop(kind, { opacity: 0.5, y: 2, scale: 0.9 })}${ground()}

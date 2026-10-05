@@ -43,7 +43,7 @@
   "tripCurrencies": ["USD", "THB"],
   "currencyRates": { "USD": 36.5, "THB": 0.24 },
   "coverImage": "https://...",
-  "themeColor": "#8b5cf6",
+  "themeColor": "#1d4ed8",
   "status": "active",
   "memberUids": ["uid1","uid2"],
   "budgetTotal": 1000000,
@@ -66,6 +66,66 @@
   base rate → `currencyRates[code]` → median `thbRate` snapshot on the trip's expenses → browser cache.
 - `cards` (v13): the managed credit-card list every member picks from in the expense form
   (add/edit/delete in Settings → cards), so card names can't be free-typed.
+- `themeColor` (legacy): written by older versions. v16 dropped the colour-theme picker, so the app
+  ignores this field (and removes `data-color` / `fuji_color_theme` on boot) and always paints the
+  fixed blue + yellow brand palette. Light / Dark / Auto still live in `fuji_theme` (localStorage).
+
+### v16 trip-tool collections
+
+```json
+// trips/{tripId}/checklists/{listId}
+{
+  "title": "ของที่ต้องเตรียม",
+  "kind": "packing",                       // packing | todo
+  "icon": "luggage",
+  "color": "#1d4ed8",
+  "order": 0,
+  "items": [
+    { "id": "ab12", "text": "ครีมกันแดด", "done": true, "assignee": "uid1", "doneBy": "uid1", "doneAt": "serverTimestamp" }
+  ],
+  "createdBy": "uid",
+  "updatedBy": "uid"
+}
+
+// trips/{tripId}/ideas/{ideaId}
+{
+  "title": "ทะเลสาบคาวากุจิ",
+  "description": "ไปดูฟูจิยามเช้า",
+  "address": "Kawaguchiko, Yamanashi",
+  "coordinates": { "lat": 35.5171, "lng": 138.7519 },
+  "imageUrl": "",
+  "link": "",
+  "status": "idea",                        // idea | planned | in_plan | dropped
+  "votes": { "uid1": true, "uid2": true }, // legacy arrays are still read
+  "estimatedCostMinor": 2500,
+  "currency": "JPY",
+  "createdBy": "uid",
+  "createdAt": "serverTimestamp"
+}
+
+// trips/{tripId}/reservations/{reservationId}
+{
+  "type": "flight",                        // flight|train|bus|hotel|restaurant|car|activity|other
+  "title": "TG676 BKK→NRT",
+  "provider": "Thai Airways",
+  "confirmation": "ABC123",
+  "date": "2027-11-10",
+  "startTime": "08:15",
+  "endTime": "16:00",
+  "checkIn": "", "checkOut": "",
+  "address": "Narita Airport",
+  "coordinates": { "lat": 35.7720, "lng": 140.3929 },
+  "seat": "12A",
+  "costMinor": 0, "currency": "THB",
+  "notes": "",
+  "url": "",
+  "createdBy": "uid",
+  "createdAt": "serverTimestamp"
+}
+```
+
+The three collections are cleaned up with the trip (`deleteTrip` walks every sub-collection), and
+every one of them is exported as a calendar event by the `.ics` writer in `src/js/utils/ics.js`.
 
 ### trips/{tripId}/members/{memberId}
 ```json

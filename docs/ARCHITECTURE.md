@@ -6,7 +6,10 @@ Fuji Trip Planner is a static SPA hosted on GitHub Pages, backed entirely by Fir
 ## Frontend
 - **SPA Router**: Hash-based, lightweight, no library. Routes defined in `src/js/app.js` + `router.js`.
 - **State**: Current user from Firebase Auth, current trip from localStorage + Firestore doc.
-- **UI**: Tailwind CDN + custom tokens.css. Bento-grid for dashboard, card-based elsewhere. Lucide icons.
+- **UI**: Tailwind CDN + custom `tokens.css` (one fixed “True tone” palette: blue `#1d4ed8` →
+  `#3b82f6`, accent yellow `#ffc81e`; every shade derived with `color-mix()`). Bento-grid for the
+  dashboard, card-based elsewhere. Lucide icons. Only Light / Dark / Auto is user-selectable —
+  the old colour-theme (ชุดสี) presets and the per-trip colour were removed in v16.
 - **Lazy Loading**: Leaflet, html2canvas, jsPDF, SheetJS loaded via dynamic import only when needed.
 - **Offline**: Firestore IndexedDB persistence enabled, but no PWA manifest/SW.
 
@@ -33,9 +36,23 @@ Fuji Trip Planner is a static SPA hosted on GitHub Pages, backed entirely by Fir
 
 ## Smart Scheduling Flow
 1. User drags item or changes duration.
-2. Optimistic UI update via `recalculateSchedule` client-side.
+2. Optimistic UI update via `recalculateSchedule` client-side. A day that starts with an untimed
+   stop is allowed (the chain simply keeps the times that are already stored instead of failing).
 3. Call `recalculateItinerarySchedule` function for server-side authoritative recalc + batch write.
 4. Detect overlaps, show warning, keep version for conflict prevention.
+
+### Route optimiser (v16)
+`src/js/utils/route.js` — `haversineKm()` / `coordOf()` normalise both `{lat,lng}` and `"lat,lng"`
+strings; `optimizeDayOrder()` keeps timed stops (`startAt`) as anchors and re-orders the untimed
+stops per day segment with a nearest-neighbour pass, returning the before/after km plus a
+never-worse guarantee (it returns the original order when nothing improves). `logger → app.js`
+previews the result and writes it through `reorderItinerary()`.
+
+### Trip-tool modules (v16)
+`src/js/prep`, `src/js/ideas`, `src/js/reservations` are thin Firestore CRUD layers; the pure logic
+(templates, voting, warnings, `.ics`/`weather`/`route` maths) lives in `src/js/utils/*.js` so the
+Node unit suites can import it without Firebase. `utils/weather.js` calls Open-Meteo (3 h cache,
+never throws) and `utils/ics.js` writes RFC-5545 calendars (escaping + 75-octet folding).
 
 ## Settlement Flow
 - `calculateNetBalances` sums paid - owed.

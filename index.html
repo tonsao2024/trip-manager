@@ -5,27 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Fuji Trip Planner — Plan • Split • Settle</title>
   <meta name="description" content="Modern minimal trip planner with group expense splitting">
-  <meta name="theme-color" id="meta-theme-color" content="#8bb89a">
+  <meta name="theme-color" id="meta-theme-color" content="#1d4ed8">
   <!-- No PWA -->
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       darkMode: ['class', '[data-theme="dark"]'],
-      theme: { extend: { fontFamily: { display: ['Fraunces','serif'], sans: ['Plus Jakarta Sans','Noto Sans Thai','sans-serif'] } } }
+      theme: { extend: { fontFamily: { display: ['Plus Jakarta Sans','Noto Sans Thai','sans-serif'], sans: ['Plus Jakarta Sans','Noto Sans Thai','sans-serif'] } } }
     }
   </script>
 
   <!-- Design System v3 (cache-busted) -->
-  <link rel="stylesheet" href="./src/css/tokens.css?v=15">
-  <link rel="stylesheet" href="./src/css/components.css?v=15">
-  <link rel="stylesheet" href="./src/css/animations.css?v=15">
+  <link rel="stylesheet" href="./src/css/tokens.css?v=16">
+  <link rel="stylesheet" href="./src/css/components.css?v=16">
+  <link rel="stylesheet" href="./src/css/animations.css?v=16">
 
   <!-- Lucide Icons -->
   <script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
@@ -98,15 +98,17 @@
       <!-- Logo = home (trip list) -->
       <a href="#/trips" id="logo-link" class="flex items-center gap-3 group" title="หน้าแรก — รายการทริป" aria-label="Fuji Planner Home">
         <span class="logo-badge w-10 h-10 rounded-full grid place-items-center shadow-sm animate-float" style="background: var(--gradient-primary); border: 2px solid rgba(255,255,255,0.85);">
-          <svg viewBox="0 0 100 70" width="22" height="16" aria-hidden="true">
-            <path d="M5 65 L50 6 L95 65 Z" fill="rgba(255,255,255,0.95)"/>
-            <path d="M38 24 L50 6 L62 24 L56 28 L50 22 L44 28 Z" fill="rgba(255,255,255,0.55)"/>
-            <path d="M38 24 L50 6 L62 24 L56 28 L50 22 L44 28 Z" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2"/>
+          <svg viewBox="0 0 100 100" width="26" height="26" aria-hidden="true">
+            <circle cx="72" cy="28" r="15" fill="#ffc81e"/>
+            <path d="M4 82 L46 18 L88 82 Z" fill="rgba(255,255,255,0.96)"/>
+            <path d="M34 36 L46 18 L58 36 L52 41 L46 34 L40 41 Z" fill="rgba(29,78,216,0.35)"/>
+            <path d="M34 36 L46 18 L58 36 L52 41 L46 34 L40 41 Z" fill="none" stroke="rgba(29,78,216,0.55)" stroke-width="2.4"/>
+            <rect x="4" y="84" width="92" height="6" rx="3" fill="#ffc81e"/>
           </svg>
         </span>
         <span>
           <span class="block font-bold text-[16px] leading-none tracking-tight" style="font-family: var(--font-display);">Fuji Planner</span>
-          <span id="header-subtitle" class="block text-[11px] text-[var(--text-tertiary)] mt-0.5 font-medium">plan • split • settle</span>
+          <span id="header-subtitle" class="block text-[11px] text-[var(--text-tertiary)] mt-0.5 font-medium">plan • pack • split • settle</span>
         </span>
       </a>
 
@@ -200,6 +202,6 @@
   </script>
 
   <!-- App (cache-busted) -->
-  <script type="module" src="./src/js/app.js?v=15"></script>
+  <script type="module" src="./src/js/app.js?v=16"></script>
 </body>
 </html>

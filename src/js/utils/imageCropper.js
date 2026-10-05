@@ -170,7 +170,7 @@ export class ImageCropper {
     // Draw handles
     const handles = this.getHandles();
     ctx.fillStyle = '#fff';
-    ctx.strokeStyle = '#8bb89a';
+    ctx.strokeStyle = '#1d4ed8';
     ctx.lineWidth = 2;
     handles.forEach(h => {
       ctx.beginPath();

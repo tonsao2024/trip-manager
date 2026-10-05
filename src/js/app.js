@@ -64,6 +64,22 @@ import { moodFaceHtml, budgetMood, balanceMood, estimateMood } from './component
 import { schematicMap, parseLatLng } from './exports/itineraryMap.js';
 import { listComments, addComment, deleteComment, commentsByExpense, commentsPending } from './comments/index.js';
 import { logActivity, listActivity, activityLabel, activityIcon, lastEditorText, deleteActivityEntries } from './utils/activity.js';
+import {
+  CHECKLIST_TEMPLATES, checklistProgress, checklistsProgress, itemsFromTemplate, mergeTemplateItems,
+  sortChecklistItems, listChecklists, createChecklist, updateChecklist, deleteChecklist, saveChecklistItems
+} from './prep/index.js';
+import {
+  IDEA_STATUSES, ideaStatusDef, listIdeas, createIdea, updateIdea, deleteIdea, voteIdea,
+  voteInfo, hasVoted, voteCount, sortIdeas, voterNames, ideasBudget, trendingIdeas, toggleVoteMap
+} from './ideas/index.js';
+import {
+  RESERVATION_TYPES, reservationTypeDef, listReservations, createReservation, updateReservation,
+  deleteReservation, groupReservationsByDate, upcomingReservations, routeLabel,
+  reservationToItineraryPayload, durationBetween, reservationWarnings
+} from './reservations/index.js';
+import { fetchDailyForecast, forecastForDates, datesBetween, weatherTip, weatherTone, isForecastRelevant } from './utils/weather.js';
+import { buildIcs, downloadIcs, itineraryToEvents, reservationsToEvents } from './utils/ics.js';
+import { optimizeDayOrder, dayDirectionsUrl, travelTimeLabel, hasCoords, coordOf } from './utils/route.js';
 import { t, setLang, getLang } from './utils/i18n.js';
 
 const appEl = document.getElementById('app');
@@ -458,28 +474,18 @@ let currentUser = null;
 let currentTripId = localStorage.getItem('fuji_current_trip') || null;
 let currentTrip = null;
 
-// --- Themes v3 — pastel collection + gradient collection ---
-const themes = [
-  // Pastel (muted, cohesive)
-  { id: 'sage', name: 'Sage', type: 'pastel', icon: 'leaf', colors: ['#8bb89a', '#a8c5b5'], desc: 'เขียวพาสเทล' },
-  { id: 'fuji', name: 'Fuji Mist', type: 'pastel', icon: 'mountain-snow', colors: ['#8aa89a', '#b5c5b5'], desc: 'ฟูจิหมอก' },
-  { id: 'sakura', name: 'Sakura Dust', type: 'pastel', icon: 'flower', colors: ['#b89aa0', '#c5a8a0'], desc: 'ซากุระฝุ่น' },
-  { id: 'ocean', name: 'Ocean Mist', type: 'pastel', icon: 'waves', colors: ['#8aa8b5', '#a0b5c5'], desc: 'มหาสมุทร' },
-  { id: 'sunset', name: 'Sand', type: 'pastel', icon: 'sun', colors: ['#b5a08a', '#c5b5a0'], desc: 'ทราย' },
-  { id: 'lavender', name: 'Fog', type: 'pastel', icon: 'cloud-fog', colors: ['#9a9ab5', '#b5b5c5'], desc: 'หมอกม่วง' },
-  { id: 'forest', name: 'Forest', type: 'pastel', icon: 'trees', colors: ['#6b8f79', '#8bb89a'], desc: 'ป่าเข้ม' },
-  { id: 'dusk', name: 'Dusk', type: 'pastel', icon: 'sunset', colors: ['#8a7a9a', '#b5a0c5'], desc: 'ยามเย็น' },
-  { id: 'clay', name: 'Clay', type: 'pastel', icon: 'layers', colors: ['#b58a7a', '#d4b5a0'], desc: 'ดินเผา' },
-  // Gradient (modern & vivid)
-  { id: 'aurora', name: 'Aurora', type: 'gradient', icon: 'sparkles', colors: ['#14b8a6', '#8b5cf6'], desc: 'แสงเหนือ' },
-  { id: 'sunburst', name: 'Sunburst', type: 'gradient', icon: 'sunrise', colors: ['#f97316', '#ec4899'], desc: 'พระอาทิตย์ขึ้น' },
-  { id: 'lagoon', name: 'Lagoon', type: 'gradient', icon: 'droplets', colors: ['#06b6d4', '#3b82f6'], desc: 'ทะเลสาบ' },
-  { id: 'berry', name: 'Berry', type: 'gradient', icon: 'heart', colors: ['#ec4899', '#a855f7'], desc: 'เบอร์รี่' },
-  { id: 'matcha', name: 'Matcha', type: 'gradient', icon: 'sprout', colors: ['#84cc16', '#22c55e'], desc: 'มัทฉะ' },
-  { id: 'midnight', name: 'Midnight', type: 'gradient', icon: 'moon', colors: ['#6366f1', '#1e3a8a'], desc: 'เที่ยงคืน' },
-  { id: 'peach', name: 'Peach', type: 'gradient', icon: 'flame', colors: ['#fbbf24', '#fb7185'], desc: 'พีช' },
-  { id: 'grape', name: 'Grape', type: 'gradient', icon: 'gem', colors: ['#8b5cf6', '#d946ef'], desc: 'องุ่น' },
-];
+// --- Brand (v16) — TRUE TONE: blue + yellow, one fixed palette -----------
+// The old "ชุดสี" picker (9 pastel + 8 gradient presets) was removed on purpose:
+// the app now always uses the brand colours below, and only light / dark / auto
+// remain selectable. `data-color` is no longer written to <html>.
+const BRAND = Object.freeze({
+  name: 'True tone',
+  blue: '#1d4ed8',
+  blueLight: '#3b82f6',
+  yellow: '#ffc81e',
+  navy: '#17203a'
+});
+const BRAND_PRIMARY = BRAND.blue;
 
 const MODE_ICONS = { light: 'sun', dark: 'moon', auto: 'monitor' };
 const MODE_LABELS = { light: 'สว่าง', dark: 'มืด', auto: 'อัตโนมัติ' };
@@ -500,7 +506,7 @@ function updateMetaThemeColor() {
   const meta = document.getElementById('meta-theme-color');
   if (!meta) return;
   const raw = getComputedStyle(document.documentElement).getPropertyValue('--primary-raw').trim();
-  meta.setAttribute('content', raw || '#8bb89a');
+  meta.setAttribute('content', raw || BRAND_PRIMARY);
 }
 function updateModeIcons() {
   const mode = getStoredMode();
@@ -538,15 +544,11 @@ try {
   });
 } catch {}
 
-function applyTheme(colorId) {
-  document.documentElement.setAttribute('data-color', colorId);
-  localStorage.setItem('fuji_color_theme', colorId);
-  updateMetaThemeColor();
-}
-
 function initTheme() {
-  const savedColor = localStorage.getItem('fuji_color_theme') || 'sage';
-  document.documentElement.setAttribute('data-color', themes.some(t => t.id === savedColor) ? savedColor : 'sage');
+  // Single fixed brand palette — make sure no legacy data-color from an older
+  // version keeps an old (green/pink/…) theme alive after the upgrade.
+  document.documentElement.removeAttribute('data-color');
+  localStorage.removeItem('fuji_color_theme');
   document.documentElement.setAttribute('data-theme', resolveMode(getStoredMode()));
   updateMetaThemeColor();
   // Defer icon updates until DOM/lucide ready
@@ -583,6 +585,9 @@ function renderDesktopNav() {
     { label: getLang() === 'th' ? 'ทริปทั้งหมด' : 'All Trips', path: '#/trips', icon: 'compass', exact: true },
     { label: t('dashboard'), path: `${base}/dashboard`, icon: 'layout-dashboard' },
     { label: t('itinerary'), path: `${base}/itinerary`, icon: 'map-pinned' },
+    { label: t('ideas'), path: `${base}/ideas`, icon: 'lightbulb' },
+    { label: t('bookings'), path: `${base}/bookings`, icon: 'ticket' },
+    { label: t('prep'), path: `${base}/prep`, icon: 'clipboard-check' },
     { label: t('expenses'), path: `${base}/expenses`, icon: 'wallet' },
     { label: t('settlement'), path: `${base}/settlement`, icon: 'hand-coins' },
     { label: t('members'), path: `${base}/members`, icon: 'users' },
@@ -645,7 +650,6 @@ function addHeaderControls() {
   controlsDiv.innerHTML = `
     <button id="header-lang-btn" class="btn btn-ghost w-9 h-9 text-xs font-extrabold" style="min-height:36px;padding:0;" title="${t('language')}">${getLang() === 'th' ? 'EN' : 'TH'}</button>
     <button id="header-mode-btn" class="btn btn-ghost btn-icon w-9 h-9" title="Light / Dark / Auto">${icon('sun', 'w-[17px] h-[17px]')}</button>
-    <button id="header-theme-btn" class="btn btn-ghost btn-icon w-9 h-9" title="${t('theme')}">${icon('palette', 'w-[17px] h-[17px]')}</button>
   `;
 
   const referenceNode = rightGroup.querySelector('#refresh-btn');
@@ -664,7 +668,6 @@ function addHeaderControls() {
   };
 
   document.getElementById('header-mode-btn').onclick = cycleMode;
-  document.getElementById('header-theme-btn').onclick = showThemePicker;
 
   updateModeIcons();
   queueIcons();
@@ -766,7 +769,7 @@ function openUserSheet(user) {
       </div>
       <div class="grid grid-cols-2 gap-2">
         <button id="lang-toggle" class="btn btn-secondary btn-sm">${icon('languages', 'w-4 h-4')} ${getLang() === 'th' ? 'English' : 'ไทย'}</button>
-        <button id="theme-picker-btn" class="btn btn-secondary btn-sm">${icon('palette', 'w-4 h-4')} ${t('theme')}</button>
+        <button id="appearance-btn" class="btn btn-secondary btn-sm">${icon('sun-moon', 'w-4 h-4')} ${t('appearance')}</button>
       </div>
       <div class="grid grid-cols-2 gap-2">
         <button id="toggle-dark-sheet" class="btn btn-secondary btn-sm" data-mode-current></button>
@@ -793,9 +796,9 @@ function openUserSheet(user) {
     sheet.close();
     setTimeout(() => router.handle(), 100);
   });
-  document.getElementById('theme-picker-btn')?.addEventListener('click', () => {
+  document.getElementById('appearance-btn')?.addEventListener('click', () => {
     sheet.close();
-    setTimeout(() => showThemePicker(), 220);
+    setTimeout(() => showAppearanceSheet(), 220);
   });
   document.getElementById('toggle-dark-sheet')?.addEventListener('click', () => {
     toggleDark();
@@ -1043,34 +1046,29 @@ if (isFirebaseConfigured && !currentUser) {
   }
 }
 
-function themeSwatchHtml(th, current) {
-  return `
-    <button class="theme-option ${current === th.id ? 'active' : ''}" data-theme="${th.id}"
-      style="background: linear-gradient(135deg, ${th.colors[0]}, ${th.colors[1]});" title="${th.name} — ${th.desc || ''}">
-      <span class="theme-swatch-icon">${icon(th.icon, 'w-4 h-4')}</span>
-      <span class="theme-name">${th.name}</span>
-    </button>`;
-}
-
-function showThemePicker() {
-  const current = localStorage.getItem('fuji_color_theme') || 'sage';
+/**
+ * Appearance sheet — light / dark / auto only.
+ * (The colour-set picker was removed: the app is fixed to the True-tone brand.)
+ */
+function showAppearanceSheet() {
   const mode = getStoredMode();
-  const pastels = themes.filter(th => th.type !== 'gradient');
-  const gradients = themes.filter(th => th.type === 'gradient');
   const sheet = showBottomSheet(`
     <div class="flex items-center gap-3 mb-1">
-      <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('palette', 'w-5 h-5')}</div>
+      <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('sun-moon', 'w-5 h-5')}</div>
       <div>
-        <h3 class="font-bold text-lg leading-tight" style="font-family: var(--font-display);">${t('theme')}</h3>
-        <p class="text-xs text-[var(--text-secondary)]">พาสเทล + gradient • สว่าง/มืด/อัตโนมัติ</p>
+        <h3 class="font-bold text-lg leading-tight" style="font-family: var(--font-display);">${t('appearance')}</h3>
+        <p class="text-xs text-[var(--text-secondary)]">${t('brandLocked')}</p>
       </div>
     </div>
 
-    <div class="theme-section-title">${icon('leaf', 'w-3.5 h-3.5')} Pastel</div>
-    <div class="theme-grid">${pastels.map(th => themeSwatchHtml(th, current)).join('')}</div>
-
-    <div class="theme-section-title">${icon('sparkles', 'w-3.5 h-3.5')} Gradient</div>
-    <div class="theme-grid">${gradients.map(th => themeSwatchHtml(th, current)).join('')}</div>
+    <div class="card p-3 mt-3 flex items-center gap-3" style="background:var(--surface-2);">
+      <span class="brand-sun">${icon('sun', 'w-4 h-4')}</span>
+      <div class="flex-1 min-w-0">
+        <p class="text-xs font-bold">${getLang() === 'th' ? 'ชุดสีของแอป' : 'App brand colours'}</p>
+        <p class="text-[11px] text-[var(--text-secondary)]">${getLang() === 'th' ? 'น้ำเงิน–เหลือง (True tone) ใช้เหมือนกันทุกหน้า' : 'Blue + yellow (True tone), the same on every screen'}</p>
+      </div>
+      <span class="flex gap-1"><span style="width:18px;height:18px;border-radius:9999px;background:${BRAND.blue};display:inline-block;"></span><span style="width:18px;height:18px;border-radius:9999px;background:${BRAND.yellow};display:inline-block;"></span></span>
+    </div>
 
     <div class="theme-section-title">${icon('contrast', 'w-3.5 h-3.5')} ${getLang() === 'th' ? 'โหมดการแสดงผล' : 'Appearance'}</div>
     <div class="mode-grid">
@@ -1084,16 +1082,6 @@ function showThemePicker() {
   updateModeIcons();
   queueIcons();
 
-  sheet.sheet.querySelectorAll('.theme-option').forEach(btn => {
-    btn.addEventListener('click', () => {
-      applyTheme(btn.dataset.theme);
-      sheet.sheet.querySelectorAll('.theme-option').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const th = themes.find(x => x.id === btn.dataset.theme);
-      toast.success(th ? `${th.name} • ${th.desc || ''}` : btn.dataset.theme);
-      renderDesktopNav();
-    });
-  });
   sheet.sheet.querySelectorAll('.mode-option').forEach(btn => {
     btn.addEventListener('click', () => {
       applyMode(btn.dataset.mode, { silent: true });
@@ -1116,6 +1104,9 @@ const routes = [
   { path: '/trip/:tripId/expenses', handler: renderExpenses },
   { path: '/trip/:tripId/expenses/add', handler: renderExpenseAdd },
   { path: '/trip/:tripId/settlement', handler: renderSettlement },
+  { path: '/trip/:tripId/prep', handler: renderPrep },
+  { path: '/trip/:tripId/ideas', handler: renderIdeas },
+  { path: '/trip/:tripId/bookings', handler: renderBookings },
   { path: '/trip/:tripId/members', handler: renderMembers },
   { path: '/trip/:tripId/documents', handler: renderDocuments },
   { path: '/trip/:tripId/import', handler: renderImportExport },
@@ -1289,7 +1280,6 @@ function renderLogin() {
           <p class="text-sm text-[var(--text-secondary)] mt-2">${t('tagline')}</p>
           <div class="flex justify-center gap-2 mt-4 flex-wrap">
             <button id="login-lang" class="chip text-xs">${icon('languages', 'w-3.5 h-3.5')} ${lang === 'th' ? 'ไทย — Switch to EN' : 'EN — เปลี่ยนเป็นไทย'}</button>
-            <button id="login-theme" class="chip text-xs">${icon('palette', 'w-3.5 h-3.5')} ${t('theme')}</button>
             <button id="login-dark" class="chip text-xs" data-mode-current></button>
           </div>
         </div>
@@ -1334,7 +1324,6 @@ function renderLogin() {
     renderLogin();
     toast.success(newLang === 'th' ? 'ภาษาไทย' : 'English');
   };
-  document.getElementById('login-theme').onclick = showThemePicker;
   document.getElementById('login-dark').onclick = cycleMode;
 
   // ---- Google account (recommended for members, works on the free plan) ----
@@ -1421,15 +1410,6 @@ function renderLogin() {
 /* ================================================================== *
  * Trips — list, create, edit (dates/details), duplicate, delete
  * ================================================================== */
-
-const TRIP_THEME_COLORS = [
-  { color: '#8bb89a', name: 'Sage' }, { color: '#8aa89a', name: 'Fuji' },
-  { color: '#a8c5b5', name: 'Moss' }, { color: '#b89aa0', name: 'Sakura' },
-  { color: '#d4b5a0', name: 'Sand' }, { color: '#8aa8b5', name: 'Ocean' },
-  { color: '#9a9ab5', name: 'Lavender' }, { color: '#6b8f79', name: 'Forest' },
-  { color: '#14b8a6', name: 'Aurora' }, { color: '#f97316', name: 'Sunburst' },
-  { color: '#8b5cf6', name: 'Grape' }, { color: '#ec4899', name: 'Berry' },
-];
 
 const TRIP_TIMEZONES = [
   'Asia/Bangkok', 'Asia/Tokyo', 'Asia/Seoul', 'Asia/Singapore', 'Asia/Hong_Kong',
@@ -1543,20 +1523,6 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
           </div>
         </div>
 
-        <div class="input-group">
-          <label class="input-label text-[12px]">${icon('palette', 'w-3.5 h-3.5')} ${t('themeColor')}</label>
-          <div class="grid grid-cols-6 gap-1.5 p-2 rounded-xl" style="background: var(--bg-secondary); border: 1px solid var(--border);">
-            ${TRIP_THEME_COLORS.map(c =>
-              `<button type="button" data-color="${c.color}" title="${c.name}" class="w-full aspect-square rounded-full border-2 shadow-sm hover:scale-110 transition-transform" style="background:${c.color};border-color:rgba(255,255,255,0.85);"></button>`
-            ).join('')}
-          </div>
-          <div class="flex gap-2 mt-2 items-center">
-            <input id="tf-color-custom" type="color" value="${trip.themeColor || '#8bb89a'}" class="w-9 h-9 rounded-full border-2 shadow-sm cursor-pointer flex-shrink-0" style="border-color:rgba(255,255,255,0.85);" title="Custom color">
-            <input id="tf-color" type="text" value="${trip.themeColor || '#8bb89a'}" class="input flex-1 text-xs font-mono" style="min-height:36px;" placeholder="#8bb89a">
-            <div id="tf-color-preview" class="w-9 h-9 rounded-full border-2 shadow-sm flex-shrink-0" style="background:${trip.themeColor || '#8bb89a'};border-color:rgba(255,255,255,0.85);"></div>
-          </div>
-        </div>
-
         <button id="tf-submit" type="submit" class="btn btn-primary w-full">${icon(isEdit ? 'save' : 'plus', 'w-4 h-4')} ${isEdit ? t('save') : t('createTrip')}</button>
         ${isEdit ? `<div class="flex gap-2">
           <button type="button" id="tf-delete" class="btn flex-1" style="background: var(--danger-bg); color: var(--danger); border:1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('trash-2', 'w-4 h-4')} ${lang==='th' ? 'ลบทริปนี้' : 'Delete trip'}</button>
@@ -1567,10 +1533,6 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
   `);
   queueIcons();
 
-  let selectedColor = trip.themeColor || '#8bb89a';
-  const colorInput = document.getElementById('tf-color');
-  const colorCustom = document.getElementById('tf-color-custom');
-  const colorPreview = document.getElementById('tf-color-preview');
   const previewImg = document.getElementById('cover-img');
   const previewContainer = document.getElementById('cover-preview');
   const coverInfo = document.getElementById('cover-info');
@@ -1579,25 +1541,6 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
   const coverUrlInput = document.getElementById('tf-cover-url');
   const cropperContainer = document.getElementById('cover-cropper-container');
   const cropperWrapper = document.getElementById('cropper-wrapper');
-
-  function updateColor(newColor) {
-    selectedColor = newColor;
-    colorInput.value = newColor;
-    colorCustom.value = newColor;
-    colorPreview.style.background = newColor;
-    document.querySelectorAll('#trip-form [data-color]').forEach(b => {
-      b.style.borderColor = 'rgba(255,255,255,0.85)';
-      b.style.transform = '';
-      if (b.dataset.color.toLowerCase() === String(newColor).toLowerCase()) {
-        b.style.borderColor = 'var(--text)';
-        b.style.transform = 'scale(1.15)';
-      }
-    });
-  }
-  document.querySelectorAll('#trip-form [data-color]').forEach(btn => btn.addEventListener('click', () => updateColor(btn.dataset.color)));
-  colorCustom.addEventListener('input', (e) => updateColor(e.target.value));
-  colorInput.addEventListener('input', (e) => { if (/^#[0-9A-F]{6}$/i.test(e.target.value)) updateColor(e.target.value); });
-  updateColor(selectedColor);
 
   async function handleFile(file) {
     if (!file) return;
@@ -1701,7 +1644,7 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
         startDate, endDate,
         timezone: document.getElementById('tf-tz').value,
         baseCurrency: document.getElementById('tf-cur').value,
-        themeColor: document.getElementById('tf-color').value,
+        themeColor: BRAND_PRIMARY, // brand-locked (kept in the schema for older exports)
         status: document.getElementById('tf-status').value,
         exchangeRateToTHB: parseFloat(document.getElementById('tf-rate').value) || 1,
         coverFile, coverBlob: croppedBlob,
@@ -1804,7 +1747,7 @@ function openTripActions(trip, { onChanged } = {}) {
   const sheet = showBottomSheet(`
     <div class="space-y-4">
       <div class="flex items-center gap-3">
-        <div class="w-12 h-12 rounded-2xl overflow-hidden flex-shrink-0" style="background: linear-gradient(135deg, ${trip.themeColor || '#8bb89a'}, color-mix(in srgb, ${trip.themeColor || '#8bb89a'} 55%, #fff));">
+        <div class="w-12 h-12 rounded-2xl overflow-hidden flex-shrink-0" style="background: var(--gradient-primary);">
           ${trip.coverImage ? `<img src="${escapeHtml(trip.coverImage)}" class="w-full h-full object-cover" alt="">` : ''}
         </div>
         <div class="min-w-0">
@@ -2010,14 +1953,14 @@ async function renderTripSelector() {
   grid.innerHTML = `<div class="card p-6"><div class="skeleton h-24 mb-4"></div><div class="skeleton h-4 mb-2"></div><div class="skeleton h-3"></div></div>`.repeat(3);
 
   const tripCardHtml = (trip, idx, compact = false) => {
-    const baseColor = trip.themeColor || '#8bb89a';
+    const baseColor = 'var(--primary-raw)';
     const c = computeCountdown({ startDate: trip.startDate, endDate: trip.endDate, createdAt: trip.createdAt });
     const countdownText = trip.startDate
       ? (c.phase === 'before' ? (lang==='th' ? `อีก ${c.days} วัน` : `${c.days} days`) : (c.phase === 'during' ? (lang==='th' ? 'กำลังเดินทาง' : 'On trip') : (lang==='th' ? 'ผ่านมาแล้ว' : 'Past')))
       : '';
     return `
       <div class="card card-hover p-0 overflow-hidden cursor-pointer group trip-card" data-trip="${trip.id}" style="animation-delay: ${idx * 0.06}s" role="button" tabindex="0" aria-label="${escapeHtml(trip.name)}">
-        <div class="${compact ? 'h-28' : 'h-36'} relative overflow-hidden" style="background: linear-gradient(135deg, ${baseColor}, color-mix(in srgb, ${baseColor} 55%, #ffffff));">
+        <div class="${compact ? 'h-28' : 'h-36'} relative overflow-hidden" style="background: linear-gradient(135deg, var(--primary-raw), color-mix(in srgb, var(--primary-raw) 45%, var(--brand-yellow-raw)));">
           ${trip.coverImage ? `<img src="${escapeHtml(trip.coverImage)}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
           <div class="absolute inset-0" style="background: linear-gradient(to top, rgba(0,0,0,0.45), transparent 55%);"></div>
           ${!compact ? `<div class="absolute top-3 right-3 flex items-center gap-1.5">
@@ -2214,7 +2157,7 @@ async function renderDashboard(params) {
   appEl.innerHTML = `
     <div class="page-enter space-y-5">
       <!-- HERO -->
-      <div class="hero-card" style="--hero-color:${trip?.themeColor || 'var(--primary-raw)'};">
+      <div class="hero-card" style="--hero-color:var(--primary-raw);">
         ${trip?.coverImage ? `<img src="${escapeHtml(trip.coverImage)}" class="hero-bg" alt="" onerror="this.style.display='none'">` : ''}
         <div class="hero-overlay"></div>
         <div class="hero-content">
@@ -2350,6 +2293,9 @@ async function renderDashboard(params) {
         </div>
         <div id="recent-expenses" class="space-y-2 stagger"><div class="skeleton h-12"></div></div>
       </div>
+
+      <!-- TRIP TOOLS (v16): prep progress • weather • next booking • top ideas -->
+      <div id="dash-tools" class="space-y-5"></div>
     </div>
   `;
   queueIcons();
@@ -2813,6 +2759,9 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
 
   queueIcons();
   initReveal(appEl);
+  // Fire-and-forget: the v16 tools row (prep • weather • bookings • ideas)
+  // paints itself as soon as its data arrives.
+  paintDashboardTools({ tripId, trip, members: members || [], items: items || [], lang }).catch(e => console.warn('dash tools failed', e?.message));
 }
 
 async function renderItinerary(params) {
@@ -2851,6 +2800,7 @@ async function renderItinerary(params) {
           <button id="toggle-map-btn" class="btn btn-primary btn-sm">${icon('map', 'w-4 h-4')} ${th('แผนที่','Map')}</button>
           <button id="export-png-btn" class="btn btn-secondary btn-sm" title="${th('PNG ทั้งแผน','Whole-plan PNG')}">${icon('image', 'w-4 h-4')} PNG</button>
           <button id="export-day-png-btn" class="btn btn-secondary btn-sm" title="${th('PNG เฉพาะวันนี้','PNG for one day')}">${icon('calendar-down', 'w-4 h-4')} PNG ${th('รายวัน','per day')}</button>
+          <button id="optimize-route-btn" class="btn btn-secondary btn-sm" title="${th('จัดลำดับสถานที่ในวันให้สั้นที่สุด','Reorder this day to the shortest route')}">${icon('route', 'w-4 h-4')} ${th('จัดเส้นทาง','Route')}</button>
           ${isAdmin ? `
           <button id="export-excel-btn" class="btn btn-secondary btn-sm">${icon('file-spreadsheet', 'w-4 h-4')} Excel</button>
           <button id="import-excel-btn" class="btn btn-secondary btn-sm">${icon('upload', 'w-4 h-4')} Import</button>` : ''}
@@ -2942,7 +2892,10 @@ async function renderItinerary(params) {
 
   const tripDays = trip ? getTripDays(trip.startDate, trip.endDate) : [];
   const dayColors = {};
-  tripDays.forEach((d, i) => { dayColors[dayjs(d).format('YYYY-MM-DD')] = `hsl(${(i * 47) % 360},62%,52%)`; });
+  // Day colours follow the True-tone brand: blue → yellow → supporting cool hues,
+  // so day 1 is the brand blue and day 2 the brand yellow.
+  const DAY_HUES = [222, 45, 199, 262, 158, 25, 240, 205, 280, 12];
+  tripDays.forEach((d, i) => { dayColors[dayjs(d).format('YYYY-MM-DD')] = `hsl(${DAY_HUES[i % DAY_HUES.length]},68%,46%)`; });
 
   const chipsEl = document.getElementById('date-chips');
   if (chipsEl) {
@@ -3001,6 +2954,103 @@ async function renderItinerary(params) {
 
   bind('export-png-btn', 'click', () => exportItineraryPng());
   bind('export-day-png-btn', 'click', () => exportItineraryDayPng(selectedDate));
+  bind('optimize-route-btn', 'click', () => optimizeDayRoute());
+
+  /** Weather chips for every day header (Open-Meteo, cached 3 h). */
+  async function paintItineraryWeather(scope) {
+    const chips = [...(scope || document).querySelectorAll('[data-weather-day]')];
+    if (!chips.length || !trip?.startDate) return;
+    const today = dayjs().format('YYYY-MM-DD');
+    if (!isForecastRelevant(trip.startDate, today)) return;
+    const dates = [...new Set(chips.map(c => c.dataset.weatherDay))];
+    const located = coordOf((visibleItems || []).find(i => hasCoords(i)));
+    const place = located ? { lat: located.lat, lon: located.lng } : (trip.city || trip.country || '');
+    if (!place) return;
+    const forecast = await fetchDailyForecast(place, { startDate: dates[0], endDate: dates[dates.length - 1] });
+    const byDate = new Map(forecastForDates(forecast, dates).map(d => [d.date, d]));
+    chips.forEach(chip => {
+      const day = byDate.get(chip.dataset.weatherDay);
+      if (!day || day.missing) return;
+      const tone = weatherTone(day.tone);
+      chip.hidden = false;
+      chip.style.background = tone.bg;
+      chip.style.borderColor = tone.line;
+      chip.style.color = tone.fg;
+      chip.innerHTML = `${icon(day.icon, 'w-3 h-3')} ${Math.round(day.max ?? 0)}°<small>/${Math.round(day.min ?? 0)}°</small>`;
+      chip.title = `${lang === 'th' ? day.labelTh : day.labelEn}${day.rainChance != null ? ` • ${th('ฝน','rain')} ${day.rainChance}%` : ''}`;
+      queueIcons();
+    });
+  }
+
+  /**
+   * “จัดลำดับเส้นทาง” — reorder the located places of a day with a
+   * nearest-neighbour pass and show how many km/minutes that saves.
+   */
+  async function optimizeDayRoute() {
+    const tLoad = toast.loading(th('กำลังคำนวณเส้นทาง...', 'Calculating the route...'));
+    try {
+      const all = (await fetchItinerary(tripId, null, { fresh: true })).filter(i => !String(i.id).includes('@stay-'));
+      const byDay = {};
+      all.forEach(it => { if (it.date) (byDay[it.date] = byDay[it.date] || []).push(it); });
+      const targets = showAll ? Object.keys(byDay).sort() : [selectedDate].filter(d => byDay[d]);
+      const plans = [];
+      for (const day of targets) {
+        const items = byDay[day].sort((a, b) => (a.order || 0) - (b.order || 0));
+        if (items.filter(hasCoords).length < 3) continue;
+        const result = optimizeDayOrder(items);
+        if (result.savedKm < 0.3) continue;
+        plans.push({ day, result });
+      }
+      tLoad.close();
+      if (!plans.length) {
+        toast.info(th('ลำดับตอนนี้ใกล้เคียงเส้นทางที่ดีที่สุดแล้ว (ต้องมีอย่างน้อย 3 จุดที่มีพิกัด)', 'The current order is already close to optimal (needs 3+ places with coordinates)'));
+        return;
+      }
+      const sheet = showBottomSheet(`
+        <div class="space-y-3">
+          <div class="flex items-center gap-3">
+            <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-sun);color:var(--on-accent);">${icon('route', 'w-5 h-5')}</div>
+            <div>
+              <h3 class="font-bold text-base" style="font-family:var(--font-display);">${t('optimizeRoute')}</h3>
+              <p class="text-xs text-[var(--text-secondary)]">${th('ระบบเรียงจุดตามระยะทางจริง (เส้นตรง) ให้สั้นลง','Stops reordered by real (great-circle) distance')}</p>
+            </div>
+          </div>
+          ${plans.map(p => `
+            <div class="card p-3">
+              <p class="text-xs font-bold">${formatDate(p.day, lang, trip?.timezone)}</p>
+              <p class="text-[11px] text-[var(--text-secondary)] mt-1">
+                ${icon('map-pin', 'w-3 h-3')} ${p.result.beforeKm} km → <b>${p.result.afterKm} km</b>
+                ${p.result.savedKm > 0 ? ` • <span class="text-brand-yellow">${th('ประหยัด','save')} ${p.result.savedKm} km ≈ ${travelTimeLabel(p.result.savedMinutes, lang)}</span>` : ''}
+              </p>
+              <p class="text-[11px] text-[var(--text-secondary)] mt-1">${th('ลำดับใหม่','New order')}: ${p.result.ordered.map((it, i) => `${i + 1}. ${escapeHtml((it.title || '').slice(0, 22))}`).join(' → ')}</p>
+              ${dayDirectionsUrl(p.result.ordered) ? `<a class="btn btn-ghost btn-sm text-[11px] mt-1" style="min-height:28px;padding:2px 8px;" target="_blank" rel="noopener" href="${dayDirectionsUrl(p.result.ordered)}">${icon('navigation', 'w-3.5 h-3.5')} ${th('ดูลำดับบน Google Maps','Preview on Google Maps')}</a>` : ''}
+            </div>`).join('')}
+          <div class="flex gap-2">
+            <button id="route-cancel" class="btn btn-secondary flex-1">${t('cancel')}</button>
+            <button id="route-apply" class="btn btn-primary flex-1">${icon('check', 'w-4 h-4')} ${th('ใช้ลำดับใหม่','Apply order')}</button>
+          </div>
+        </div>
+      `);
+      queueIcons();
+      document.getElementById('route-cancel')?.addEventListener('click', () => sheet.close());
+      document.getElementById('route-apply')?.addEventListener('click', async () => {
+        const tApply = toast.loading(th('กำลังจัดลำดับ...', 'Reordering...'));
+        try {
+          for (const p of plans) {
+            await reorderItinerary(tripId, p.day, p.result.order, currentUser.uid);
+          }
+          tApply.close();
+          sheet.close();
+          toast.success(th(`จัดเส้นทางใหม่ ${plans.length} วันแล้ว`, `Reordered ${plans.length} day(s)`));
+          logActivity(tripId, { type: 'itinerary', targetId: plans[0].day, title: t('optimizeRoute'), detail: th('จัดลำดับเส้นทางอัตโนมัติ','Automatic route optimisation'), user: actor() }).catch(() => {});
+          loadItems();
+        } catch (e) { tApply.close(); toast.error(e.message || String(e)); }
+      });
+    } catch (e) {
+      tLoad.close();
+      toast.error(e.message || String(e));
+    }
+  }
 
   function itineraryMoney(items) {
     // Stays contribute only THAT night's share to a day's total (the full price
@@ -3747,6 +3797,7 @@ async function renderItinerary(params) {
               <span class="step-num">${dayjs(day).format('DD')}</span>
               ${formatDate(day, lang, trip?.timezone)}
               <span class="badge badge-planned text-[10px]">${dayItems.length} ${th('ที่','places')}</span>
+              <span class="weather-chip weather-chip--mini" data-weather-day="${escapeHtml(day)}" hidden></span>
               <span class="text-[10px] text-[var(--text-tertiary)] ml-auto">${itineraryMoney(dayItems)}</span>
               <button class="itin-day-export-btn" data-export-day="${escapeHtml(day)}" title="${th('ส่งออก PNG ของวันนี้','Export this day as a PNG')}">${icon('image', 'w-3.5 h-3.5')} PNG</button>
             </h3>
@@ -3761,6 +3812,9 @@ async function renderItinerary(params) {
         e.stopPropagation();
         await exportItineraryDayPng(btn.dataset.exportDay);
       }));
+
+      // Weather chips on the day headers (only in the “view all” listing).
+      paintItineraryWeather(listEl);
 
       listEl.querySelectorAll('[data-act]').forEach(btn => btn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -6330,7 +6384,7 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
         <div class="input-group">
           <label class="input-label">${th('สี','Colour')}</label>
           <div class="chip-row" id="cat-colors">
-            ${CATEGORY_COLOR_CHOICES.map(col => `<button type="button" class="chip ${((existing?.color || '#9aa79c') === col) ? 'chip-active' : ''}" data-color="${col}" style="background:${col}22; border-color:${col};">${icon('circle', 'w-3 h-3')} ${col}</button>`).join('')}
+            ${CATEGORY_COLOR_CHOICES.map(col => `<button type="button" class="chip ${((existing?.color || '#1d4ed8') === col) ? 'chip-active' : ''}" data-color="${col}" style="background:${col}22; border-color:${col};">${icon('circle', 'w-3 h-3')} ${col}</button>`).join('')}
           </div>
         </div>
         <div id="cat-preview" class="diag-row"></div>
@@ -6585,7 +6639,7 @@ function openMemberForm(tripId, member = null, { onSaved } = {}) {
               ${MEMBER_ROLES.map(r => `<option value="${r.id}" ${(m.role || 'member') === r.id ? 'selected' : ''}>${lang==='th'?r.th:r.en}</option>`).join('')}
             </select>
           </div>
-          <div class="input-group"><label class="input-label">${icon('palette', 'w-3.5 h-3.5')} ${th('สีประจำตัว','Color')}</label><input id="m-color" type="color" value="${m.color || '#8bb89a'}" class="w-full h-11 rounded-xl cursor-pointer border" style="border-color:var(--border);"></div>
+          <div class="input-group"><label class="input-label">${icon('palette', 'w-3.5 h-3.5')} ${th('สีประจำตัว','Color')}</label><input id="m-color" type="color" value="${m.color || '#1d4ed8'}" class="w-full h-11 rounded-xl cursor-pointer border" style="border-color:var(--border);"></div>
         </div>
         <div class="input-group"><label class="input-label">${icon('image', 'w-3.5 h-3.5')} ${th('รูปโปรไฟล์ (URL)','Photo URL')}</label><input id="m-photo" class="input" placeholder="https://..." autocomplete="off" value="${escapeHtml(m.photoURL || '')}"></div>
         ${isEdit ? `
@@ -7207,6 +7261,15 @@ async function renderImportExport(params) {
           <button id="exp-expenses-json" class="btn btn-secondary btn-sm">${icon('file-json', 'w-4 h-4')} JSON</button>
           <button id="exp-print" class="btn btn-ghost btn-sm">${icon('printer', 'w-4 h-4')} ${th('พิมพ์ / PDF','Print / PDF')}</button>
         </div>
+        <div class="p-3 rounded-xl" style="background:var(--bg-secondary); border:1px solid var(--border);">
+          <p class="text-sm font-semibold flex items-center gap-2">${icon('calendar-plus', 'w-4 h-4')} ${t('exportCalendar')}</p>
+          <p class="text-[11px] text-[var(--text-secondary)] mt-1 mb-2">${th('ไฟล์ .ics นำเข้า Google ปฏิทิน / Apple ปฏิทิน ได้ทันที — ทุกคนในทริปส่งออกได้','An .ics file you can import into Google / Apple Calendar — available to every member')}</p>
+          <div class="btn-row">
+            <button id="ics-all" class="btn btn-secondary btn-sm">${icon('layers', 'w-4 h-4')} ${th('ทั้งทริป','Everything')}</button>
+            <button id="ics-itinerary" class="btn btn-secondary btn-sm">${icon('map-pinned', 'w-4 h-4')} ${t('itinerary')}</button>
+            <button id="ics-bookings" class="btn btn-secondary btn-sm">${icon('ticket', 'w-4 h-4')} ${t('bookings')}</button>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -7218,6 +7281,25 @@ async function renderImportExport(params) {
     try { const r = await fn(); tLoad.close(); return r; }
     catch (e) { tLoad.close(); toast.error(e.message); return null; }
   };
+
+  /** Calendar (.ics) export — itinerary, reservations or both. */
+  const exportIcs = async (kind) => withLoading(th('กำลังสร้างไฟล์ปฏิทิน...', 'Building the calendar file...'), async () => {
+    const [items, reservations] = await Promise.all([
+      kind === 'bookings' ? Promise.resolve([]) : fetchItinerary(tripId, null).catch(() => []),
+      kind === 'itinerary' ? Promise.resolve([]) : listReservations(tripId).catch(() => [])
+    ]);
+    const events = [
+      ...itineraryToEvents(items, { lang }),
+      ...reservationsToEvents(reservations, { lang })
+    ];
+    if (!events.length) throw new Error(th('ยังไม่มีข้อมูลให้ส่งออก', 'Nothing to export yet'));
+    const suffix = kind === 'all' ? 'trip' : kind;
+    downloadIcs(`${(trip?.name || 'trip').replace(/\s+/g, '-')}-${suffix}.ics`, buildIcs(events, { calendarName: `${trip?.name || 'Trip'} — Fuji Planner` }));
+    return events.length;
+  });
+  bind('ics-all', 'click', async () => { const n = await exportIcs('all'); if (n) toast.success(th(`ส่งออก ${n} กิจกรรมแล้ว`, `Exported ${n} events`)); });
+  bind('ics-itinerary', 'click', async () => { const n = await exportIcs('itinerary'); if (n) toast.success(th(`ส่งออก ${n} สถานที่แล้ว`, `Exported ${n} places`)); });
+  bind('ics-bookings', 'click', async () => { const n = await exportIcs('bookings'); if (n) toast.success(th(`ส่งออก ${n} การจองแล้ว`, `Exported ${n} bookings`)); });
 
   appEl.querySelectorAll('[data-tpl]').forEach(btn => btn.addEventListener('click', async () => {
     if (!isAdmin) return toast.warning(th('เฉพาะผู้ดูแลทริป','Admins only'));
@@ -7416,7 +7498,6 @@ async function renderSettings(params) {
   await loadTrip(tripId);
   if (isStale(token)) return;
   const trip = currentTrip;
-  const currentColor = localStorage.getItem('fuji_color_theme') || 'sage';
   const mode = getStoredMode();
 
   let perms = { isAdmin: false, role: 'member' };
@@ -7447,8 +7528,6 @@ async function renderSettings(params) {
   tripCurrencyList(trip).forEach(code => {
     if (!currencies.some(c => c.code === code)) currencies.push({ code, name: code });
   });
-  const pastels = themes.filter(x => x.type !== 'gradient');
-  const gradients = themes.filter(x => x.type === 'gradient');
 
   appEl.innerHTML = `
     <div class="page-enter max-w-[720px] mx-auto space-y-5">
@@ -7502,13 +7581,6 @@ async function renderSettings(params) {
           <input id="s-cover-file" type="file" accept="image/*" class="input text-xs mt-2">
           <p class="input-hint">${th('อัปโหลดไฟล์ (จะถูกย่อขนาดอัตโนมัติ) หรือวางลิงก์รูป','Upload a file (auto-compressed) or paste an image URL')}</p>
         </div>
-        <div class="input-group">
-          <label class="input-label">${icon('palette', 'w-3.5 h-3.5')} ${t('themeColor')}</label>
-          <div class="flex gap-2 items-center">
-            <input id="s-color" type="color" value="${trip?.themeColor || '#8bb89a'}" class="w-11 h-11 rounded-xl cursor-pointer border" style="border-color:var(--border);">
-            <input id="s-color-text" class="input flex-1 font-mono text-xs" value="${trip?.themeColor || '#8bb89a'}">
-          </div>
-        </div>
         <button id="save-settings" class="btn btn-primary w-full">${icon('save', 'w-4 h-4')} ${t('save')}</button>
       </div>
 
@@ -7544,12 +7616,16 @@ async function renderSettings(params) {
         <button id="save-budget" class="btn btn-secondary w-full">${icon('save', 'w-4 h-4')} ${th('บันทึกงบประมาณ','Save budget')}</button>
       </div>
 
-      <div class="card p-5 space-y-4">
-        <h3 class="font-bold flex items-center gap-2">${icon('palette', 'w-4 h-4')} ${t('theme')}</h3>
-        <div class="theme-section-title" style="margin-top:4px;">${icon('leaf', 'w-3.5 h-3.5')} Pastel</div>
-        <div class="theme-grid" id="settings-themes-pastel">${pastels.map(x => themeSwatchHtml(x, currentColor)).join('')}</div>
-        <div class="theme-section-title">${icon('sparkles', 'w-3.5 h-3.5')} Gradient</div>
-        <div class="theme-grid" id="settings-themes-gradient">${gradients.map(x => themeSwatchHtml(x, currentColor)).join('')}</div>
+      <div class="card p-5 space-y-4" id="settings-appearance-card">
+        <h3 class="font-bold flex items-center gap-2">${icon('sun-moon', 'w-4 h-4')} ${th('การแสดงผล','Appearance')}</h3>
+        <div class="flex items-center gap-3 p-3 rounded-xl" style="background:var(--surface-2); border:1px solid var(--border);">
+          <span class="brand-sun">${icon('sun', 'w-4 h-4')}</span>
+          <div class="flex-1 min-w-0">
+            <p class="text-xs font-bold">${th('ชุดสีของแอป: น้ำเงิน–เหลือง','App brand colours: blue + yellow')}</p>
+            <p class="text-[11px] text-[var(--text-secondary)]">${th('ชุดสีถูกล็อกไว้ให้ทุกหน้าเป็นแบรนด์เดียว เลือกได้เฉพาะโหมดสว่าง/มืด','The palette is locked to one brand — only light / dark / auto can be chosen')}</p>
+          </div>
+          <span class="flex gap-1"><span style="width:18px;height:18px;border-radius:9999px;background:${BRAND.blue};display:inline-block;"></span><span style="width:18px;height:18px;border-radius:9999px;background:${BRAND.yellow};display:inline-block;"></span></span>
+        </div>
         <div class="theme-section-title">${icon('contrast', 'w-3.5 h-3.5')} ${th('โหมดการแสดงผล','Appearance')}</div>
         <div class="mode-grid" id="settings-modes">
           <button class="mode-option ${mode === 'light' ? 'active' : ''}" data-mode="light">${icon('sun', 'w-5 h-5')} ${th('สว่าง','Light')}</button>
@@ -7888,7 +7964,7 @@ async function renderSettings(params) {
         exchangeRateToTHB: parseFloat(document.getElementById('s-thb-rate').value) || 1,
         // Extra currencies used in this trip + their THB rates (multi-currency)
         ...readTripCurrencyFields(),
-        themeColor: document.getElementById('s-color').value,
+        themeColor: trip?.themeColor || BRAND_PRIMARY,
         status: document.getElementById('trip-status').value,
         ...extra
       };
@@ -7919,14 +7995,6 @@ async function renderSettings(params) {
     memberBudgets: readMemberBudgets()
   }));
 
-  document.querySelectorAll('.theme-option').forEach(btn => btn.addEventListener('click', () => {
-    applyTheme(btn.dataset.theme);
-    document.querySelectorAll('.theme-option').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll(`.theme-option[data-theme="${btn.dataset.theme}"]`).forEach(b => b.classList.add('active'));
-    const thm = themes.find(x => x.id === btn.dataset.theme);
-    toast.success(thm ? `${thm.name} • ${thm.desc || ''}` : btn.dataset.theme);
-    renderDesktopNav();
-  }));
   document.querySelectorAll('#settings-modes .mode-option').forEach(btn => btn.addEventListener('click', () => {
     applyMode(btn.dataset.mode);
     document.querySelectorAll('#settings-modes .mode-option').forEach(b => b.classList.remove('active'));
@@ -8079,6 +8147,1238 @@ async function renderSettings(params) {
   });
 }
 
+/* ================================================================== *
+ * Dashboard widgets for the trip tools (v16)
+ * Quick tiles → prep progress • weather • next booking • top ideas
+ * All data loads in parallel and any widget without data stays hidden.
+ * ================================================================== */
+async function paintDashboardTools({ tripId, trip, members = [], items = [], lang = getLang() }) {
+  const box = document.getElementById('dash-tools');
+  if (!box) return;
+  const th = (a, b) => (lang === 'th' ? a : b);
+  box.innerHTML = `<div class="grid md:grid-cols-3 gap-3">${'<div class="skeleton h-20"></div>'.repeat(3)}</div>`;
+
+  const [lists, ideas, reservations] = await Promise.all([
+    listChecklists(tripId).catch(() => []),
+    listIdeas(tripId).catch(() => []),
+    listReservations(tripId).catch(() => [])
+  ]);
+  if (!box.isConnected) return;
+
+  const prep = checklistsProgress(lists);
+  const openIdeas = ideas.filter(i => i.status !== 'planned');
+  const topIdeas = trendingIdeas(ideas, 3);
+  const nextOnes = upcomingReservations(reservations, dayjs().format('YYYY-MM-DDTHH:mm'), 2);
+
+  const tile = (href, ic, label, value, sub, { accent = false } = {}) => `
+    <a href="${href}" class="card card-hover p-4 tool-tile" style="text-decoration:none; color:inherit;">
+      <div class="flex items-center gap-3">
+        <span class="row-icon" style="width:40px;height:40px;border-radius:14px;${accent ? 'background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);' : 'background:var(--primary-light);color:var(--primary-strong);'}">${icon(ic, 'w-5 h-5')}</span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-[10px] font-bold uppercase tracking-wide text-[var(--text-tertiary)]">${label}</span>
+          <span class="block text-lg font-bold leading-tight" style="font-family:var(--font-display);">${value}</span>
+          <span class="block text-[11px] text-[var(--text-secondary)] truncate">${sub}</span>
+        </span>
+        ${icon('chevron-right', 'w-4 h-4')}
+      </div>
+    </a>`;
+
+  const weatherCard = (trip?.startDate && isForecastRelevant(trip.startDate, dayjs().format('YYYY-MM-DD')))
+    ? `<div class="card p-5" id="dash-weather"><div class="skeleton h-16"></div></div>` : '';
+
+  const bookingCard = nextOnes.length ? `
+    <div class="card p-5">
+      <div class="flex items-center justify-between gap-2 mb-3">
+        <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('ticket', 'w-4 h-4')}</span> ${t('bookings')}</h3>
+        <a href="#/trip/${tripId}/bookings" class="btn btn-ghost btn-sm text-xs">${th('ดูทั้งหมด','All')}</a>
+      </div>
+      <div class="space-y-2">
+        ${nextOnes.map(r => {
+          const rt = reservationTypeDef(r.type);
+          const days = dayjs(`${r.date}T${r.startTime || '00:00'}`).diff(dayjs(), 'day');
+          return `<div class="flex items-center gap-3 p-2 rounded-xl" style="background:var(--bg-secondary);">
+            <span class="row-icon" style="width:32px;height:32px;border-radius:10px;background:${rt.tone}1f;color:${rt.tone};">${icon(rt.icon, 'w-4 h-4')}</span>
+            <span class="min-w-0 flex-1">
+              <span class="block text-xs font-bold truncate">${escapeHtml(r.title || '')}</span>
+              <span class="block text-[10px] text-[var(--text-secondary)]">${escapeHtml(r.date || '')} ${escapeHtml(r.startTime || '')}${days >= 0 ? ` • ${th('อีก','in')} ${days} ${th('วัน','d')}` : ''}</span>
+            </span>
+            ${r.confirmation ? `<button class="icon-btn" data-dash-copy="${escapeHtml(r.confirmation)}" title="${t('confirmCode')}">${icon('copy', 'w-3.5 h-3.5')}</button>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>` : '';
+
+  const ideaCard = topIdeas.length ? `
+    <div class="card p-5">
+      <div class="flex items-center justify-between gap-2 mb-3">
+        <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);">${icon('lightbulb', 'w-4 h-4')}</span> ${t('ideasBoard')}</h3>
+        <a href="#/trip/${tripId}/ideas" class="btn btn-ghost btn-sm text-xs">${th('โหวตต่อ','Vote')}</a>
+      </div>
+      <div class="space-y-2">
+        ${topIdeas.map(i => `
+          <div class="flex items-center gap-3">
+            <span class="vote-pill">${icon('chevron-up', 'w-3 h-3')} ${voteCount(i)}</span>
+            <span class="min-w-0 flex-1 text-xs font-semibold truncate">${escapeHtml(i.title || '')}</span>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  const prepCard = lists.length ? `
+    <div class="card p-5">
+      <div class="flex items-center justify-between gap-2 mb-3">
+        <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('clipboard-check', 'w-4 h-4')}</span> ${t('prep')}</h3>
+        <a href="#/trip/${tripId}/prep" class="btn btn-ghost btn-sm text-xs">${th('เปิดลิสต์','Open')}</a>
+      </div>
+      <p class="text-xs text-[var(--text-secondary)] mb-2">${prep.done}/${prep.total} ${t('items')} • ${prep.remaining} ${th('เหลือ','left')}</p>
+      ${toolProgressHtml(prep.percent)}
+    </div>` : '';
+
+  box.innerHTML = `
+    <div class="grid md:grid-cols-3 gap-3">
+      ${tile(`#/trip/${tripId}/prep`, 'clipboard-check', t('prep'), `${prep.percent}%`,
+        prep.total ? `${prep.remaining} ${th('รายการที่ยังไม่ติ๊ก','left to tick')}` : th('เริ่มจากเทมเพลตสำเร็จรูป','Start from a template'))}
+      ${tile(`#/trip/${tripId}/ideas`, 'lightbulb', t('ideasBoard'), `${openIdeas.length}`,
+        openIdeas.length ? th('รอโหวต/ตัดสินใจ','waiting for votes') : th('ชวนทุกคนเสนอสถานที่','Ask the group for places'), { accent: true })}
+      ${tile(`#/trip/${tripId}/bookings`, 'ticket', t('bookings'), `${reservations.length}`,
+        nextOnes[0] ? th('ถัดไป','Next') + `: ${(nextOnes[0].title || '').slice(0, 20)}` : th('เพิ่มตั๋ว/ที่พัก','Add tickets & hotels'))}
+    </div>
+    ${(weatherCard || bookingCard || ideaCard || prepCard) ? `<div class="grid md:grid-cols-2 gap-4 mt-4">${weatherCard}${bookingCard}${ideaCard}${prepCard}</div>` : ''}
+  `;
+  queueIcons();
+
+  box.querySelectorAll('[data-dash-copy]').forEach(btn => btn.addEventListener('click', () => copyToClipboard(btn.dataset.dashCopy)));
+  if (weatherCard) paintTripWeather(trip, items, lang);
+  initReveal(box);
+}
+
+/** Compact forecast strip for the trip window (Open-Meteo, no key). */
+async function paintTripWeather(trip, items = [], lang = getLang()) {
+  const el = document.getElementById('dash-weather');
+  if (!el || !trip) return;
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const today = dayjs().format('YYYY-MM-DD');
+  const start = trip.startDate > today ? trip.startDate : today;
+  const endCandidate = trip.endDate && trip.endDate > start ? trip.endDate : dayjs(start).add(6, 'day').format('YYYY-MM-DD');
+  const horizon = dayjs().add(15, 'day').format('YYYY-MM-DD');
+  const end = endCandidate < horizon ? endCandidate : horizon;
+  const dates = datesBetween(start, end, 16);
+  if (!dates.length) { el.remove(); return; }
+
+  const located = (items || []).find(i => hasCoords(i));
+  const point = coordOf(located);
+  const place = point ? { lat: point.lat, lon: point.lng } : (trip.city || trip.country || '');
+
+  const forecast = await fetchDailyForecast(place, { startDate: dates[0], endDate: dates[dates.length - 1] });
+  const days = forecastForDates(forecast, dates).filter(d => !d.missing);
+  if (!el.isConnected) return;
+  if (!days.length) { el.remove(); return; }
+
+  const tip = weatherTip(days, lang);
+  el.innerHTML = `
+    <div class="flex items-center justify-between gap-2 mb-3">
+      <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);">${icon('cloud-sun', 'w-4 h-4')}</span> ${t('weather')}</h3>
+      <span class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(trip.city || trip.country || '')} • Open-Meteo</span>
+    </div>
+    <div class="weather-strip">
+      ${days.map(d => {
+        const tone = weatherTone(d.tone);
+        return `<div class="weather-chip" style="background:${tone.bg}; border-color:${tone.line}; color:${tone.fg};" title="${escapeHtml(lang === 'th' ? d.labelTh : d.labelEn)}${d.rainChance != null ? ` • ${d.rainChance}%` : ''}">
+          <span class="weather-chip-day">${dayjs(d.date).format('DD MMM')}</span>
+          ${icon(d.icon, 'w-4 h-4')}
+          <span class="weather-chip-temp">${Math.round(d.max ?? 0)}°<small>${Math.round(d.min ?? 0)}°</small></span>
+          ${d.rainChance != null && d.rainChance >= 40 ? `<span class="weather-chip-rain">${icon('droplets', 'w-2.5 h-2.5')}${d.rainChance}%</span>` : ''}
+        </div>`;
+      }).join('')}
+    </div>
+    ${tip ? `<p class="text-[11px] text-[var(--text-secondary)] mt-2">${icon('info', 'w-3 h-3')} ${escapeHtml(tip)}</p>` : ''}
+  `;
+  queueIcons();
+}
+
+/* ================================================================== *
+ * Trip tools v16 — เตรียมตัว (checklists) • ไอเดียสถานที่ • การจอง
+ * Wanderlog-inspired: packing/to-do lists, an up-voted places board and
+ * reservation cards with one-tap “add to the day plan”.
+ * ================================================================== */
+
+/* ---------------- shared little helpers ---------------- */
+
+/** <option> list of trip members (optionally with “unassigned”). */
+function toolMemberOptions(members = [], selected = '', lang = 'th', { none = '' } = {}) {
+  const opts = [];
+  if (none) opts.push(`<option value="" ${!selected ? 'selected' : ''}>${escapeHtml(none)}</option>`);
+  for (const m of members) {
+    opts.push(`<option value="${escapeHtml(m.id)}" ${m.id === selected ? 'selected' : ''}>${escapeHtml(m.displayName || m.name || '')}</option>`);
+  }
+  return opts.join('');
+}
+
+/** <option> list of the trip's days. */
+function toolDayOptions(trip, selected = '', lang = getLang(), th = (a) => a) {
+  const days = trip ? getTripDays(trip.startDate, trip.endDate) : [];
+  if (!days.length) {
+    const today = dayjs().format('YYYY-MM-DD');
+    return `<option value="${today}" ${today === selected ? 'selected' : ''}>${th('วันนี้','Today')} • ${today}</option>`;
+  }
+  return days.map((d, i) => {
+    const ds = dayjs(d).format('YYYY-MM-DD');
+    const label = `${th('วันที่','Day')} ${i + 1} • ${dayjs(d).format('DD MMM')}${ds === dayjs().format('YYYY-MM-DD') ? ` ${th('(วันนี้)','(today)')}` : ''}`;
+    return `<option value="${ds}" ${ds === selected ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+  }).join('');
+}
+
+/** Currency <select> limited to the trip's currencies. */
+function toolCurrencyOptions(trip, selected = 'THB') {
+  const list = tripCurrencyList(trip || {});
+  const codes = list.includes(selected) ? list : [selected, ...list];
+  return codes.map(c => `<option value="${c}" ${c === selected ? 'selected' : ''}>${c}</option>`).join('');
+}
+
+/** money minor → the editable major-unit string */
+function toolAmountValue(minor, currency) {
+  const n = fromMinor(Number(minor) || 0, getCurrencyDecimals(currency));
+  return Number(n) ? String(n) : '';
+}
+
+/** Copy helper (works on http + https, falls back to a hidden textarea). */
+async function copyToClipboard(text, okTh = 'คัดลอกแล้ว', okEn = 'Copied') {
+  const value = String(text ?? '');
+  if (!value) return false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = value;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    toast.success(getLang() === 'th' ? okTh : okEn);
+    return true;
+  } catch {
+    toast.error(getLang() === 'th' ? 'คัดลอกไม่สำเร็จ' : 'Copy failed');
+    return false;
+  }
+}
+
+/** Small progress bar used by the prep page + dashboard widget. */
+function toolProgressHtml(percent = 0, { tone = 'blue' } = {}) {
+  const p = Math.max(0, Math.min(100, Math.round(percent)));
+  const bg = tone === 'yellow' ? 'var(--gradient-sun)' : 'var(--gradient-primary)';
+  return `<div class="tool-progress" role="progressbar" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100">
+    <span style="width:${p}%; background:${bg};"></span>
+  </div>`;
+}
+
+/** Shared “add to the day plan” sheet — used by ideas + bookings. */
+function openAddToPlanSheet({ trip, title, subtitle, defaultDate, defaultTime, category, onConfirm }) {
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const sheet = showBottomSheet(`
+    <div class="space-y-4">
+      <div class="flex items-start gap-3">
+        <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('calendar-plus', 'w-5 h-5')}</div>
+        <div class="min-w-0">
+          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${t('addToPlan')}</h3>
+          <p class="text-xs text-[var(--text-secondary)] mt-0.5">${escapeHtml(title || '')}</p>
+        </div>
+      </div>
+      ${subtitle ? `<p class="text-[11px] text-[var(--text-secondary)] p-3 rounded-xl" style="background:var(--bg-secondary); border:1px solid var(--border);">${subtitle}</p>` : ''}
+      <div class="grid grid-cols-2 gap-3">
+        <div class="input-group"><label class="input-label">${icon('calendar', 'w-3.5 h-3.5')} ${th('วัน','Day')}</label>
+          <select id="atp-date" class="input">${toolDayOptions(trip, defaultDate || trip?.startDate || '', lang, th)}</select></div>
+        <div class="input-group"><label class="input-label">${icon('clock', 'w-3.5 h-3.5')} ${th('เวลาเริ่ม','Start')}</label>
+          <input id="atp-time" type="time" class="input" value="${escapeHtml(defaultTime || '09:00')}"></div>
+      </div>
+      <div class="input-group"><label class="input-label">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('หมวดหมู่','Category')}</label>
+        <select id="atp-cat" class="input">${ITINERARY_CATEGORIES.map(c => `<option value="${c.id}" ${c.id === category ? 'selected' : ''}>${escapeHtml(lang === 'th' ? c.th : c.en)}</option>`).join('')}</select></div>
+      <div class="flex gap-2">
+        <button id="atp-cancel" class="btn btn-secondary flex-1">${t('cancel')}</button>
+        <button id="atp-ok" class="btn btn-primary flex-1">${icon('check', 'w-4 h-4')} ${t('addToPlan')}</button>
+      </div>
+    </div>
+  `);
+  queueIcons();
+  document.getElementById('atp-cancel')?.addEventListener('click', () => sheet.close());
+  document.getElementById('atp-ok')?.addEventListener('click', async () => {
+    const payload = {
+      date: document.getElementById('atp-date')?.value || '',
+      startAt: document.getElementById('atp-time')?.value || '',
+      category: document.getElementById('atp-cat')?.value || 'general'
+    };
+    const ok = await onConfirm(payload);
+    if (ok !== false) sheet.close();
+  });
+  return sheet;
+}
+
+/* ================================================================== *
+ * PREP — checklists (packing + to-do)
+ * ================================================================== */
+async function renderPrep(params) {
+  const tripId = params.tripId;
+  const token = beginRender();
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  await loadTrip(tripId);
+  if (isStale(token)) return;
+  const trip = currentTrip;
+
+  let members = [];
+  try { members = await listMembers(tripId); currentTripMembers = members || []; } catch (e) { console.warn('members load failed', e?.message); }
+  if (isStale(token)) return;
+
+  let lists = [];
+  let loadError = '';
+  try { lists = await listChecklists(tripId); } catch (e) { loadError = e?.message || String(e); }
+  if (isStale(token)) return;
+
+  appEl.innerHTML = `
+    <div class="page-enter max-w-[860px] mx-auto space-y-5">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        ${renderPageScene('prep', {
+          lang,
+          title: `${icon('clipboard-check', 'w-5 h-5')} ${t('prep')}`,
+          subtitle: th('เช็กลิสต์ของที่ต้องเตรียมและสิ่งที่ต้องทำ — ติ๊กได้ ทุกคนเห็นตรงกัน','Packing + to-do checklists — tick as you go, everyone sees the same list')
+        })}
+        <div class="btn-row">
+          <button id="prep-template-btn" class="btn btn-secondary btn-sm">${icon('sparkles', 'w-4 h-4')} ${t('templates')}</button>
+          <button id="prep-add-btn" class="btn btn-primary btn-sm">${icon('plus', 'w-4 h-4')} ${t('checklists')}</button>
+        </div>
+      </div>
+
+      <div class="card card-accent p-5" id="prep-progress"></div>
+      ${loadError ? `<div class="card p-4 text-xs" style="background:var(--warning-bg); border-color:color-mix(in srgb, var(--warning) 35%, transparent);">${icon('info', 'w-4 h-4')} ${escapeHtml(loadError)}</div>` : ''}
+      <div id="prep-lists" class="space-y-4 stagger"></div>
+    </div>
+  `;
+  queueIcons();
+
+  function paintProgress() {
+    const box = document.getElementById('prep-progress');
+    if (!box) return;
+    const p = checklistsProgress(lists);
+    box.innerHTML = `
+      <div class="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h3 class="font-bold flex items-center gap-2">${icon('list-checks', 'w-4 h-4')} ${t('progress')}</h3>
+          <p class="text-xs text-[var(--text-secondary)] mt-0.5">${p.done}/${p.total} ${t('items')} • ${th('เสร็จแล้ว','done')} ${p.percent}%</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="badge badge-planned text-[10px]">${p.lists} ${t('checklists')}</span>
+          <span class="brand-ribbon">${icon('sparkles', 'w-3 h-3')} ${p.remaining} ${th('เหลือ','left')}</span>
+        </div>
+      </div>
+      <div class="mt-3">${toolProgressHtml(p.percent)}</div>
+    `;
+    queueIcons();
+  }
+
+  function paintLists() {
+    const box = document.getElementById('prep-lists');
+    if (!box) return;
+    if (!lists.length) {
+      box.innerHTML = renderEmptyState({
+        icon: 'clipboard-check',
+        title: th('ยังไม่มีเช็กลิสต์','No checklists yet'),
+        desc: th('เริ่มจากเทมเพลตสำเร็จรูป (ทะเล หน้าหนาว งานก่อนเดินทาง ฯลฯ) แล้วปรับได้ตามใจ','Start from a ready template (beach, winter, before-you-go …) and edit it freely'),
+        actionHtml: `<button id="prep-empty-template" class="btn btn-primary btn-sm mt-2">${icon('sparkles', 'w-4 h-4')} ${t('useTemplate')}</button>`
+      });
+      bind('prep-empty-template', 'click', () => openTemplateSheet());
+      queueIcons();
+      return;
+    }
+    box.innerHTML = lists.map(list => {
+      const p = checklistProgress(list);
+      const items = sortChecklistItems(list.items || []);
+      return `
+      <div class="card p-4" data-list="${list.id}">
+        <div class="flex items-start justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="row-icon" style="width:36px;height:36px;border-radius:12px;background:${escapeHtml(list.color || '#1d4ed8')}1f;color:${escapeHtml(list.color || '#1d4ed8')};">${icon(list.icon || (list.kind === 'todo' ? 'list-checks' : 'luggage'), 'w-4 h-4')}</span>
+            <div class="min-w-0">
+              <h3 class="font-bold text-sm truncate">${escapeHtml(list.title || '')}</h3>
+              <p class="text-[11px] text-[var(--text-secondary)]">${p.done}/${p.total} • ${list.kind === 'todo' ? t('todo') : t('packing')}</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1">
+            <button class="icon-btn" data-act="template" data-id="${list.id}" title="${t('templates')}">${icon('sparkles', 'w-3.5 h-3.5')}</button>
+            <button class="icon-btn" data-act="reset" data-id="${list.id}" title="${t('resetChecks')}">${icon('rotate-ccw', 'w-3.5 h-3.5')}</button>
+            <button class="icon-btn" data-act="rename" data-id="${list.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
+            <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${list.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
+          </div>
+        </div>
+        <div class="mt-3">${toolProgressHtml(p.percent, { tone: list.kind === 'todo' ? 'yellow' : 'blue' })}</div>
+        <ul class="check-list mt-3">
+          ${items.map(item => `
+            <li class="check-item ${item.done ? 'is-done' : ''}" data-item="${escapeHtml(item.id)}">
+              <button class="check-box" data-act="toggle" data-id="${list.id}" data-item="${escapeHtml(item.id)}" aria-label="toggle">${item.done ? icon('check', 'w-3.5 h-3.5') : ''}</button>
+              <span class="check-text" data-act="edit-item" data-id="${list.id}" data-item="${escapeHtml(item.id)}">${escapeHtml(item.text || '')}</span>
+              <select class="check-assignee" data-act="assign" data-id="${list.id}" data-item="${escapeHtml(item.id)}" title="${t('assignTo')}">
+                ${toolMemberOptions(members, item.assignee || '', lang, { none: th('ไม่ระบุ','—') })}
+              </select>
+              <button class="icon-btn icon-btn-danger" data-act="remove-item" data-id="${list.id}" data-item="${escapeHtml(item.id)}" title="${t('delete')}">${icon('x', 'w-3 h-3')}</button>
+            </li>`).join('')}
+        </ul>
+        ${p.done ? `<button class="btn btn-ghost btn-sm text-[11px] mt-2" data-act="clear-done" data-id="${list.id}">${icon('eraser', 'w-3.5 h-3.5')} ${t('clearDone')}</button>` : ''}
+        <div class="add-item-row mt-2">
+          <input class="input text-sm" data-add-input="${list.id}" placeholder="${t('itemPlaceholder')}" autocomplete="off">
+          <button class="btn btn-primary btn-sm" data-act="add-item" data-id="${list.id}">${icon('plus', 'w-4 h-4')}</button>
+        </div>
+      </div>`;
+    }).join('');
+    queueIcons();
+    initReveal(box);
+  }
+
+  function findList(id) { return lists.find(l => l.id === id); }
+
+  async function persistItems(list, items, { silent = true } = {}) {
+    list.items = items;
+    paintLists(); paintProgress();
+    try {
+      await saveChecklistItems(tripId, list.id, items, currentUser?.uid);
+      if (!silent) toast.success(th('บันทึกแล้ว', 'Saved'));
+    } catch (e) {
+      toast.error(e.message || String(e));
+    }
+  }
+
+  function bindListActions() {
+    const box = document.getElementById('prep-lists');
+    if (!box) return;
+    box.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-act]');
+      if (!btn) return;
+      const list = findList(btn.dataset.id);
+      if (!list) return;
+      const act = btn.dataset.act;
+      const itemId = btn.dataset.item;
+
+      if (act === 'toggle') {
+        const items = (list.items || []).map(i => i.id === itemId ? { ...i, done: !i.done } : i);
+        await persistItems(list, items);
+        return;
+      }
+      if (act === 'edit-item') {
+        const item = (list.items || []).find(i => i.id === itemId);
+        const val = await promptAction({ title: t('edit'), label: th('รายการ','Item'), value: item?.text || '', icon: 'pencil' });
+        if (val == null) return;
+        const items = (list.items || []).map(i => i.id === itemId ? { ...i, text: String(val).trim() } : i).filter(i => i.text);
+        await persistItems(list, items);
+        return;
+      }
+      if (act === 'remove-item') {
+        await persistItems(list, (list.items || []).filter(i => i.id !== itemId));
+        return;
+      }
+      if (act === 'assign') return; // handled by change event
+      if (act === 'clear-done') {
+        await persistItems(list, (list.items || []).filter(i => !i.done));
+        return;
+      }
+      if (act === 'reset') {
+        const ok = await confirmAction({ title: t('resetChecks'), message: th('เอาติ๊กถูกออกทั้งหมดในลิสต์นี้','Remove every checkmark in this list'), confirmText: t('resetChecks'), icon: 'rotate-ccw' });
+        if (!ok) return;
+        await persistItems(list, (list.items || []).map(i => ({ ...i, done: false })));
+        return;
+      }
+      if (act === 'rename') {
+        const val = await promptAction({ title: th('เปลี่ยนชื่อเช็กลิสต์','Rename checklist'), label: t('tripName'), value: list.title || '', icon: 'pencil' });
+        if (val == null || !String(val).trim()) return;
+        list.title = String(val).trim();
+        paintLists();
+        try { await updateChecklist(tripId, list.id, { title: list.title }, currentUser?.uid); } catch (err) { toast.error(err.message); }
+        return;
+      }
+      if (act === 'template') { openTemplateSheet({ list }); return; }
+      if (act === 'delete') {
+        const ok = await confirmAction({ title: th(`ลบ “${list.title}” ?`, `Delete “${list.title}”?`), message: th('ลบเช็กลิสต์นี้และรายการทั้งหมด','Delete this checklist and all of its items'), confirmText: t('delete'), danger: true, icon: 'trash-2' });
+        if (!ok) return;
+        try {
+          await deleteChecklist(tripId, list.id);
+          lists = lists.filter(l => l.id !== list.id);
+          paintLists(); paintProgress();
+          toast.success(th('ลบแล้ว', 'Deleted'));
+        } catch (err) { toast.error(err.message); }
+        return;
+      }
+      if (act === 'add-item') {
+        const input = box.querySelector(`[data-add-input="${list.id}"]`);
+        const text = String(input?.value || '').trim();
+        if (!text) return;
+        input.value = '';
+        await persistItems(list, [...(list.items || []), { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`, text, done: false, assignee: null, qty: 1, note: '' }]);
+        box.querySelector(`[data-add-input="${list.id}"]`)?.focus();
+      }
+    });
+
+    box.addEventListener('keydown', async (e) => {
+      if (e.key !== 'Enter') return;
+      const input = e.target.closest('[data-add-input]');
+      if (!input) return;
+      e.preventDefault();
+      const list = findList(input.dataset.addInput);
+      if (!list) return;
+      const text = String(input.value || '').trim();
+      if (!text) return;
+      input.value = '';
+      await persistItems(list, [...(list.items || []), { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`, text, done: false, assignee: null, qty: 1, note: '' }]);
+      box.querySelector(`[data-add-input="${list.id}"]`)?.focus();
+    });
+
+    box.addEventListener('change', async (e) => {
+      const sel = e.target.closest('select[data-act="assign"]');
+      if (!sel) return;
+      const list = findList(sel.dataset.id);
+      if (!list) return;
+      const items = (list.items || []).map(i => i.id === sel.dataset.item ? { ...i, assignee: sel.value || null } : i);
+      await persistItems(list, items);
+    });
+  }
+
+  /** Template picker — creates a new list, or tops up an existing one. */
+  function openTemplateSheet({ list = null } = {}) {
+    const sheet = showBottomSheet(`
+      <div class="space-y-3">
+        <div class="flex items-center gap-3">
+          <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-sun);color:var(--on-accent);">${icon('sparkles', 'w-5 h-5')}</div>
+          <div>
+            <h3 class="font-bold text-base" style="font-family: var(--font-display);">${t('templates')}</h3>
+            <p class="text-xs text-[var(--text-secondary)]">${list ? th(`เพิ่มรายการจากเทมเพลตเข้า “${list.title}”`, `Add template items into “${list.title}”`) : th('เลือกเทมเพลตเพื่อสร้างเช็กลิสต์ใหม่','Pick a template to create a new checklist')}</p>
+          </div>
+        </div>
+        <div class="space-y-2" id="tpl-list">
+          ${CHECKLIST_TEMPLATES.map(tpl => `
+            <button class="card card-hover p-3 w-full text-left flex items-center gap-3" data-tpl="${tpl.id}" style="cursor:pointer;">
+              <span class="row-icon" style="width:36px;height:36px;border-radius:12px;background:${tpl.color}1f;color:${tpl.color};">${icon(tpl.icon, 'w-4 h-4')}</span>
+              <span class="flex-1 min-w-0">
+                <span class="block font-semibold text-sm truncate">${escapeHtml(lang === 'th' ? tpl.th : tpl.en)}</span>
+                <span class="block text-[11px] text-[var(--text-secondary)]">${tpl.items.length} ${t('items')} • ${tpl.kind === 'todo' ? t('todo') : t('packing')}</span>
+              </span>
+              ${icon('chevron-right', 'w-4 h-4')}
+            </button>`).join('')}
+        </div>
+        <button id="tpl-cancel" class="btn btn-secondary w-full">${t('cancel')}</button>
+      </div>
+    `);
+    queueIcons();
+    document.getElementById('tpl-cancel')?.addEventListener('click', () => sheet.close());
+    sheet.sheet.querySelectorAll('[data-tpl]').forEach(btn => btn.addEventListener('click', async () => {
+      const tpl = CHECKLIST_TEMPLATES.find(x => x.id === btn.dataset.tpl);
+      if (!tpl) return;
+      sheet.close();
+      const tLoad = toast.loading(th('กำลังเพิ่ม...', 'Adding...'));
+      try {
+        if (list) {
+          await persistItems(list, mergeTemplateItems(list.items || [], tpl.items));
+        } else {
+          const items = itemsFromTemplate(tpl.items);
+          const id = await createChecklist(tripId, {
+            title: lang === 'th' ? tpl.th : tpl.en,
+            kind: tpl.kind,
+            icon: tpl.icon,
+            color: tpl.color,
+            order: lists.length,
+            items
+          }, currentUser?.uid);
+          lists.push({ id, title: lang === 'th' ? tpl.th : tpl.en, kind: tpl.kind, icon: tpl.icon, color: tpl.color, items });
+        }
+        tLoad.close();
+        paintLists(); paintProgress();
+        toast.success(th('เพิ่มเช็กลิสต์แล้ว', 'Checklist added'));
+      } catch (e) {
+        tLoad.close();
+        toast.error(e.message || String(e));
+      }
+    }));
+  }
+
+  bind('prep-add-btn', 'click', async () => {
+    const name = await promptAction({ title: th('เช็กลิสต์ใหม่','New checklist'), label: th('ชื่อลิสต์','List name'), placeholder: th('เช่น ของที่ต้องเตรียม','e.g. Packing'), value: '', icon: 'clipboard-check' });
+    if (name == null || !String(name).trim()) return;
+    const tLoad = toast.loading(th('กำลังสร้าง...', 'Creating...'));
+    try {
+      const items = [{ id: `${Date.now().toString(36)}`, text: '', done: false, assignee: null }].filter(i => i.text);
+      const payload = { title: String(name).trim(), kind: 'packing', icon: 'luggage', color: '#1d4ed8', order: lists.length, items: items.length ? items : [{ id: `${Date.now().toString(36)}a`, text: th('รายการแรก','First item'), done: false, assignee: null }] };
+      const id = await createChecklist(tripId, payload, currentUser?.uid);
+      lists.push({ id, ...payload });
+      tLoad.close();
+      paintLists(); paintProgress();
+    } catch (e) { tLoad.close(); toast.error(e.message || String(e)); }
+  });
+
+  bind('prep-template-btn', 'click', () => openTemplateSheet());
+
+  paintProgress();
+  paintLists();
+  bindListActions();
+  initReveal(appEl);
+}
+
+/* ================================================================== *
+ * IDEAS — places to visit with voting
+ * ================================================================== */
+async function renderIdeas(params) {
+  const tripId = params.tripId;
+  const token = beginRender();
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  await loadTrip(tripId);
+  if (isStale(token)) return;
+  const trip = currentTrip;
+
+  let members = [];
+  try { members = await listMembers(tripId); currentTripMembers = members || []; } catch (e) { console.warn(e?.message); }
+  if (isStale(token)) return;
+
+  let ideas = [];
+  let loadError = '';
+  try { ideas = await listIdeas(tripId); } catch (e) { loadError = e?.message || String(e); }
+  if (isStale(token)) return;
+
+  let filter = 'open';
+  let sortMode = 'votes';
+  const myId = currentUser?.uid || '';
+
+  appEl.innerHTML = `
+    <div class="page-enter max-w-[1000px] mx-auto space-y-5">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        ${renderPageScene('ideas', {
+          lang,
+          title: `${icon('lightbulb', 'w-5 h-5')} ${t('ideasBoard')}`,
+          subtitle: th('ทุกคนเสนอสถานที่ที่อยากไป แล้วโหวตกัน — อันดับต้น ๆ กดเพิ่มเข้าแผนได้เลย','Anyone can suggest a place, everyone votes — add the winners straight to the plan')
+        })}
+        <button id="idea-add-btn" class="btn btn-primary btn-sm">${icon('plus', 'w-4 h-4')} ${t('addIdea')}</button>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3" id="idea-stats"></div>
+
+      <div class="flex items-center justify-between gap-2 flex-wrap">
+        <div class="chip-row" id="idea-filters">
+          <button class="chip chip-active" data-filter="open">${icon('sparkles', 'w-3.5 h-3.5')} ${th('ยังไม่อยู่ในแผน','Not planned')}</button>
+          <button class="chip" data-filter="planned">${icon('calendar-check', 'w-3.5 h-3.5')} ${t('inPlan')}</button>
+          <button class="chip" data-filter="all">${icon('layers', 'w-3.5 h-3.5')} ${t('all')}</button>
+        </div>
+        <select id="idea-sort" class="input text-xs" style="max-width:190px; min-height:36px;">
+          <option value="votes">${th('เรียงตามโหวต','Sort: most voted')}</option>
+          <option value="newest">${th('ใหม่สุดก่อน','Sort: newest')}</option>
+          <option value="alpha">${th('ตามตัวอักษร','Sort: A → Z')}</option>
+        </select>
+      </div>
+
+      ${loadError ? `<div class="card p-4 text-xs" style="background:var(--warning-bg); border-color:color-mix(in srgb, var(--warning) 35%, transparent);">${icon('info', 'w-4 h-4')} ${escapeHtml(loadError)}</div>` : ''}
+      <div id="ideas-list" class="grid gap-3 stagger sm:grid-cols-2"></div>
+    </div>
+  `;
+  queueIcons();
+
+  function paintStats() {
+    const box = document.getElementById('idea-stats');
+    if (!box) return;
+    const open = ideas.filter(i => i.status !== 'planned');
+    const planned = ideas.filter(i => i.status === 'planned');
+    const topVotes = sortIdeas(open, 'votes')[0];
+    const budget = ideasBudget(open);
+    const tiles = [
+      { icon: 'lightbulb', label: th('ไอเดียทั้งหมด','Ideas'), value: ideas.length, tone: 'blue' },
+      { icon: 'sparkles', label: th('รอตัดสินใจ','Shortlist'), value: open.length, tone: 'yellow' },
+      { icon: 'calendar-check', label: t('inPlan'), value: planned.length, tone: 'blue' },
+      { icon: 'crown', label: th('โหวตสูงสุด','Top votes'), value: topVotes ? `${voteCount(topVotes)}` : '0', tone: 'yellow' }
+    ];
+    box.innerHTML = tiles.map(tile => `
+      <div class="card p-3 flex items-center gap-2">
+        <span class="row-icon" style="width:34px;height:34px;border-radius:12px;${tile.tone === 'yellow' ? 'background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);' : 'background:var(--primary-light);color:var(--primary-strong);'}">${icon(tile.icon, 'w-4 h-4')}</span>
+        <span class="min-w-0">
+          <span class="block text-[10px] font-bold uppercase tracking-wide text-[var(--text-tertiary)]">${tile.label}</span>
+          <span class="block text-lg font-bold" style="font-family:var(--font-display);">${escapeHtml(String(tile.value))}</span>
+        </span>
+      </div>`).join('') + (budget ? `<p class="col-span-2 sm:col-span-4 text-[11px] text-[var(--text-secondary)]">${icon('coins', 'w-3 h-3')} ${th('งบประมาณรวมของไอเดียที่ยังไม่เข้าแผน','Estimated budget of the unplanned ideas')}: <b>${escapeHtml(formatCurrency(budget, trip?.baseCurrency || 'THB'))}</b></p>` : '');
+    queueIcons();
+  }
+
+  function paintIdeas() {
+    const box = document.getElementById('ideas-list');
+    if (!box) return;
+    const filtered = filter === 'all' ? ideas : ideas.filter(i => (filter === 'planned' ? i.status === 'planned' : i.status !== 'planned'));
+    const sorted = sortIdeas(filtered, sortMode, { lang });
+    if (!sorted.length) {
+      box.innerHTML = `<div class="col-span-full">${renderEmptyState({
+        icon: 'lightbulb',
+        title: th('ยังไม่มีไอเดีย','No ideas yet'),
+        desc: th('ชวนทุกคนในทริปใส่สถานที่ที่อยากไป แล้วโหวตให้อันดับสูงสุด','Invite the group to drop places they want, then vote for the best'),
+        actionHtml: `<button id="idea-empty-add" class="btn btn-primary btn-sm mt-2">${icon('plus', 'w-4 h-4')} ${t('addIdea')}</button>`
+      })}</div>`;
+      bind('idea-empty-add', 'click', () => openIdeaForm(null));
+      queueIcons();
+      return;
+    }
+    box.innerHTML = sorted.map(idea => {
+      const info = voteInfo(idea);
+      const voted = hasVoted(idea, myId);
+      const voters = voterNames(idea, members).slice(0, 4);
+      const status = ideaStatusDef(idea.status);
+      return `
+      <div class="card p-4 idea-card" data-idea="${idea.id}">
+        <div class="flex items-start gap-3">
+          <button class="vote-btn ${voted ? 'is-voted' : ''}" data-act="vote" data-id="${idea.id}" title="${t('vote')}">
+            ${icon('chevron-up', 'w-4 h-4')}
+            <span>${info.count}</span>
+          </button>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-start justify-between gap-2">
+              <h3 class="font-bold text-sm leading-snug min-w-0">${escapeHtml(idea.title || '')}</h3>
+              <span class="badge ${idea.status === 'planned' ? 'badge-completed' : 'badge-planned'} text-[10px] flex-shrink-0">${icon(status.icon, 'w-2.5 h-2.5')} ${lang === 'th' ? status.th : status.en}</span>
+            </div>
+            ${idea.note ? `<p class="text-xs text-[var(--text-secondary)] mt-1">${escapeHtml(idea.note)}</p>` : ''}
+            <div class="flex items-center gap-2 flex-wrap mt-1.5">
+              <span class="badge badge-planned text-[10px]">${icon(categoryIcon(normalizeCategory(idea.category)), 'w-2.5 h-2.5')} ${escapeHtml(categoryLabel(normalizeCategory(idea.category), lang))}</span>
+              ${idea.address ? `<span class="meta-line">${icon('map-pin', 'w-3 h-3')} <span class="truncate" style="max-width:220px;">${escapeHtml(idea.address)}</span></span>` : ''}
+              ${Number(idea.estimatedCostMinor) > 0 ? `<span class="badge badge-skipped text-[10px]">${icon('coins', 'w-2.5 h-2.5')} ${escapeHtml(formatCurrency(Number(idea.estimatedCostMinor), idea.currency || trip?.baseCurrency || 'THB'))}</span>` : ''}
+            </div>
+            ${voters.length ? `<p class="text-[10px] text-[var(--text-tertiary)] mt-1.5">${icon('users', 'w-3 h-3')} ${escapeHtml(voters.join(', '))}${info.count > voters.length ? ` +${info.count - voters.length}` : ''}</p>` : ''}
+            <div class="flex items-center gap-1 flex-wrap mt-2">
+              ${idea.url ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(idea.url)}" target="_blank" rel="noopener">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
+              ${idea.address ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(googleMapsPlaceUrl(idea.address, idea.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
+              ${idea.status === 'planned'
+                ? `<span class="badge badge-completed text-[10px]">${icon('check', 'w-3 h-3')} ${th('อยู่ในแผน','In the plan')}${idea.plannedDate ? ` • ${escapeHtml(idea.plannedDate)}` : ''}</span>`
+                : `<button class="btn btn-accent btn-sm text-[11px]" style="min-height:30px;padding:2px 10px;" data-act="plan" data-id="${idea.id}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>`}
+              <button class="icon-btn" data-act="edit" data-id="${idea.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
+              <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${idea.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+    queueIcons();
+    initReveal(box);
+  }
+
+  async function toggleVote(idea) {
+    const before = { ...(idea.votes || {}) };
+    idea.votes = toggleVoteMap(idea.votes || {}, myId);
+    paintIdeas(); paintStats();
+    try {
+      await voteIdea(tripId, { ...idea, votes: before }, myId);
+    } catch (e) {
+      idea.votes = before;
+      paintIdeas(); paintStats();
+      toast.error(e.message || String(e));
+    }
+  }
+
+  async function planIdea(idea) {
+    openAddToPlanSheet({
+      trip,
+      title: idea.title,
+      subtitle: `${icon('info', 'w-3 h-3')} ${Number(idea.estimatedCostMinor) > 0 ? th('ค่าใช้จ่ายประมาณการจะถูกสร้างเป็นรายการประมาณการในสมุดค่าใช้จ่ายด้วย','The estimated cost will also be created as an estimate in the expense book') : th('รายการนี้จะถูกเพิ่มเข้าแผนของวันที่เลือก','This will be added to the day you pick')}`,
+      defaultDate: trip?.startDate || '',
+      defaultTime: '09:00',
+      category: normalizeCategory(idea.category),
+      onConfirm: async ({ date, startAt, category }) => {
+        const tLoad = toast.loading(th('กำลังเพิ่มเข้าแผน...', 'Adding to the plan...'));
+        try {
+          const payload = {
+            title: idea.title,
+            description: idea.note || '',
+            date,
+            startAt: new Date(`${date}T${startAt || '09:00'}`),
+            durationMinutes: 60,
+            travelToNextMinutes: 0,
+            category,
+            address: idea.address || '',
+            coordinates: idea.coordinates || '',
+            notes: idea.url ? `${th('ลิงก์','Link')}: ${idea.url}` : '',
+            status: 'planned',
+            estimateAmount: Number(idea.estimatedCostMinor) > 0 ? fromMinor(Number(idea.estimatedCostMinor), getCurrencyDecimals(idea.currency || 'THB')) : 0,
+            estimateCurrency: idea.estimatedCostMinor ? (idea.currency || trip?.baseCurrency || 'THB') : '',
+            estimateCategory: normalizeCategory(idea.category),
+            estimateShareWith: members.map(m => m.id),
+            estimateAutoAdd: true
+          };
+          const { id } = await saveItineraryItem(tripId, payload, currentUser.uid, null, { trip, members });
+          await updateIdea(tripId, idea.id, { status: 'planned', plannedItemId: id, plannedDate: date }, currentUser.uid);
+          idea.status = 'planned';
+          idea.plannedItemId = id;
+          idea.plannedDate = date;
+          tLoad.close();
+          toast.success(th('เพิ่มเข้าแผนแล้ว', 'Added to the plan'));
+          logActivity(tripId, { type: 'itinerary', targetId: id, title: idea.title, detail: th('เพิ่มจากไอเดียสถานที่','Added from the ideas board'), user: actor() }).catch(() => {});
+          paintIdeas(); paintStats();
+        } catch (e) {
+          tLoad.close();
+          toast.error(e.message || String(e));
+          return false;
+        }
+        return true;
+      }
+    });
+  }
+
+  function openIdeaForm(idea) {
+    const isEdit = !!idea;
+    const sheet = showBottomSheet(`
+      <div class="space-y-4">
+        <div class="flex items-center gap-3">
+          <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('lightbulb', 'w-5 h-5')}</div>
+          <h3 class="font-bold text-base" style="font-family: var(--font-display);">${isEdit ? t('edit') : t('addIdea')}</h3>
+        </div>
+        <div class="input-group"><label class="input-label">${icon('sparkles', 'w-3.5 h-3.5')} ${th('ชื่อสถานที่','Place name')} *</label>
+          <input id="idea-title" class="input" value="${escapeHtml(idea?.title || '')}" placeholder="${th('เช่น ทะเลสาบคาวากุจิ','e.g. Lake Kawaguchi')}"></div>
+        <div class="input-group"><label class="input-label">${icon('align-left', 'w-3.5 h-3.5')} ${th('โน้ต / เหตุผลที่อยากไป','Note')}</label>
+          <textarea id="idea-note" class="input" style="min-height:70px;" placeholder="${th('ทำไมถึงอยากไป เปิดกี่โมง ฯลฯ','Why go, opening hours, tips…')}">${escapeHtml(idea?.note || '')}</textarea></div>
+        <div class="input-group"><label class="input-label">${icon('link', 'w-3.5 h-3.5')} ${th('ลิงก์','Link')}</label>
+          <input id="idea-url" class="input text-sm" value="${escapeHtml(idea?.url || '')}" placeholder="https://..."></div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="input-group"><label class="input-label">${icon('map-pin', 'w-3.5 h-3.5')} ${th('ที่อยู่','Address')}</label>
+            <input id="idea-address" class="input text-sm" value="${escapeHtml(idea?.address || '')}" placeholder="${th('ที่อยู่หรือชื่อสถานที่','Address or place')}"></div>
+          <div class="input-group"><label class="input-label">${icon('crosshair', 'w-3.5 h-3.5')} ${th('พิกัด (lat,lng)','Coordinates')}</label>
+            <input id="idea-coords" class="input text-sm font-mono" value="${escapeHtml(idea?.coordinates ? `${idea.coordinates.lat ?? idea.coordinates.latitude},${idea.coordinates.lng ?? idea.coordinates.longitude}` : '')}" placeholder="35.5171,138.7519"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="input-group"><label class="input-label">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('หมวดหมู่','Category')}</label>
+            <select id="idea-cat" class="input">${ITINERARY_CATEGORIES.map(c => `<option value="${c.id}" ${normalizeCategory(idea?.category) === c.id ? 'selected' : ''}>${escapeHtml(lang === 'th' ? c.th : c.en)}</option>`).join('')}</select></div>
+          <div class="input-group"><label class="input-label">${icon('coins', 'w-3.5 h-3.5')} ${th('ค่าใช้จ่ายประมาณ','Estimated cost')}</label>
+            <div class="flex gap-2">
+              <input id="idea-cost" class="input money-input flex-1" type="text" inputmode="decimal" value="${escapeHtml(toolAmountValue(idea?.estimatedCostMinor, idea?.currency || trip?.baseCurrency || 'THB'))}" placeholder="0">
+              <select id="idea-cur" class="input" style="max-width:92px;">${toolCurrencyOptions(trip, idea?.currency || trip?.baseCurrency || 'THB')}</select>
+            </div></div>
+        </div>
+        <div class="flex gap-2">
+          <button id="idea-cancel" class="btn btn-secondary flex-1">${t('cancel')}</button>
+          <button id="idea-save" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${t('save')}</button>
+        </div>
+      </div>
+    `);
+    queueIcons();
+    bindMoneyInputs(sheet.sheet);
+    document.getElementById('idea-cancel')?.addEventListener('click', () => sheet.close());
+    document.getElementById('idea-save')?.addEventListener('click', async () => {
+      const title = String(document.getElementById('idea-title')?.value || '').trim();
+      if (!title) return toast.error(th('ต้องมีชื่อสถานที่', 'Place name is required'));
+      const cur = document.getElementById('idea-cur')?.value || 'THB';
+      const cost = parseCurrencyInput(document.getElementById('idea-cost')?.value || '') || 0;
+      const payload = {
+        title,
+        note: String(document.getElementById('idea-note')?.value || '').trim(),
+        url: String(document.getElementById('idea-url')?.value || '').trim(),
+        address: String(document.getElementById('idea-address')?.value || '').trim(),
+        category: document.getElementById('idea-cat')?.value || 'sightseeing',
+        coordinates: parseCoordinates(document.getElementById('idea-coords')?.value || ''),
+        estimatedCostMinor: toMinor(cost, getCurrencyDecimals(cur)),
+        currency: cur
+      };
+      const tLoad = toast.loading(th('กำลังบันทึก...', 'Saving...'));
+      try {
+        if (isEdit) {
+          await updateIdea(tripId, idea.id, payload, currentUser?.uid);
+          Object.assign(idea, payload);
+        } else {
+          const id = await createIdea(tripId, payload, currentUser?.uid);
+          ideas.push({ id, ...payload, status: 'idea', votes: currentUser?.uid ? { [currentUser.uid]: true } : {} });
+        }
+        tLoad.close();
+        sheet.close();
+        toast.success(th('บันทึกแล้ว', 'Saved'));
+        paintIdeas(); paintStats();
+      } catch (e) { tLoad.close(); toast.error(e.message || String(e)); }
+    });
+    setTimeout(() => document.getElementById('idea-title')?.focus(), 250);
+  }
+
+  async function removeIdea(idea) {
+    const ok = await confirmAction({
+      title: th(`ลบ “${idea.title}” ?`, `Delete “${idea.title}”?`),
+      message: th('ไอเดียนี้จะถูกเอาออกจากบอร์ด','This idea will be removed from the board'),
+      confirmText: t('delete'), danger: true, icon: 'trash-2'
+    });
+    if (!ok) return;
+    try {
+      await deleteIdea(tripId, idea.id);
+      ideas = ideas.filter(i => i.id !== idea.id);
+      paintIdeas(); paintStats();
+      toast.success(th('ลบแล้ว', 'Deleted'));
+    } catch (e) { toast.error(e.message || String(e)); }
+  }
+
+  document.getElementById('idea-filters')?.querySelectorAll('[data-filter]').forEach(btn => btn.addEventListener('click', () => {
+    filter = btn.dataset.filter;
+    document.getElementById('idea-filters')?.querySelectorAll('.chip').forEach(c => c.classList.remove('chip-active'));
+    btn.classList.add('chip-active');
+    paintIdeas();
+  }));
+  bind('idea-sort', 'change', (e) => { sortMode = e.target.value; paintIdeas(); });
+  bind('idea-add-btn', 'click', () => openIdeaForm(null));
+
+  document.getElementById('ideas-list')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    const idea = ideas.find(i => i.id === btn.dataset.id);
+    if (!idea) return;
+    if (btn.dataset.act === 'vote') await toggleVote(idea);
+    if (btn.dataset.act === 'plan') await planIdea(idea);
+    if (btn.dataset.act === 'edit') openIdeaForm(idea);
+    if (btn.dataset.act === 'delete') await removeIdea(idea);
+  });
+
+  paintStats();
+  paintIdeas();
+  initReveal(appEl);
+}
+
+/* ================================================================== *
+ * BOOKINGS — reservations (flights, trains, hotels, cars, …)
+ * ================================================================== */
+async function renderBookings(params) {
+  const tripId = params.tripId;
+  const token = beginRender();
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  await loadTrip(tripId);
+  if (isStale(token)) return;
+  const trip = currentTrip;
+
+  let members = [];
+  try { members = await listMembers(tripId); currentTripMembers = members || []; } catch (e) { console.warn(e?.message); }
+  if (isStale(token)) return;
+
+  let reservations = [];
+  let loadError = '';
+  try { reservations = await listReservations(tripId); } catch (e) { loadError = e?.message || String(e); }
+  if (isStale(token)) return;
+
+  let typeFilter = 'all';
+  const nowStamp = dayjs().format('YYYY-MM-DDTHH:mm');
+
+  appEl.innerHTML = `
+    <div class="page-enter max-w-[900px] mx-auto space-y-5">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        ${renderPageScene('bookings', {
+          lang,
+          title: `${icon('ticket', 'w-5 h-5')} ${t('reservations')}`,
+          subtitle: th('ตั๋วเครื่องบิน รถไฟ โรงแรม รถเช่า — เก็บรหัสยืนยันไว้เปิดดูได้ทันที','Flights, trains, hotels, cars — every confirmation code one tap away')
+        })}
+        <div class="btn-row">
+          <button id="booking-ics-btn" class="btn btn-secondary btn-sm">${icon('calendar-plus', 'w-4 h-4')} ${t('exportCalendar')}</button>
+          <button id="booking-add-btn" class="btn btn-primary btn-sm">${icon('plus', 'w-4 h-4')} ${t('addBooking')}</button>
+        </div>
+      </div>
+
+      <div class="card card-accent p-4" id="booking-next"></div>
+
+      <div class="chip-row" id="booking-filters">
+        <button class="chip chip-active" data-type="all">${icon('layers', 'w-3.5 h-3.5')} ${t('all')}</button>
+        ${RESERVATION_TYPES.map(rt => {
+          const count = reservations.filter(r => r.type === rt.id).length;
+          return `<button class="chip" data-type="${rt.id}">${icon(rt.icon, 'w-3.5 h-3.5')} ${escapeHtml(lang === 'th' ? rt.th : rt.en)}${count ? ` (${count})` : ''}</button>`;
+        }).join('')}
+      </div>
+
+      ${loadError ? `<div class="card p-4 text-xs" style="background:var(--warning-bg); border-color:color-mix(in srgb, var(--warning) 35%, transparent);">${icon('info', 'w-4 h-4')} ${escapeHtml(loadError)}</div>` : ''}
+      <div id="bookings-list" class="space-y-5 stagger"></div>
+    </div>
+  `;
+  queueIcons();
+
+  function paintNext() {
+    const box = document.getElementById('booking-next');
+    if (!box) return;
+    const upcoming = upcomingReservations(reservations, nowStamp, 1)[0];
+    if (!upcoming) {
+      box.innerHTML = `<div class="flex items-center gap-3">
+        <span class="row-icon" style="width:38px;height:38px;border-radius:12px;">${icon('calendar-clock', 'w-4 h-4')}</span>
+        <div>
+          <p class="text-xs font-bold">${th('ยังไม่มีการจองถัดไป','No upcoming booking')}</p>
+          <p class="text-[11px] text-[var(--text-secondary)]">${th('เพิ่มตั๋ว/ที่พัก แล้วระบบจะเตือนลำดับถัดไปไว้ตรงนี้','Add a ticket or hotel and the next one shows up here')}</p>
+        </div>
+      </div>`;
+      queueIcons();
+      return;
+    }
+    const rt = reservationTypeDef(upcoming.type);
+    const countdown = dayjs(`${upcoming.date}T${upcoming.startTime || '00:00'}`).diff(dayjs(), 'day');
+    box.innerHTML = `
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--primary-light);color:var(--primary-strong);">${icon(rt.icon, 'w-5 h-5')}</span>
+        <div class="flex-1 min-w-0">
+          <p class="text-[10px] font-bold uppercase tracking-wide text-[var(--text-tertiary)]">${th('การจองถัดไป','Next booking')} ${countdown >= 0 ? `• ${th('อีก','in')} ${countdown} ${th('วัน','day(s)')}` : ''}</p>
+          <p class="font-bold text-sm truncate">${escapeHtml(upcoming.title || '')}</p>
+          <p class="text-[11px] text-[var(--text-secondary)]">${escapeHtml(upcoming.date || '')} ${escapeHtml(upcoming.startTime || '')} ${upcoming.confirmation ? `• ${t('confirmCode')}: <b>${escapeHtml(upcoming.confirmation)}</b>` : ''}</p>
+        </div>
+        <button class="btn btn-secondary btn-sm" data-copy="${escapeHtml(upcoming.confirmation || '')}">${icon('copy', 'w-3.5 h-3.5')} ${th('คัดลอกรหัส','Copy code')}</button>
+      </div>`;
+    queueIcons();
+  }
+
+  function paintList() {
+    const box = document.getElementById('bookings-list');
+    if (!box) return;
+    const filtered = typeFilter === 'all' ? reservations : reservations.filter(r => r.type === typeFilter);
+    if (!filtered.length) {
+      box.innerHTML = renderEmptyState({
+        icon: 'ticket',
+        title: th('ยังไม่มีการจอง','No reservations yet'),
+        desc: th('เพิ่มตั๋วเครื่องบิน รถไฟ โรงแรม หรือร้านอาหาร พร้อมรหัสยืนยันและค่าใช้จ่าย','Add flights, trains, hotels or restaurants with the confirmation code and price'),
+        actionHtml: `<button id="booking-empty-add" class="btn btn-primary btn-sm mt-2">${icon('plus', 'w-4 h-4')} ${t('addBooking')}</button>`
+      });
+      bind('booking-empty-add', 'click', () => openBookingForm(null));
+      queueIcons();
+      return;
+    }
+    const groups = groupReservationsByDate(filtered);
+    box.innerHTML = groups.map(group => `
+      <div>
+        <h3 class="font-bold text-sm mb-2 flex items-center gap-2">
+          <span class="step-num">${group.date === 'unscheduled' ? icon('calendar-x', 'w-3 h-3') : dayjs(group.date).format('DD')}</span>
+          ${group.date === 'unscheduled' ? th('ยังไม่ระบุวัน','Unscheduled') : formatDate(group.date, lang, trip?.timezone)}
+          <span class="badge badge-planned text-[10px]">${group.items.length}</span>
+        </h3>
+        <div class="space-y-3">
+          ${group.items.map(r => {
+            const rt = reservationTypeDef(r.type);
+            const route = routeLabel(r);
+            const warnings = reservationWarnings(r);
+            return `
+            <div class="card p-4 booking-card" data-booking="${r.id}">
+              <div class="flex items-start gap-3">
+                <span class="row-icon" style="width:42px;height:42px;border-radius:14px;background:${rt.tone}1f;color:${rt.tone};">${icon(rt.icon, 'w-5 h-5')}</span>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                      <h4 class="font-bold text-sm truncate">${escapeHtml(r.title || '')}</h4>
+                      <p class="text-[11px] text-[var(--text-secondary)]">
+                        ${icon('clock', 'w-3 h-3')} ${escapeHtml(r.startTime || '--:--')}${r.endTime ? ` – ${escapeHtml(r.endTime)}` : ''}
+                        ${r.provider ? ` • ${escapeHtml(r.provider)}` : ''}
+                      </p>
+                    </div>
+                    <span class="badge badge-planned text-[10px] flex-shrink-0">${escapeHtml(lang === 'th' ? rt.th : rt.en)}</span>
+                  </div>
+                  ${route ? `<p class="meta-line mt-1">${icon('arrow-left-right', 'w-3 h-3')} ${escapeHtml(route)}</p>` : ''}
+                  <div class="flex items-center gap-2 flex-wrap mt-2">
+                    ${r.confirmation ? `<button class="chip text-[11px] chip-accent" data-copy="${escapeHtml(r.confirmation)}" title="${t('copied')}">${icon('hash', 'w-3 h-3')} ${escapeHtml(r.confirmation)} ${icon('copy', 'w-3 h-3')}</button>` : ''}
+                    ${r.seat ? `<span class="badge badge-planned text-[10px]">${icon('armchair', 'w-2.5 h-2.5')} ${escapeHtml(r.seat)}</span>` : ''}
+                    ${r.room ? `<span class="badge badge-planned text-[10px]">${icon('door-open', 'w-2.5 h-2.5')} ${escapeHtml(r.room)}</span>` : ''}
+                    ${Number(r.costMinor) > 0 ? `<span class="badge badge-skipped text-[10px]">${icon('coins', 'w-2.5 h-2.5')} ${escapeHtml(formatCurrency(Number(r.costMinor), r.currency || 'THB'))}</span>` : ''}
+                    ${r.linkedItemId ? `<span class="badge badge-completed text-[10px]">${icon('check', 'w-2.5 h-2.5')} ${t('inPlan')}</span>` : ''}
+                  </div>
+                  ${r.address ? `<p class="text-[11px] text-[var(--text-secondary)] mt-1.5">${icon('map-pin', 'w-3 h-3')} ${escapeHtml(r.address)}</p>` : ''}
+                  ${r.notes ? `<p class="text-[11px] text-[var(--text-secondary)] mt-1">${escapeHtml(r.notes)}</p>` : ''}
+                  ${warnings.length ? `<p class="text-[10px] mt-1.5" style="color:var(--warning);">${icon('alert-triangle', 'w-3 h-3')} ${escapeHtml(warnings.map(w => lang === 'th' ? w.th : w.en).join(' • '))}</p>` : ''}
+                  <div class="flex items-center gap-1 flex-wrap mt-2">
+                    ${r.url ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(r.url)}" target="_blank" rel="noopener">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
+                    ${r.address ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(googleMapsPlaceUrl(r.address, r.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
+                    ${r.phone ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="tel:${escapeHtml(r.phone)}">${icon('phone', 'w-3.5 h-3.5')} ${escapeHtml(r.phone)}</a>` : ''}
+                    ${!r.linkedItemId ? `<button class="btn btn-accent btn-sm text-[11px]" style="min-height:30px;padding:2px 10px;" data-act="plan" data-id="${r.id}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>` : ''}
+                    <button class="icon-btn" data-act="edit" data-id="${r.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
+                    <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${r.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
+                  </div>
+                </div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    `).join('');
+    queueIcons();
+    initReveal(box);
+  }
+
+  async function planBooking(r) {
+    const rt = reservationTypeDef(r.type);
+    openAddToPlanSheet({
+      trip,
+      title: r.title,
+      subtitle: `${icon('info', 'w-3 h-3')} ${th('ระบบจะใส่รหัสยืนยันและเวลาไว้ในรายละเอียดของแผนด้วย','The confirmation code and times are copied into the itinerary note')}`,
+      defaultDate: r.date || trip?.startDate || '',
+      defaultTime: r.startTime || '09:00',
+      category: ['hotel'].includes(rt.id) ? 'stay' : (['flight', 'train', 'bus', 'ferry', 'car'].includes(rt.id) ? 'transport' : 'activity'),
+      onConfirm: async ({ date, startAt, category }) => {
+        const tLoad = toast.loading(th('กำลังเพิ่มเข้าแผน...', 'Adding to the plan...'));
+        try {
+          const payload = reservationToItineraryPayload(r, { date, startAt, order: 999 });
+          payload.startAt = new Date(`${date}T${startAt || r.startTime || '09:00'}`);
+          payload.durationMinutes = durationBetween(startAt || r.startTime, r.endTime) || payload.durationMinutes || 60;
+          payload.category = category || payload.category;
+          payload.estimateAmount = Number(r.costMinor) > 0 ? fromMinor(Number(r.costMinor), getCurrencyDecimals(r.currency || 'THB')) : 0;
+          payload.estimateCurrency = Number(r.costMinor) > 0 ? (r.currency || 'THB') : '';
+          payload.estimateShareWith = members.map(m => m.id);
+          payload.estimateAutoAdd = true;
+          const { id } = await saveItineraryItem(tripId, payload, currentUser.uid, null, { trip, members });
+          await updateReservation(tripId, r.id, { linkedItemId: id }, currentUser?.uid);
+          r.linkedItemId = id;
+          tLoad.close();
+          toast.success(th('เพิ่มเข้าแผนแล้ว', 'Added to the plan'));
+          paintList(); paintNext();
+        } catch (e) {
+          tLoad.close();
+          toast.error(e.message || String(e));
+          return false;
+        }
+        return true;
+      }
+    });
+  }
+
+  function openBookingForm(existing) {
+    const isEdit = !!existing;
+    const sheet = showBottomSheet(`
+      <div class="space-y-4">
+        <div class="flex items-center gap-3">
+          <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('ticket', 'w-5 h-5')}</div>
+          <h3 class="font-bold text-base" style="font-family: var(--font-display);">${isEdit ? t('edit') : t('addBooking')}</h3>
+        </div>
+        <div class="input-group"><label class="input-label">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('ประเภท','Type')}</label>
+          <select id="bk-type" class="input">${RESERVATION_TYPES.map(rt => `<option value="${rt.id}" ${reservationTypeDef(existing?.type).id === rt.id ? 'selected' : ''}>${escapeHtml(lang === 'th' ? rt.th : rt.en)}</option>`).join('')}</select></div>
+        <div class="input-group"><label class="input-label">${icon('sparkles', 'w-3.5 h-3.5')} ${th('ชื่อรายการ','Title')} *</label>
+          <input id="bk-title" class="input" value="${escapeHtml(existing?.title || '')}" placeholder="${th('เช่น TG676 BKK→NRT','e.g. TG676 BKK→NRT')}"></div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="input-group"><label class="input-label">${icon('building', 'w-3.5 h-3.5')} ${th('ผู้ให้บริการ','Provider')}</label>
+            <input id="bk-provider" class="input text-sm" value="${escapeHtml(existing?.provider || '')}" placeholder="${th('สายการบิน / โรงแรม','Airline / hotel')}"></div>
+          <div class="input-group"><label class="input-label">${icon('hash', 'w-3.5 h-3.5')} ${t('confirmCode')}</label>
+            <input id="bk-confirm" class="input text-sm font-mono" value="${escapeHtml(existing?.confirmation || '')}" placeholder="ABC123"></div>
+        </div>
+        <div class="grid grid-cols-3 gap-2">
+          <div class="input-group"><label class="input-label">${icon('calendar', 'w-3.5 h-3.5')} ${th('วัน','Date')}</label>
+            <input id="bk-date" type="date" class="input text-sm" value="${escapeHtml(existing?.date || trip?.startDate || '')}"></div>
+          <div class="input-group"><label class="input-label">${icon('clock', 'w-3.5 h-3.5')} ${th('เริ่ม','Start')}</label>
+            <input id="bk-start" type="time" class="input text-sm" value="${escapeHtml(existing?.startTime || '')}"></div>
+          <div class="input-group"><label class="input-label">${icon('clock', 'w-3.5 h-3.5')} ${th('สิ้นสุด','End')}</label>
+            <input id="bk-end" type="time" class="input text-sm" value="${escapeHtml(existing?.endTime || '')}"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-3" id="bk-route-row">
+          <div class="input-group"><label class="input-label">${icon('plane-takeoff', 'w-3.5 h-3.5')} ${th('จาก','From')}</label>
+            <input id="bk-from" class="input text-sm" value="${escapeHtml(existing?.from || '')}" placeholder="BKK"></div>
+          <div class="input-group"><label class="input-label">${icon('plane-landing', 'w-3.5 h-3.5')} ${th('ไป','To')}</label>
+            <input id="bk-to" class="input text-sm" value="${escapeHtml(existing?.to || '')}" placeholder="NRT"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="input-group"><label class="input-label">${icon('armchair', 'w-3.5 h-3.5')} ${th('ที่นั่ง / ชั้น','Seat / class')}</label>
+            <input id="bk-seat" class="input text-sm" value="${escapeHtml(existing?.seat || '')}" placeholder="12A"></div>
+          <div class="input-group"><label class="input-label">${icon('door-open', 'w-3.5 h-3.5')} ${th('ห้อง / ประเภทห้อง','Room')}</label>
+            <input id="bk-room" class="input text-sm" value="${escapeHtml(existing?.room || '')}" placeholder="Deluxe"></div>
+        </div>
+        <div class="input-group"><label class="input-label">${icon('map-pin', 'w-3.5 h-3.5')} ${th('ที่อยู่','Address')}</label>
+          <input id="bk-address" class="input text-sm" value="${escapeHtml(existing?.address || '')}" placeholder="${th('ที่อยู่สนามบิน/โรงแรม','Airport / hotel address')}"></div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="input-group"><label class="input-label">${icon('phone', 'w-3.5 h-3.5')} ${th('เบอร์โทร','Phone')}</label>
+            <input id="bk-phone" class="input text-sm" value="${escapeHtml(existing?.phone || '')}" placeholder="+66 ..."></div>
+          <div class="input-group"><label class="input-label">${icon('link', 'w-3.5 h-3.5')} ${th('ลิงก์','Link')}</label>
+            <input id="bk-url" class="input text-sm" value="${escapeHtml(existing?.url || '')}" placeholder="https://..."></div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="input-group"><label class="input-label">${icon('coins', 'w-3.5 h-3.5')} ${th('ค่าใช้จ่าย','Cost')}</label>
+            <input id="bk-cost" class="input money-input" type="text" inputmode="decimal" value="${escapeHtml(toolAmountValue(existing?.costMinor, existing?.currency || trip?.baseCurrency || 'THB'))}" placeholder="0"></div>
+          <div class="input-group"><label class="input-label">${icon('banknote', 'w-3.5 h-3.5')} ${th('สกุลเงิน','Currency')}</label>
+            <select id="bk-currency" class="input">${toolCurrencyOptions(trip, existing?.currency || trip?.baseCurrency || 'THB')}</select></div>
+        </div>
+        <div class="input-group"><label class="input-label">${icon('align-left', 'w-3.5 h-3.5')} ${th('โน้ต','Notes')}</label>
+          <textarea id="bk-notes" class="input" style="min-height:64px;">${escapeHtml(existing?.notes || '')}</textarea></div>
+        <div class="flex gap-2">
+          <button id="bk-cancel" class="btn btn-secondary flex-1">${t('cancel')}</button>
+          <button id="bk-save" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${t('save')}</button>
+        </div>
+      </div>
+    `);
+    queueIcons();
+    bindMoneyInputs(sheet.sheet);
+    document.getElementById('bk-cancel')?.addEventListener('click', () => sheet.close());
+    document.getElementById('bk-save')?.addEventListener('click', async () => {
+      const title = String(document.getElementById('bk-title')?.value || '').trim();
+      if (!title) return toast.error(th('ต้องมีชื่อรายการจอง', 'A booking title is required'));
+      const cur = document.getElementById('bk-currency')?.value || 'THB';
+      const payload = {
+        type: document.getElementById('bk-type')?.value || 'other',
+        title,
+        provider: String(document.getElementById('bk-provider')?.value || '').trim(),
+        confirmation: String(document.getElementById('bk-confirm')?.value || '').trim(),
+        date: document.getElementById('bk-date')?.value || '',
+        startTime: document.getElementById('bk-start')?.value || '',
+        endTime: document.getElementById('bk-end')?.value || '',
+        from: String(document.getElementById('bk-from')?.value || '').trim(),
+        to: String(document.getElementById('bk-to')?.value || '').trim(),
+        seat: String(document.getElementById('bk-seat')?.value || '').trim(),
+        room: String(document.getElementById('bk-room')?.value || '').trim(),
+        address: String(document.getElementById('bk-address')?.value || '').trim(),
+        phone: String(document.getElementById('bk-phone')?.value || '').trim(),
+        url: String(document.getElementById('bk-url')?.value || '').trim(),
+        costMinor: toMinor(parseCurrencyInput(document.getElementById('bk-cost')?.value || '') || 0, getCurrencyDecimals(cur)),
+        currency: cur,
+        notes: String(document.getElementById('bk-notes')?.value || '').trim()
+      };
+      const tLoad = toast.loading(th('กำลังบันทึก...', 'Saving...'));
+      try {
+        if (isEdit) {
+          await updateReservation(tripId, existing.id, payload, currentUser?.uid);
+          Object.assign(existing, payload);
+        } else {
+          const id = await createReservation(tripId, payload, currentUser?.uid);
+          reservations.push({ id, ...payload });
+        }
+        tLoad.close();
+        sheet.close();
+        toast.success(th('บันทึกแล้ว', 'Saved'));
+        logActivity(tripId, { type: 'trip', targetId: existing?.id || payload.title, title: payload.title, detail: th('บันทึกการจอง','Reservation saved'), user: actor() }).catch(() => {});
+        paintList(); paintNext();
+      } catch (e) { tLoad.close(); toast.error(e.message || String(e)); }
+    });
+    setTimeout(() => document.getElementById('bk-title')?.focus(), 250);
+  }
+
+  async function removeBooking(r) {
+    const ok = await confirmAction({
+      title: th(`ลบ “${r.title}” ?`, `Delete “${r.title}”?`),
+      message: th('การจองนี้จะถูกเอาออก (แผนที่เชื่อมไว้ไม่ถูกลบ)','This booking will be removed (a linked itinerary item stays)'),
+      confirmText: t('delete'), danger: true, icon: 'trash-2'
+    });
+    if (!ok) return;
+    try {
+      await deleteReservation(tripId, r.id);
+      reservations = reservations.filter(x => x.id !== r.id);
+      paintList(); paintNext();
+      toast.success(th('ลบแล้ว', 'Deleted'));
+    } catch (e) { toast.error(e.message || String(e)); }
+  }
+
+  document.getElementById('booking-filters')?.querySelectorAll('[data-type]').forEach(btn => btn.addEventListener('click', () => {
+    typeFilter = btn.dataset.type;
+    document.getElementById('booking-filters')?.querySelectorAll('.chip').forEach(c => c.classList.remove('chip-active'));
+    btn.classList.add('chip-active');
+    paintList();
+  }));
+
+  function bindBookingActions(container) {
+    container?.addEventListener('click', async (e) => {
+      const copyBtn = e.target.closest('[data-copy]');
+      if (copyBtn) { copyToClipboard(copyBtn.dataset.copy); return; }
+      const btn = e.target.closest('[data-act]');
+      if (!btn) return;
+      const r = reservations.find(x => x.id === btn.dataset.id);
+      if (!r) return;
+      if (btn.dataset.act === 'edit') openBookingForm(r);
+      if (btn.dataset.act === 'plan') await planBooking(r);
+      if (btn.dataset.act === 'delete') await removeBooking(r);
+    });
+  }
+  bindBookingActions(document.getElementById('bookings-list'));
+  bindBookingActions(document.getElementById('booking-next'));
+
+  bind('booking-add-btn', 'click', () => openBookingForm(null));
+  bind('booking-ics-btn', 'click', () => {
+    if (!reservations.length) return toast.error(th('ยังไม่มีการจองให้ส่งออก', 'No reservations to export'));
+    const events = reservationsToEvents(reservations, { lang });
+    downloadIcs(`${(trip?.name || 'trip').replace(/\s+/g, '-')}-bookings.ics`, buildIcs(events, { calendarName: `${trip?.name || 'Trip'} — ${t('reservations')}` }));
+    toast.success(th('ส่งออกไฟล์ปฏิทินแล้ว', 'Calendar file exported'));
+  });
+
+  paintNext();
+  paintList();
+  initReveal(appEl);
+}
+
 function renderMore(params) {
   const tripId = params.tripId;
   const lang = getLang();
@@ -8087,6 +9387,9 @@ function renderMore(params) {
     { href: `#/trip/${tripId}/dashboard`, icon: 'layout-dashboard', label: t('dashboard') },
     { href: `#/trip/${tripId}/settlement`, icon: 'hand-coins', label: t('settlement') },
     { href: `#/trip/${tripId}/members`, icon: 'users', label: t('members') },
+    { href: `#/trip/${tripId}/prep`, icon: 'clipboard-check', label: t('prep') },
+    { href: `#/trip/${tripId}/ideas`, icon: 'lightbulb', label: t('ideas') },
+    { href: `#/trip/${tripId}/bookings`, icon: 'ticket', label: t('bookings') },
     { href: `#/trip/${tripId}/documents`, icon: 'folder', label: lang==='th' ? 'เอกสารสำคัญ' : 'Documents' },
     { href: `#/trip/${tripId}/import`, icon: 'package', label: t('importExport') },
     { href: `#/trip/${tripId}/settings`, icon: 'settings', label: t('settings') },
