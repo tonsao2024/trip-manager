@@ -1709,7 +1709,7 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 .itin-sheet-item-meta { font-size: 10.5px; color: #6b7280; margin-top: 3px; display: flex; gap: 4px 10px; flex-wrap: wrap; }
 .itin-sheet-note { font-size: 11px; color: #374151; margin-top: 5px; background: #fffbeb; border-left: 3px solid #f59e0b; padding: 5px 8px; border-radius: 4px; white-space: pre-wrap; }
 .itin-sheet-est { color: #047857; font-weight: 800; }
-.itin-sheet-est i { display: block; font-style: normal; color: #059669; font-size: 10px; font-weight: 700; }
+.itin-sheet-est i { display: block; font-style: normal; color: var(--success); font-size: 10px; font-weight: 700; }
 .itin-sheet-status { display: inline-block; font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 8px; border: 1px solid #d1d5db; color: #374151; background: #ffffff; }
 .itin-sheet-foot { margin-top: 14px; padding-top: 10px; border-top: 1px dashed #e5e7eb; display: flex; justify-content: space-between; font-size: 10px; color: #9ca3af; }
 .itin-sheet-empty { padding: 26px 16px; text-align: center; font-size: 12px; color: #6b7280; }
@@ -1728,7 +1728,7 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 .rcpt-block-body { padding: 10px 12px 12px; }
 .rcpt-block--recv { border-color: #a7f3d0; }
 .rcpt-block--recv .rcpt-block-head { background: #ecfdf5; color: #065f46; }
-.rcpt-block--recv .rcpt-block-icon { background: #059669; }
+.rcpt-block--recv .rcpt-block-icon { background: var(--success); }
 .rcpt-block--deduct { border-color: #fecdd3; }
 .rcpt-block--deduct .rcpt-block-head { background: #fff1f2; color: #9f1239; }
 .rcpt-block--deduct .rcpt-block-icon { background: #e11d48; }
@@ -1778,7 +1778,7 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 .export-flat .receipt .rcpt-block--deduct .rcpt-block-head { background: #fff1f2 !important; color: #9f1239 !important; }
 .export-flat .receipt .rcpt-block--balance .rcpt-block-head { background: #eaf2fd !important; color: #1c4a9e !important; }
 .export-flat .receipt .rcpt-block-icon { color: #ffffff !important; }
-.export-flat .receipt .rcpt-block--recv .rcpt-block-icon { background: #059669 !important; }
+.export-flat .receipt .rcpt-block--recv .rcpt-block-icon { background: var(--success) !important; }
 .export-flat .receipt .rcpt-block--deduct .rcpt-block-icon { background: #e11d48 !important; }
 .export-flat .receipt .rcpt-block--balance .rcpt-block-icon { background: #2f6fe4 !important; }
 .export-flat .receipt .rcpt-chip--cash { background: #ecfdf5 !important; color: #047857 !important; border-color: #a7f3d0 !important; }

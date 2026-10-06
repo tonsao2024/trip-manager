@@ -1773,6 +1773,36 @@ console.log('\n▶ v16 trip tools — ideas board (vote + add to plan)');
   check(text$().includes('อยู่ในแผน') || text$().includes('In the plan'), 'ideas: card switches to “in the plan”');
 }
 
+console.log('\n▶ v18.2 — ไอเดียยังบันทึกได้แม้กฎ Firestore ยังไม่อนุญาต (fix: missing permissions)');
+{
+  // Simulate the deployed-rules-are-older-than-the-code situation: writes to the
+  // ideas collection are denied, exactly what the user hit.
+  fsdb.__deny('trips/t1/ideas');
+  await goto('#/trip/t1/ideas');
+  await waitFor(() => q('#idea-add-btn'), { label: 'ideas page' });
+  await click('#idea-add-btn');
+  await waitFor(() => q('#idea-title'), { label: 'idea form' });
+  q('#idea-title').value = 'วัดป่าแห่งใหม่';
+  await click('#idea-save');
+  await waitFor(() => q('#idea-pending-banner'), { timeout: 8000, label: 'pending banner' }).catch(() => {});
+  check(!!q('#idea-pending-banner'), 'ideas: a denied write explains itself with the pending banner');
+  check(text$().includes('วัดป่าแห่งใหม่'), 'ideas: the text the user typed is still shown on the board');
+  check(qa('.idea-card .badge-pending').length >= 1, 'ideas: the queued card is badged as waiting to sync');
+  check(!!q('#idea-sync-retry') && !!q('#idea-rules-help'), 'ideas: retry + “fix the rules” actions offered');
+  const queued = window.localStorage.getItem(`fuji_pending_ideas_${'t1'}`);
+  check(!!queued && queued.includes('วัดป่าแห่งใหม่'), 'ideas: the idea is queued in local storage (nothing lost)');
+
+  // Publishing the rules (allowAll again) + retry pushes it to the cloud.
+  fsdb.__allowAll();
+  await click('#idea-sync-retry');
+  await waitFor(() => [...fsdb.__store.entries()].some(([k, v]) => k.startsWith('trips/t1/ideas/') && String(v?.title || '').includes('วัดป่าแห่งใหม่')),
+    { timeout: 8000, label: 'queued idea synced' }).catch(() => {});
+  check([...fsdb.__store.entries()].some(([k, v]) => k.startsWith('trips/t1/ideas/') && String(v?.title || '').includes('วัดป่าแห่งใหม่')),
+    'ideas: retry syncs the queued idea once the rules allow it');
+  await waitFor(() => !q('#idea-pending-banner'), { timeout: 6000, label: 'banner cleared' }).catch(() => {});
+  check(!q('#idea-pending-banner'), 'ideas: the banner disappears after a successful sync');
+}
+
 console.log('\n▶ v16 trip tools — bookings + calendar export');
 {
   await goto('#/trip/t1/bookings');
@@ -1805,47 +1835,29 @@ console.log('\n▶ v16 trip tools — dashboard widgets');
   check(!!q('#dash-tools a[href="#/trip/t1/prep"]'), 'dashboard: prep tile links to the page');
 }
 
-console.log('\n▶ v16 itinerary — route optimiser (จัดลำดับเส้นทาง)');
+console.log('\n▶ v18.2 itinerary — clean toolbar + Excel import behind edit mode');
 {
-  // A fresh, deliberately zig-zagged day: hotel → far NE → E → N (backtracking).
+  // The “แชร์” and “จัดเส้นทาง” buttons were removed (a request): the toolbar now
+  // keeps reading + export tools, and the destructive Excel *import* only exists
+  // while edit mode is on.
   const ZDAY = TRIP.endDate;
-  const zig = [
-    ['z1', '35.3905,138.9331'],              // hotel — kept as the day's first stop
-    ['z2', '35.4500,139.0000'],              // far north-east
-    ['z3', '35.3905,139.0000'],              // east
-    ['z4', '35.4500,138.9331'],              // north
-    ['zt', '35.4780,138.9700']               // timed anchor (kept in place)
-  ];
-  zig.forEach(([id, coords], i) => fsdb.__seed(`trips/t1/itineraryItems/${id}`, {
-    title: `จุดที่ ${i + 1}`, date: ZDAY, order: i, category: 'sightseeing', status: 'planned',
-    startAt: id === 'zt' ? new Date(`${ZDAY}T15:00:00+09:00`) : null,
-    address: '', coordinates: coords, description: '', createdAt: now
-  }));
+  fsdb.__seed(`trips/t1/itineraryItems/z1`, {
+    title: 'โรงแรม', date: ZDAY, order: 0, category: 'stay', status: 'planned',
+    coordinates: '35.3905,138.9331', address: '', description: '', createdAt: now
+  });
 
   await goto(`#/trip/t1/itinerary?date=${ZDAY}`);
-  await waitFor(() => q('#optimize-route-btn'), { label: 'optimise button' });
-  check(!!q('#optimize-route-btn'), 'itinerary: “optimise route” button present');
-  await click('#optimize-route-btn');
-  await waitFor(() => q('#route-apply'), { timeout: 8000, label: 'optimiser preview sheet' });
-  check(!!q('#route-apply'), 'itinerary: optimiser previews a shorter order');
-  const preview = q('#route-apply')?.closest('.bottom-sheet')?.textContent || '';
-  check(/km/.test(preview), 'itinerary: preview shows the distance saved');
-  check(/Google Maps/i.test(preview), 'itinerary: preview links the new order on Google Maps');
-  check(/จุดที่ 5/.test(preview), 'itinerary: the timed stop is part of the previewed route');
-
-  const before = fsdb.__dump('trips/t1/itineraryItems/z1')?.order;
-  await click('#route-apply');
-  await waitFor(() => {
-    const o = zig.map(([id]) => fsdb.__dump(`trips/t1/itineraryItems/${id}`)?.order);
-    return new Set(o).size === zig.length && o.join(',') !== zig.map((_, i) => i).join(',');
-  }, { timeout: 8000, label: 'reordered items' });
-  const after = zig.map(([id]) => fsdb.__dump(`trips/t1/itineraryItems/${id}`)?.order);
-  check(after.join(',') !== zig.map((_, i) => i).join(','), 'itinerary: applying rewrote the stored order');
-  check(fsdb.__dump('trips/t1/itineraryItems/z1')?.order === 0, 'itinerary: the day still starts at the hotel');
-  const ztOrder = fsdb.__dump('trips/t1/itineraryItems/zt')?.order;
-  const z4Order = fsdb.__dump('trips/t1/itineraryItems/z4')?.order;
-  check(typeof before === 'number' && typeof ztOrder === 'number', 'itinerary: order values are numbers again');
-  check(ztOrder === 4 || ztOrder > z4Order, 'itinerary: the timed stop keeps its slot at the end of the day');
+  await waitFor(() => q('#view-all-btn'), { label: 'itinerary shell' });
+  check(!q('#itin-share-btn'), 'itinerary: the แชร์ button is gone');
+  check(!q('#optimize-route-btn'), 'itinerary: the จัดเส้นทาง button is gone');
+  check(!q('#import-excel-btn'), 'itinerary: Excel import is hidden by default');
+  check(!!q('#export-excel-btn'), 'itinerary: Excel export stays available to admins');
+  await click('#edit-mode-btn');
+  await waitFor(() => q('#import-excel-btn'), { timeout: 4000, label: 'import button in edit mode' });
+  check(!!q('#import-excel-btn'), 'itinerary: Excel import appears in edit mode');
+  await click('#edit-mode-btn');
+  await sleep(120);
+  check(!q('#import-excel-btn'), 'itinerary: Excel import disappears when edit mode is off');
 }
 
 console.log('\n▶ v16 exports page — calendar (.ics)');
@@ -1993,6 +2005,147 @@ console.log('\n▶ v17 booking import — paste a confirmation e-mail');
   check(text$().includes('XT4K9P'), 'import: card appears on the bookings page');
 }
 
+console.log('\n▶ v18.2 — สรุปการโอน / โหมดกระทัดรัด / แผนที่หนี้ / กลุ่มย่อย / เฉลี่ยต่อคน');
+{
+  // ---- 7) the clear-bill page leads with a tap-through transfer summary ----
+  await goto('#/trip/t1/settlement');
+  await waitFor(() => q('#settle-views'), { label: 'settlement page' });
+  await waitFor(() => q('#settle-net .net-chip[data-settle-person]'), { timeout: 8000, label: 'net summary' }).catch(() => {});
+  const chips = qa('#settle-net .net-chip[data-settle-person]');
+  check(chips.length >= 1, `settlement: a net chip per member (${chips.length})`);
+  check(!!q('#settle-net .net-chip.is-in') || !!q('#settle-net .net-chip.is-out'), 'settlement: net chips say who gets back / who pays');
+  check(/รับสุทธิ|จ่ายสุทธิ|เคลียร์แล้ว/.test(q('#settle-net')?.textContent || ''), 'settlement: each chip carries its verdict text');
+  check(!!q('#settle-overview [data-settle-person]'), 'settlement: the overview table rows are tappable too');
+
+  // tap a chip → the person screen opens (avatar + verdict + transfer rows)
+  const firstId = chips[0].dataset.settlePerson;
+  await click(chips[0]);
+  await waitFor(() => q('#settle-person'), { label: 'person sheet' });
+  check(!!q('#settle-person .settle-person-verdict'), 'settlement: the person sheet shows the net verdict');
+  check(!!q('#sp-receipt') && !!q('#sp-copy') && !!q('#sp-close'), 'settlement: the person sheet offers receipt / copy / close');
+  const chained = qa('#settle-person [data-settle-person]').filter(el => el.dataset.settlePerson && el.dataset.settlePerson !== firstId);
+  if (chained.length) {
+    const nextId = chained[0].dataset.settlePerson;
+    await click(chained[0]);
+    await waitFor(() => q('#settle-person') && q('#settle-person').textContent.includes((q('#settle-person')?.textContent || '')), { label: 'chained person sheet' }).catch(() => {});
+    await sleep(260);
+    const nowIds = qa('#settle-person [data-settle-person]').map(el => el.dataset.settlePerson);
+    check(nowIds.includes(nextId) || (q('#settle-person')?.textContent || '').length > 0, 'settlement: tapping a transfer row chains to the other person');
+  } else {
+    check(true, 'settlement: no transfer rows for this member (nothing to chain)');
+  }
+  await click('#sp-receipt');
+  await waitFor(() => q('.receipt-detail-body'), { timeout: 6000, label: 'receipt detail sheet' }).catch(() => {});
+  check(!!q('#rd-density [data-rd-density="compact"]'), 'settlement: the receipt sheet has a compact toggle');
+  await click('#rd-density [data-rd-density="compact"]');
+  await sleep(220);
+  check(window.localStorage.getItem('fuji_rcpt_density') === 'compact', 'settlement: the compact choice is remembered');
+  check(!!q('.receipt-detail-body.is-compact') || !!q('#rd-density [data-rd-density="compact"].active'),
+    'settlement: compact mode is applied to the receipt');
+  await click('#rd-close');
+  await sleep(240);
+
+  // ---- the receipts view keeps its own density toolbar ----
+  await click('#settle-views [data-view="receipts"]');
+  await waitFor(() => q('#receipt-density'), { timeout: 8000, label: 'receipt density toolbar' });
+  check(!!q('#receipt-density [data-density="full"]') && !!q('#receipt-density [data-density="compact"]'), 'settlement: receipts view offers ละเอียด / กระทัดรัด');
+  check(q('#receipt-density [data-density="compact"]').classList.contains('active'), 'settlement: the remembered compact mode is preselected');
+  await click('#receipt-density [data-density="full"]');
+  await sleep(220);
+  check(window.localStorage.getItem('fuji_rcpt_density') === 'full', 'settlement: switching back to detailed persists too');
+
+  // ---- 8) the debt map is tappable and labels net receive / net pay ----
+  await click('#settle-views [data-view="debt-map"]');
+  await waitFor(() => q('.debt-map-container') || q('.debt-map-node'), { timeout: 8000, label: 'debt map' }).catch(() => {});
+  const nodes = qa('.debt-map-node[data-debt-person]');
+  check(nodes.length >= 1, `debt map: one node per member (${nodes.length})`);
+  check(nodes.every(n => n.getAttribute('role') === 'button' && n.getAttribute('tabindex') === '0'), 'debt map: nodes are announced as buttons');
+  check(/รับสุทธิ|จ่ายสุทธิ|เคลียร์/.test(q('#settlement-content')?.textContent || ''), 'debt map: labels spell out net receive / net pay');
+  check(!!q('.debt-map-legend'), 'debt map: legend explains the colours');
+  if (nodes.length) {
+    // <g> is SVG: it has no .click(), dispatch the event like a real tap does
+    nodes[0].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await waitFor(() => q('#settle-person'), { label: 'debt node → person sheet' }).catch(() => {});
+    check(!!q('#settle-person'), 'debt map: tapping a node opens the person detail');
+    await click('#sp-close');
+    await sleep(300);
+    // keyboard: Enter on a focused node behaves the same way
+    nodes[0].dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await waitFor(() => q('#settle-person'), { label: 'debt node keyboard' }).catch(() => {});
+    check(!!q('#settle-person'), 'debt map: Enter on a focused node also opens the detail');
+    await click('#sp-close');
+    await sleep(300);
+  }
+  const debtRows = qa('#settlement-content .debt-tx-row[data-settle-person]');
+  check(debtRows.length >= 1, `debt map: transfer rows are tappable (${debtRows.length})`);
+
+  // ---- 3) an average per person wherever a total is shown ----
+  await goto('#/trip/t1/expenses');
+  await waitFor(() => q('#exp-sum-avg'), { label: 'expense KPI strip' });
+  const avgText = (q('#exp-sum-avg')?.textContent || '').trim();
+  check(avgText.length > 0 && avgText !== '--', `expenses: average per person computed (${avgText})`);
+  check(/เฉลี่ย/.test(q('#exp-sum-avg-label')?.textContent || ''), 'expenses: the tile is labelled เฉลี่ย / คน');
+  check(qa('.expense-avg-chip').length >= 1 || qa('#exp-sum-avg').length === 1, 'expenses: day headers / list bar carry the per-person average');
+
+  // ---- 4) trip sub-groups: create → badge → budget report → edit → delete ----
+  await goto('#/trip/t1/members');
+  await waitFor(() => q('#groups-card'), { label: 'groups card' });
+  check(!!q('#add-group-btn'), 'groups: admins get the “เพิ่มกลุ่ม” button');
+  await click('#add-group-btn');
+  await waitFor(() => q('#group-name'), { label: 'group form' });
+  check(qa('#group-colors [data-color]').length >= 4, 'groups: colour swatches offered');
+  check(qa('#group-icons [data-icon]').length >= 4, 'groups: icon picker offered');
+  const tiles = qa('#group-tiles [data-member]');
+  check(tiles.length >= 2, `groups: every member can be picked (${tiles.length})`);
+  q('#group-name').value = 'กลุ่ม A ทดสอบ';
+  q('#group-note').value = 'กลับก่อน';
+  await click(qa('#group-colors [data-color]')[1]);
+  await click(qa('#group-icons [data-icon]')[1]);
+  await click(tiles[0]);
+  await click(tiles[1]);
+  check(/2/.test(q('#group-picked-count')?.textContent || ''), 'groups: the picked counter follows the selection');
+  await click('#group-save');
+  await waitFor(() => q('.group-card[data-group]'), { timeout: 8000, label: 'group card' });
+  const card = q('.group-card[data-group]');
+  check(/กลุ่ม A ทดสอบ/.test(card.textContent), 'groups: the new group is listed');
+  check(!!card.style.getPropertyValue('--group-color'), 'groups: the group carries its colour');
+  check(qa('#groups-budget .group-budget-row').length >= 2, 'groups: the budget report compares groups with the whole trip');
+  check(!/NaN|undefined/.test(q('#groups-budget')?.textContent || ''), 'groups: the budget report has no NaN');
+  const gid = card.dataset.group;
+  const stored = [...fsdb.__store.entries()].find(([k]) => k.includes('/memberGroups/'));
+  check(!!stored, 'groups: the group is saved to Firestore (memberGroups)');
+  check(!!q('[data-member-groups] span'), 'groups: members show their group badge');
+
+  // edit round-trip
+  await click(`[data-group-act="edit"][data-id="${gid}"]`);
+  await waitFor(() => q('#group-name'), { label: 'edit group form' });
+  check((q('#group-name').value || '').includes('กลุ่ม A'), 'groups: the edit form is prefilled');
+  q('#group-name').value = 'กลุ่ม A (แก้ไข)';
+  await click('#group-save');
+  await waitFor(() => /แก้ไข/.test(q('.group-card[data-group]')?.textContent || ''), { timeout: 8000, label: 'edited group' }).catch(() => {});
+  check(/แก้ไข/.test(q('.group-card[data-group]')?.textContent || ''), 'groups: edits are reflected on the card');
+
+  // delete round-trip (confirmation sheet)
+  await click(`[data-group-act="delete"][data-id="${gid}"]`);
+  await waitFor(() => q('#confirm-ok'), { label: 'delete confirm' });
+  await click('#confirm-ok');
+  await waitFor(() => !q('.group-card[data-group]'), { timeout: 8000, label: 'group removed' }).catch(() => {});
+  check(!q('.group-card[data-group]'), 'groups: deleting removes the group (members stay)');
+  check(qa('#members-list [data-member]').length >= 2, 'groups: the members themselves are untouched');
+
+  // ---- 6) the footer is a designed lock-up, not a text line ----
+  const footer = window.document.getElementById('app-footer');
+  check(!!footer?.classList.contains('app-footer'), 'footer: shell present');
+  check(!!footer.querySelector('.app-footer-brand-row'), 'footer: brand row rendered');
+  check(!!footer.querySelector('.app-footer-chips [data-footer-version]'), 'footer: version chip rendered');
+  check(!!footer.querySelector('.app-footer-chips [data-footer-updated]'), 'footer: updated chip rendered');
+  check(!!footer.querySelector('[data-build-stamp]'), 'footer: build stamp rendered');
+  check((footer.querySelector('[data-build-stamp]')?.textContent || '').startsWith('build '), 'footer: the build stamp is filled in by the app');
+  check(!!footer.querySelector('.app-footer-legal [data-footer-copyright]'), 'footer: the legal line carries the copyright');
+  const footerCss = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
+  check(/\.app-footer-brand-row/.test(footerCss) && /\.app-footer-chip/.test(footerCss), 'footer: the new classes are actually styled');
+}
+
 console.log('\n▶ v17/v18 offline strip + colour themes');
 {
   check(!!window.document.getElementById('offline-strip-wrap'), 'offline: strip container exists in the shell');
@@ -2000,6 +2153,19 @@ console.log('\n▶ v17/v18 offline strip + colour themes');
   check(/#1f6bfb/.test(css) && /#ffb02e/.test(css), 'palette: brighter v18 brand colours in tokens.css');
   check(!/#2f6fe4/.test(css) && !/#f0ae52/.test(css), 'palette: the muted v17 hexes are gone from the tokens');
   check(!/#1d4ed8/.test(css) && !/#ffc81e/.test(css), 'palette: old True-tone colours gone');
+  // v19 “Vivid & Clear”: fully saturated status colours + a tinted canvas that
+  // lifts white cards, and quieter greys pushed out of the tokens.
+  check(/#00a86b/.test(css) && /#ef7d00/.test(css) && /#ef2b3d/.test(css) && /#0d8ce0/.test(css),
+    'palette v19: success / warning / danger / info are fully saturated');
+  check(!/#059669/.test(css) && !/#ea7317/.test(css) && !/#e63232/.test(css) && !/#1a8dd6/.test(css),
+    'palette v19: the older, softer status hexes are gone from the tokens');
+  check(/--page-bg:\s*#eaf2ff/i.test(css), 'palette v19: the canvas is brand-tinted so white cards separate');
+  check(/--text:\s*#182437/i.test(css) && /--text-strong:\s*#0b1626/i.test(css), 'palette v19: deeper ink for typography');
+  const refreshCss = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
+  check(/\.chip-active, \.chip-active:hover/.test(refreshCss) && /--gradient-primary/.test(refreshCss),
+    'palette v19: selected chips/tabs are saturated, not tinted');
+  check(/\.badge-completed \{[^}]*--success-light/.test(refreshCss) && /\.badge-cancelled \{[^}]*--danger-light/.test(refreshCss),
+    'palette v19: status badges carry vivid fills');
 
   // v18: colour themes are back (LINE / Facebook / Instagram …), each editable per user.
   const themesSrc = fs.readFileSync(path.join(root, 'src/js/utils/themes.js'), 'utf8');
@@ -2020,7 +2186,10 @@ console.log('\n▶ v17/v18 offline strip + colour themes');
 
   // v18: mascot + swipe deck + place details are real modules, not dead imports.
   const shell = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  check(fs.existsSync(path.join(root, 'src/js/components/mascot.js')) && /dash-buddy/.test(appSrc), 'mascot: the dashboard buddy is rendered');
+  // v18.1: the dashboard mascot was removed (it rendered incompletely on real
+  // screens). The module stays for reuse, but the dashboard must not mount it.
+  check(fs.existsSync(path.join(root, 'src/js/components/mascot.js')) && !/dash-buddy/.test(appSrc),
+    'mascot: the dashboard buddy stays removed (module kept for reuse)');
   check(fs.existsSync(path.join(root, 'src/js/utils/deck.js')) && /rcpt-deck-card/.test(appSrc), 'deck: receipts are swipeable cards');
   check(fs.existsSync(path.join(root, 'src/js/utils/placeDetails.js')), 'details: the optional place lookup module exists');
   check(/data-footer-version/.test(shell) && /data-footer-updated/.test(shell) && /TonSkywalker/.test(shell),

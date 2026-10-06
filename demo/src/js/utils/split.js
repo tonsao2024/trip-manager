@@ -134,3 +134,26 @@ export function splitCustom({ subtotalMinor, netTotalMinor, discountMinor = 0, s
   return { valid: valid && rows.every(e => e.amountMinor >= 0) && rows.reduce((n, e) => n + e.amountMinor, 0) === netTotalMinor,
     enteredMinor, differenceMinor, unfilledCount: empty.length, rows };
 }
+
+/**
+ * Who actually joined in? Distinct member ids that appear in the allocations of
+ * the given expenses — the honest denominator for “เฉลี่ยต่อคน” on the expenses
+ * page (a trip of 6 where only 4 people split anything is a 4-person average).
+ */
+export function participantsOf(expenses = []) {
+  const ids = new Set();
+  for (const e of expenses) {
+    if (!e || e.status === 'voided') continue;
+    for (const a of e.allocations || []) {
+      if (a?.memberId && Number(a.amountMinor) > 0) ids.add(String(a.memberId));
+    }
+  }
+  return [...ids];
+}
+
+/** Average per person in minor units (0 when nobody shared). */
+export function averagePerPerson(totalMinor, pax) {
+  const n = Number(pax) || 0;
+  if (n <= 0) return 0;
+  return Math.round((Number(totalMinor) || 0) / n);
+}

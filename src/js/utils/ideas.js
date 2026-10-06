@@ -102,3 +102,59 @@ export function trendingIdeas(ideas = [], limit = 3) {
   return sortIdeas(ideas.filter(i => i.status !== 'planned'), 'votes').slice(0, limit);
 }
 
+/* ------------------------------------------------------------------ *
+ * Offline / denied-write queue
+ *
+ * “เพิ่มไอเดีย” must never lose what somebody typed. When Firestore answers
+ * permission-denied (the project still runs older rules than the app code),
+ * the idea is kept on the device and shown on the board with a “รอซิงก์”
+ * badge until the rules are published — see src/js/ideas/index.js.
+ * ------------------------------------------------------------------ */
+
+export const LOCAL_IDEA_PREFIX = 'local-';
+
+export function isLocalIdeaId(id = '') {
+  return String(id).startsWith(LOCAL_IDEA_PREFIX);
+}
+
+/** A normalised idea record that only lives on this device. */
+export function pendingIdeaRecord(data = {}, { uid = null, now = Date.now(), seq = 0 } = {}) {
+  const author = uid || 'unknown';
+  const payload = {
+    title: String(data.title || '').trim(),
+    note: String(data.note || '').trim(),
+    url: String(data.url || '').trim(),
+    address: String(data.address || '').trim(),
+    category: data.category || 'sightseeing',
+    coordinates: data.coordinates || null,
+    imageUrl: data.imageUrl || '',
+    estimatedCostMinor: Number(data.estimatedCostMinor) || 0,
+    currency: data.currency || 'THB',
+    status: 'idea',
+    plannedItemId: null,
+    plannedDate: null,
+    votes: data.votes || (author !== 'unknown' ? { [author]: true } : {})
+  };
+  return {
+    id: `${LOCAL_IDEA_PREFIX}${now.toString(36)}${seq ? `-${seq}` : ''}`,
+    ...payload,
+    createdBy: author,
+    updatedBy: author,
+    pendingSync: true,
+    queuedAt: now,
+    createdAt: { seconds: Math.floor(now / 1000) }
+  };
+}
+
+/** Remote ideas + queued ones (queued first so they are impossible to miss). */
+export function mergeIdeas(remote = [], pending = []) {
+  const seen = new Set(remote.map(i => i.id));
+  const queued = pending.filter(i => i && !seen.has(i.id));
+  return [...queued, ...remote];
+}
+
+/** How many queued ideas are still waiting (banner on the ideas board). */
+export function pendingIdeaCount(pending = []) {
+  return pending.filter(Boolean).length;
+}
+

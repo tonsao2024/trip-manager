@@ -114,7 +114,7 @@
     <span class="demo-dot"></span>
     <b>เวอร์ชันตัวอย่าง</b>
     <span>ทริปฟูจิ 2027 • ใช้ได้ทุกฟังก์ชันแบบออฟไลน์</span>
-    <span class="demo-stamp">v18 Sky light • อัปเดตล่าสุด 6 ต.ค. 2569 • build 2026-10-06 03:44 • da252e5</span>
+    <span class="demo-stamp">v18 Sky light • อัปเดตล่าสุด 6 ต.ค. 2569 • build 2026-10-06 04:56 • b872331</span>
     <button class="demo-btn" id="demo-banner-hide">ซ่อน</button>
   </div>
   <script>
@@ -224,26 +224,27 @@
     <button data-route="#/trip/more" class="bottom-nav-item"><i data-lucide="more-horizontal"></i><span>เพิ่มเติม</span></button>
   </nav>
 
-  <!-- Global footer — version + update date + copyright (always visible) -->
+  <!-- Global footer — brand lock-up + build identity (always visible).
+       Values are painted from src/js/utils/buildInfo.js on boot (paintAppFooter). -->
   <footer id="app-footer" class="app-footer">
-    <div class="max-w-[1280px] mx-auto px-4">
-      <p class="app-footer-brand">
-        <span class="app-footer-name">Trip Manager</span>
-        <span class="app-by">by TonSkywalker</span>
-        <span class="app-footer-badge" data-build-stamp></span>
-      </p>
-      <p class="app-footer-meta">
-        <span data-footer-version>v18</span>
-        <span aria-hidden="true">•</span>
-        <span data-footer-updated>อัปเดตล่าสุด 6 ต.ค. 2569</span>
-        <span aria-hidden="true">•</span>
-        <span data-footer-palette>ชุดสี Sky light</span>
-      </p>
-      <p class="app-footer-legal">
-        <!-- painted from buildInfo.js on boot / language change (paintAppFooter) -->
-        <span data-footer-copyright>© 2024–2026 TonSkywalker — สงวนลิขสิทธิ์ ห้ามทำซ้ำ เผยแพร่ ดัดแปลง หรือใช้เชิงพาณิชย์ก่อนได้รับอนุญาตเป็นลายลักษณ์อักษร</span>
-      </p>
+    <div class="app-footer-inner">
+      <div class="app-footer-brand-row">
+        <span class="app-footer-mark" aria-hidden="true"><i data-lucide="plane-takeoff"></i></span>
+        <span class="app-footer-wordmark">Trip Manager</span>
+        <span class="app-footer-by">by TonSkywalker</span>
+      </div>
+      <div class="app-footer-chips">
+        <span class="app-footer-chip app-footer-chip--version" data-footer-version>v18</span>
+        <span class="app-footer-chip" data-footer-updated>อัปเดตล่าสุด 6 ต.ค. 2569</span>
+        <span class="app-footer-chip" data-footer-palette>ชุดสี Sky light</span>
+        <span class="app-footer-chip app-footer-chip--build" data-build-stamp></span>
+      </div>
     </div>
+    <p class="app-footer-legal">
+      <!-- full © line, painted from buildInfo.js on boot / language change -->
+      <span class="app-footer-sep" aria-hidden="true"></span>
+      <span data-footer-copyright>© 2024–2026 TonSkywalker — สงวนลิขสิทธิ์ ห้ามทำซ้ำ เผยแพร่ ดัดแปลง หรือใช้เชิงพาณิชย์ก่อนได้รับอนุญาตเป็นลายลักษณ์อักษร</span>
+    </p>
   </footer>
 
   <!-- FAB -->
