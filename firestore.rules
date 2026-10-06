@@ -229,11 +229,26 @@ service cloud.firestore {
         allow delete: if isAuthenticated() && (isTripAdmin(tripId) || !('createdBy' in resource.data) || resource.data.createdBy == request.auth.uid);
       }
 
+      // Ideas board (v18.2). Writing here must NEVER depend on the membership
+      // lookup: a `get()` on a member doc that has not propagated yet made the
+      // whole rule error out, and Firestore answers an errored rule with
+      // “Missing or insufficient permissions” — exactly the message users hit
+      // when adding a place to the board. Any signed-in user who can reach the
+      // trip may add / edit an idea; deleting stays with the author or an admin.
       match /ideas/{ideaId} {
-        allow read: if isTripMember(tripId) || isAuthenticated();
-        allow create: if isTripMember(tripId) || isAuthenticated();
-        allow update: if isTripMember(tripId) || isAuthenticated();
-        allow delete: if (isTripMember(tripId) || isAuthenticated()) && (isTripAdmin(tripId) || !('createdBy' in resource.data) || resource.data.createdBy == request.auth.uid);
+        allow read, create, update: if isAuthenticated();
+        allow delete: if isAuthenticated() && (
+          !('createdBy' in resource.data) || resource.data.createdBy == request.auth.uid || isTripAdmin(tripId)
+        );
+      }
+
+      // Trip sub-groups (v18.2): named gangs inside a trip (“กลุ่ม A”, “กลับก่อน”).
+      // Same contract as the ideas board — planning data any member may shape.
+      match /memberGroups/{groupId} {
+        allow read, create, update: if isAuthenticated();
+        allow delete: if isAuthenticated() && (
+          !('createdBy' in resource.data) || resource.data.createdBy == request.auth.uid || isTripAdmin(tripId)
+        );
       }
 
       match /reservations/{reservationId} {

@@ -179,7 +179,7 @@ export const THEMES = [
     hint: 'ฟ้า–เหลืองอบอุ่น แบบแอปเดินทางยุคใหม่',
     primary: '#0f5ef5', grad2: '#3d96ff', accent: '#ffa020',
     mist: '#8ec0f0', steel: '#3a82d4', sand: '#fdf3e2', ink: '#28374d',
-    bg: '#f2f8ff', bgDark: '#0b1018',
+    bg: '#e9f1ff', bgDark: '#070c14',
     gradient: 'linear-gradient(135deg, #0f5ef5 0%, #3d96ff 55%, #7ec4ff 100%)'
   }),
   theme({

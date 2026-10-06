@@ -14,6 +14,12 @@ function unlockBodyScroll() {
 }
 
 export function showBottomSheet(htmlContent, { onClose } = {}) {
+  // v18.2: a sheet that is animating out stays in the DOM for ~230 ms. If the app
+  // opens the next sheet in that window (tapping a name, switching person, …) two
+  // copies with the same ids would exist and document.getElementById could wire the
+  // new UI to the dying copy. Drop the closing sheets the moment a new one opens.
+  document.querySelectorAll('.bottom-sheet[data-closing="1"], .bottom-sheet-backdrop[data-closing="1"]').forEach(el => el.remove());
+
   const backdrop = document.createElement('div');
   backdrop.className = 'bottom-sheet-backdrop animate-fadeIn';
   const sheet = document.createElement('div');
@@ -24,6 +30,8 @@ export function showBottomSheet(htmlContent, { onClose } = {}) {
   const close = () => {
     if (closed) return;
     closed = true;
+    sheet.dataset.closing = '1';
+    backdrop.dataset.closing = '1';
     // Animate with the standalone `translate`/`scale` properties so the
     // CSS positioning transform (desktop centering) is never disturbed.
     sheet.style.transition = 'opacity 0.22s ease, translate 0.22s ease, scale 0.22s ease';

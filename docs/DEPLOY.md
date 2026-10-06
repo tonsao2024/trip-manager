@@ -27,6 +27,18 @@ firebase deploy --only functions
 ### Enable APIs
 - Firestore, Auth, Storage, Functions, Secret Manager (for step-up secrets if used)
 
+### Publishing rules matters for the app (v18.2)
+`firebase deploy --only firestore:rules` is **not** optional bookkeeping: when the
+published rules are older than the app, Firestore answers every write with
+“Missing or insufficient permissions”. The app detects that (Settings → System
+check, and inline banners such as the ideas board) and keeps the data on the
+device until the rules are published, but the write only reaches the cloud once
+the rules below are live:
+
+- `trips/{tripId}/ideas/{id}` — the ideas board (any signed-in user may add/edit;
+  delete stays with the author or a trip admin)
+- `trips/{tripId}/memberGroups/{id}` — trip sub-groups (“กลุ่ม A”, “กลับก่อน”)
+
 ### Create Super Admin
 1. Firebase Console > Auth > Add user email/pass
 2. Firestore > users/{uid} doc:
