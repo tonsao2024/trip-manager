@@ -36,9 +36,20 @@ export function placeDetailsSupported(item = {}) {
 /** {lat,lng} from the many shapes the app stores coordinates in. */
 export function coordinatesOf(item = {}) {
   const raw = item && typeof item === 'object' && 'coordinates' in item ? item.coordinates : item;
-  const lat = Number(raw?.lat ?? raw?.latitude ?? raw?.lat_ ?? raw?.y);
-  const lng = Number(raw?.lng ?? raw?.lon ?? raw?.longitude ?? raw?.lng_ ?? raw?.x);
+  if (raw == null || raw === '') return null;
+  // The itinerary form saves the pair as a string ("35.5171,138.7519").
+  if (typeof raw === 'string' || typeof raw === 'number') {
+    const parts = String(raw).split(',').map(part => Number(String(part).trim()));
+    if (parts.length !== 2 || !parts.every(n => Number.isFinite(n))) return null;
+    return inRange(parts[0], parts[1]);
+  }
+  const lat = Number(raw.lat ?? raw.latitude ?? raw.lat_ ?? raw.y);
+  const lng = Number(raw.lng ?? raw.lon ?? raw.longitude ?? raw.lng_ ?? raw.x);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return inRange(lat, lng);
+}
+
+function inRange(lat, lng) {
   if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
   return { lat, lng };
 }
@@ -270,12 +281,15 @@ function osmKindLabel(tags = {}) {
 
 /** Distance in km between two {lat,lng} (equirectangular is plenty here). */
 export function haversineKm(a, b) {
+  const pa = coordinatesOf(a), pb = coordinatesOf(b);
+  // An unknown side means “no distance”, never a number measured from (0,0).
+  if (!pa || !pb) return 0;
   const R = 6371;
   const toRad = d => (d * Math.PI) / 180;
-  const dLat = toRad((b?.lat || 0) - (a?.lat || 0));
-  const dLon = toRad((b?.lng || 0) - (a?.lng || 0));
+  const dLat = toRad(pb.lat - pa.lat);
+  const dLon = toRad(pb.lng - pa.lng);
   const h = Math.sin(dLat / 2) ** 2
-    + Math.cos(toRad(a?.lat || 0)) * Math.cos(toRad(b?.lat || 0)) * Math.sin(dLon / 2) ** 2;
+    + Math.cos(toRad(pa.lat)) * Math.cos(toRad(pb.lat)) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 

@@ -73,8 +73,9 @@ function toHsl(hex) {
 }
 
 function fromHsl({ h, s, l }) {
-  const hh = ((h % 360) + 360) % 360 / 360;
-  const ss = clamp(s) * 100, ll = clamp(l) * 100;
+  // h is degrees, s and l are FRACTIONS (0…1) — exactly what toHsl returns.
+  const hh = (((h % 360) + 360) % 360) / 360;
+  const ss = clamp(s), ll = clamp(l);
   const hue2rgb = (p, q, t) => {
     let tt = t;
     if (tt < 0) tt += 1;
@@ -85,10 +86,10 @@ function fromHsl({ h, s, l }) {
     return p;
   };
   if (ss === 0) {
-    const v = Math.round(ll * 2.55);
+    const v = Math.round(ll * 255);
     return rgbToHex([v, v, v]);
   }
-  const q = ll < 50 ? ll * (100 + ss) : ll + ss - ll * ss;
+  const q = ll < 0.5 ? ll * (1 + ss) : ll + ss - ll * ss;
   const p = 2 * ll - q;
   return rgbToHex([
     Math.round(hue2rgb(p, q, hh + 1 / 3) * 255),
@@ -372,7 +373,9 @@ export function readStoredTheme() {
   if (!raw) return { id: DEFAULT_THEME_ID, custom: { ...CUSTOM_DEFAULTS } };
   let parsed = null;
   try { parsed = JSON.parse(raw); } catch { parsed = { id: String(raw) }; }
-  const id = THEMES.some(t => t.id === parsed?.id) ? parsed.id : (THEMES.some(t => t.id === raw) ? raw : DEFAULT_THEME_ID);
+  // Older builds stored a bare id ("line"); a corrupt value must never poison the boot.
+  const wanted = typeof parsed === 'string' ? parsed : (parsed?.id ?? raw);
+  const id = THEMES.some(t => t.id === wanted) ? wanted : DEFAULT_THEME_ID;
   const custom = { ...CUSTOM_DEFAULTS, ...(parsed?.custom || {}) };
   // sanitise the user colours so a bad value can never poison the stylesheet
   custom.primary = normalizeHex(custom.primary, CUSTOM_DEFAULTS.primary);

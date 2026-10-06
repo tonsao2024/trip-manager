@@ -73,10 +73,12 @@ function hatFor(kind) {
  * @returns {string} HTML
  */
 export function renderFujiBuddy({ mood = 'happy', size = 132, tagline = '', id = 'fuji-buddy' } = {}) {
-  const def = MOODS[mood] || MOODS.happy;
+  // An unknown mood must not leak into the class list (the styles are keyed by it).
+  const safe = MOODS[mood] ? mood : 'happy';
+  const def = MOODS[safe];
   const gid = `fjb-${++uid}`;
   return `
-  <div class="fuji-buddy mood-${mood}" id="${id}" role="img" tabindex="0"
+  <div class="fuji-buddy mood-${safe}" id="${id}" data-mood="${safe}" role="img" tabindex="0"
        aria-label="${def.label}" title="${def.label}" style="width:${size}px;height:${ Math.round(size * 0.86) }px;">
     <svg viewBox="0 0 162 140" width="100%" height="100%" aria-hidden="true">
       <defs>
@@ -138,6 +140,9 @@ export function renderFujiBuddy({ mood = 'happy', size = 132, tagline = '', id =
     ${tagline ? `<span class="fuji-buddy-speech">${tagline}</span>` : ''}
   </div>`;
 }
+
+/** Every mood the buddy can show (the styles and the lines are keyed by these). */
+export const BUDDY_MOODS = Object.keys(MOODS);
 
 /** Pick a mood from the dashboard numbers. */
 export function fujiBuddyMood({ daysToStart = null, overBudget = false, unsettledMinor = 0, hasPlan = false, hour = new Date().getHours() } = {}) {
@@ -214,8 +219,4 @@ export function mountFujiBuddy(container, { lang = 'th', mood = 'happy', onToast
 }
 
 /** Optional inline styles (the demo/dev preview can inject them; the app ships them in animations.css). */
-export function fujiBuddyStyles() {
-  return '';
-}
-
 export default renderFujiBuddy;

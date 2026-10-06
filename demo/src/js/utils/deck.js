@@ -79,7 +79,7 @@ export function swipeHint(dx, { next = 'คนถัดไป', prev = 'คน�
  * The compact face of a receipt card (the deck only shows the essentials;
  * the full receipt opens when the card is tapped).
  */
-export function deckSummary(statement, { money = (n) => String(n ?? ''), lang = 'th' } = {}) {
+export function deckSummary(statement, { money = (n) => String(n ?? ''), lang = 'th', flagged = null } = {}) {
   const net = Number(statement?.netMinor) || 0;
   const items = statement?.items || [];
   const positive = net >= 0;
@@ -112,7 +112,15 @@ export function deckSummary(statement, { money = (n) => String(n ?? ''), lang = 
     itemCount: items.length,
     paidCount: Number(statement?.paidCount) || 0,
     shareCount: Number(statement?.shareCount) || 0,
-    flagged: Number(statement?.flaggedCount) || 0,
+    // The flag count is not stored on the statement — the page computes it from the
+    // trip comments, so an override is accepted (`flagged`) and the shapes the
+    // builders do carry (flaggedCount / flaggedIds / flagged) are read as a fallback.
+    flagged: Number.isFinite(Number(flagged)) && flagged !== null
+      ? Number(flagged) || 0
+      : (Number(statement?.flaggedCount)
+        || (Array.isArray(statement?.flaggedIds) ? statement.flaggedIds.length : 0)
+        || (Array.isArray(statement?.flagged) ? statement.flagged.length : 0)
+        || Number(statement?.flagged) || 0),
     top
   };
 }
