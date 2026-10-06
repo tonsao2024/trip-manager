@@ -4,12 +4,12 @@ import { auth, db, isFirebaseConfigured, onAuthStateChanged, syncState } from '.
 import { Router } from './router.js';
 import { toast } from './components/toast.js';
 import { renderFujiMascot, renderEmptyState } from './components/fuji.js';
-import { loginAdmin, logout, hasStepUpSession } from './auth/index.js';
+import { logout, hasStepUpSession } from './auth/index.js';
 import { getMemberSession, clearMemberSession } from './auth/memberAuth.js';
 import { runSystemDiagnostics, formatDiagnosticsReport, DIAG } from './utils/diagnostics.js';
 import { listTrips, getTrip, createTrip, updateTrip, deleteTrip, duplicateTrip, uploadCoverImage, clearTripsCache, clearAllDataCache, regenerateInviteCode } from './trips/index.js';
 import {
-  signInWithGoogle, completeRedirectSignIn, signUpEmailAccount, sendAccountPasswordReset,
+  signInWithGoogle, completeRedirectSignIn,
   ensureUserProfile, findProfileByEmail
 } from './auth/accountAuth.js';
 import {
@@ -765,24 +765,12 @@ function addHeaderControls() {
   controlsDiv.id = 'header-controls';
   controlsDiv.className = 'flex items-center gap-1';
   controlsDiv.innerHTML = `
-    <button id="header-lang-btn" class="btn btn-ghost w-9 h-9 text-xs font-extrabold" style="min-height:36px;padding:0;" title="${t('language')}">${getLang() === 'th' ? 'EN' : 'TH'}</button>
     <button id="header-mode-btn" class="btn btn-ghost btn-icon w-9 h-9" title="Light / Dark / Auto">${icon('sun', 'w-[17px] h-[17px]')}</button>
   `;
 
   const referenceNode = rightGroup.querySelector('#refresh-btn');
   if (referenceNode && referenceNode.parentElement === rightGroup) rightGroup.insertBefore(controlsDiv, referenceNode);
   else rightGroup.appendChild(controlsDiv);
-
-  document.getElementById('header-lang-btn').onclick = () => {
-    const newLang = getLang() === 'th' ? 'en' : 'th';
-    setLang(newLang);
-    document.getElementById('header-lang-btn').textContent = newLang === 'th' ? 'EN' : 'TH';
-    renderDesktopNav();
-    updateBottomNav();
-    if (headerSubtitle && currentTrip) headerSubtitle.textContent = currentTrip.name;
-    toast.success(newLang === 'th' ? 'ภาษาไทย' : 'English');
-    setTimeout(() => router.handle(), 50);
-  };
 
   document.getElementById('header-mode-btn').onclick = cycleMode;
 
@@ -907,10 +895,7 @@ function openUserSheet(user) {
         <div class="input-group"><label class="input-label text-xs">${icon('image', 'w-3.5 h-3.5')} Photo URL</label><input id="edit-photo-url" class="input text-sm" value="${escapeHtml(user.photoURL || '')}" placeholder="https://..."></div>
         <button id="save-profile" class="btn btn-primary btn-sm w-full">${icon('save', 'w-4 h-4')} บันทึกโปรไฟล์</button>
       </div>
-      <div class="grid grid-cols-2 gap-2">
-        <button id="lang-toggle" class="btn btn-secondary btn-sm">${icon('languages', 'w-4 h-4')} ${getLang() === 'th' ? 'English' : 'ไทย'}</button>
-        <button id="appearance-btn" class="btn btn-secondary btn-sm">${icon('sun-moon', 'w-4 h-4')} ${t('appearance')}</button>
-      </div>
+      <button id="appearance-btn" class="btn btn-secondary btn-sm w-full">${icon('sun-moon', 'w-4 h-4')} ${t('appearance')}</button>
       <div class="grid grid-cols-2 gap-2">
         <button id="toggle-dark-sheet" class="btn btn-secondary btn-sm" data-mode-current></button>
         <button id="user-settings" class="btn btn-secondary btn-sm">${icon('settings', 'w-4 h-4')} ${t('settings')}</button>
@@ -929,13 +914,6 @@ function openUserSheet(user) {
     await doLogout();
   });
   document.getElementById('forget-device')?.addEventListener('click', () => { localStorage.clear(); location.hash = '#/login'; location.reload(); });
-  document.getElementById('lang-toggle')?.addEventListener('click', () => {
-    const newLang = getLang() === 'th' ? 'en' : 'th';
-    setLang(newLang);
-    toast.success(newLang === 'th' ? 'ภาษาไทย' : 'English');
-    sheet.close();
-    setTimeout(() => router.handle(), 100);
-  });
   document.getElementById('appearance-btn')?.addEventListener('click', () => {
     sheet.close();
     setTimeout(() => showAppearanceSheet(), 220);
@@ -1589,35 +1567,25 @@ function renderLogin() {
           <h1 class="text-[32px] font-bold mt-4 tracking-tight" style="font-family: var(--font-display);">${t('appName')}</h1>
           <p class="text-sm text-[var(--text-secondary)] mt-2">${t('tagline')}</p>
           <div class="flex justify-center gap-2 mt-4 flex-wrap">
-            <button id="login-lang" class="chip text-xs">${icon('languages', 'w-3.5 h-3.5')} ${lang === 'th' ? 'ไทย — Switch to EN' : 'EN — เปลี่ยนเป็นไทย'}</button>
             <button id="login-dark" class="chip text-xs" data-mode-current></button>
           </div>
         </div>
 
         <div class="card card-accent p-7 space-y-4">
-          <!-- Google first: the recommended way for members on the free plan -->
+          <!-- Google-only sign-in -->
           <button id="google-signin-btn" class="btn btn-google w-full btn-lg">
             <svg viewBox="0 0 48 48" class="w-5 h-5" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-            ${lang === 'th' ? 'เข้าสู่ระบบด้วยบัญชี Google' : 'Continue with Google'}
+            เข้าสู่ระบบด้วยบัญชี Google
           </button>
 
-          <div class="login-or"><span>${lang === 'th' ? 'หรือใช้บัญชีอีเมล' : 'or use an email account'}</span></div>
-
-          <form id="account-form" class="space-y-4">
-            <div class="input-group"><label class="input-label">${icon('mail', 'w-3.5 h-3.5')} ${t('email')}</label><input id="admin-email" class="input" type="email" placeholder="you@example.com" required autocomplete="email"></div>
-            <div class="input-group"><label class="input-label">${icon('key-round', 'w-3.5 h-3.5')} ${t('password')}</label><input id="admin-pass" class="input" type="password" required autocomplete="current-password"></div>
-            <label class="flex items-center gap-2 text-sm cursor-pointer"><input id="admin-remember" type="checkbox" checked class="accent-[var(--primary)] w-4 h-4"> ${t('rememberDevice')}</label>
-            <button class="btn btn-primary w-full btn-lg" type="submit">${icon('log-in', 'w-4 h-4')} ${lang==='th' ? 'เข้าสู่ระบบ' : 'Sign in'}</button>
-            <div class="btn-row">
-              <button type="button" id="account-signup-btn" class="btn btn-secondary btn-sm">${icon('user-plus', 'w-4 h-4')} ${lang==='th' ? 'สมัครบัญชีใหม่' : 'Create account'}</button>
-              <button type="button" id="account-reset-btn" class="btn btn-ghost btn-sm">${icon('help-circle', 'w-4 h-4')} ${lang==='th' ? 'ลืมรหัสผ่าน' : 'Forgot password'}</button>
-            </div>
-          </form>
+          <div class="login-steps">
+            <div class="login-step"><span class="step-num">1</span><span>กดปุ่มด้านบน แล้วเลือกบัญชี Google ของคุณ</span></div>
+            <div class="login-step"><span class="step-num">2</span><span>ขอรหัสเชิญทริปจากแอดมิน แล้วกดเข้าร่วม</span></div>
+            <div class="login-step"><span class="step-num">3</span><span>เริ่มวางแผนทริปด้วยกันได้เลย</span></div>
+          </div>
 
           <p class="text-[11px] text-center text-[var(--text-tertiary)] leading-relaxed">
-            ${lang === 'th'
-              ? 'สมาชิกใช้บัญชี Google ของตัวเองได้ — แอดมินทริปเป็นคนอนุมัติให้เข้าร่วมแต่ละทริป'
-              : 'Members sign in with their own Google account — the trip admin approves each trip.'}
+            สมาชิกใช้บัญชี Google ของตัวเองได้ — แอดมินทริปเป็นคนอนุมัติให้เข้าร่วมแต่ละทริป
           </p>
         </div>
 
@@ -1631,88 +1599,23 @@ function renderLogin() {
   queueIcons();
   updateModeIcons();
 
-  setTimeout(() => addPasswordToggle('admin-pass'), 10);
-
-  document.getElementById('login-lang').onclick = () => {
-    const newLang = lang === 'th' ? 'en' : 'th';
-    setLang(newLang);
-    renderLogin();
-    toast.success(newLang === 'th' ? 'ภาษาไทย' : 'English');
-  };
   document.getElementById('login-dark').onclick = cycleMode;
 
-  // ---- Google account (recommended for members, works on the free plan) ----
+  // ---- Google-only sign-in ----
   appEl.querySelector('#google-signin-btn').onclick = async (e) => {
     const btn = e.currentTarget;
     const originalHtml = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = `${spinner('w-5 h-5')} ${lang==='th' ? 'กำลังเปิด Google...' : 'Opening Google...'}`;
+    btn.innerHTML = `${spinner('w-5 h-5')} กำลังเปิด Google...`;
     queueIcons();
     try {
       const user = await signInWithGoogle(true);
       // null = we were redirected to Google and will come back here
       if (!user) return;
-      toast.success(lang==='th' ? `ยินดีต้อนรับ ${user.displayName || user.email}` : `Welcome ${user.displayName || user.email}`);
+      toast.success(`ยินดีต้อนรับ ${user.displayName || user.email}`);
       location.hash = '#/trips';
     } catch (err) {
-      toast.error(err.message || 'Google sign-in failed');
-      btn.disabled = false;
-      btn.innerHTML = originalHtml;
-      queueIcons();
-    }
-  };
-
-  // ---- Email account: sign up / forgot password ----
-  appEl.querySelector('#account-signup-btn').onclick = async () => {
-    const email = document.getElementById('admin-email').value.trim();
-    const pass = document.getElementById('admin-pass').value;
-    const name = await promptAction({
-      title: lang==='th' ? 'สมัครบัญชีสมาชิก' : 'Create member account',
-      message: lang==='th'
-        ? 'กรอกชื่อที่ต้องการให้เพื่อนเห็น แล้วระบบจะสมัครบัญชีให้ด้วยอีเมล/รหัสผ่านที่กรอกไว้ด้านบน'
-        : 'Enter the name your friends will see — the account is created with the email/password above.',
-      placeholder: lang==='th' ? 'เช่น นุ่น' : 'e.g. Nun',
-      confirmText: lang==='th' ? 'สมัคร' : 'Sign up', icon: 'user-plus'
-    });
-    if (!name) return;
-    const tLoad = toast.loading(lang==='th' ? 'กำลังสมัคร...' : 'Creating account...');
-    try {
-      await signUpEmailAccount(email, pass, name, document.getElementById('admin-remember').checked);
-      tLoad.close();
-      toast.success(lang==='th' ? 'สมัครสำเร็จ! ขั้นต่อไป: ขอรหัสเชิญทริปจากแอดมิน' : 'Account created! Next: ask the admin for a trip code');
-      location.hash = '#/trips';
-    } catch (err) {
-      tLoad.close();
-      toast.error(err.message);
-    }
-  };
-
-  appEl.querySelector('#account-reset-btn').onclick = async () => {
-    const email = document.getElementById('admin-email').value.trim();
-    if (!email) { toast.warning(lang==='th' ? 'กรอกอีเมลก่อน' : 'Enter your email first'); return; }
-    try {
-      await sendAccountPasswordReset(email);
-      toast.success(lang==='th' ? `ส่งลิงก์รีเซ็ตรหัสผ่านไปที่ ${email} แล้ว` : `Reset link sent to ${email}`);
-    } catch (err) { toast.error(err.message); }
-  };
-
-  appEl.querySelector('#account-form').onsubmit = async (e) => {
-    e.preventDefault();
-    const btn = e.target.querySelector('button[type="submit"]');
-    if (!btn) return;
-    btn.disabled = true;
-    const originalHtml = btn.innerHTML;
-    btn.innerHTML = `${spinner('w-4 h-4')} ${lang==='th' ? 'กำลังเข้าสู่ระบบ...' : 'Logging in...'}`;
-    queueIcons();
-    const tLoad = toast.loading(lang==='th' ? 'กำลังเข้าสู่ระบบ...' : 'Logging in...');
-    try {
-      await loginAdmin(document.getElementById('admin-email').value, document.getElementById('admin-pass').value, document.getElementById('admin-remember').checked);
-      tLoad.close();
-      toast.success(lang==='th' ? 'เข้าสู่ระบบสำเร็จ' : 'Signed in');
-      location.hash = '#/trips';
-    } catch (err) {
-      tLoad.close();
-      toast.error(err.message || 'Login failed');
+      toast.error(err.message || 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ');
       btn.disabled = false;
       btn.innerHTML = originalHtml;
       queueIcons();
@@ -2470,7 +2373,7 @@ async function renderDashboard(params) {
   const th = (a, b) => (lang === 'th' ? a : b);
 
   appEl.innerHTML = `
-    <div class="page-enter space-y-5">
+    <div class="page-enter space-y-5" id="dashboard-view">
       <!-- HERO -->
       <div class="hero-card" style="--hero-color:var(--primary-raw);">
         ${trip?.coverImage ? `<img src="${escapeHtml(trip.coverImage)}" class="hero-bg" alt="" onerror="this.style.display='none'">` : ''}
@@ -2492,6 +2395,7 @@ async function renderDashboard(params) {
               <button id="dash-edit-trip" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;">${icon('pencil', 'w-4 h-4')} ${th('แก้ไขทริป','Edit trip')}</button>
               <button id="add-place-quick" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;">${icon('map-pin', 'w-4 h-4')} ${t('addPlace')}</button>
               <button id="add-expense-quick" class="btn btn-sm btn-primary">${icon('wallet', 'w-4 h-4')} ${t('addExpense')}</button>
+              <button id="dash-density-btn" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;" title="สลับมุมมองกะทัดรัด/ปกติ">${icon('rows-3', 'w-4 h-4')} <span data-density-label>มุมมองกะทัดรัด</span></button>
             </div>
           </div>
         </div>
@@ -2551,6 +2455,16 @@ async function renderDashboard(params) {
           <span id="my-wallet-mood"></span>
         </div>
         <div id="my-wallet" class="my-wallet-grid"><div class="skeleton h-16"></div></div>
+
+        <!-- TEAMS live inside the wallet now: per-team cost per person + team total -->
+        <div class="dash-subhead">
+          <h4>
+            <span class="row-icon" style="width:26px;height:26px;border-radius:9px;">${icon('users-round', 'w-3.5 h-3.5')}</span>
+            ${th('ทีม • ค่าใช้จ่ายต่อคน / รวมทีม','Teams • cost per person / per team')}
+          </h4>
+          <button id="dash-teams-link" class="btn btn-ghost btn-sm text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการทีม','Manage teams')}</button>
+        </div>
+        <div id="team-board" class="team-board"><div class="skeleton h-16"></div></div>
       </div>
 
       <!-- TODAY / CURRENT -->
@@ -2591,6 +2505,8 @@ async function renderDashboard(params) {
         </div>
       </div>
 
+      <!-- MEMBERS + RECENT share one row on desktop (no more full-width sparse cards) -->
+      <div class="grid lg:grid-cols-2 gap-4 items-start">
       <!-- MEMBERS -->
       <div class="card p-5">
         <div class="flex items-center justify-between gap-2 mb-4">
@@ -2600,18 +2516,6 @@ async function renderDashboard(params) {
         <div id="member-board-content" class="space-y-3 stagger"><div class="skeleton h-16"></div></div>
       </div>
 
-      <!-- TEAMS (trip sub-groups): per-team cost per person + team total (a request) -->
-      <div class="card p-5">
-        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-          <h3 class="font-bold flex items-center gap-2">
-            <span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('users-round', 'w-4 h-4')}</span>
-            ${th('ทีม • ค่าใช้จ่ายต่อคน / รวมทีม','Teams • cost per person / per team')}
-          </h3>
-          <button id="dash-teams-link" class="btn btn-ghost btn-sm text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการทีม','Manage teams')}</button>
-        </div>
-        <div id="team-board" class="team-board"><div class="skeleton h-16"></div></div>
-      </div>
-
       <!-- RECENT EXPENSES -->
       <div class="card p-5">
         <div class="flex items-center justify-between gap-2 mb-3">
@@ -2619,6 +2523,7 @@ async function renderDashboard(params) {
           <button id="dash-expenses-link" class="btn btn-ghost btn-sm text-xs">${icon('wallet', 'w-3.5 h-3.5')} ${th('ดูทั้งหมด','View all')}</button>
         </div>
         <div id="recent-expenses" class="space-y-2 stagger"><div class="skeleton h-12"></div></div>
+      </div>
       </div>
 
       <!-- TRIP TOOLS (v16): prep progress • weather • next booking • top ideas -->
@@ -2637,6 +2542,25 @@ async function renderDashboard(params) {
   bind('dash-members-link', 'click', () => { location.hash = `#/trip/${tripId}/members`; });
   bind('dash-expenses-link', 'click', () => { location.hash = `#/trip/${tripId}/expenses`; });
   bind('dash-teams-link', 'click', () => { location.hash = `#/trip/${tripId}/members`; });
+
+  // Dashboard density: comfortable (default) vs compact — remembered per device.
+  const DASH_DENSITY_KEY = 'fuji_dash_density';
+  const isDashCompact = () => { try { return localStorage.getItem(DASH_DENSITY_KEY) === 'compact'; } catch { return false; } };
+  function applyDashDensity() {
+    const compact = isDashCompact();
+    document.getElementById('dashboard-view')?.classList.toggle('dash-compact', compact);
+    const btn = document.getElementById('dash-density-btn');
+    if (btn) {
+      btn.classList.toggle('is-active', compact);
+      const label = btn.querySelector('[data-density-label]');
+      if (label) label.textContent = compact ? 'มุมมองปกติ' : 'มุมมองกะทัดรัด';
+    }
+  }
+  bind('dash-density-btn', 'click', () => {
+    try { localStorage.setItem(DASH_DENSITY_KEY, isDashCompact() ? 'comfortable' : 'compact'); } catch {}
+    applyDashDensity();
+  });
+  applyDashDensity();
 
   // Countdown scene (independent of Firestore so it always renders)
   const cd = mountCountdown('countdown-scene', {
@@ -9820,7 +9744,6 @@ async function renderSettings(params) {
         <h3 class="font-bold flex items-center gap-2">${icon('palette', 'w-4 h-4')} ${th('ชุดสี & การแสดงผล','Colour theme & display')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เลือกธีมที่ถูกใจ แล้วปรับสี/ความสดใสเองได้ — มีผลทุกหน้า รวมถึงโหมดมืดและรูปที่ส่งออก','Pick a palette you like and fine-tune the colours — it applies everywhere, including dark mode and exported images.')}</p>
         ${themePickerHtml({ idPrefix: 'settings' })}
-        <button id="lang-switch" class="btn btn-secondary w-full btn-sm">${icon('languages', 'w-4 h-4')} ${lang === 'th' ? 'English' : 'ภาษาไทย'}</button>
       </div>
 
       <!-- v18: the profile picture lands here, so the account lives with it -->
@@ -10273,14 +10196,6 @@ async function renderSettings(params) {
     setTimeout(() => location.reload(), 400);
   });
   bind('account-logout', 'click', async () => { await doLogout(); });
-  bind('lang-switch', 'click', () => {
-    const newLang = lang === 'th' ? 'en' : 'th';
-    setLang(newLang);
-    toast.success(newLang === 'th' ? 'ภาษาไทย' : 'English');
-    renderSettings(params);
-    renderDesktopNav();
-    updateBottomNav();
-  });
 
   // Expense groups preview (values come from the shared registry).
   (function paintCategoryChips() {

@@ -1541,6 +1541,15 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
   height: 1px;
   background: var(--border);
 }
+/* Google-only sign-in: 3 short steps under the button. */
+.login-steps { display: grid; gap: 8px; padding: 4px 2px 0; }
+.login-step {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 12px; font-weight: 600; color: var(--text-secondary);
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: 12px; padding: 8px 10px;
+}
+.login-step .step-num { flex-shrink: 0; }
 
 /* ------------------------------------------------------------------
    THB equivalent shown next to foreign-currency amounts
@@ -2932,6 +2941,36 @@ html, body { max-width: 100%; overflow-x: clip; }
 }
 .dash-pop-row:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--primary-raw) 35%, var(--border)); box-shadow: var(--shadow-sm); }
 .my-wallet-tile { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+
+/* ---------- Dashboard: teams live inside the wallet + compact density ---------- */
+.dash-subhead {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  margin: 16px 0 10px; padding-top: 14px;
+  border-top: 1.5px dashed var(--border);
+}
+.dash-subhead h4 {
+  display: flex; align-items: center; gap: 8px; margin: 0;
+  font-size: 13px; font-weight: 800;
+}
+#dash-density-btn.is-active {
+  background: var(--primary) !important; color: #fff !important;
+}
+/* Compact density: tighter cards, smaller gaps, trimmed subtitles. */
+#dashboard-view.dash-compact > * + * { margin-top: 10px; }
+#dashboard-view.dash-compact .grid { gap: 8px; }
+#dashboard-view.dash-compact .card { padding: 12px; }
+#dashboard-view.dash-compact .hero-card { min-height: 0; }
+#dashboard-view.dash-compact .hero-content { padding: 14px; }
+#dashboard-view.dash-compact .hero-content h1 { font-size: 22px; }
+#dashboard-view.dash-compact .kpi-tile { padding: 10px; }
+#dashboard-view.dash-compact .kpi-value { font-size: 19px; }
+#dashboard-view.dash-compact .kpi-sub { display: none; }
+#dashboard-view.dash-compact .my-wallet-tile { padding: 9px 11px; }
+#dashboard-view.dash-compact .my-wallet-sub { font-size: 10px; }
+#dashboard-view.dash-compact .team-card { padding: 10px 12px; gap: 6px; }
+#dashboard-view.dash-compact .dash-subhead { margin: 10px 0 6px; padding-top: 10px; }
+#dashboard-view.dash-compact #countdown-scene { zoom: .85; }
+#dashboard-view.dash-compact .tool-tile { padding: 12px; }
 
 /* ---- Weather (today + 7 days, multi-city) ---- */
 .wx-today {
