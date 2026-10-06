@@ -21,7 +21,7 @@ import {
   isPermissionError, joinPermissionHelp, adminHelpMessage, fetchRulesText,
   consoleRulesUrl, consoleAuthUrl
 } from './utils/rulesHelper.js';
-import { fetchItinerary, saveItineraryItem, deleteItineraryItem, reorderItinerary, getItineraryItem, syncItineraryExpense, findLinkedExpense } from './itinerary/index.js';
+import { fetchItinerary, saveItineraryItem, deleteItineraryItem, reorderItinerary, getItineraryItem, updateItineraryItem, syncItineraryExpense, findLinkedExpense } from './itinerary/index.js';
 import {
   fetchExpenses, fetchAllExpenses, addExpense, updateExpense, deleteExpense,
   voidExpense, getExpense, exportExpensesToJson, sumExpenses
@@ -42,7 +42,6 @@ import {
 } from './utils/themes.js';
 import { renderFujiBuddy, fujiBuddyMood, fujiBuddyLine } from './components/mascot.js';
 import { deckOrder, deckStep, deckSummary, swipeIntent, swipeTilt, swipePeek, swipeHint, deckPositionLabel } from './utils/deck.js';
-import { fetchPlaceDetails, placeDetailsHtml } from './utils/placeDetails.js';
 import { showBottomSheet, showModal } from './components/modal.js';
 import { confirmAction, promptAction } from './components/confirm.js';
 import { mountCountdown, computeCountdown, countdownHeadline } from './components/countdown.js';
@@ -85,7 +84,8 @@ import {
 } from './ideas/index.js';
 import {
   GROUP_COLORS, GROUP_ICONS, listGroups, createGroup, updateGroup, deleteGroup,
-  nextGroupName, groupBudgetReport, groupMembers, memberGroupBadges, forgetMemberFromGroups
+  nextGroupName, groupBudgetReport, groupMembers, memberGroupBadges, forgetMemberFromGroups,
+  itemGroupIds, groupAttendsItem, placesForGroup
 } from './members/groups.js';
 import {
   RESERVATION_TYPES, reservationTypeDef, listReservations, createReservation, updateReservation,
@@ -2599,6 +2599,18 @@ async function renderDashboard(params) {
         <div id="member-board-content" class="space-y-3 stagger"><div class="skeleton h-16"></div></div>
       </div>
 
+      <!-- TEAMS (trip sub-groups): per-team cost per person + team total (a request) -->
+      <div class="card p-5">
+        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <h3 class="font-bold flex items-center gap-2">
+            <span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('users-round', 'w-4 h-4')}</span>
+            ${th('ทีม • ค่าใช้จ่ายต่อคน / รวมทีม','Teams • cost per person / per team')}
+          </h3>
+          <button id="dash-teams-link" class="btn btn-ghost btn-sm text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการทีม','Manage teams')}</button>
+        </div>
+        <div id="team-board" class="team-board"><div class="skeleton h-16"></div></div>
+      </div>
+
       <!-- RECENT EXPENSES -->
       <div class="card p-5">
         <div class="flex items-center justify-between gap-2 mb-3">
@@ -2623,6 +2635,7 @@ async function renderDashboard(params) {
   bind('dash-today-link', 'click', () => { location.hash = `#/trip/${tripId}/itinerary?date=${dayjs().format('YYYY-MM-DD')}`; });
   bind('dash-members-link', 'click', () => { location.hash = `#/trip/${tripId}/members`; });
   bind('dash-expenses-link', 'click', () => { location.hash = `#/trip/${tripId}/expenses`; });
+  bind('dash-teams-link', 'click', () => { location.hash = `#/trip/${tripId}/members`; });
 
   // Countdown scene (independent of Firestore so it always renders)
   const cd = mountCountdown('countdown-scene', {
@@ -2667,14 +2680,15 @@ async function renderDashboard(params) {
   } catch (e) { console.warn('progress', e); }
 
   /* ---------------- Data sections (each guarded separately) ---------------- */
-  let expenses = [], members = [], items = [];
+  let expenses = [], members = [], items = [], groups = [];
 
   // Trip groups, money and the itinerary are independent — fetch them together
-  // (all three are served from cache on a revisit, so this is instant).
-  const [categoriesRes, dataRes, itemsRes] = await Promise.allSettled([
+  // (all of them are served from cache on a revisit, so this is instant).
+  const [categoriesRes, dataRes, itemsRes, groupsRes] = await Promise.allSettled([
     loadTripCategories(tripId),
     fetchSettlementData(tripId),
-    fetchItinerary(tripId, null)
+    fetchItinerary(tripId, null),
+    listGroups(tripId)
   ]);
   if (isStale(token)) return;
 
@@ -2692,11 +2706,13 @@ async function renderDashboard(params) {
   } else {
     console.error('dashboard itinerary failed', itemsRes.reason);
   }
+  if (groupsRes.status === 'fulfilled') groups = groupsRes.value || [];
+  else console.warn('dashboard groups failed', groupsRes.reason);
 
   if (isStale(token)) return;
 
   try {
-    renderDashboardData({ tripId, trip, expenses, members, items, currency, lang, token, params });
+    renderDashboardData({ tripId, trip, expenses, members, items, groups, currency, lang, token, params });
   } catch (e) {
     console.error('dashboard render failed', e);
     toast.error(th('โหลด Dashboard ไม่สำเร็จ: ', 'Dashboard error: ') + e.message);
@@ -2707,7 +2723,7 @@ async function renderDashboard(params) {
   }
 }
 
-function renderDashboardData({ tripId, trip, expenses, members, items, currency, lang, token, params }) {
+function renderDashboardData({ tripId, trip, expenses, members, items, groups = [], currency, lang, token, params }) {
   const th = (a, b) => (lang === 'th' ? a : b);
   if (isStale(token)) return;
   const rate = resolveTripThbRate(trip, expenses, currency);
@@ -3050,6 +3066,87 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
       </div>`;
   }).join('') : `<p class="text-sm text-[var(--text-secondary)]">${t('noData')}</p>`);
 
+  /* ---- Teams (trip sub-groups): cost per person + team total (a request) ----
+     Each team shows what its members were charged in total and what that means
+     per person, next to the whole trip so the two can be compared at a glance.
+     The place count comes from the per-place group picker (“แต่ละสถานที่มีกลุ่ม
+     ไหนไปบ้าง”), which is the plan → money link. */
+  try {
+    const teamBox = document.getElementById('team-board');
+    if (teamBox) {
+      if (!groups.length) {
+        teamBox.innerHTML = `
+          <div class="team-empty">
+            ${icon('users-round', 'w-5 h-5')}
+            <p class="font-semibold text-[12.5px]">${th('ยังไม่มีทีมในทริปนี้','No teams in this trip yet')}</p>
+            <p class="text-[11px] text-[var(--text-secondary)]">${th('สร้างกลุ่มย่อย (ทีม) ที่หน้าสมาชิก แล้วแต่ละทีมจะถูกคำนวณค่าใช้จ่ายต่อคน / รวมทีมให้อัตโนมัติ','Create sub-groups (teams) on the Members page and each team’s cost per person / team total is calculated for you')}</p>
+            <button id="team-empty-btn" class="btn btn-secondary btn-sm">${icon('plus', 'w-4 h-4')} ${th('ไปสร้างทีม','Create a team')}</button>
+          </div>`;
+        bind('team-empty-btn', 'click', () => { location.hash = `#/trip/${tripId}/members`; });
+      } else {
+        const report = groupBudgetReport(groups, expenses, members);
+        const perPersonTrip = report.trip.perPersonMinor;
+        const teamCard = (g) => {
+          const delta = g.perPersonMinor - perPersonTrip;
+          const places = placesForGroup(g.id, items).length;
+          return `
+            <article class="team-card" style="--team-color:${escapeHtml(g.color)};">
+              <div class="team-card-head">
+                <span class="team-card-name" style="color:${escapeHtml(g.color)};">${icon(g.icon || 'users', 'w-4 h-4')} ${escapeHtml(g.name)}</span>
+                <span class="badge badge-planned text-[10px] ml-auto">${icon('users', 'w-2.5 h-2.5')} ${g.memberCount} ${th('คน','pax')}</span>
+              </div>
+              ${g.note ? `<p class="team-card-note">${escapeHtml(g.note)}</p>` : ''}
+              <div class="team-stats">
+                <div class="team-stat">
+                  <span class="team-stat-label">${th('เฉลี่ย / คน','Per person')}</span>
+                  <b>${fmt(g.perPersonMinor)}</b>
+                  ${delta ? `<span class="team-delta ${delta > 0 ? 'is-over' : 'is-under'}">${delta > 0 ? '▲' : '▼'} ${fmt(Math.abs(delta))} ${th('เทียบทริป','vs trip')}</span>` : `<span class="team-delta">${th('เท่าค่าเฉลี่ยทริป','on the trip average')}</span>`}
+                </div>
+                <div class="team-stat">
+                  <span class="team-stat-label">${th('รวมทีม','Team total')}</span>
+                  <b>${fmt(g.shareMinor)}</b>
+                  <span class="team-delta">${th('จ่ายไป','paid')} ${fmt(g.paidMinor)}</span>
+                </div>
+              </div>
+              <div class="team-facts">
+                <span>${icon('map-pinned', 'w-3 h-3')} ${places} ${th('สถานที่','places')}</span>
+                <span>${icon('receipt', 'w-3 h-3')} ${g.itemCount} ${th('รายการ','items')}</span>
+                <span>${icon('scale', 'w-3 h-3')} ${g.netMinor >= 0 ? th('รอรับคืน','owed') : th('ต้องจ่ายเพิ่ม','owes')} ${fmt(Math.abs(g.netMinor))}</span>
+              </div>
+              <div class="team-members">
+                ${g.members.length ? g.members.map(m => `
+                  <span class="team-member-chip"><span class="avatar w-5 h-5 text-[9px]" style="background:${escapeHtml(m.color || 'var(--primary)')};width:20px;height:20px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>${escapeHtml((m.displayName || '').split(' ')[0])}</span>`).join('')
+                  : `<span class="team-card-note">${th('ยังไม่ได้เลือกสมาชิก','No members picked yet')}</span>`}
+              </div>
+            </article>`;
+        };
+        teamBox.innerHTML = report.groups.map(teamCard).join('') + `
+          <article class="team-card team-card--trip">
+            <div class="team-card-head">
+              <span class="team-card-name">${icon('users', 'w-4 h-4')} ${th('ทั้งทริป','Whole trip')}</span>
+              <span class="badge badge-planned text-[10px] ml-auto">${report.trip.memberCount} ${th('คน','pax')}</span>
+            </div>
+            <div class="team-stats">
+              <div class="team-stat">
+                <span class="team-stat-label">${th('เฉลี่ย / คน','Per person')}</span>
+                <b>${fmt(report.trip.perPersonMinor)}</b>
+                <span class="team-delta">${th('ฐานเปรียบเทียบ','comparison base')}</span>
+              </div>
+              <div class="team-stat">
+                <span class="team-stat-label">${th('รวมทั้งทริป','Trip total')}</span>
+                <b>${fmt(report.trip.shareMinor)}</b>
+                <span class="team-delta">${th('จ่ายไป','paid')} ${fmt(report.trip.paidMinor)}</span>
+              </div>
+            </div>
+            ${report.ungrouped.length ? `<div class="team-facts"><span>${icon('user-plus', 'w-3 h-3')} ${th('ยังไม่อยู่ในทีม','Not in a team')}: ${report.ungrouped.map(m => escapeHtml(m.displayName || '')).join(', ')}</span></div>` : ''}
+          </article>`;
+      }
+      queueIcons();
+    }
+  } catch (e) {
+    console.warn('team board failed', e?.message);
+  }
+
   /* ---- Recent expenses ---- */
   const recent = [...originalExpenses].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 5);
   setHtml('recent-expenses', recent.length ? recent.map(e => {
@@ -3090,13 +3187,16 @@ async function renderItinerary(params) {
   const currency = trip?.baseCurrency || 'THB';
   // Trip groups feed the "estimated cost" select in the add/edit sheet, so load
   // them together with the permissions (one round trip, cached afterwards).
-  const [perms, , itineraryExpenses] = await Promise.all([
+  const [perms, , itineraryExpenses, itineraryGroups] = await Promise.all([
     resolvePermissions(tripId, trip, currentUser.uid),
     loadTripCategories(tripId).catch(e => console.warn(e)),
-    fetchAllExpenses(tripId).catch(() => [])
+    fetchAllExpenses(tripId).catch(() => []),
+    // Sub-groups (ทีม) are picked per place — “สถานที่นี้มีทีมไหนไปบ้าง”.
+    listGroups(tripId).catch(e => { console.warn('groups load failed', e?.message); return []; })
   ]);
   if (isStale(token)) return;
   const isAdmin = perms.isAdmin;
+  const tripGroups = itineraryGroups || [];
 
   const urlParams = new URLSearchParams(location.hash.split('?')[1] || '');
   const action = urlParams.get('action');
@@ -3193,6 +3293,13 @@ async function renderItinerary(params) {
   let mapVisible = true;
   let mapReady = false;
   let visibleItems = [];
+  // Live Sortable instances of this page (edit mode only) — see loadItems().
+  let sortables = [];
+  const destroySortables = () => {
+    sortables.forEach(s => { try { s.destroy(); } catch { /* already gone */ } });
+    sortables = [];
+  };
+  document.addEventListener('routechange', destroySortables, { once: true });
   // Set when a card was tapped before the map finished drawing — applied right
   // after the pins land so the map always ends up on the tapped place.
   let pendingFocus = null;
@@ -3374,7 +3481,6 @@ async function renderItinerary(params) {
         fitBounds: true,
         forceRecreate,
         lang,
-        moreLabel: th('รายละเอียดสถานที่เพิ่มเติม', 'More about this place'),
         directionsLabel: th('ไปที่นี่', 'Directions')
       });
       mapReady = true;
@@ -4031,6 +4137,7 @@ async function renderItinerary(params) {
                 ${isVirtual ? '' : `<span class="meta-line">${icon('timer', 'w-3 h-3')} ${formatDuration(it.durationMinutes)}</span>`}
                 ${(!isVirtual && it.travelToNextMinutes > 0) ? `<span class="meta-line">${icon('footprints', 'w-3 h-3')} ${formatDuration(it.travelToNextMinutes)}</span>` : ''}
                 <span class="badge badge-planned text-[10px]">${icon(categoryIcon(it.category), 'w-2.5 h-2.5')} ${escapeHtml(categoryLabel(it.category || 'general', lang))}</span>
+                ${groupBadgesHtml(it)}
               </div>
               ${isCheckin && it.stayCheckIn && it.stayCheckOut ? `<p class="meta-line mt-1">${icon('calendar-range', 'w-3 h-3')} <span class="truncate">${th('เช็คอิน','Check-in')} ${escapeHtml(it.stayCheckIn)} → ${th('เช็คเอาท์','Check-out')} ${escapeHtml(it.stayCheckOut)}</span></p>` : ''}
               ${it.address && !isVirtual ? `<p class="meta-line mt-1">${icon('map-pin', 'w-3 h-3')} <span class="truncate">${escapeHtml(it.address)}</span></p>` : ''}
@@ -4042,7 +4149,7 @@ async function renderItinerary(params) {
                   ${isCheckin && perNightMinor && nights > 1 ? `<span class="text-[10px]">${th('เฉลี่ย','avg')} ${moneyHtml(perNightMinor, cur, rate)} / ${th('คืน','night')}</span>` : ''}
                   ${!it.isStay ? `<span class="text-[10px]">${escapeHtml(categoryLabel(it.estimateCategory || 'general', lang))}${payerName ? ` • ${th('จ่าย','paid by')} ${escapeHtml(payerName)}` : ''}${sharedNames.length ? ` • ${th('หาร','split')} ${sharedNames.length} ${th('คน','pax')}` : ''}</span>` : ''}
                   ${pendingPayer ? `<span class="badge badge-pending text-[9px]">${icon('help-circle', 'w-2.5 h-2.5')} ${th('ยังไม่ระบุเจ้าภาพ','payer TBD')}</span>` : ''}
-                  ${it.expenseId && !isVirtual ? `<span class="badge badge-skipped text-[9px]">${th('อยู่ในค่าใช้จ่าย','in expenses')}</span>` : ''}
+                  ${isVirtual ? '' : `<button type="button" class="badge badge-skipped text-[9px] itin-expense-btn" data-act="expense" data-id="${it.id}">${icon(it.expenseId ? 'pencil' : 'plus', 'w-2.5 h-2.5')} ${it.expenseId ? th('แก้ไขค่าใช้จ่าย','Edit expense') : th('ผูกค่าใช้จ่าย','Link a cost')}</button>`}
                 </div>` : ''}
             </div>
           </div>
@@ -4056,7 +4163,7 @@ async function renderItinerary(params) {
             <button type="button" class="itin-thumb-more" data-act="more" data-id="${it.id}" title="${th('เพิ่มเติม','More')}" aria-label="${th('เมนูรายการ','Item menu')}">${icon('more-vertical', 'w-3.5 h-3.5')}</button>
             <div class="itin-more-menu" data-more-menu="${it.id}">
               ${isVirtual ? '' : `<button data-act="status" data-id="${it.id}">${icon('circle-check', 'w-4 h-4')} ${th('เปลี่ยนสถานะ','Change status')}</button>`}
-              ${hasCoords(it) ? `<button data-act="details" data-id="${it.id}">${icon('search', 'w-4 h-4')} ${th('รายละเอียดสถานที่เพิ่มเติม','More place details')}</button>` : ''}
+              ${isVirtual ? '' : `<button data-act="expense" data-id="${it.id}">${icon('receipt', 'w-4 h-4')} ${it.expenseId || dayMinor ? th('แก้ไขค่าใช้จ่าย','Edit expense') : th('เพิ่มค่าใช้จ่าย','Add a cost')}</button>`}
               <button data-act="edit" data-id="${it.id}">${icon('pencil', 'w-4 h-4')} ${isVirtual ? th('แก้ไขการจองพัก','Edit the stay') : t('edit')}</button>
               ${isVirtual ? '' : `<button data-act="delete" data-id="${it.id}" class="is-danger">${icon('trash-2', 'w-4 h-4')} ${t('delete')}</button>`}
             </div>
@@ -4066,55 +4173,21 @@ async function renderItinerary(params) {
   }
 
   /**
-   * v18 (optional extra): “รายละเอียดสถานที่เพิ่มเติม” for one pinned place.
-   * Key-less OpenStreetMap (Overpass) + Wikipedia, fetched on demand and cached per
-   * session by utils/placeDetails.js. Everything is optional — the sheet always
-   * offers the Google Maps link, even offline.
+   * Chips for the sub-groups (ทีม) that go to this place. The picker lives in the
+   * place form — “ให้เลือกได้ด้วยว่าแต่ละสถานที่มีกลุ่มไหนไปบ้าง” — and the money
+   * analysis (dashboard + expenses) reads it back.
    */
-  async function openPlaceDetails(item) {
-    const pos = coordOf(item);
-    const mapsUrl = item.googleMapsUrl
-      || (pos ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${pos.lat},${pos.lng}`)}` : '');
-    const sheet = showBottomSheet(`
-      <div class="place-sheet">
-        <div class="place-sheet-head">
-          <div class="row-icon" style="width:38px;height:38px;border-radius:12px;">${icon('search', 'w-4 h-4')}</div>
-          <div class="min-w-0">
-            <h3 class="font-bold text-sm leading-tight" style="font-family:var(--font-display);">${escapeHtml(item.title || '')}</h3>
-            <p class="text-[11px] text-[var(--text-tertiary)]">${pos ? `${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)}` : escapeHtml(item.address || '')}</p>
-          </div>
-          <button class="btn btn-ghost btn-sm" id="place-sheet-close" style="margin-left:auto;">${icon('x', 'w-4 h-4')}</button>
-        </div>
-        <div id="place-sheet-body" class="place-sheet-body">
-          <div class="place-details place-details--loading"><span class="place-details-spinner"></span>${th('กำลังค้นหาจาก OpenStreetMap…', 'Looking it up on OpenStreetMap…')}</div>
-        </div>
-        <div class="btn-row mt-3">
-          ${mapsUrl ? `<a class="btn btn-secondary btn-sm" href="${escapeHtml(mapsUrl)}" target="_blank" rel="noopener">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดใน Google Maps', 'Open in Google Maps')}</a>` : ''}
-          <button class="btn btn-ghost btn-sm" id="place-copy-coords">${icon('copy', 'w-3.5 h-3.5')} ${th('คัดลอกพิกัด', 'Copy coordinates')}</button>
-        </div>
-      </div>
-    `);
-    document.getElementById('place-sheet-close')?.addEventListener('click', () => sheet.close());
-    document.getElementById('place-copy-coords')?.addEventListener('click', async () => {
-      if (!pos) return toast.error(th('ไม่มีพิกัดให้คัดลอก', 'No coordinates to copy'));
-      try { await navigator.clipboard.writeText(`${pos.lat},${pos.lng}`); toast.success(th('คัดลอกแล้ว', 'Copied')); }
-      catch { toast.error(`${pos.lat},${pos.lng}`); }
-    });
-    try {
-      const details = await fetchPlaceDetails(item, { lang });
-      const body = document.getElementById('place-sheet-body');
-      if (body) body.innerHTML = placeDetailsHtml(details, { lang });
-      queueIcons();
-    } catch (e) {
-      const body = document.getElementById('place-sheet-body');
-      if (body) body.innerHTML = placeDetailsHtmlSafe({ ok: false, mapsUrl });
+  function groupBadgesHtml(it) {
+    if (!tripGroups.length) return '';
+    const ids = itemGroupIds(it);
+    // No pick at all = everyone goes (the default, and the state of every place
+    // created before the picker existed) — shown as one “ทุกทีม” chip.
+    const badges = ids.length ? tripGroups.filter(g => ids.includes(g.id)) : tripGroups;
+    if (!badges.length) return '';
+    if (badges.length === tripGroups.length) {
+      return `<span class="badge badge-completed text-[10px]" title="${th('ทุกทีมไปที่นี่','Every team goes here')}">${icon('users-round', 'w-2.5 h-2.5')} ${th('ทุกทีม','all teams')}</span>`;
     }
-  }
-
-  /** placeDetailsHtml is optional — never let it break the sheet. */
-  function placeDetailsHtmlSafe(details) {
-    try { return placeDetailsHtml(details, { lang }); }
-    catch { return `<div class="place-details place-details--empty">${th('ดึงข้อมูลไม่ได้ตอนนี้', 'Could not load details')}</div>`; }
+    return badges.map(g => `<span class="badge text-[10px]" style="background:color-mix(in srgb, ${escapeHtml(g.color)} 18%, var(--surface)); border:1px solid color-mix(in srgb, ${escapeHtml(g.color)} 45%, transparent); color:color-mix(in srgb, ${escapeHtml(g.color)} 72%, var(--text-strong));" title="${th('ทีมที่ไปสถานที่นี้','Teams going here')}">${icon(g.icon || 'users', 'w-2.5 h-2.5')} ${escapeHtml(g.name)}</span>`).join('');
   }
 
   async function loadItems() {
@@ -4160,7 +4233,7 @@ async function renderItinerary(params) {
               <span class="text-[10px] text-[var(--text-tertiary)] ml-auto">${itineraryMoney(dayItems)}</span>
               <button class="itin-day-export-btn" data-export-day="${escapeHtml(day)}" title="${th('ส่งออก PNG ของวันนี้','Export this day as a PNG')}">${icon('image', 'w-3.5 h-3.5')} PNG</button>
             </h3>
-            <div class="space-y-3 stagger">${dayCardsHtml(dayItems, { draggable: editMode })}</div>
+            <div class="space-y-3 stagger" data-day-group="${escapeHtml(day)}">${dayCardsHtml(dayItems, { draggable: editMode })}</div>
           </div>
         `).join('');
       } else {
@@ -4209,7 +4282,11 @@ async function renderItinerary(params) {
         if (btn.dataset.act === 'edit') openItemForm(item, item.date);
         if (btn.dataset.act === 'delete') await removeItem(item);
         if (btn.dataset.act === 'status') await changeStatus(item);
-        if (btn.dataset.act === 'details') await openPlaceDetails(item);
+        // “แก้ไขค่าใช้จ่าย” opens the SAME form the expenses page uses (a sheet),
+        // so a cost is edited identically from the plan and from the money book.
+        if (btn.dataset.act === 'expense') await openItemExpenseSheet({
+          tripId, item, trip, members, items: visibleItems, lang, onSaved: () => loadItems()
+        });
       }));
 
       // Tapping anywhere on a place card sends the map straight to that pin —
@@ -4232,27 +4309,42 @@ async function renderItinerary(params) {
       document.addEventListener('click', closeMenus);
       document.addEventListener('routechange', () => document.removeEventListener('click', closeMenus), { once: true });
 
+      // Drag-to-swap exists ONLY in edit mode (a request). The Sortable instance
+      // outlives the innerHTML it was created with, so it used to keep working
+      // after edit mode was switched off — every instance is now destroyed before
+      // the list is painted, and nothing is created unless edit mode is on.
+      destroySortables();
       if (editMode) {
         try {
           const Sortable = (await import('https://esm.sh/sortablejs@1.15.3')).default;
-          Sortable.create(listEl, {
-            animation: 180,
-            handle: '.itin-card',
-            // virtual "กลับเข้าพัก" night cards are not real items — never drag them
-            filter: 'button, .itin-card--stay-return',
-            onEnd: async () => {
-              const newOrder = Array.from(listEl.querySelectorAll('[data-id]'))
-                .map(node => node.dataset.id)
-                .filter(id => !String(id).includes('@stay-'));
-              const tLoad = toast.loading(th('กำลังจัดลำดับ...', 'Reordering...'));
-              try {
-                await reorderItinerary(tripId, showAll ? null : selectedDate, newOrder, currentUser.uid);
-                tLoad.close();
-                toast.success(th('จัดลำดับใหม่แล้ว', 'Reordered'));
-                loadItems();
-              } catch (err) { tLoad.close(); toast.error(err.message); }
-            }
-          });
+          const wire = (container, day) => {
+            sortables.push(Sortable.create(container, {
+              animation: 180,
+              handle: '.itin-card',
+              // virtual "กลับเข้าพัก" night cards are not real items — never drag them
+              filter: 'button, .itin-card--stay-return',
+              onEnd: async () => {
+                const newOrder = Array.from(container.querySelectorAll('[data-id]'))
+                  .map(node => node.dataset.id)
+                  .filter(id => !String(id).includes('@stay-'));
+                const tLoad = toast.loading(th('กำลังจัดลำดับ...', 'Reordering...'));
+                try {
+                  // “ดูทั้งหมด” keeps one list per day, so a drag can never move a
+                  // place to another date (that would rewrite the day's timetable).
+                  await reorderItinerary(tripId, showAll ? day : selectedDate, newOrder, currentUser.uid);
+                  tLoad.close();
+                  toast.success(th('จัดลำดับใหม่แล้ว', 'Reordered'));
+                  loadItems();
+                } catch (err) { tLoad.close(); toast.error(err.message); }
+              }
+            }));
+          };
+          const dayGroups = listEl.querySelectorAll('[data-day-group]');
+          if (showAll && dayGroups.length) {
+            dayGroups.forEach(group => wire(group, group.dataset.dayGroup));
+          } else {
+            wire(listEl, selectedDate);
+          }
         } catch (err) { console.warn('Sortable failed', err); }
       }
       queueIcons();
@@ -4330,13 +4422,9 @@ async function renderItinerary(params) {
     const durInit = toUnit(it.durationMinutes ?? 60);
     const travelInit = toUnit(it.travelToNextMinutes ?? 0);
     const initPayer = it.estimatePayerPending ? '__pending' : (it.estimatePayerId || currentUser.uid);
-    // v18 (requested): one merged category control. By default the expense group
-    // simply follows the place category; the lock is only broken when this place
-    // really bills into another group (e.g. a temple visited on a guided tour).
-    const estimateFollow = !it.estimateCategory
-      || normalizeCategory(it.estimateCategory) === expenseGroupForChoice(normalizeCategory(it.category || 'general'));
-    let estimateLinked = estimateFollow;
-    const estimateInit = it.estimateCategory || expenseGroupForChoice(normalizeCategory(it.category || 'general'));
+    // ONE category for both sides (a request): the expense group this place bills
+    // into is always derived from the place category, so there is nothing to keep
+    // in sync and nothing to choose twice.
 
     const sheet = showBottomSheet(`
       <div class="space-y-3">
@@ -4399,7 +4487,26 @@ async function renderItinerary(params) {
 
           <div class="input-group"><label class="input-label">${icon('tag', 'w-3.5 h-3.5')} ${th('หมวดหมู่ (ใช้ได้ทั้งสถานที่และค่าใช้จ่าย)','Category — place and money, one list')}</label>
             <select id="it-category" class="input">${categoryChoices(lang).map(c => `<option value="${c.id}" ${(it.category || 'general') === c.id ? 'selected' : ''}>${escapeHtml(categoryChoiceLabel(c, lang))}</option>`).join('')}</select>
-            <p class="input-hint mt-1">${th('เลือกครั้งเดียว — ระบบจับคู่ให้เองว่าจะลงกลุ่มค่าใช้จ่ายไหน','One pick — the expense group it bills into is matched for you')}</p>
+            <p class="input-hint mt-1">${th('เลือกครั้งเดียวจบ — กลุ่มค่าใช้จ่ายของสถานที่นี้จะถูกกำหนดให้อัตโนมัติ ไม่ต้องเลือกซ้ำ','One pick only — the expense group of this place follows automatically, no second field to fill')}
+              <span id="it-category-group" class="font-semibold" style="color:var(--primary-strong);"></span></p>
+          </div>
+
+          <div class="input-group" id="it-groups-wrap">
+            <div class="flex items-center justify-between">
+              <label class="input-label">${icon('users-round', 'w-3.5 h-3.5')} ${th('ทีมที่ไปสถานที่นี้','Teams going to this place')}</label>
+              <button type="button" id="it-groups-all" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:2px 8px;">${th('ทุกทีม','All teams')}</button>
+            </div>
+            <div class="tile-grid" id="it-group-tiles">
+              ${tripGroups.length ? tripGroups.map(g => `
+                <button type="button" class="tile ${(it.groupIds || []).includes(g.id) ? 'tile-selected' : ''}" data-group="${g.id}">
+                  <span class="flex items-center gap-2 min-w-0">
+                    <span class="avatar w-7 h-7 text-[10px]" style="background:${escapeHtml(g.color || 'var(--primary)')};width:28px;height:28px;">${icon(g.icon || 'users', 'w-3.5 h-3.5')}</span>
+                    <span class="text-xs font-medium truncate">${escapeHtml(g.name)}</span>
+                  </span>
+                </button>`).join('')
+              : `<p class="text-xs text-[var(--text-secondary)]">${th('ยังไม่มีทีมในทริป — สร้างกลุ่มย่อยได้ที่หน้าสมาชิก แล้วกลับมาเลือกที่นี่','No teams yet — create sub-groups on the Members page, then pick them here')}</p>`}
+            </div>
+            <p class="input-hint">${th('เลือกได้ว่าทีมไหนไปที่นี่บ้าง (หรือทั้งสองทีม) — ระบบใช้ค่านี้วิเคราะห์ค่าใช้จ่ายต่อทีมในแดชบอร์ดและหน้าค่าใช้จ่าย','Pick which teams go here (or both) — the dashboard and the expenses page use it for the per-team analysis')}</p>
           </div>
 
           <div class="input-group">
@@ -4428,11 +4535,14 @@ async function renderItinerary(params) {
 
           <!-- Estimated cost -->
           <div class="p-3 rounded-xl" style="background: var(--bg-secondary); border:1px solid var(--border);">
-            <label class="flex items-center gap-2 text-sm font-bold cursor-pointer">
-              <input id="it-has-estimate" type="checkbox" class="accent-[var(--primary)] w-4 h-4" ${hasEstimate ? 'checked' : ''}>
-              ${icon('hourglass', 'w-3.5 h-3.5')} ${th('มีค่าใช้จ่าย (ประมาณการ)','Has a cost (estimate)')}
-            </label>
-            <p class="input-hint mt-1">${th('เช่น ค่าโรงแรมที่ต้องจอง ค่าเข้าชม — ระบบจะดึงไปรวมในหน้าค่าใช้จ่ายให้อัตโนมัติ','e.g. hotel booking or entrance fee — it is added to the expense book automatically')}</p>
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <label class="flex items-center gap-2 text-sm font-bold cursor-pointer">
+                <input id="it-has-estimate" type="checkbox" class="accent-[var(--primary)] w-4 h-4" ${hasEstimate ? 'checked' : ''}>
+                ${icon('hourglass', 'w-3.5 h-3.5')} ${th('มีค่าใช้จ่าย (ประมาณการ)','Has a cost (estimate)')}
+              </label>
+              ${it.expenseId ? `<button type="button" id="it-open-expense" class="btn btn-secondary btn-sm">${icon('receipt', 'w-3.5 h-3.5')} ${th('แก้ไขค่าใช้จ่าย (เมนูเดียวกับหน้าค่าใช้จ่าย)','Edit expense (same form as the money page)')}</button>` : ''}
+            </div>
+            <p class="input-hint mt-1">${th('เช่น ค่าโรงแรมที่ต้องจอง ค่าเข้าชม — กรอกยอดคร่าวๆ ที่นี่ได้ หรือกด “แก้ไขค่าใช้จ่าย” เพื่อกรอกแบบละเอียด (ส่วนลด / VAT / หลายคนจ่าย) ในเมนูเดียวกับหน้าค่าใช้จ่าย','e.g. hotel booking or entrance fee — a rough amount is enough here, or use “Edit expense” to fill in the full form (discount / VAT / several payers) that the money page uses')}</p>
 
             <div id="it-estimate-fields" class="${hasEstimate ? '' : 'hidden'} space-y-3 mt-3">
               <div class="grid grid-cols-3 gap-2">
@@ -4441,14 +4551,7 @@ async function renderItinerary(params) {
                   <select id="it-estimate-currency" class="input">${tripCurrencyList(trip, [it.estimateCurrency, currency]).map(c => `<option value="${c}" ${(it.estimateCurrency || currency) === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
                 </div>
               </div>
-              <div class="input-group">
-                <label class="input-label text-[12px] flex items-center gap-2">${icon('tag', 'w-3.5 h-3.5')} <span>${th('หมวดค่าใช้จ่าย','Expense group')}</span>
-                  <button type="button" id="it-est-link" class="chip text-[10px]" style="min-height:22px;padding:2px 8px;margin-left:auto;">
-                    ${icon(estimateLinked ? 'link' : 'link-off', 'w-3 h-3')} <span data-link-label>${estimateLinked ? th('ตามหมวดหมู่สถานที่', 'follows the place category') : th('เลือกเอง', 'chosen by hand')}</span>
-                  </button>
-                </label>
-                <select id="it-estimate-category" class="input" ${estimateLinked ? 'disabled' : ''}>${getAllExpenseCategories().map(c => `<option value="${c.id}" ${normalizeCategory(estimateInit) === c.id ? 'selected' : ''}>${lang==='th'?(c.th||c.en):(c.en||c.th)}</option>`).join('')}</select>
-              </div>
+              <p class="input-hint">${icon('tag', 'w-3 h-3')} ${th('หมวดค่าใช้จ่ายของรายการนี้มาจาก “หมวดหมู่” ด้านบน — ระบุที่เดียวใช้ทั้งระบบ','This item’s expense group comes from the “Category” field above — one pick, used everywhere')}</p>
               <div class="input-group">
                 <label class="input-label text-[12px]">${icon('user', 'w-3.5 h-3.5')} ${th('ใครจ่าย','Paid by')}</label>
                 <div class="tile-grid" id="it-payer-tiles">
@@ -4494,26 +4597,48 @@ async function renderItinerary(params) {
     `);
     queueIcons();
 
-    /* ---- v18: the merged category control (place category ⇄ expense group) ---- */
+    /* ---- ONE category (a request): the pick above decides everything ----
+       The expense group of the place is derived from it, so the same category is
+       never asked for twice and every screen (plan, money, dashboard) reads the
+       same value. */
     const catSelect = document.getElementById('it-category');
-    const estSelect = document.getElementById('it-estimate-category');
-    const estLinkBtn = document.getElementById('it-est-link');
-    const syncEstimateGroup = () => {
-      if (!estSelect || !estimateLinked) return;
-      estSelect.value = expenseGroupForChoice(catSelect?.value || 'general');
+    const catGroupHint = document.getElementById('it-category-group');
+    const paintCategoryGroup = () => {
+      if (!catGroupHint) return;
+      const groupId = expenseGroupForChoice(catSelect?.value || 'general');
+      catGroupHint.textContent = ` → ${lang === 'th' ? 'กลุ่มค่าใช้จ่าย' : 'expense group'}: ${categoryLabel(groupId, lang)}`;
     };
-    catSelect?.addEventListener('change', syncEstimateGroup);
-    estLinkBtn?.addEventListener('click', () => {
-      estimateLinked = !estimateLinked;
-      if (estSelect) {
-        estSelect.disabled = estimateLinked;
-        syncEstimateGroup();
-      }
-      estLinkBtn.innerHTML = `${icon(estimateLinked ? 'link' : 'link-off', 'w-3 h-3')} <span data-link-label>${estimateLinked ? th('ตามหมวดหมู่สถานที่', 'follows the place category') : th('เลือกเอง', 'chosen by hand')}</span>`;
-      estLinkBtn.classList.toggle('chip-active', estimateLinked);
-      queueIcons();
+    catSelect?.addEventListener('change', paintCategoryGroup);
+    paintCategoryGroup();
+
+    /* ---- teams that go to this place (กลุ่มไหนไปบ้าง) ---- */
+    let pickedGroups = itemGroupIds(it);
+    const groupTiles = () => document.querySelectorAll('#it-group-tiles [data-group]');
+    const syncAllTeams = () => {
+      const allBtn = document.getElementById('it-groups-all');
+      if (!allBtn) return;
+      // Nothing picked = the whole trip goes, so “ทุกทีม” is the selected state.
+      const everyone = !pickedGroups.length || (tripGroups.length > 0 && pickedGroups.length === tripGroups.length);
+      allBtn.classList.toggle('chip-active', everyone);
+    };
+    groupTiles().forEach(btn => btn.addEventListener('click', () => {
+      const gid = btn.dataset.group;
+      if (pickedGroups.includes(gid)) { pickedGroups = pickedGroups.filter(x => x !== gid); btn.classList.remove('tile-selected'); }
+      else { pickedGroups.push(gid); btn.classList.add('tile-selected'); }
+      syncAllTeams();
+    }));
+    bind('it-groups-all', 'click', () => {
+      pickedGroups = [];
+      groupTiles().forEach(t => t.classList.remove('tile-selected'));
+      syncAllTeams();
     });
-    if (estLinkBtn) estLinkBtn.classList.toggle('chip-active', estimateLinked);
+    syncAllTeams();
+
+    /* ---- the linked expense, edited in the SAME form the money page uses ---- */
+    bind('it-open-expense', 'click', async () => {
+      sheet.close();
+      await openItemExpenseSheet({ tripId, item: it, trip, members, items: visibleItems, lang, onSaved: () => loadItems() });
+    });
 
     const estimateToggle = document.getElementById('it-has-estimate');
     estimateToggle.addEventListener('change', () => {
@@ -4667,11 +4792,11 @@ async function renderItinerary(params) {
           notes: document.getElementById('it-notes').value.trim(),
           category: document.getElementById('it-category').value,
           status: document.getElementById('it-status').value,
+          groupIds: [...new Set(pickedGroups)].filter(Boolean),
           estimateAmount,
           estimateCurrency: document.getElementById('it-estimate-currency').value,
-          estimateCategory: estimateLinked
-            ? expenseGroupForChoice(document.getElementById('it-category').value)
-            : document.getElementById('it-estimate-category').value,
+          // One category controls both sides (a request) — never a second picker.
+          estimateCategory: expenseGroupForChoice(document.getElementById('it-category').value),
           estimatePayerId: payerId === '__pending' ? '' : payerId,
           estimatePayerPending: payerId === '__pending',
           estimateShareWith: shareIds,
@@ -4847,16 +4972,23 @@ async function renderExpenses(params) {
   if (isStale(token)) return;
   const trip = currentTrip;
   const currency = trip?.baseCurrency || 'THB';
-  // permissions, trip groups and the member list are independent — one round trip
-  const [perms, , membersRes, commentsRes] = await Promise.all([
+  // permissions, trip groups, the plan and the member list are independent — one
+  // round trip. ORDER MATTERS: the destructuring below reads this array by
+  // position, so groups must come before the plan here.
+  const [perms, , membersRes, commentsRes, groupsRes, planRes] = await Promise.all([
     resolvePermissions(tripId, trip, currentUser.uid),
     loadTripCategories(tripId).catch(e => console.warn(e)),
     listMembers(tripId).catch(e => { console.warn(e); return []; }),
     listComments(tripId).catch(e => { console.warn(e); return []; }),
-    fetchAllExpenses(tripId).catch(() => [])
+    listGroups(tripId).catch(e => { console.warn('groups load failed', e?.message); return []; }),
+    fetchItinerary(tripId, null).catch(() => null)
   ]);
   if (isStale(token)) return;
   const isAdmin = perms.isAdmin;
+  // Trip sub-groups (ทีม) drive the “เฉลี่ยต่อกลุ่ม → ต่อคน” numbers below, and the
+  // plan tells us how many places each group actually goes to.
+  const tripGroups = groupsRes || [];
+  const planItems = planRes;
 
   const members = membersRes || [];
   currentTripMembers = members;
@@ -4882,13 +5014,16 @@ async function renderExpenses(params) {
         </div>
       </div>
 
-      <div class="kpi-strip mb-4">
+      <div class="kpi-strip mb-3">
         <div class="kpi-mini"><span class="kpi-mini-label">${th('รวมทั้งหมด','Total')}</span><b id="exp-sum-total">--</b></div>
         <div class="kpi-mini"><span class="kpi-mini-label">${th('จ่ายจริง','Actual')}</span><b id="exp-sum-actual">--</b></div>
         <div class="kpi-mini"><span class="kpi-mini-label">${th('ประมาณการ','Estimated')}</span><b id="exp-sum-est">--</b></div>
         <div class="kpi-mini"><span class="kpi-mini-label">${th('รายการ','Items')}</span><b id="exp-sum-count">--</b></div>
-        <div class="kpi-mini"><span class="kpi-mini-label" id="exp-sum-avg-label">${th('เฉลี่ย / คน','Avg / person')}</span><b id="exp-sum-avg">--</b></div>
+        <div class="kpi-mini"><span class="kpi-mini-label" id="exp-sum-avg-label">${th('เฉลี่ย / กลุ่ม','Avg / group')}</span><b id="exp-sum-avg">--</b><span class="kpi-mini-sub" id="exp-sum-avg-sub"></span></div>
       </div>
+
+      <!-- เฉลี่ยต่อกลุ่ม แล้วแยกเป็นต่อคนของแต่ละกลุ่ม (a request) -->
+      <div id="exp-group-avg" class="group-avg-strip mb-4"></div>
 
       <div class="chip-row mb-2" id="expense-filters">
         <button class="chip chip-active" data-filter="all">${icon('layers', 'w-3.5 h-3.5')} ${t('all')}</button>
@@ -4997,14 +5132,59 @@ async function renderExpenses(params) {
     setHtml('exp-sum-actual', withThb(actual));
     setHtml('exp-sum-est', withThb(est));
     setText('exp-sum-count', String(allLoaded.length));
-    // “เฉลี่ยต่อคน” — the honest denominator is whoever actually joined in
-    // (falls back to the trip's member count before the first expense exists).
+    // “เฉลี่ยต่อกลุ่ม แล้วแต่ละกลุ่มเฉลี่ยเป็นต่อคน” (a request): the headline is how
+    // much ONE group costs (trip total ÷ how many groups there are); the per-person
+    // number of the whole trip stays visible as the small line below, and every
+    // group's own total + per-person figure is printed by renderGroupAverages().
+    const report = groupBudgetReport(tripGroups, normalized, members);
+    const groupCount = report.groups.filter(g => g.memberCount > 0).length;
+    const shareTotal = report.trip.shareMinor || total;
     const paxCount = participantsOf(normalized).length || (members.length || 0);
-    const avg = averagePerPerson(total, paxCount);
-    setText('exp-sum-avg-label', paxCount
-      ? th(`เฉลี่ย / คน (${paxCount} คน)`, `Avg / person (${paxCount})`)
-      : th('เฉลี่ย / คน', 'Avg / person'));
-    setHtml('exp-sum-avg', withThb(avg));
+    const perPerson = averagePerPerson(shareTotal, paxCount);
+    if (groupCount) {
+      setText('exp-sum-avg-label', th(`เฉลี่ย / กลุ่ม (${groupCount} กลุ่ม)`, `Avg / group (${groupCount})`));
+      setHtml('exp-sum-avg', withThb(Math.round(shareTotal / groupCount)));
+      setHtml('exp-sum-avg-sub', paxCount ? th(`ต่อคน ≈ ${formatCurrency(perPerson, 'THB')} • ${paxCount} คน`, `≈ ${formatCurrency(perPerson, 'THB')} / person • ${paxCount} pax`) : '');
+    } else {
+      setText('exp-sum-avg-label', paxCount ? th(`เฉลี่ย / คน (${paxCount} คน)`, `Avg / person (${paxCount})`) : th('เฉลี่ย / คน', 'Avg / person'));
+      setHtml('exp-sum-avg', withThb(perPerson));
+      setHtml('exp-sum-avg-sub', th('ยังไม่มีกลุ่ม — สร้างได้ที่หน้าสมาชิก', 'No groups yet — add them on the Members page'));
+    }
+  }
+
+  /**
+   * One card per trip sub-group (ทีม): what the group spent and what that means
+   * per person, plus the whole trip as the comparison base. The numbers follow the
+   * current filter (day / category / estimated) because the caller passes the same
+   * item list the list view prints.
+   */
+  function renderGroupAverages(items) {
+    const box = document.getElementById('exp-group-avg');
+    if (!box) return;
+    if (!tripGroups.length) { box.innerHTML = ''; return; }
+    let normalized = items;
+    try { normalized = expensesInThb(items, trip); } catch { /* keep raw minor units */ }
+    const report = groupBudgetReport(tripGroups, normalized, members);
+    const money = minor => formatCurrency(minor || 0, 'THB');
+    const card = (name, iconName, color, totalMinor, perPersonMinor, pax, { trip = false, places = null } = {}) => `
+      <div class="group-avg-card ${trip ? 'group-avg-card--trip' : ''}" style="--group-color:${escapeHtml(color || 'var(--primary)')};">
+        <span class="group-avg-name" style="color:${trip ? 'var(--text-secondary)' : escapeHtml(color || 'var(--primary)')};">${icon(iconName || 'users', 'w-3 h-3')} ${escapeHtml(name)}</span>
+        <b class="group-avg-per">${money(perPersonMinor)}<i>/${th('คน','person')}</i></b>
+        <span class="group-avg-total">${th('รวม','total')} ${money(totalMinor)} • ${pax} ${th('คน','pax')}${places != null ? ` • ${places} ${th('ที่','places')}` : ''}</span>
+      </div>`;
+    box.innerHTML = report.groups.map(g => card(g.name, g.icon, g.color, g.shareMinor, g.perPersonMinor, g.memberCount, { places: groupPlaceCount(g.id) })).join('')
+      + card(th('ทั้งทริป','Whole trip'), 'users-round', 'var(--primary)', report.trip.shareMinor, report.trip.perPersonMinor, report.trip.memberCount, { trip: true });
+    queueIcons();
+  }
+
+  /**
+   * How many places of the plan this group goes to. Groups are picked per place
+   * (“ให้เลือกได้ด้วยว่าแต่ละสถานที่มีกลุ่มไหนไปบ้าง”), so this is the link between
+   * the plan and the money analysis. Returns null while the plan is unknown.
+   */
+  function groupPlaceCount(groupId) {
+    if (!Array.isArray(planItems)) return null;
+    return placesForGroup(groupId, planItems).length;
   }
 
   function expenseCardHtml(e) {
@@ -5050,11 +5230,45 @@ async function renderExpenses(params) {
       </div>`;
   }
 
+  /**
+   * “เฉลี่ยต่อกลุ่ม แล้วแต่ละกลุ่มเฉลี่ยเป็นต่อคน” for one slice of the list
+   * (a day, or everything the filters show). Per-group numbers come from what the
+   * group's members were actually charged (allocations), so an overlapping
+   * membership never inflates the trip total.
+   */
+  function groupAvgFor(sliceItems) {
+    let normalized = sliceItems;
+    try { normalized = expensesInThb(sliceItems, trip); } catch { /* keep raw minor units */ }
+    const report = groupBudgetReport(tripGroups, normalized, members);
+    const groupCount = report.groups.filter(g => g.memberCount > 0).length;
+    const pax = participantsOf(normalized).length || (members.length || 0);
+    const shareTotal = report.trip.shareMinor;
+    return {
+      report,
+      groupCount,
+      pax,
+      avgPerGroup: groupCount ? Math.round(shareTotal / groupCount) : 0,
+      avgPerPerson: pax ? Math.round(shareTotal / pax) : 0
+    };
+  }
+
+  /** The “avg / group • X / person” chip used by the day headers and the list bar. */
+  function avgChipHtml(sliceItems) {
+    const g = groupAvgFor(sliceItems);
+    if (g.groupCount) {
+      return `<span class="expense-avg-chip">${icon('users-round', 'w-3 h-3')} ${th('เฉลี่ย/กลุ่ม', 'avg/group')} <b>${formatCurrency(g.avgPerGroup, 'THB')}</b> • <b>${formatCurrency(g.avgPerPerson, 'THB')}</b>/${th('คน', 'person')} • ${g.groupCount} ${th('กลุ่ม', 'groups')} • ${g.pax} ${th('คน', 'pax')}</span>`;
+    }
+    return g.pax
+      ? `<span class="expense-avg-chip">${th('เฉลี่ย', 'avg')} <b>${formatCurrency(g.avgPerPerson, 'THB')}</b>/${th('คน', 'person')} • ${g.pax} ${th('คน', 'pax')}</span>`
+      : '';
+  }
+
   function applyFilterRender() {
     const listEl = document.getElementById('expense-list');
     if (!listEl) return;
     renderSummary();
     const items = filterItems(allLoaded);
+    renderGroupAverages(items);
     if (!items.length) {
       listEl.innerHTML = renderEmptyState({
         icon: 'wallet',
@@ -5081,7 +5295,6 @@ async function renderExpenses(params) {
         try { dayTotal = sumExpenses(expensesInThb(dayItems, trip)); } catch { /* missing rate */ }
         const tripRate = resolveTripThbRate(trip, allLoaded, currency);
         const thbTotal = dayTotal != null && currency !== 'THB' && tripRate ? origTextChipHtml(formatCurrency(convertCurrency(dayTotal, 'THB', currency, 1 / tripRate), currency)) : '';
-        const dayPax = participantsOf(dayItems).length || (members.length || 0);
         return `
           <section class="expense-day" data-day="${escapeHtml(day)}">
             <header class="expense-day-head">
@@ -5093,7 +5306,7 @@ async function renderExpenses(params) {
               <div class="expense-day-total">
                 <b class="money-primary">${dayTotal == null ? th('ยังไม่มีเรท THB','THB rate needed') : formatCurrency(dayTotal, 'THB')}</b>
                 ${thbTotal}
-                ${dayTotal != null && dayPax ? `<span class="expense-avg-chip">${th('เฉลี่ย', 'avg')} <b>${formatCurrency(averagePerPerson(dayTotal, dayPax), 'THB')}</b>/${th('คน','person')} • ${dayPax} ${th('คน','pax')}</span>` : ''}
+                ${dayTotal != null ? avgChipHtml(dayItems) : ''}
               </div>
             </header>
             <div class="space-y-3 stagger">${dayItems.map(e => expenseCardHtml(e)).join('')}</div>
@@ -5108,14 +5321,12 @@ async function renderExpenses(params) {
       const listThb = listTotal != null && currency !== 'THB' && listRate
         ? origTextChipHtml(formatCurrency(convertCurrency(listTotal, 'THB', currency, 1 / listRate), currency)) : '';
       const dayCount = new Set(items.map(e => e.date).filter(Boolean)).size;
-      const listPax = participantsOf(items).length || (members.length || 0);
-      const listAvg = listTotal == null ? 0 : averagePerPerson(listTotal, listPax);
       listEl.innerHTML = `
         <div class="expense-day-total-bar">
           <span>${icon('wallet', 'w-3.5 h-3.5')} ${th('ยอดรวมทั้งทริป (ตามตัวกรองนี้)', 'Trip total (this filter)')}</span>
           <b class="money-primary">${listTotal == null ? th('ยังไม่มีเรท THB', 'THB rate needed') : formatCurrency(listTotal, 'THB')}</b>
           ${listThb}
-          ${listAvg ? `<span class="expense-avg-chip">${icon('users', 'w-3 h-3')} ${th('เฉลี่ย', 'avg')} <b>${formatCurrency(listAvg, 'THB')}</b>/${th('คน','person')} • ${listPax} ${th('คน','pax')}</span>` : ''}
+          ${listTotal == null ? '' : avgChipHtml(items)}
           <i>${items.length} ${th('รายการ', 'items')}${dayCount ? ` • ${dayCount} ${th('วัน', 'days')}` : ''}</i>
         </div>
         ${items.map(e => expenseCardHtml(e)).join('')}`;
@@ -5287,6 +5498,698 @@ async function renderExpenses(params) {
 }
 
 /* ================================================================== *
+ * Expense form — ONE form, two homes.
+ *
+ * The full-page editor (`#/trip/:id/expenses/add`) and the sheet that opens from
+ * the plan (“แก้ไขค่าใช้จ่าย” on an itinerary card) render the very same sections,
+ * fields, pickers and computed previews — so a cost is written the same way no
+ * matter where it is opened from (a request: “แก้ไขจากหน้านี้ให้เมนูเป็นแบบ
+ * เดียวกัน”). Everything below is prefix-aware and root-scoped: the page uses the
+ * historical `ex-…` ids, the sheet uses `sh-…`, the markup and the wiring are one
+ * implementation.
+ * ================================================================== */
+
+/**
+ * Markup of the four expense sections (+ optional footer row).
+ * @returns {string} HTML, ready to drop inside a <form class="expense-form">.
+ */
+function expenseFormSectionsHtml({
+  prefix = '', e = {}, members = [], items = [], trip = null, lang = 'th',
+  currency = 'THB', expenseRates = [], lockItinerary = false, showType = true, planLabel = ''
+} = {}) {
+  const tx = (a, b) => (lang === 'th' ? a : b);
+  const p = prefix;
+  const decimals = getCurrencyDecimals(currency);
+  const amount = (minor) => (minor ? formatAmount(fromMinor(minor, decimals), decimals) : '');
+  const initialPayments = expensePayments(e);
+  const initialPayers = new Set(initialPayments.length ? initialPayments.map(x => x.memberId) : [members[0]?.id || currentUser.uid]);
+  const selectedShare = members.filter(m => (e.allocations ? e.allocations.some(a => a.memberId === m.id) : true));
+
+  return `
+        <!-- 1) รายละเอียดรายการ -->
+        <section class="form-section">
+          <div class="form-section-head">
+            <span class="form-section-icon">${icon('receipt-text', 'w-4 h-4')}</span>
+            <h3>${tx('รายละเอียดรายการ', 'Item details')}</h3>
+          </div>
+          <div class="space-y-3">
+            <div class="input-group"><label class="input-label">${icon('sparkles', 'w-3.5 h-3.5')} ${tx('ชื่อรายการ','Title')} *</label><input id="${p}ex-title" class="input" required autocomplete="off" placeholder="${tx('เช่น ราเมงมื้อเย็น','e.g. Dinner ramen')}" value="${escapeHtml(e.title || '')}"></div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div class="input-group"><label class="input-label">${icon('calendar', 'w-3.5 h-3.5')} ${tx('วันที่','Date')} *</label><input id="${p}ex-date" class="input" type="date" value="${escapeHtml(e.date || dayjs().format('YYYY-MM-DD'))}" required></div>
+              <div class="input-group">
+                <label class="input-label flex items-center justify-between">${icon('tag', 'w-3.5 h-3.5')} ${tx('กลุ่มค่าใช้จ่าย','Expense group')}
+                  <button type="button" id="${p}ex-manage-cats" class="link-btn text-[10px]">${icon('settings-2', 'w-3 h-3')} ${tx('จัดการ','Manage')}</button>
+                </label>
+                <select id="${p}ex-cat" class="input">
+                  ${getAllExpenseCategories().map(c => `<option value="${c.id}" ${normalizeCategory(e.category || 'general') === c.id ? 'selected' : ''}>${lang==='th'?(c.th||c.en):(c.en||c.th)}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              ${showType ? `<div class="input-group"><label class="input-label">${icon('list-checks', 'w-3.5 h-3.5')} ${tx('ประเภท','Type')}</label>
+                <select id="${p}ex-type" class="input">
+                  <option value="actual" ${!e.isEstimated ? 'selected' : ''}>${tx('จ่ายจริง','Actual')}</option>
+                  <option value="estimated" ${e.isEstimated ? 'selected' : ''}>${tx('ประมาณการ','Estimated')}</option>
+                </select>
+              </div>` : `<input id="${p}ex-type" type="hidden" value="${e.isEstimated ? 'estimated' : 'actual'}">`}
+              ${lockItinerary
+                ? `<div class="input-group"><label class="input-label">${icon('map-pinned', 'w-3.5 h-3.5')} ${tx('ผูกกับแผนการเดินทาง','Linked place')}</label>
+                     <div class="input trail-input" style="display:flex;align-items:center;gap:6px;">${icon('map-pin', 'w-3.5 h-3.5')} <span class="truncate">${escapeHtml(planLabel || e.itineraryItemTitle || '')}</span></div>
+                     <input id="${p}ex-itinerary" type="hidden" value="${escapeHtml(e.itineraryItemId || '')}">
+                   </div>`
+                : ''}
+            </div>
+          </div>
+        </section>
+
+        <!-- 2) จำนวนเงิน -->
+        <section class="form-section">
+          <div class="form-section-head">
+            <span class="form-section-icon">${icon('banknote', 'w-4 h-4')}</span>
+            <h3>${tx('จำนวนเงิน', 'Amount')}</h3>
+          </div>
+          <div class="space-y-3">
+            <div class="grid grid-cols-3 gap-3">
+              <div class="input-group col-span-2"><label class="input-label">${icon('banknote', 'w-3.5 h-3.5')} ${tx('ยอดก่อนส่วนลด / VAT / Service Charge','Subtotal before adjustments')} *</label><input id="${p}ex-subtotal" class="input money-input" type="text" inputmode="decimal" required placeholder="0.00" value="${amount(e.subtotalMinor)}"></div>
+              <div class="input-group"><label class="input-label">${icon('coins', 'w-3.5 h-3.5')} ${tx('สกุลเงิน','Currency')}</label>
+                <select id="${p}ex-currency" class="input">${tripCurrencyList(trip, [e.currency]).map(c => `<option value="${c}" ${currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-3">
+              <div class="input-group"><label class="input-label">${icon('ticket', 'w-3.5 h-3.5')} ${tx('ส่วนลด','Discount')}</label><input id="${p}ex-discount" class="input money-input" type="text" inputmode="decimal" value="${amount(e.discountMinor) || 0}"></div>
+              <div class="input-group"><label class="input-label">${icon('concierge-bell', 'w-3.5 h-3.5')} Service Charge</label><input id="${p}ex-service" class="input money-input" type="text" inputmode="decimal" value="${amount(e.serviceMinor) || 0}"></div>
+              <div class="input-group"><label class="input-label">${icon('receipt-text', 'w-3.5 h-3.5')} VAT / Tax</label><input id="${p}ex-tax" class="input money-input" type="text" inputmode="decimal" value="${amount(e.taxMinor) || 0}"></div>
+            </div>
+
+            <div class="input-group"><label class="input-label">${icon('arrow-left-right', 'w-3.5 h-3.5')} ${tx('เรทเป็น THB','Rate to THB')}</label><input id="${p}ex-thb-rate" class="input" type="number" step="0.0001" min="0" value="${e.thbRate || resolveTripThbRate(trip, expenseRates, currency) || ''}"></div>
+
+            <div id="${p}net-preview" class="p-4 rounded-xl text-sm font-bold border flex items-center gap-2" style="border-color: var(--border); background: var(--bg-secondary);">${icon('calculator', 'w-4 h-4')} ${t('netTotal')}: --</div>
+            <div id="${p}thb-preview" class="p-3 rounded-xl border text-sm flex items-center gap-2" style="border-color: color-mix(in srgb, var(--success) 35%, transparent); background: var(--success-bg); color: var(--success);">${icon('banknote', 'w-4 h-4')} THB: --</div>
+          </div>
+        </section>
+
+        <!-- 3) คนจ่ายและการแบ่ง -->
+        <section class="form-section">
+          <div class="form-section-head">
+            <span class="form-section-icon">${icon('users', 'w-4 h-4')}</span>
+            <h3>${tx('คนจ่ายและการแบ่งจ่าย', 'Payer & split')}</h3>
+          </div>
+          <div class="space-y-4">
+            <div class="input-group">
+              <label class="input-label">${icon('user', 'w-3.5 h-3.5')} ${tx('คนจ่าย (เลือกได้หลายคน)','Paid by (select one or more)')} *</label>
+              <div id="${p}payer-tiles" class="tile-grid">
+                ${members.map(m => `
+                  <button type="button" class="tile ${initialPayers.has(m.id) ? 'tile-selected' : ''}" data-payer="${m.id}" title="${escapeHtml(m.displayName)}">
+                    <span class="flex items-center gap-2 min-w-0">
+                      <span class="avatar w-8 h-8 text-xs" style="background:${m.color || 'var(--primary)'};width:32px;height:32px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+                      <span class="text-sm font-medium truncate">${escapeHtml(m.displayName)}</span>
+                    </span>
+                  </button>`).join('') || `<p class="text-sm text-[var(--text-secondary)]">${tx('ยังไม่พบสมาชิกในทริปนี้','No members found in this trip')}</p>`}
+              </div>
+            </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div class="input-group"><label class="input-label">${icon('credit-card', 'w-3.5 h-3.5')} ${tx('วิธีจ่าย','Payment method')}</label>
+            <select id="${p}ex-payment" class="input">
+              <option value="cash" ${(e.paymentMethod || 'cash') === 'cash' ? 'selected' : ''}>${tx('เงินสด','Cash')}</option>
+              <option value="card" ${e.paymentMethod === 'card' ? 'selected' : ''}>${tx('บัตรเครดิต','Card')}</option>
+              <option value="transfer" ${e.paymentMethod === 'transfer' ? 'selected' : ''}>${tx('โอนเงิน','Transfer')}</option>
+            </select>
+          </div>
+          <div class="input-group" id="${p}ex-card-group">
+            <label class="input-label flex items-center justify-between">${icon('credit-card', 'w-3.5 h-3.5')} ${tx('บัตรเครดิต','Credit card')}
+              <button type="button" id="${p}ex-manage-cards" class="link-btn text-[10px]">${icon('settings-2', 'w-3 h-3')} ${tx('จัดการบัตร','Manage cards')}</button>
+            </label>
+            <!-- Managed dropdown only — the trip's card list prevents random card names -->
+            <select id="${p}ex-card" class="input"></select>
+            <p class="input-hint">${tx('เลือกได้เฉพาะบัตรที่ลงทะเบียนไว้ของทริป — เพิ่ม/แก้ไข/ลบที่ “จัดการบัตร”','Only registered trip cards can be picked — add/edit/delete via “Manage cards”')}</p>
+          </div>
+        </div>
+
+            <div id="${p}payer-amounts"></div>
+            <div class="input-group">
+              <div class="flex items-center justify-between">
+                <label class="input-label">${icon('split', 'w-3.5 h-3.5')} ${tx('ใครหารด้วย','Who shares')}</label>
+                <button type="button" id="${p}share-all" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:2px 8px;">${tx('เลือกทั้งหมด','Select all')}</button>
+              </div>
+              <div id="${p}share-tiles" class="tile-grid">
+                ${members.map(m => `
+                  <button type="button" class="tile ${selectedShare.some(x => x.id === m.id) ? 'tile-selected' : ''}" data-share="${m.id}" title="${escapeHtml(m.displayName)}">
+                    <span class="flex items-center gap-2 min-w-0">
+                      <span class="avatar w-8 h-8 text-xs" style="background:${m.color || 'var(--primary)'};width:32px;height:32px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+                      <span class="text-sm font-medium truncate">${escapeHtml(m.displayName)}</span>
+                    </span>
+                  </button>`).join('')}
+              </div>
+            </div>
+
+            <div class="input-group">
+              <label class="input-label">${icon('sliders-horizontal', 'w-3.5 h-3.5')} ${t('splitMethod')}</label>
+              <div class="segmented">
+                <button type="button" data-split="equal" class="segmented-item active">${icon('scale', 'w-4 h-4')} ${t('equal')}</button>
+                <button type="button" data-split="unequal" class="segmented-item">${icon('sliders-horizontal', 'w-4 h-4')} ${t('unequal')}</button>
+              </div>
+            </div>
+            <div id="${p}split-area" class="space-y-3"></div>
+          </div>
+        </section>
+
+        <!-- 4) ข้อมูลเพิ่มเติม -->
+        <section class="form-section">
+          <div class="form-section-head">
+            <span class="form-section-icon">${icon('info', 'w-4 h-4')}</span>
+            <h3>${tx('หลักฐานและข้อมูลเพิ่มเติม (ไม่บังคับ)', 'Receipt & extra details (optional)')}</h3>
+          </div>
+          <div class="space-y-3">
+        ${lockItinerary ? '' : `<div class="input-group">
+          <label class="input-label">${icon('map-pinned', 'w-3.5 h-3.5')} ${tx('ผูกกับแผนการเดินทาง','Linked itinerary place')}</label>
+          <select id="${p}ex-itinerary" class="input">
+            <option value="">${tx('— ไม่ผูก —','— none —')}</option>
+            ${items.map(it => `<option value="${it.id}" ${e.itineraryItemId === it.id ? 'selected' : ''}>${escapeHtml(it.date || '')} • ${escapeHtml(it.title)}</option>`).join('')}
+          </select>
+        </div>`}
+
+
+        <div class="input-group">
+          <label class="input-label">${icon('image-plus', 'w-3.5 h-3.5')} ${tx('รูปใบเสร็จ (ไม่บังคับ)','Receipt photo (optional)')}</label>
+          <div class="receipt-upload">
+            <div id="${p}ex-receipt-preview" class="receipt-upload-preview ${e.receiptImage ? '' : 'hidden'}">
+              ${e.receiptImage ? `<img src="${escapeHtml(e.receiptImage)}" alt="receipt">` : ''}
+            </div>
+            <div class="btn-row">
+              <label class="btn btn-secondary btn-sm" for="${p}ex-receipt-file">${icon('upload', 'w-4 h-4')} ${tx('เลือกรูป','Choose photo')}</label>
+              <input id="${p}ex-receipt-file" type="file" accept="image/*" class="hidden">
+              <button type="button" id="${p}ex-receipt-clear" class="btn btn-ghost btn-sm ${e.receiptImage ? '' : 'hidden'}">${icon('trash-2', 'w-4 h-4')} ${tx('ลบรูป','Remove')}</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="input-group"><label class="input-label">${icon('link', 'w-3.5 h-3.5')} ${tx('ลิงก์ใบเสร็จ','Receipt URL')}</label><input id="${p}ex-receipt" class="input" placeholder="https://..." value="${escapeHtml(e.receiptUrl || '')}"></div>
+
+        <div class="input-group"><label class="input-label">${icon('align-left', 'w-3.5 h-3.5')} ${tx('รายละเอียด','Description')}</label><textarea id="${p}ex-desc" class="input" style="min-height:70px;">${escapeHtml(e.description || '')}</textarea></div>
+          </div>
+        </section>`;
+}
+
+/**
+ * Wire one expense form (already in the DOM inside `root`) and hand back a small
+ * API: read the numbers, validate them and build the Firestore payload.
+ *
+ * Both callers (the page and the plan's sheet) get exactly the same behaviour —
+ * multi-payer amounts, equal/unequal split with auto-distribution, VAT/SC
+ * inclusion, managed cards, receipt photo, itinerary link.
+ */
+function mountExpenseForm({
+  root = document, prefix = '', e = {}, members = [], items = [], trip = null,
+  tripId = null, currency = 'THB', baseCurrency = 'THB', expenseRates = [], lang = 'th'
+} = {}) {
+  const tx = (a, b) => (lang === 'th' ? a : b);
+  const idOf = (name) => `${prefix}${name}`;
+  // jsdom has no global CSS object (and no CSS.escape) — never assume it exists.
+  const esc = (name) => (window.CSS && window.CSS.escape ? window.CSS.escape(idOf(name)) : idOf(name));
+  const $ = (name) => root.querySelector(`[id="${esc(name)}"]`);
+  const on = (name, evt, fn) => { const node = $(name); if (node) node.addEventListener(evt, fn); return node; };
+
+  const decimalsFor = (cur) => getCurrencyDecimals(cur);
+  const initialPayments = expensePayments(e);
+  const initialPayers = new Set(initialPayments.length ? initialPayments.map(p => p.memberId) : [members[0]?.id || currentUser.uid]);
+
+  /* ---- payment method → managed card dropdown ---- */
+  const paymentSel = $('ex-payment');
+  const cardGroup = $('ex-card-group');
+  const cardInput = $('ex-card');
+
+  function fillCardOptions(keep = '') {
+    if (!cardInput) return;
+    const cards = tripCards(currentTrip);
+    const selected = keep || e.cardName || '';
+    const known = cards.some(c => c.name === selected);
+    cardInput.innerHTML = `
+      <option value="">${cards.length ? tx('— เลือกบัตร —', '— pick a card —') : tx('— ยังไม่มีบัตรในทริป —', '— no trip cards yet —')}</option>
+      ${cards.map(c => `<option value="${escapeHtml(c.name)}" ${c.name === selected ? 'selected' : ''}>${escapeHtml(tripCardLabel(c))}${c.holderId ? ` (${escapeHtml(members.find(m => m.id === c.holderId)?.displayName || '')})` : ''}</option>`).join('')}
+      ${selected && !known ? `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)} ${tx('(ของเดิม)', '(legacy)')}</option>` : ''}
+      <option value="__manage">${tx('➕ เพิ่ม / จัดการบัตร…', '➕ Add / manage cards…')}</option>`;
+  }
+  fillCardOptions();
+
+  function openCardsFromForm() {
+    openCardManager(tripId, {
+      members,
+      onSaved: (cards) => fillCardOptions(cardInput?.value === '__manage' ? (cards[cards.length - 1]?.name || '') : cardInput?.value)
+    });
+  }
+  cardInput?.addEventListener('change', () => {
+    if (cardInput.value === '__manage') {
+      cardInput.value = '';
+      openCardsFromForm();
+    }
+  });
+  on('ex-manage-cards', 'click', openCardsFromForm);
+
+  const syncCardField = () => {
+    const isCard = paymentSel?.value === 'card';
+    cardGroup?.classList.toggle('hidden', !isCard);
+    if (!isCard && cardInput) cardInput.value = '';
+  };
+  paymentSel?.addEventListener('change', syncCardField);
+  syncCardField();
+
+  /* ---- receipt photo (optional): preview now, upload when the caller saves ---- */
+  let pendingReceiptFile = null;
+  let receiptCleared = false;
+  const receiptFileInput = $('ex-receipt-file');
+  const receiptPreview = $('ex-receipt-preview');
+  const receiptClearBtn = $('ex-receipt-clear');
+
+  const setReceiptPreview = (src) => {
+    if (!receiptPreview) return;
+    receiptPreview.innerHTML = src ? `<img src="${src}" alt="receipt">` : '';
+    receiptPreview.classList.toggle('hidden', !src);
+    receiptClearBtn?.classList.toggle('hidden', !src);
+  };
+
+  receiptFileInput?.addEventListener('change', async () => {
+    const file = receiptFileInput.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error(tx('เลือกไฟล์รูปภาพเท่านั้น','Pick an image file')); return; }
+    if (file.size > 12 * 1024 * 1024) { toast.error(tx('รูปใหญ่เกินไป (สูงสุด 12MB)','Image too large (max 12MB)')); return; }
+    pendingReceiptFile = file;
+    receiptCleared = false;
+    try {
+      const reader = new FileReader();
+      reader.onload = () => setReceiptPreview(String(reader.result));
+      reader.readAsDataURL(file);
+    } catch { setReceiptPreview(''); }
+    toast.success(tx('แนบรูปแล้ว — จะอัปโหลดตอนบันทึก','Attached — it uploads when you save'));
+  });
+
+  on('ex-receipt-clear', 'click', () => {
+    pendingReceiptFile = null;
+    receiptCleared = true;
+    if (receiptFileInput) receiptFileInput.value = '';
+    setReceiptPreview('');
+  });
+
+  /* ---- state ---- */
+  const selectedPayers = new Set(initialPayers);
+  const payerAmounts = Object.fromEntries(initialPayments.map(p => [p.memberId, formatAmount(fromMinor(p.amountMinor, decimalsFor(e.currency || currency)), decimalsFor(e.currency || currency))]));
+  let selectedShare = new Set(members.filter(m => {
+    if (!e.allocations) return true;
+    return e.allocations.some(a => a.memberId === m.id);
+  }).map(m => m.id));
+  // A prefilled expense whose shares are all the same IS an equal split — even when
+  // the old document never spelled it out (documents written by the plan don't).
+  // Treating it as a hand-made split left the rows disagreeing with a changed total.
+  const storedAllocs = (Array.isArray(e.allocations) ? e.allocations : []).filter(a => a && a.memberId);
+  const storedNetMinor = Number(e.netTotalMinor) || storedAllocs.reduce((n, a) => n + (Number(a.amountMinor) || 0), 0);
+  const storedIsEqual = storedAllocs.length > 0 && storedNetMinor > 0
+    && splitEqual(storedNetMinor, storedAllocs.map(a => a.memberId))
+      .every(a => storedAllocs.find(x => x.memberId === a.memberId)?.amountMinor === a.amountMinor);
+  let splitMethod = e.splitMethod || (e.allocations?.length ? (storedIsEqual ? 'equal' : 'unequal') : 'equal');
+  let customAllocations = e.splitInputs || Object.fromEntries((e.allocations || []).map(a => [a.memberId, formatAmount(fromMinor(a.amountMinor, decimalsFor(e.currency || currency)), decimalsFor(e.currency || currency))]));
+  let lockedAllocations = new Set(Object.keys(customAllocations));   // IDs whose custom amount was manually set
+  let allocationTouched = false;   // did the user type in a custom-split row in THIS session?
+  let splitIncludesVatSc = e.splitIncludesVatSc !== false;        // true = custom amounts include VAT/SC, false = exclude
+
+  const shareTiles = () => root.querySelectorAll(`[id="${esc('share-tiles')}"] [data-share]`);
+  const payerTiles = () => root.querySelectorAll(`[id="${esc('payer-tiles')}"] [data-payer]`);
+
+  payerTiles().forEach(btn => btn.addEventListener('click', () => {
+    const id = btn.dataset.payer;
+    if (selectedPayers.has(id)) { selectedPayers.delete(id); delete payerAmounts[id]; }
+    else { selectedPayers.add(id); payerAmounts[id] = ''; }
+    btn.classList.toggle('tile-selected', selectedPayers.has(id));
+    renderPayers();
+  }));
+
+  shareTiles().forEach(btn => btn.addEventListener('click', () => {
+    const id = btn.dataset.share;
+    if (selectedShare.has(id)) { selectedShare.delete(id); btn.classList.remove('tile-selected'); }
+    else { selectedShare.add(id); btn.classList.add('tile-selected'); }
+    renderSplitArea();
+  }));
+
+  on('share-all', 'click', () => {
+    const isAll = selectedShare.size === members.length;
+    selectedShare = new Set(isAll ? [] : members.map(m => m.id));
+    shareTiles().forEach(t => t.classList.toggle('tile-selected', !isAll));
+    renderSplitArea();
+  });
+
+  const netPreview = $('net-preview');
+  const thbPreview = $('thb-preview');
+
+  bindMoneyInputs(root);
+  root.querySelectorAll('[data-split]').forEach(b => b.classList.toggle('active', b.dataset.split === splitMethod));
+
+  function readValues() {
+    const cur = $('ex-currency').value;
+    const dec = decimalsFor(cur);
+    const read = name => fromMinor(toMinor(parseCurrencyInput($(name).value), dec), dec);
+    const sub = read('ex-subtotal'), disc = read('ex-discount'), serv = read('ex-service'), tax = read('ex-tax');
+    const rate = cur === 'THB' ? 1 : parseFloat($('ex-thb-rate').value) || 0;
+    const net = Math.max(0, sub - disc + serv + tax);
+    return { sub, disc, serv, tax, rate, cur, net, netMinor: toMinor(net, decimalsFor(cur)) };
+  }
+
+  function updateNet() {
+    const v = readValues();
+    $('ex-thb-rate').disabled = v.cur === 'THB';
+    if (v.cur === 'THB') $('ex-thb-rate').value = '1';
+    if (netPreview) netPreview.innerHTML = `${icon('calculator', 'w-4 h-4')} ${t('netTotal')}: ${moneyHtml(v.netMinor, v.cur, v.rate)}`;
+    if (thbPreview) thbPreview.innerHTML = v.rate > 0 ? `${tx('เรท','Rate')}: 1 ${v.cur} = ${formatAmount(v.rate, 4)} THB` : tx('กรุณาระบุเรทแลกเป็นเงินบาทก่อนบันทึก','Enter the THB exchange rate before saving');
+    renderPayers();
+    queueIcons();
+    renderSplitArea();
+  }
+
+  on('ex-currency', 'change', () => {
+    const cur = $('ex-currency').value;
+    $('ex-thb-rate').value = cur === e.currency && e.thbRate ? e.thbRate : resolveTripThbRate(trip, expenseRates, cur) || '';
+    updateNet();
+  });
+
+  ['ex-subtotal', 'ex-discount', 'ex-service', 'ex-tax', 'ex-currency', 'ex-thb-rate'].forEach(name => {
+    const node = $(name);
+    if (node) node.addEventListener('input', updateNet);
+  });
+
+  function renderSplitArea() {
+    const area = $('split-area');
+    if (!area) return;
+    const v = readValues();
+    const ids = members.filter(m => selectedShare.has(m.id));
+    const dec = decimalsFor(v.cur);
+    if (!members.length) { area.innerHTML = ''; return; }
+    if (!ids.length) {
+      area.innerHTML = `<p class="text-xs" style="color:var(--danger);">${tx('เลือกอย่างน้อย 1 คนที่ร่วมหาร','Pick at least one person to share')}</p>`;
+      return;
+    }
+    if (splitMethod === 'equal') {
+      const equal = splitEqual(v.netMinor, ids.map(m => m.id));
+      area.innerHTML = ids.map(m => `
+        <div class="flex justify-between items-center text-sm p-2.5 rounded-xl gap-2" style="background: var(--bg-secondary);">
+          <span class="flex items-center gap-2 min-w-0">
+            <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${escapeHtml(getInitials(m.displayName))}</span>
+            <span class="truncate">${escapeHtml(m.displayName)}</span>
+          </span>
+          <span class="font-bold flex-shrink-0">${moneyHtml(equal.find(a => a.memberId === m.id).amountMinor, v.cur, v.rate)}</span>
+        </div>`).join('');
+    } else {
+      // ---- Custom split ----
+      // Show VAT/SC inclusion toggle + auto-distribute inputs
+      const vatScToggle = `
+        <div class="split-vat-toggle">
+          <span class="text-[11px] font-bold flex-shrink-0">${icon('calculator', 'w-3.5 h-3.5')} ${tx('ยอดที่กรอก','Amounts')}:</span>
+          <div class="segmented" style="flex:1;min-height:28px;">
+            <button type="button" data-vatsc="include" class="segmented-item ${splitIncludesVatSc ? 'active' : ''}" style="font-size:11px;padding:4px 8px;">${tx('ยอดสุทธิ (รวมทุกอย่างแล้ว)','Final amounts')}</button>
+            <button type="button" data-vatsc="exclude" class="segmented-item ${!splitIncludesVatSc ? 'active' : ''}" style="font-size:11px;padding:4px 8px;">${tx('ยอดก่อนส่วนลด / VAT / SC','Before adjustments')}</button>
+          </div>
+        </div>`;
+
+      // Row structure is built ONCE per structural change; while typing we only
+      // patch computed values in place (see refreshSplitComputed below).
+      const rows = ids.map(m => {
+        const isLocked = lockedAllocations.has(m.id);
+        const entered = customAllocations[m.id];
+        const displayValue = entered !== undefined ? entered : '';
+        return `
+          <div class="split-row" data-member="${m.id}">
+            <div class="split-name">
+              <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;flex-shrink:0;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+              <span class="truncate text-xs font-medium" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
+            </div>
+            <input data-alloc="${m.id}" aria-label="${escapeHtml(m.displayName)} ${tx('ยอดที่กรอก','Entered amount')}" class="input split-input money-input" type="text" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${escapeHtml(displayValue)}" style="min-height:36px;padding:6px 10px;font-size:13px;">
+            <button type="button" class="split-lock-btn ${isLocked ? 'is-locked' : ''}" data-lock="${m.id}" title="${isLocked ? tx('ปลดล็อก — จะถูกระบบกระจายยอดอัตโนมัติ','Unlock — will be auto-distributed') : tx('ล็อกยอดนี้ไว้ ไม่ให้ระบบแก้','Lock this amount')}">${icon(isLocked ? 'lock' : 'unlock', 'w-3 h-3')}</button>
+            <span class="split-final ${isLocked ? '' : 'split-computed'}" data-alloc-final title="${isLocked ? '' : tx('กระจายอัตโนมัติ','Auto-distributed')}">—</span>
+          </div>`;
+      }).join('');
+
+      // Summary line (its text is patched in place while typing)
+      const summaryHint = `
+        <div class="split-auto-hint">
+          ${icon('info', 'w-3.5 h-3.5')}
+          <span data-split-hint></span>
+        </div>`;
+
+      area.innerHTML = vatScToggle + `<div class="split-columns"><span>${tx('สมาชิก','Member')}</span><span>${tx('ยอดที่กรอก','Input')}</span><span></span><span>${tx('ยอดสุทธิ','Final share')}</span></div>` + rows + summaryHint + '<div data-split-warning role="alert" aria-live="polite"></div><div data-adjustment-summary class="split-adjustments"></div>';
+      bindMoneyInputs(area);
+
+      // Bind VAT/SC toggle — rows stay, only the computed values change
+      area.querySelectorAll('[data-vatsc]').forEach(btn => btn.addEventListener('click', () => {
+        splitIncludesVatSc = btn.dataset.vatsc === 'include';
+        area.querySelectorAll('[data-vatsc]').forEach(b => b.classList.toggle('active', b.dataset.vatsc === (splitIncludesVatSc ? 'include' : 'exclude')));
+        refreshSplitComputed();
+      }));
+
+      // Bind input changes — auto-distribute remaining.
+      // IMPORTANT: do NOT re-render the area here. Rebuilding the HTML on every
+      // keystroke destroyed the focused <input> (lost focus + mobile keyboard
+      // closed, forcing a re-tap for every single digit).
+      area.querySelectorAll('[data-alloc]').forEach(inp => inp.addEventListener('input', () => {
+        const id = inp.dataset.alloc;
+        const val = inp.value;
+        allocationTouched = true;
+        if (val === '' || val === undefined) {
+          delete customAllocations[id];
+          lockedAllocations.delete(id);
+        } else {
+          customAllocations[id] = val;
+          lockedAllocations.add(id);  // typing fixes this person's share
+        }
+        refreshSplitComputed();
+      }));
+
+      // Bind lock buttons
+      area.querySelectorAll('[data-lock]').forEach(btn => btn.addEventListener('click', () => {
+        const id = btn.dataset.lock;
+        allocationTouched = true;
+        const input = area.querySelector(`[data-alloc="${id}"]`);
+        if (lockedAllocations.has(id)) {
+          lockedAllocations.delete(id);
+          delete customAllocations[id];  // unlock clears the value too
+          if (input) input.value = '';
+        } else {
+          if (input && input.value !== '') customAllocations[id] = input.value;
+          lockedAllocations.add(id);
+        }
+        refreshSplitComputed();
+      }));
+
+      refreshSplitComputed();
+    }
+    queueIcons();
+  }
+
+  /**
+   * A prefilled custom split is a snapshot of an OLDER total. Until the user touches
+   * a row, the entered shares are re-fitted proportionally when the amount changes —
+   * so editing the cost of a place is never a dead end (“ยอดแบ่งไม่ตรง”).
+   */
+  function refitPrefilledAllocations(area, v, ids, dec) {
+    if (allocationTouched) return;
+    const entered = ids.filter(m => customAllocations[m.id] !== undefined && customAllocations[m.id] !== '');
+    if (!entered.length || entered.length !== ids.length) return;   // partial → the auto-distributor handles it
+    const target = splitIncludesVatSc ? v.netMinor : toMinor(v.sub, dec);
+    const rows = entered.map(m => ({ memberId: m.id, amountMinor: toMinor(parseCurrencyInput(customAllocations[m.id]), dec) }));
+    const total = rows.reduce((n, r) => n + r.amountMinor, 0);
+    if (!total || total === target) return;
+    let put = 0;
+    rows.forEach((r, i) => {
+      const share = i === rows.length - 1
+        ? Math.max(0, target - put)
+        : Math.max(0, Math.round((r.amountMinor * target) / total));
+      put += share;
+      const text = formatAmount(fromMinor(share, dec), dec);
+      customAllocations[r.memberId] = text;
+      const inp = area.querySelector(`[data-alloc="${r.memberId}"]`);
+      if (inp) inp.value = text;
+    });
+  }
+
+  /**
+   * Light-weight update for the custom split: patches the computed per-person
+   * values, lock buttons and the summary hint in place. It never touches the
+   * <input> elements, so the field being typed keeps focus and the mobile
+   * keyboard stays open — no "tap again per digit" problem.
+   */
+  function refreshSplitComputed() {
+    const area = $('split-area');
+    if (!area || splitMethod !== 'unequal' || !area.querySelector('[data-alloc]')) return;
+    const v = readValues();
+    const ids = members.filter(m => selectedShare.has(m.id));
+    const dec = decimalsFor(v.cur);
+    if (!ids.length) return;
+    refitPrefilledAllocations(area, v, ids, dec);
+    const computed = computeCustomAllocations(v, ids, dec);
+    ids.forEach(m => {
+      const entered = customAllocations[m.id];
+      const isEntered = entered !== undefined && entered !== '';
+      const row = area.querySelector(`.split-row[data-member="${m.id}"]`);
+      if (!row) return;
+      const finalEl = row.querySelector('[data-alloc-final]');
+      if (finalEl) {
+        const val = computed[m.id] ?? 0;
+        finalEl.innerHTML = moneyHtml(toMinor(val, dec), v.cur, v.rate);
+        finalEl.classList.toggle('split-computed', !isEntered);
+        finalEl.title = isEntered ? '' : tx('กระจายอัตโนมัติ', 'Auto-distributed');
+      }
+      const lockBtn = row.querySelector('[data-lock]');
+      if (lockBtn) {
+        const isLocked = lockedAllocations.has(m.id);
+        lockBtn.classList.toggle('is-locked', isLocked);
+        lockBtn.title = isLocked ? tx('ปลดล็อก — จะถูกระบบกระจายยอดอัตโนมัติ', 'Unlock — will be auto-distributed') : tx('ล็อกยอดนี้ไว้ ไม่ให้ระบบแก้', 'Lock this amount');
+        const want = isLocked ? 'lock' : 'unlock';
+        const cur = lockBtn.querySelector('[data-lucide]');
+        if (!cur || cur.getAttribute('data-lucide') !== want) {
+          lockBtn.innerHTML = icon(want, 'w-3 h-3');
+          queueIcons();
+        }
+      }
+    });
+    const result = customResult(v, ids);
+    const fmt = n => formatCurrency(n, v.cur);
+    const hintText = area.querySelector('[data-split-hint]');
+    if (hintText) hintText.textContent = `${tx('กรอกแล้ว','Entered')} ${fmt(result.enteredMinor)} • ${tx('เป้าหมาย','Target')} ${fmt(splitIncludesVatSc ? v.netMinor : toMinor(v.sub, dec))}` + (result.unfilledCount ? ` • ${tx('กระจายยอดที่เหลือให้','Remainder shared by')} ${result.unfilledCount} ${tx('คน','people')}` : '');
+    const warning = area.querySelector('[data-split-warning]');
+    warning.className = result.valid ? '' : 'split-warning';
+    warning.textContent = result.valid ? '' : `${tx('ยอดแบ่งไม่ตรง กรุณาตรวจสอบก่อนบันทึก','Split mismatch — check before saving')} • ${tx('ส่วนต่าง','Difference')} ${fmt(Math.abs(result.differenceMinor))}`;
+    const summary = area.querySelector('[data-adjustment-summary]');
+    summary.innerHTML = splitIncludesVatSc ? '' : `<p>${tx('กระจายตามสัดส่วนยอดก่อนปรับของแต่ละคน','Adjustments proportional to each person’s subtotal')}: ${tx('ส่วนลด','Discount')} −${fmt(toMinor(v.disc, dec))} · Service Charge +${fmt(toMinor(v.serv, dec))} · VAT +${fmt(toMinor(v.tax, dec))}</p>` + result.rows.map(r => `<div><b>${escapeHtml(members.find(m => m.id === r.memberId)?.displayName || '')}</b><span>${fmt(r.subtotalMinor)} − ${fmt(r.discountMinor)} + ${fmt(r.serviceMinor)} + ${fmt(r.taxMinor)} = <b>${fmt(r.amountMinor)}</b></span></div>`).join('');
+  }
+
+  function customResult(v, ids) {
+    const dec = decimalsFor(v.cur);
+    return splitCustom({ subtotalMinor: toMinor(v.sub, dec), netTotalMinor: v.netMinor,
+      discountMinor: toMinor(v.disc, dec), serviceMinor: toMinor(v.serv, dec), taxMinor: toMinor(v.tax, dec),
+      includesAdjustments: splitIncludesVatSc,
+      entries: ids.map(m => ({ memberId: m.id, amountMinor: customAllocations[m.id] == null || customAllocations[m.id] === '' ? null : toMinor(parseCurrencyInput(customAllocations[m.id]), dec) })) });
+  }
+
+  function computeCustomAllocations(v, ids, dec) {
+    return Object.fromEntries(customResult(v, ids).rows.map(r => [r.memberId, fromMinor(r.amountMinor, dec)]));
+  }
+
+  function readPayments(v) {
+    const ids = [...selectedPayers];
+    if (ids.length === 1) return [{ memberId: ids[0], amountMinor: v.netMinor }];
+    return ids.map(memberId => ({ memberId, amountMinor: toMinor(parseCurrencyInput(payerAmounts[memberId]), decimalsFor(v.cur)) }));
+  }
+
+  function refreshPayerTotal() {
+    const v = readValues();
+    const payments = readPayments(v);
+    const diff = v.netMinor - payments.reduce((n, p) => n + p.amountMinor, 0);
+    const hint = $('payer-total-hint');
+    if (!hint) return;
+    hint.className = validatePayments(v.netMinor, payments) ? 'input-hint' : 'split-warning';
+    hint.textContent = `${tx('ยอดผู้จ่ายรวม','Total paid')} ${formatCurrency(v.netMinor - diff, v.cur)} / ${formatCurrency(v.netMinor, v.cur)}` + (diff ? ` • ${tx('ยอดยังไม่ตรง ส่วนต่าง','Mismatch, difference')} ${formatCurrency(Math.abs(diff), v.cur)}` : ' ✓');
+  }
+
+  function renderPayers() {
+    const area = $('payer-amounts');
+    if (!area) return;
+    const v = readValues();
+    area.innerHTML = `<p class="input-hint">${tx('เลือกผู้จ่ายได้หลายคน แล้วระบุยอดที่แต่ละคนจ่ายจริงให้รวมเท่ายอดสุทธิ','Select payers and enter what each paid. Payments must match the net total.')}</p>` + (selectedPayers.size > 1 ? members.filter(m => selectedPayers.has(m.id)).map(m => `<label class="payer-amount-row"><span>${escapeHtml(m.displayName)}</span><input class="input money-input" type="text" inputmode="decimal" data-payment="${m.id}" value="${escapeHtml(payerAmounts[m.id] || '')}" placeholder="0.00"><span>${v.cur}</span></label>`).join('') : '') + '<div id="payer-total-hint" aria-live="polite"></div>';
+    bindMoneyInputs(area);
+    area.querySelectorAll('[data-payment]').forEach(inp => inp.addEventListener('input', () => { payerAmounts[inp.dataset.payment] = inp.value; refreshPayerTotal(); }));
+    refreshPayerTotal();
+  }
+
+  root.querySelectorAll('[data-split]').forEach(btn => btn.addEventListener('click', () => {
+    root.querySelectorAll('[data-split]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    splitMethod = btn.dataset.split;
+    renderSplitArea();
+  }));
+
+  on('ex-manage-cats', 'click', () => openCategoryManager(tripId, {
+    onSaved: () => {
+      const sel = $('ex-cat');
+      const keep = sel?.value;
+      if (sel) {
+        sel.innerHTML = getAllExpenseCategories()
+          .map(c => `<option value="${c.id}" ${keep === c.id ? 'selected' : ''}>${lang === 'th' ? (c.th || c.en) : (c.en || c.th)}</option>`)
+          .join('');
+      }
+    }
+  }));
+
+  updateNet();
+
+  /** Validate everything and hand back the Firestore payload. Throws on error. */
+  function collectPayload() {
+    const v = readValues();
+    if (!v.netMinor) throw new Error(tx('ยอดรวมต้องมากกว่า 0', 'Amount must be greater than 0'));
+    const ids = members.filter(m => selectedShare.has(m.id));
+    if (!ids.length) throw new Error(tx('เลือกอย่างน้อย 1 คนที่ร่วมหาร', 'Pick at least one person to share'));
+
+    let allocations;
+    if (splitMethod === 'equal') {
+      allocations = splitEqual(v.netMinor, ids.map(m => m.id));
+    } else {
+      const result = customResult(v, ids);
+      if (!result.valid) throw new Error(tx('ยอดแบ่งไม่ตรง กรุณาแก้ไขยอดที่กรอกก่อนบันทึก','Split amounts do not match. Correct the amounts before saving.'));
+      allocations = result.rows.map(({ memberId, amountMinor }) => ({ memberId, amountMinor }));
+    }
+    const payments = readPayments(v);
+    if (!validatePayments(v.netMinor, payments)) throw new Error(tx('ยอดผู้จ่ายรวมต้องเท่ากับยอดสุทธิ และต้องเลือกผู้จ่ายอย่างน้อย 1 คน','Payments must match the net total. Select at least one payer.'));
+    if (v.cur !== 'THB' && (!Number.isFinite(v.rate) || !(v.rate > 0))) throw new Error(tx('กรุณาระบุเรทแลกเป็นเงินบาท','Enter the THB exchange rate'));
+    if ([v.sub, v.disc, v.serv, v.tax].some(n => n < 0) || v.disc > v.sub) throw new Error(tx('ยอดเงินต้องไม่ติดลบ และส่วนลดต้องไม่เกินยอดก่อนปรับ','Amounts must be non-negative and discount cannot exceed subtotal'));
+    const payMethod = $('ex-payment').value;
+    const pickedCard = payMethod === 'card' ? ($('ex-card')?.value || '').trim() : '';
+    if (payMethod === 'card' && (!pickedCard || pickedCard === '__manage')) {
+      throw new Error(tx('เลือกบัตรเครดิตจากรายการ หรือเพิ่มบัตรใหม่จากปุ่ม “จัดการบัตร”','Pick a card from the list, or add one via “Manage cards”'));
+    }
+    const title = $('ex-title').value.trim();
+    if (!title) throw new Error(tx('กรุณากรอกชื่อรายการ', 'Title is required'));
+    const curDec = decimalsFor(v.cur);
+    return {
+      title,
+      date: $('ex-date').value,
+      category: $('ex-cat').value,
+      description: $('ex-desc').value.trim(),
+      subtotalMinor: toMinor(v.sub, curDec),
+      discountMinor: toMinor(v.disc, curDec),
+      serviceMinor: toMinor(v.serv, curDec),
+      taxMinor: toMinor(v.tax, curDec),
+      netTotalMinor: v.netMinor,
+      currency: v.cur,
+      baseCurrency,
+      thbRate: v.rate,
+      thbMinor: toThbMinor(v.netMinor, v.cur, v.rate),
+      isEstimated: $('ex-type').value === 'estimated',
+      payerId: payments[0].memberId,
+      payments,
+      splitMethod,
+      splitIncludesVatSc,
+      splitInputs: customAllocations,
+      allocations,
+      paymentMethod: payMethod,
+      cardName: pickedCard,
+      receiptUrl: $('ex-receipt').value.trim(),
+      itineraryItemId: $('ex-itinerary')?.value || null,
+      status: 'active',
+      // Saving through this form always has a payer → clears any "TBD host".
+      payerPending: false,
+      source: e.source || 'manual'
+    };
+  }
+
+  return {
+    collectPayload,
+    readValues,
+    refresh: updateNet,
+    money: (minor, cur = currency) => formatCurrency(minor || 0, cur),
+    takePendingReceipt: () => ({ file: pendingReceiptFile, cleared: receiptCleared }),
+    clearPendingReceipt: () => { pendingReceiptFile = null; }
+  };
+}
+
+/* ================================================================== *
  * Expense editor — add AND edit (all fields editable, deletable)
  * ================================================================== */
 async function renderExpenseAdd(params) {
@@ -5327,10 +6230,6 @@ async function renderExpenseAdd(params) {
 
   const e = expense || {};
   const currency = e.currency || baseCurrency;
-  const decimals = getCurrencyDecimals(currency);
-  const amount = (minor) => (minor ? formatAmount(fromMinor(minor, decimals), decimals) : '');
-  const initialPayments = expensePayments(e);
-  const initialPayers = new Set(initialPayments.length ? initialPayments.map(p => p.memberId) : [members[0]?.id || currentUser.uid]);
 
   appEl.innerHTML = `
     <div class="page-enter max-w-[720px] mx-auto">
@@ -5345,168 +6244,8 @@ async function renderExpenseAdd(params) {
         ${(commentMapAll().get(editId) || []).length ? commentChip((commentMapAll().get(editId) || []).length) : ''}
         <button type="button" id="ex-comments-btn" class="link-btn text-[11px] ml-auto">${icon('message-square', 'w-3.5 h-3.5')} ${th('ความเห็น','Comments')}</button>
       </div>` : ''}
-      <form id="expense-form" class="card card-accent p-6">
-        <!-- 1) รายละเอียดรายการ -->
-        <section class="form-section">
-          <div class="form-section-head">
-            <span class="form-section-icon">${icon('receipt-text', 'w-4 h-4')}</span>
-            <h3>${th('รายละเอียดรายการ', 'Item details')}</h3>
-          </div>
-          <div class="space-y-3">
-            <div class="input-group"><label class="input-label">${icon('sparkles', 'w-3.5 h-3.5')} ${th('ชื่อรายการ','Title')} *</label><input id="ex-title" class="input" required autocomplete="off" placeholder="${th('เช่น ราเมงมื้อเย็น','e.g. Dinner ramen')}" value="${escapeHtml(e.title || '')}"></div>
-
-            <div class="grid grid-cols-2 gap-3">
-              <div class="input-group"><label class="input-label">${icon('calendar', 'w-3.5 h-3.5')} ${th('วันที่','Date')} *</label><input id="ex-date" class="input" type="date" value="${escapeHtml(e.date || dayjs().format('YYYY-MM-DD'))}" required></div>
-              <div class="input-group">
-                <label class="input-label flex items-center justify-between">${icon('tag', 'w-3.5 h-3.5')} ${th('กลุ่มค่าใช้จ่าย','Expense group')}
-                  <button type="button" id="ex-manage-cats" class="link-btn text-[10px]">${icon('settings-2', 'w-3 h-3')} ${th('จัดการ','Manage')}</button>
-                </label>
-                <select id="ex-cat" class="input">
-                  ${getAllExpenseCategories().map(c => `<option value="${c.id}" ${normalizeCategory(e.category || 'general') === c.id ? 'selected' : ''}>${lang==='th'?(c.th||c.en):(c.en||c.th)}</option>`).join('')}
-                </select>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3">
-              <div class="input-group"><label class="input-label">${icon('list-checks', 'w-3.5 h-3.5')} ${th('ประเภท','Type')}</label>
-                <select id="ex-type" class="input">
-                  <option value="actual" ${!e.isEstimated ? 'selected' : ''}>${th('จ่ายจริง','Actual')}</option>
-                  <option value="estimated" ${e.isEstimated ? 'selected' : ''}>${th('ประมาณการ','Estimated')}</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- 2) จำนวนเงิน -->
-        <section class="form-section">
-          <div class="form-section-head">
-            <span class="form-section-icon">${icon('banknote', 'w-4 h-4')}</span>
-            <h3>${th('จำนวนเงิน', 'Amount')}</h3>
-          </div>
-          <div class="space-y-3">
-            <div class="grid grid-cols-3 gap-3">
-              <div class="input-group col-span-2"><label class="input-label">${icon('banknote', 'w-3.5 h-3.5')} ${th('ยอดก่อนส่วนลด / VAT / Service Charge','Subtotal before adjustments')} *</label><input id="ex-subtotal" class="input money-input" type="text" inputmode="decimal" required placeholder="0.00" value="${amount(e.subtotalMinor)}"></div>
-              <div class="input-group"><label class="input-label">${icon('coins', 'w-3.5 h-3.5')} ${th('สกุลเงิน','Currency')}</label>
-                <select id="ex-currency" class="input">${tripCurrencyList(trip, [e.currency]).map(c => `<option value="${c}" ${currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-3 gap-3">
-              <div class="input-group"><label class="input-label">${icon('ticket', 'w-3.5 h-3.5')} ${th('ส่วนลด','Discount')}</label><input id="ex-discount" class="input money-input" type="text" inputmode="decimal" value="${amount(e.discountMinor) || 0}"></div>
-              <div class="input-group"><label class="input-label">${icon('concierge-bell', 'w-3.5 h-3.5')} Service Charge</label><input id="ex-service" class="input money-input" type="text" inputmode="decimal" value="${amount(e.serviceMinor) || 0}"></div>
-              <div class="input-group"><label class="input-label">${icon('receipt-text', 'w-3.5 h-3.5')} VAT / Tax</label><input id="ex-tax" class="input money-input" type="text" inputmode="decimal" value="${amount(e.taxMinor) || 0}"></div>
-            </div>
-
-              <div class="input-group"><label class="input-label">${icon('arrow-left-right', 'w-3.5 h-3.5')} ${th('เรทเป็น THB','Rate to THB')}</label><input id="ex-thb-rate" class="input" type="number" step="0.0001" min="0" value="${e.thbRate || resolveTripThbRate(trip, expenseRates, currency) || ''}"></div>
-
-            <div id="net-preview" class="p-4 rounded-xl text-sm font-bold border flex items-center gap-2" style="border-color: var(--border); background: var(--bg-secondary);">${icon('calculator', 'w-4 h-4')} ${t('netTotal')}: --</div>
-            <div id="thb-preview" class="p-3 rounded-xl border text-sm flex items-center gap-2" style="border-color: color-mix(in srgb, var(--success) 35%, transparent); background: var(--success-bg); color: var(--success);">${icon('banknote', 'w-4 h-4')} THB: --</div>
-          </div>
-        </section>
-
-        <!-- 3) คนจ่ายและการแบ่ง -->
-        <section class="form-section">
-          <div class="form-section-head">
-            <span class="form-section-icon">${icon('users', 'w-4 h-4')}</span>
-            <h3>${th('คนจ่ายและการแบ่งจ่าย', 'Payer & split')}</h3>
-          </div>
-          <div class="space-y-4">
-            <div class="input-group">
-              <label class="input-label">${icon('user', 'w-3.5 h-3.5')} ${th('คนจ่าย (เลือกได้หลายคน)','Paid by (select one or more)')} *</label>
-              <div id="payer-tiles" class="tile-grid">
-                ${members.map(m => `
-                  <button type="button" class="tile ${initialPayers.has(m.id) ? 'tile-selected' : ''}" data-payer="${m.id}" title="${escapeHtml(m.displayName)}">
-                    <span class="flex items-center gap-2 min-w-0">
-                      <span class="avatar w-8 h-8 text-xs" style="background:${m.color || 'var(--primary)'};width:32px;height:32px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
-                      <span class="text-sm font-medium truncate">${escapeHtml(m.displayName)}</span>
-                    </span>
-                  </button>`).join('') || `<p class="text-sm text-[var(--text-secondary)]">${th('ยังไม่พบสมาชิกในทริปนี้','No members found in this trip')}</p>`}
-              </div>
-            </div>
-
-        <div class="grid grid-cols-2 gap-3">
-          <div class="input-group"><label class="input-label">${icon('credit-card', 'w-3.5 h-3.5')} ${th('วิธีจ่าย','Payment method')}</label>
-            <select id="ex-payment" class="input">
-              <option value="cash" ${(e.paymentMethod || 'cash') === 'cash' ? 'selected' : ''}>${th('เงินสด','Cash')}</option>
-              <option value="card" ${e.paymentMethod === 'card' ? 'selected' : ''}>${th('บัตรเครดิต','Card')}</option>
-              <option value="transfer" ${e.paymentMethod === 'transfer' ? 'selected' : ''}>${th('โอนเงิน','Transfer')}</option>
-            </select>
-          </div>
-          <div class="input-group" id="ex-card-group">
-            <label class="input-label flex items-center justify-between">${icon('credit-card', 'w-3.5 h-3.5')} ${th('บัตรเครดิต','Credit card')}
-              <button type="button" id="ex-manage-cards" class="link-btn text-[10px]">${icon('settings-2', 'w-3 h-3')} ${th('จัดการบัตร','Manage cards')}</button>
-            </label>
-            <!-- Managed dropdown only — the trip's card list prevents random card names -->
-            <select id="ex-card" class="input"></select>
-            <p class="input-hint">${th('เลือกได้เฉพาะบัตรที่ลงทะเบียนไว้ของทริป — เพิ่ม/แก้ไข/ลบที่ “จัดการบัตร”','Only registered trip cards can be picked — add/edit/delete via “Manage cards”')}</p>
-          </div>
-        </div>
-
-            <div id="payer-amounts"></div>
-            <div class="input-group">
-              <div class="flex items-center justify-between">
-                <label class="input-label">${icon('split', 'w-3.5 h-3.5')} ${th('ใครหารด้วย','Who shares')}</label>
-                <button type="button" id="share-all" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:2px 8px;">${th('เลือกทั้งหมด','Select all')}</button>
-              </div>
-              <div id="share-tiles" class="tile-grid">
-                ${members.map(m => `
-                  <button type="button" class="tile ${(e.allocations ? (e.allocations.some(a => a.memberId === m.id)) : true) ? 'tile-selected' : ''}" data-share="${m.id}" title="${escapeHtml(m.displayName)}">
-                    <span class="flex items-center gap-2 min-w-0">
-                      <span class="avatar w-8 h-8 text-xs" style="background:${m.color || 'var(--primary)'};width:32px;height:32px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
-                      <span class="text-sm font-medium truncate">${escapeHtml(m.displayName)}</span>
-                    </span>
-                  </button>`).join('')}
-              </div>
-            </div>
-
-            <div class="input-group">
-              <label class="input-label">${icon('sliders-horizontal', 'w-3.5 h-3.5')} ${t('splitMethod')}</label>
-              <div class="segmented">
-                <button type="button" data-split="equal" class="segmented-item active">${icon('scale', 'w-4 h-4')} ${t('equal')}</button>
-                <button type="button" data-split="unequal" class="segmented-item">${icon('sliders-horizontal', 'w-4 h-4')} ${t('unequal')}</button>
-              </div>
-            </div>
-            <div id="split-area" class="space-y-3"></div>
-          </div>
-        </section>
-
-        <!-- 4) ข้อมูลเพิ่มเติม -->
-        <section class="form-section">
-          <div class="form-section-head">
-            <span class="form-section-icon">${icon('info', 'w-4 h-4')}</span>
-            <h3>${th('หลักฐานและข้อมูลเพิ่มเติม (ไม่บังคับ)', 'Receipt & extra details (optional)')}</h3>
-          </div>
-          <div class="space-y-3">
-        <div class="input-group">
-          <label class="input-label">${icon('map-pinned', 'w-3.5 h-3.5')} ${th('ผูกกับแผนการเดินทาง','Linked itinerary place')}</label>
-          <select id="ex-itinerary" class="input">
-            <option value="">${th('— ไม่ผูก —','— none —')}</option>
-            ${items.map(it => `<option value="${it.id}" ${e.itineraryItemId === it.id ? 'selected' : ''}>${escapeHtml(it.date || '')} • ${escapeHtml(it.title)}</option>`).join('')}
-          </select>
-        </div>
-
-
-        <div class="input-group">
-          <label class="input-label">${icon('image-plus', 'w-3.5 h-3.5')} ${th('รูปใบเสร็จ (ไม่บังคับ)','Receipt photo (optional)')}</label>
-          <div class="receipt-upload">
-            <div id="ex-receipt-preview" class="receipt-upload-preview ${e.receiptImage ? '' : 'hidden'}">
-              ${e.receiptImage ? `<img src="${escapeHtml(e.receiptImage)}" alt="receipt">` : ''}
-            </div>
-            <div class="btn-row">
-              <label class="btn btn-secondary btn-sm" for="ex-receipt-file">${icon('upload', 'w-4 h-4')} ${th('เลือกรูป','Choose photo')}</label>
-              <input id="ex-receipt-file" type="file" accept="image/*" class="hidden">
-              <button type="button" id="ex-receipt-clear" class="btn btn-ghost btn-sm ${e.receiptImage ? '' : 'hidden'}">${icon('trash-2', 'w-4 h-4')} ${th('ลบรูป','Remove')}</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="input-group"><label class="input-label">${icon('link', 'w-3.5 h-3.5')} ${th('ลิงก์ใบเสร็จ','Receipt URL')}</label><input id="ex-receipt" class="input" placeholder="https://..." value="${escapeHtml(e.receiptUrl || '')}"></div>
-
-        <div class="input-group"><label class="input-label">${icon('align-left', 'w-3.5 h-3.5')} ${th('รายละเอียด','Description')}</label><textarea id="ex-desc" class="input" style="min-height:70px;">${escapeHtml(e.description || '')}</textarea></div>
-          </div>
-        </section>
-
+      <form id="expense-form" class="expense-form card card-accent p-6">
+        ${expenseFormSectionsHtml({ prefix: '', e, members, items, trip, lang, currency, expenseRates })}
         <div class="flex gap-3 form-submit-row">
           ${isEdit ? `<button type="button" id="ex-delete" class="btn" style="background:var(--danger-bg);color:var(--danger);border:1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
           <button type="button" id="cancel-expense" class="btn btn-secondary flex-1">${t('cancel')}</button>
@@ -5517,7 +6256,12 @@ async function renderExpenseAdd(params) {
   `;
   queueIcons();
 
-  // Manage the trip's expense groups straight from the form.
+  const form = mountExpenseForm({
+    root: document, prefix: '', e, members, items, trip, tripId, lang,
+    currency, baseCurrency, expenseRates
+  });
+
+  // Manage the trip's expense groups / comments straight from the form.
   bind('ex-comments-btn', 'click', () => openCommentSheet({
     tripId,
     expenseId: editId,
@@ -5525,372 +6269,6 @@ async function renderExpenseAdd(params) {
     comments: tripComments,
     onChanged: () => { /* badge refreshes on the next open */ }
   }));
-
-  bind('ex-manage-cats', 'click', () => openCategoryManager(tripId, {
-    onSaved: () => {
-      const sel = document.getElementById('ex-cat');
-      const keep = sel?.value;
-      if (sel) {
-        sel.innerHTML = getAllExpenseCategories()
-          .map(c => `<option value="${c.id}" ${keep === c.id ? 'selected' : ''}>${lang === 'th' ? (c.th || c.en) : (c.en || c.th)}</option>`)
-          .join('');
-      }
-    }
-  }));
-
-  /* ---- payment method → managed card dropdown ---- */
-  const paymentSel = document.getElementById('ex-payment');
-  const cardGroup = document.getElementById('ex-card-group');
-  const cardInput = document.getElementById('ex-card');
-
-  /** Fill the dropdown from the trip's managed card list (no free text). */
-  function fillCardOptions(keep = '') {
-    if (!cardInput) return;
-    const cards = tripCards(currentTrip);
-    const selected = keep || e.cardName || '';
-    const known = cards.some(c => c.name === selected);
-    cardInput.innerHTML = `
-      <option value="">${cards.length ? th('— เลือกบัตร —', '— pick a card —') : th('— ยังไม่มีบัตรในทริป —', '— no trip cards yet —')}</option>
-      ${cards.map(c => `<option value="${escapeHtml(c.name)}" ${c.name === selected ? 'selected' : ''}>${escapeHtml(tripCardLabel(c))}${c.holderId ? ` (${escapeHtml(members.find(m => m.id === c.holderId)?.displayName || '')})` : ''}</option>`).join('')}
-      ${selected && !known ? `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)} ${th('(ของเดิม)', '(legacy)')}</option>` : ''}
-      <option value="__manage">${th('➕ เพิ่ม / จัดการบัตร…', '➕ Add / manage cards…')}</option>`;
-  }
-  fillCardOptions();
-
-  function openCardsFromForm() {
-    openCardManager(tripId, {
-      members,
-      onSaved: (cards) => fillCardOptions(cardInput?.value === '__manage' ? (cards[cards.length - 1]?.name || '') : cardInput?.value)
-    });
-  }
-  cardInput?.addEventListener('change', () => {
-    if (cardInput.value === '__manage') {
-      cardInput.value = '';
-      openCardsFromForm();
-    }
-  });
-  bind('ex-manage-cards', 'click', openCardsFromForm);
-
-  const syncCardField = () => {
-    const isCard = paymentSel?.value === 'card';
-    cardGroup?.classList.toggle('hidden', !isCard);
-    if (!isCard && cardInput) cardInput.value = '';
-  };
-  paymentSel?.addEventListener('change', syncCardField);
-  syncCardField();
-
-  /* ---- receipt photo (optional): preview now, upload on save ---- */
-  let pendingReceiptFile = null;
-  let receiptCleared = false;
-  const receiptFileInput = document.getElementById('ex-receipt-file');
-  const receiptPreview = document.getElementById('ex-receipt-preview');
-  const receiptClearBtn = document.getElementById('ex-receipt-clear');
-
-  const setReceiptPreview = (src) => {
-    if (!receiptPreview) return;
-    receiptPreview.innerHTML = src ? `<img src="${src}" alt="receipt">` : '';
-    receiptPreview.classList.toggle('hidden', !src);
-    receiptClearBtn?.classList.toggle('hidden', !src);
-  };
-
-  receiptFileInput?.addEventListener('change', async () => {
-    const file = receiptFileInput.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) { toast.error(th('เลือกไฟล์รูปภาพเท่านั้น','Pick an image file')); return; }
-    if (file.size > 12 * 1024 * 1024) { toast.error(th('รูปใหญ่เกินไป (สูงสุด 12MB)','Image too large (max 12MB)')); return; }
-    pendingReceiptFile = file;
-    receiptCleared = false;
-    try {
-      const reader = new FileReader();
-      reader.onload = () => setReceiptPreview(String(reader.result));
-      reader.readAsDataURL(file);
-    } catch { setReceiptPreview(''); }
-    toast.success(th('แนบรูปแล้ว — จะอัปโหลดตอนบันทึก','Attached — it uploads when you save'));
-  });
-
-  bind('ex-receipt-clear', 'click', () => {
-    pendingReceiptFile = null;
-    receiptCleared = true;
-    if (receiptFileInput) receiptFileInput.value = '';
-    setReceiptPreview('');
-  });
-
-  const selectedPayers = new Set(initialPayers);
-  const payerAmounts = Object.fromEntries(initialPayments.map(p => [p.memberId, formatAmount(fromMinor(p.amountMinor, decimals), decimals)]));
-  let selectedShare = new Set(members.filter(m => {
-    if (!e.allocations) return true;
-    return e.allocations.some(a => a.memberId === m.id);
-  }).map(m => m.id));
-  let splitMethod = e.splitMethod || (e.allocations?.length ? 'unequal' : 'equal');
-  let customAllocations = e.splitInputs || Object.fromEntries((e.allocations || []).map(a => [a.memberId, formatAmount(fromMinor(a.amountMinor, decimals), decimals)]));
-  let lockedAllocations = new Set(Object.keys(customAllocations));   // IDs whose custom amount was manually set
-  let splitIncludesVatSc = e.splitIncludesVatSc !== false;        // true = custom amounts include VAT/SC, false = exclude
-
-  document.querySelectorAll('#payer-tiles [data-payer]').forEach(btn => btn.addEventListener('click', () => {
-    const id = btn.dataset.payer;
-    if (selectedPayers.has(id)) { selectedPayers.delete(id); delete payerAmounts[id]; }
-    else { selectedPayers.add(id); payerAmounts[id] = ''; }
-    btn.classList.toggle('tile-selected', selectedPayers.has(id));
-    renderPayers();
-  }));
-
-  document.querySelectorAll('#share-tiles [data-share]').forEach(btn => btn.addEventListener('click', () => {
-    const id = btn.dataset.share;
-    if (selectedShare.has(id)) { selectedShare.delete(id); btn.classList.remove('tile-selected'); }
-    else { selectedShare.add(id); btn.classList.add('tile-selected'); }
-    renderSplitArea();
-  }));
-
-  bind('share-all', 'click', () => {
-    const isAll = selectedShare.size === members.length;
-    selectedShare = new Set(isAll ? [] : members.map(m => m.id));
-    document.querySelectorAll('#share-tiles .tile').forEach(t => t.classList.toggle('tile-selected', !isAll));
-    renderSplitArea();
-  });
-
-  const netPreview = document.getElementById('net-preview');
-  const thbPreview = document.getElementById('thb-preview');
-
-  bindMoneyInputs(document.getElementById('expense-form'));
-  document.querySelectorAll('[data-split]').forEach(b => b.classList.toggle('active', b.dataset.split === splitMethod));
-
-  function readValues() {
-    const cur = document.getElementById('ex-currency').value;
-    const dec = getCurrencyDecimals(cur);
-    const read = id => fromMinor(toMinor(parseCurrencyInput(document.getElementById(id).value), dec), dec);
-    const sub = read('ex-subtotal'), disc = read('ex-discount'), serv = read('ex-service'), tax = read('ex-tax');
-    const rate = cur === 'THB' ? 1 : parseFloat(document.getElementById('ex-thb-rate').value) || 0;
-    const net = Math.max(0, sub - disc + serv + tax);
-    return { sub, disc, serv, tax, rate, cur, net, netMinor: toMinor(net, getCurrencyDecimals(cur)) };
-  }
-
-  function updateNet() {
-    const v = readValues();
-    document.getElementById('ex-thb-rate').disabled = v.cur === 'THB';
-    if (v.cur === 'THB') document.getElementById('ex-thb-rate').value = '1';
-    if (netPreview) netPreview.innerHTML = `${icon('calculator', 'w-4 h-4')} ${t('netTotal')}: ${moneyHtml(v.netMinor, v.cur, v.rate)}`;
-    if (thbPreview) thbPreview.innerHTML = v.rate > 0 ? `${th('เรท','Rate')}: 1 ${v.cur} = ${formatAmount(v.rate, 4)} THB` : th('กรุณาระบุเรทแลกเป็นเงินบาทก่อนบันทึก','Enter the THB exchange rate before saving');
-    renderPayers();
-    queueIcons();
-    renderSplitArea();
-  }
-
-  bind('ex-currency', 'change', () => {
-    const cur = document.getElementById('ex-currency').value;
-    document.getElementById('ex-thb-rate').value = cur === e.currency && e.thbRate ? e.thbRate : resolveTripThbRate(trip, expenseRates, cur) || '';
-    updateNet();
-  });
-
-  ['ex-subtotal','ex-discount','ex-service','ex-tax','ex-currency','ex-thb-rate'].forEach(id => {
-    const node = document.getElementById(id);
-    if (node) node.addEventListener('input', updateNet);
-  });
-
-  function renderSplitArea() {
-    const area = document.getElementById('split-area');
-    if (!area) return;
-    const v = readValues();
-    const ids = members.filter(m => selectedShare.has(m.id));
-    const dec = getCurrencyDecimals(v.cur);
-    if (!members.length) { area.innerHTML = ''; return; }
-    if (!ids.length) {
-      area.innerHTML = `<p class="text-xs" style="color:var(--danger);">${th('เลือกอย่างน้อย 1 คนที่ร่วมหาร','Pick at least one person to share')}</p>`;
-      return;
-    }
-    if (splitMethod === 'equal') {
-      const equal = splitEqual(v.netMinor, ids.map(m => m.id));
-      area.innerHTML = ids.map(m => `
-        <div class="flex justify-between items-center text-sm p-2.5 rounded-xl gap-2" style="background: var(--bg-secondary);">
-          <span class="flex items-center gap-2 min-w-0">
-            <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${escapeHtml(getInitials(m.displayName))}</span>
-            <span class="truncate">${escapeHtml(m.displayName)}</span>
-          </span>
-          <span class="font-bold flex-shrink-0">${moneyHtml(equal.find(a => a.memberId === m.id).amountMinor, v.cur, v.rate)}</span>
-        </div>`).join('');
-    } else {
-      // ---- Custom split ----
-      // Show VAT/SC inclusion toggle + auto-distribute inputs
-      const vatScToggle = `
-        <div class="split-vat-toggle">
-          <span class="text-[11px] font-bold flex-shrink-0">${icon('calculator', 'w-3.5 h-3.5')} ${th('ยอดที่กรอก','Amounts')}:</span>
-          <div class="segmented" style="flex:1;min-height:28px;">
-            <button type="button" data-vatsc="include" class="segmented-item ${splitIncludesVatSc ? 'active' : ''}" style="font-size:11px;padding:4px 8px;">${th('ยอดสุทธิ (รวมทุกอย่างแล้ว)','Final amounts')}</button>
-            <button type="button" data-vatsc="exclude" class="segmented-item ${!splitIncludesVatSc ? 'active' : ''}" style="font-size:11px;padding:4px 8px;">${th('ยอดก่อนส่วนลด / VAT / SC','Before adjustments')}</button>
-          </div>
-        </div>`;
-
-      // Row structure is built ONCE per structural change; while typing we only
-      // patch computed values in place (see refreshSplitComputed below).
-      const rows = ids.map(m => {
-        const isLocked = lockedAllocations.has(m.id);
-        const entered = customAllocations[m.id];
-        const displayValue = entered !== undefined ? entered : '';
-        return `
-          <div class="split-row" data-member="${m.id}">
-            <div class="split-name">
-              <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;flex-shrink:0;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
-              <span class="truncate text-xs font-medium" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
-            </div>
-            <input data-alloc="${m.id}" aria-label="${escapeHtml(m.displayName)} ${th('ยอดที่กรอก','Entered amount')}" class="input split-input money-input" type="text" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${escapeHtml(displayValue)}" style="min-height:36px;padding:6px 10px;font-size:13px;">
-            <button type="button" class="split-lock-btn ${isLocked ? 'is-locked' : ''}" data-lock="${m.id}" title="${isLocked ? th('ปลดล็อก — จะถูกระบบกระจายยอดอัตโนมัติ','Unlock — will be auto-distributed') : th('ล็อกยอดนี้ไว้ ไม่ให้ระบบแก้','Lock this amount')}">${icon(isLocked ? 'lock' : 'unlock', 'w-3 h-3')}</button>
-            <span class="split-final ${isLocked ? '' : 'split-computed'}" data-alloc-final title="${isLocked ? '' : th('กระจายอัตโนมัติ','Auto-distributed')}">—</span>
-          </div>`;
-      }).join('');
-
-      // Summary line (its text is patched in place while typing)
-      const summaryHint = `
-        <div class="split-auto-hint">
-          ${icon('info', 'w-3.5 h-3.5')}
-          <span data-split-hint></span>
-        </div>`;
-
-      area.innerHTML = vatScToggle + `<div class="split-columns"><span>${th('สมาชิก','Member')}</span><span>${th('ยอดที่กรอก','Input')}</span><span></span><span>${th('ยอดสุทธิ','Final share')}</span></div>` + rows + summaryHint + '<div data-split-warning role="alert" aria-live="polite"></div><div data-adjustment-summary class="split-adjustments"></div>';
-      bindMoneyInputs(area);
-
-      // Bind VAT/SC toggle — rows stay, only the computed values change
-      area.querySelectorAll('[data-vatsc]').forEach(btn => btn.addEventListener('click', () => {
-        splitIncludesVatSc = btn.dataset.vatsc === 'include';
-        area.querySelectorAll('[data-vatsc]').forEach(b => b.classList.toggle('active', b.dataset.vatsc === (splitIncludesVatSc ? 'include' : 'exclude')));
-        refreshSplitComputed();
-      }));
-
-      // Bind input changes — auto-distribute remaining.
-      // IMPORTANT: do NOT re-render the area here. Rebuilding the HTML on every
-      // keystroke destroyed the focused <input> (lost focus + mobile keyboard
-      // closed, forcing a re-tap for every single digit).
-      area.querySelectorAll('[data-alloc]').forEach(inp => inp.addEventListener('input', () => {
-        const id = inp.dataset.alloc;
-        const val = inp.value;
-        if (val === '' || val === undefined) {
-          delete customAllocations[id];
-          lockedAllocations.delete(id);
-        } else {
-          customAllocations[id] = val;
-          lockedAllocations.add(id);  // typing fixes this person's share
-        }
-        refreshSplitComputed();
-      }));
-
-      // Bind lock buttons
-      area.querySelectorAll('[data-lock]').forEach(btn => btn.addEventListener('click', () => {
-        const id = btn.dataset.lock;
-        const input = area.querySelector(`[data-alloc="${id}"]`);
-        if (lockedAllocations.has(id)) {
-          lockedAllocations.delete(id);
-          delete customAllocations[id];  // unlock clears the value too
-          if (input) input.value = '';
-        } else {
-          if (input && input.value !== '') customAllocations[id] = input.value;
-          lockedAllocations.add(id);
-        }
-        refreshSplitComputed();
-      }));
-
-      refreshSplitComputed();
-    }
-    queueIcons();
-  }
-
-  /**
-   * Light-weight update for the custom split: patches the computed per-person
-   * values, lock buttons and the summary hint in place. It never touches the
-   * <input> elements, so the field being typed keeps focus and the mobile
-   * keyboard stays open — no "tap again per digit" problem.
-   */
-  function refreshSplitComputed() {
-    const area = document.getElementById('split-area');
-    if (!area || splitMethod !== 'unequal' || !area.querySelector('[data-alloc]')) return;
-    const v = readValues();
-    const ids = members.filter(m => selectedShare.has(m.id));
-    const dec = getCurrencyDecimals(v.cur);
-    if (!ids.length) return;
-    const computed = computeCustomAllocations(v, ids, dec);
-    let enteredSum = 0;
-    let unfilledCount = 0;
-    ids.forEach(m => {
-      const entered = customAllocations[m.id];
-      const isEntered = entered !== undefined && entered !== '';
-      if (isEntered) enteredSum += (parseCurrencyInput(entered) || 0);
-      else if (!lockedAllocations.has(m.id)) unfilledCount++;
-      const row = area.querySelector(`.split-row[data-member="${m.id}"]`);
-      if (!row) return;
-      const finalEl = row.querySelector('[data-alloc-final]');
-      if (finalEl) {
-        const val = computed[m.id] ?? 0;
-        finalEl.innerHTML = moneyHtml(toMinor(val, dec), v.cur, v.rate);
-        finalEl.classList.toggle('split-computed', !isEntered);
-        finalEl.title = isEntered ? '' : th('กระจายอัตโนมัติ', 'Auto-distributed');
-      }
-      const lockBtn = row.querySelector('[data-lock]');
-      if (lockBtn) {
-        const isLocked = lockedAllocations.has(m.id);
-        lockBtn.classList.toggle('is-locked', isLocked);
-        lockBtn.title = isLocked ? th('ปลดล็อก — จะถูกระบบกระจายยอดอัตโนมัติ', 'Unlock — will be auto-distributed') : th('ล็อกยอดนี้ไว้ ไม่ให้ระบบแก้', 'Lock this amount');
-        const want = isLocked ? 'lock' : 'unlock';
-        const cur = lockBtn.querySelector('[data-lucide]');
-        if (!cur || cur.getAttribute('data-lucide') !== want) {
-          lockBtn.innerHTML = icon(want, 'w-3 h-3');
-          queueIcons();
-        }
-      }
-    });
-    const result = customResult(v, ids);
-    const fmt = n => formatCurrency(n, v.cur);
-    const hintText = area.querySelector('[data-split-hint]');
-    if (hintText) hintText.textContent = `${th('กรอกแล้ว','Entered')} ${fmt(result.enteredMinor)} • ${th('เป้าหมาย','Target')} ${fmt(splitIncludesVatSc ? v.netMinor : toMinor(v.sub, dec))}` + (result.unfilledCount ? ` • ${th('กระจายยอดที่เหลือให้','Remainder shared by')} ${result.unfilledCount} ${th('คน','people')}` : '');
-    const warning = area.querySelector('[data-split-warning]');
-    warning.className = result.valid ? '' : 'split-warning';
-    warning.textContent = result.valid ? '' : `${th('ยอดแบ่งไม่ตรง กรุณาตรวจสอบก่อนบันทึก','Split mismatch — check before saving')} • ${th('ส่วนต่าง','Difference')} ${fmt(Math.abs(result.differenceMinor))}`;
-    const summary = area.querySelector('[data-adjustment-summary]');
-    summary.innerHTML = splitIncludesVatSc ? '' : `<p>${th('กระจายตามสัดส่วนยอดก่อนปรับของแต่ละคน','Adjustments proportional to each person’s subtotal')}: ${th('ส่วนลด','Discount')} −${fmt(toMinor(v.disc, dec))} · Service Charge +${fmt(toMinor(v.serv, dec))} · VAT +${fmt(toMinor(v.tax, dec))}</p>` + result.rows.map(r => `<div><b>${escapeHtml(members.find(m => m.id === r.memberId)?.displayName || '')}</b><span>${fmt(r.subtotalMinor)} − ${fmt(r.discountMinor)} + ${fmt(r.serviceMinor)} + ${fmt(r.taxMinor)} = <b>${fmt(r.amountMinor)}</b></span></div>`).join('');
-  }
-
-  function customResult(v, ids) {
-    const dec = getCurrencyDecimals(v.cur);
-    return splitCustom({ subtotalMinor: toMinor(v.sub, dec), netTotalMinor: v.netMinor,
-      discountMinor: toMinor(v.disc, dec), serviceMinor: toMinor(v.serv, dec), taxMinor: toMinor(v.tax, dec),
-      includesAdjustments: splitIncludesVatSc,
-      entries: ids.map(m => ({ memberId: m.id, amountMinor: customAllocations[m.id] == null || customAllocations[m.id] === '' ? null : toMinor(parseCurrencyInput(customAllocations[m.id]), dec) })) });
-  }
-
-  function computeCustomAllocations(v, ids, dec) {
-    return Object.fromEntries(customResult(v, ids).rows.map(r => [r.memberId, fromMinor(r.amountMinor, dec)]));
-  }
-
-  function readPayments(v) {
-    const ids = [...selectedPayers];
-    if (ids.length === 1) return [{ memberId: ids[0], amountMinor: v.netMinor }];
-    return ids.map(memberId => ({ memberId, amountMinor: toMinor(parseCurrencyInput(payerAmounts[memberId]), getCurrencyDecimals(v.cur)) }));
-  }
-
-  function refreshPayerTotal() {
-    const v = readValues();
-    const payments = readPayments(v);
-    const diff = v.netMinor - payments.reduce((n, p) => n + p.amountMinor, 0);
-    const hint = document.getElementById('payer-total-hint');
-    if (!hint) return;
-    hint.className = validatePayments(v.netMinor, payments) ? 'input-hint' : 'split-warning';
-    hint.textContent = `${th('ยอดผู้จ่ายรวม','Total paid')} ${formatCurrency(v.netMinor - diff, v.cur)} / ${formatCurrency(v.netMinor, v.cur)}` + (diff ? ` • ${th('ยอดยังไม่ตรง ส่วนต่าง','Mismatch, difference')} ${formatCurrency(Math.abs(diff), v.cur)}` : ' ✓');
-  }
-
-  function renderPayers() {
-    const area = document.getElementById('payer-amounts');
-    if (!area) return;
-    const v = readValues();
-    area.innerHTML = `<p class="input-hint">${th('เลือกผู้จ่ายได้หลายคน แล้วระบุยอดที่แต่ละคนจ่ายจริงให้รวมเท่ายอดสุทธิ','Select payers and enter what each paid. Payments must match the net total.')}</p>` + (selectedPayers.size > 1 ? members.filter(m => selectedPayers.has(m.id)).map(m => `<label class="payer-amount-row"><span>${escapeHtml(m.displayName)}</span><input class="input money-input" type="text" inputmode="decimal" data-payment="${m.id}" value="${escapeHtml(payerAmounts[m.id] || '')}" placeholder="0.00"><span>${v.cur}</span></label>`).join('') : '') + '<div id="payer-total-hint" aria-live="polite"></div>';
-    bindMoneyInputs(area);
-    area.querySelectorAll('[data-payment]').forEach(inp => inp.addEventListener('input', () => { payerAmounts[inp.dataset.payment] = inp.value; refreshPayerTotal(); }));
-    refreshPayerTotal();
-  }
-
-  document.querySelectorAll('[data-split]').forEach(btn => btn.addEventListener('click', () => {
-    document.querySelectorAll('[data-split]').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    splitMethod = btn.dataset.split;
-    renderSplitArea();
-  }));
-
-  updateNet();
 
   bind('exp-back', 'click', () => { location.hash = `#/trip/${tripId}/expenses`; });
   bind('cancel-expense', 'click', () => { location.hash = `#/trip/${tripId}/expenses`; });
@@ -5917,63 +6295,9 @@ async function renderExpenseAdd(params) {
     submitBtn.disabled = true;
     const tLoad = toast.loading(th('กำลังบันทึก...', 'Saving...'));
     try {
-      const v = readValues();
-      if (!v.netMinor) throw new Error(th('ยอดรวมต้องมากกว่า 0', 'Amount must be greater than 0'));
-      const ids = members.filter(m => selectedShare.has(m.id)).map(m => m.id);
-      if (!ids.length) throw new Error(th('เลือกอย่างน้อย 1 คนที่ร่วมหาร', 'Pick at least one person to share'));
-
-      let allocations;
-      if (splitMethod === 'equal') {
-        allocations = splitEqual(v.netMinor, ids);
-      } else {
-        const result = customResult(v, members.filter(m => selectedShare.has(m.id)));
-        if (!result.valid) throw new Error(th('ยอดแบ่งไม่ตรง กรุณาแก้ไขยอดที่กรอกก่อนบันทึก','Split amounts do not match. Correct the amounts before saving.'));
-        allocations = result.rows.map(({ memberId, amountMinor }) => ({ memberId, amountMinor }));
-      }
-      const payments = readPayments(v);
-      if (!validatePayments(v.netMinor, payments)) throw new Error(th('ยอดผู้จ่ายรวมต้องเท่ากับยอดสุทธิ และต้องเลือกผู้จ่ายอย่างน้อย 1 คน','Payments must match the net total. Select at least one payer.'));
-      if (v.cur !== 'THB' && (!Number.isFinite(v.rate) || !(v.rate > 0))) throw new Error(th('กรุณาระบุเรทแลกเป็นเงินบาท','Enter the THB exchange rate'));
-      if ([v.sub, v.disc, v.serv, v.tax].some(n => n < 0) || v.disc > v.sub) throw new Error(th('ยอดเงินต้องไม่ติดลบ และส่วนลดต้องไม่เกินยอดก่อนปรับ','Amounts must be non-negative and discount cannot exceed subtotal'));
-      const payMethod = document.getElementById('ex-payment').value;
-      const pickedCard = payMethod === 'card' ? (document.getElementById('ex-card')?.value || '').trim() : '';
-      if (payMethod === 'card' && (!pickedCard || pickedCard === '__manage')) {
-        throw new Error(th('เลือกบัตรเครดิตจากรายการ หรือเพิ่มบัตรใหม่จากปุ่ม “จัดการบัตร”','Pick a card from the list, or add one via “Manage cards”'));
-      }
-
-      const payload = {
-        title: document.getElementById('ex-title').value.trim(),
-        date: document.getElementById('ex-date').value,
-        category: document.getElementById('ex-cat').value,
-        description: document.getElementById('ex-desc').value.trim(),
-        subtotalMinor: toMinor(v.sub, getCurrencyDecimals(v.cur)),
-        discountMinor: toMinor(v.disc, getCurrencyDecimals(v.cur)),
-        serviceMinor: toMinor(v.serv, getCurrencyDecimals(v.cur)),
-        taxMinor: toMinor(v.tax, getCurrencyDecimals(v.cur)),
-        netTotalMinor: v.netMinor,
-        currency: v.cur,
-        baseCurrency,
-        thbRate: v.rate,
-        thbMinor: toThbMinor(v.netMinor, v.cur, v.rate),
-        isEstimated: document.getElementById('ex-type').value === 'estimated',
-        payerId: payments[0].memberId,
-        payments,
-        splitMethod,
-        splitIncludesVatSc,
-        splitInputs: customAllocations,
-        allocations,
-        paymentMethod: payMethod,
-        cardName: pickedCard,
-        receiptUrl: document.getElementById('ex-receipt').value.trim(),
-        itineraryItemId: document.getElementById('ex-itinerary').value || null,
-        status: 'active',
-        // Saving through this form always has a payer → clears any "TBD host".
-        payerPending: false,
-        source: e.source || 'manual'
-      };
-      if (!payload.title) throw new Error(th('กรุณากรอกชื่อรายการ', 'Title is required'));
+      const payload = form.collectPayload();
       let savedId = editId;
       const me = actor();
-      // Who wrote it, and what kind of change it was — the audit trail.
       payload.createdByName = me.displayName;
       payload.updatedByName = me.displayName;
       if (isEdit) {
@@ -5983,6 +6307,10 @@ async function renderExpenseAdd(params) {
       }
       // Card name → remember locally so the next expense can pick it from a list.
       if (payload.cardName) rememberCard(tripId, payload.cardName);
+
+      // Linked place → keep the plan's estimate in step with the money book, so
+      // the same cost never reads differently on the two screens.
+      await syncPlanEstimateFromExpense(tripId, payload, savedId);
 
       // The audit entry is written after the local bookkeeping above, so a slow
       // log write can never delay (or block) the user-visible result.
@@ -6000,6 +6328,7 @@ async function renderExpenseAdd(params) {
 
       // Receipt photo: uploaded after save (needs the expense id) and stored on
       // the document. Storage when available, inlined image otherwise.
+      const { file: pendingReceiptFile, cleared: receiptCleared } = form.takePendingReceipt();
       if (pendingReceiptFile && savedId) {
         const tUpload = toast.loading(th('กำลังอัปโหลดรูปใบเสร็จ…', 'Uploading receipt photo…'));
         try {
@@ -6035,6 +6364,144 @@ async function renderExpenseAdd(params) {
       submitBtn.disabled = false;
     }
   });
+}
+
+/**
+ * One expense, edited from the plan (a request): “แก้ไขค่าใช้จ่าย” on an itinerary
+ * card opens the very same form the expenses page uses — inside a bottom sheet —
+ * so the fields, the sections, the payers/split widgets and the validation are
+ * identical wherever the cost is opened. Saving writes the expense book AND keeps
+ * the place's estimate fields in step; a link jumps to the full page editor.
+ */
+async function openItemExpenseSheet({ tripId, item, trip = null, members = [], items = [], expense: initial = null, lang = 'th', onSaved = null }) {
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const baseCurrency = trip?.baseCurrency || 'THB';
+  let expense = initial;
+  if (!expense) {
+    const linkedId = item.expenseId || null;
+    try {
+      expense = (linkedId ? await getExpense(tripId, linkedId) : null) || await findLinkedExpense(tripId, item.id);
+    } catch (err) { console.warn('[Plan] linked expense lookup failed', err?.message); }
+  }
+  const expenseRates = await fetchAllExpenses(tripId).catch(() => []);
+  const e = expense || {
+    title: item.title || '',
+    date: item.date || dayjs().format('YYYY-MM-DD'),
+    category: item.estimateCategory || expenseGroupForChoice(item.category || 'general'),
+    currency: item.estimateCurrency || baseCurrency,
+    subtotalMinor: toMinor(Number(item.estimateAmount) || 0, getCurrencyDecimals(item.estimateCurrency || baseCurrency)),
+    isEstimated: true,
+    source: 'itinerary-estimate',
+    itineraryItemId: item.id,
+    paymentMethod: 'cash'
+  };
+
+  const sheet = showBottomSheet(`
+    <div class="space-y-4">
+      <div class="flex items-start gap-3">
+        <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('receipt', 'w-5 h-5')}</div>
+        <div class="min-w-0 flex-1">
+          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${expense ? th('แก้ไขค่าใช้จ่าย','Edit expense') : th('เพิ่มค่าใช้จ่ายให้สถานที่นี้','Add a cost to this place')}</h3>
+          <p class="text-[11px] text-[var(--text-secondary)] flex items-center gap-1 flex-wrap">
+            ${icon('map-pinned', 'w-3 h-3')} <span class="truncate">${escapeHtml(item.title || '')}</span>
+            <span class="badge badge-planned text-[10px]">${th('เมนูเดียวกับหน้าค่าใช้จ่าย','same form as the expenses page')}</span>
+          </p>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="sh-close">${icon('x', 'w-4 h-4')}</button>
+      </div>
+      <form id="sh-expense-form" class="expense-form">
+        ${expenseFormSectionsHtml({ prefix: 'sh-', e, members, items, trip, lang, currency: e.currency || baseCurrency, expenseRates, lockItinerary: true, planLabel: item.title || '' })}
+        <div class="btn-row form-submit-row">
+          ${expense ? `<button type="button" id="sh-open-page" class="btn btn-ghost btn-sm">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดหน้าเต็ม','Open full page')}</button>` : ''}
+          <button type="button" id="sh-cancel" class="btn btn-secondary flex-1">${t('cancel')}</button>
+          <button type="submit" id="sh-save" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${t('save')}</button>
+        </div>
+      </form>
+    </div>
+  `);
+  queueIcons();
+  bind('sh-close', 'click', () => sheet.close());
+  bind('sh-cancel', 'click', () => sheet.close());
+  if (expense) {
+    bind('sh-open-page', 'click', () => {
+      sheet.close();
+      location.hash = `#/trip/${tripId}/expenses/add?id=${expense.id}`;
+    });
+  }
+
+  const form = mountExpenseForm({
+    root: sheet.sheet, prefix: 'sh-', e, members, items, trip, tripId, lang,
+    currency: e.currency || baseCurrency, baseCurrency, expenseRates
+  });
+
+  document.getElementById('sh-expense-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const btn = document.getElementById('sh-save');
+    btn.disabled = true;
+    const tLoad = toast.loading(th('กำลังบันทึก...', 'Saving...'));
+    try {
+      const payload = form.collectPayload();
+      payload.itineraryItemId = item.id;
+      payload.source = expense?.source || 'itinerary-estimate';
+      const me = actor();
+      payload.createdByName = me.displayName;
+      payload.updatedByName = me.displayName;
+      let savedId = expense?.id;
+      if (savedId) await updateExpense(tripId, savedId, payload, currentUser.uid, me);
+      else savedId = await addExpense(tripId, payload, currentUser.uid, me);
+      await syncPlanEstimateFromExpense(tripId, payload, savedId);
+      await logActivity(tripId, {
+        type: expense ? 'expense.update' : 'expense.create',
+        targetId: savedId,
+        title: payload.title,
+        detail: `${formatCurrency(payload.netTotalMinor || 0, payload.currency || baseCurrency)} • ${payload.date || ''}`,
+        user: me
+      });
+
+      const { file: pendingReceiptFile } = form.takePendingReceipt();
+      if (pendingReceiptFile && savedId) {
+        try {
+          const res = await uploadReceiptImage(tripId, savedId, pendingReceiptFile);
+          if (res.url) await updateExpense(tripId, savedId, { receiptImage: res.url, receiptStorage: res.storage }, currentUser.uid, me);
+        } catch (photoErr) { console.warn('receipt save failed', photoErr); }
+      }
+      form.clearPendingReceipt();
+      tLoad.close();
+      sheet.close();
+      toast.success(th('บันทึกค่าใช้จ่ายแล้ว — แผนอัปเดตตาม','Expense saved — the plan follows'));
+      onSaved?.();
+    } catch (err) {
+      tLoad.close();
+      toast.error(err.message);
+      btn.disabled = false;
+    }
+  });
+  return sheet;
+}
+
+/**
+ * Copy a saved expense back onto its linked place (estimate fields + expenseId).
+ * The plan keeps its own copy so the card, the day totals and the PNG export stay
+ * instant offline, but the numbers always come from the expense book.
+ */
+async function syncPlanEstimateFromExpense(tripId, payload, expenseId, itemId = null) {
+  const target = itemId || payload?.itineraryItemId;
+  if (!target || !expenseId) return;
+  try {
+    const dec = getCurrencyDecimals(payload.currency || 'THB');
+    await updateItineraryItem(tripId, target, {
+      expenseId,
+      estimateAmount: fromMinor(payload.netTotalMinor || 0, dec),
+      estimateCurrency: payload.currency || 'THB',
+      estimateCategory: payload.category || 'general',
+      estimatePayerId: payload.payerId || '',
+      estimatePayerPending: payload.payerPending === true,
+      estimateShareWith: (payload.allocations || []).map(a => a.memberId),
+      estimateAutoAdd: true
+    }, currentUser.uid);
+  } catch (err) {
+    console.warn('[Plan] estimate sync failed', err?.message);
+  }
 }
 
 async function renderSettlement(params) {

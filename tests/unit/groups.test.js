@@ -2,7 +2,8 @@
 // budget report used on the members page.
 import {
   normalizeGroup, sortGroups, nextGroupName, groupMembers, groupIdsOfMember,
-  memberGroupBadges, groupBudget, groupBudgetReport
+  memberGroupBadges, groupBudget, groupBudgetReport,
+  itemGroupIds, groupAttendsItem, placesForGroup
 } from '../../src/js/utils/groups.js';
 
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
@@ -78,4 +79,25 @@ export function testEmptyInputs() {
   eq(report.groups.length, 0, 'no groups → no rows');
   eq(report.trip.perPersonMinor, 0, 'no members → 0 per person');
   eq(groupBudget({ name: 'x', memberIds: [] }, EXPENSES, MEMBERS).perPersonMinor, 0, 'empty group → 0 per person');
+}
+
+// v19: the per-place team pick (“แต่ละสถานที่มีกลุ่มไหนไปบ้าง”) feeds the per-team
+// place counts on the dashboard + the expenses page.
+export function testGroupPlaceAttendance() {
+  const items = [
+    { id: 'i1', groupIds: ['g1'] },
+    { id: 'i2', groupIds: ['g1', 'g2'] },
+    { id: 'i3' },                               // no pick → the whole trip goes
+    { id: 'i4', groupIds: [] },
+    { id: 'i5', groupIds: [null, 'g2'] }
+  ];
+  eq(itemGroupIds({}).length, 0, 'a place with no groups has no ids');
+  eq(itemGroupIds(items[4]).join(','), 'g2', 'blank / unknown ids are dropped');
+  assert(groupAttendsItem('g1', items[0]), 'a picked team goes to the place');
+  assert(!groupAttendsItem('g2', items[0]), 'a team that was not picked does not go');
+  assert(groupAttendsItem('g2', items[2]), 'no pick at all = everyone goes');
+  assert(!groupAttendsItem('', items[2]), 'an unknown team never matches');
+  eq(placesForGroup('g1', items).map(i => i.id).join(','), 'i1,i2,i3,i4', 'per-team place count');
+  eq(placesForGroup('g2', items).map(i => i.id).join(','), 'i2,i3,i4,i5', 'per-team place count (second team; empty pad = everyone)');
+  eq(placesForGroup('', items).length, 0, 'no team → no places');
 }

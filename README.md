@@ -2,12 +2,14 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
-> **v18 “Trip Manager by TonSkywalker” — updated 6 Oct 2026.** The app was renamed (the tab icon and a
-> small `by TonSkywalker` wordmark came with it) and got its **colour themes back** — 13 presets (LINE,
-> Facebook, Instagram, …) plus custom colours and a vividness slider, remembered per device. The receipts
-> are now **swipeable cards**, the dashboard has an animated **Mt-Fuji buddy**, the plan shows **travel legs**
-> between places, and a **footer with version + last-updated date + copyright** sits under every page.
-> The v17 work (guides, month **calendar**, **share/invite**, **booking import**, **offline strip**) stays.
+> **v19 “Vivid & Clear” — updated 6 Oct 2026.** Five planner requests landed: **drag-to-reorder only in edit
+> mode**, a **ทีม (team) panel on the dashboard** with cost-per-person + team total, the expenses KPI reading
+> **เฉลี่ยต่อกลุ่ม → ต่อคน** with the **5 summary cards in one row at every width**, and four plan-page changes —
+> “รายละเอียดสถานที่” removed, **per-place team picker**, **one category for the whole app**, and a linked
+> expense that opens the **same form as ค่าใช้จ่าย** in an in-page sheet. Status colours are fully saturated and
+> the canvas is brand-tinted.
+> The v18 work (rename, colour themes back, swipeable receipts, Mt-Fuji buddy, travel legs, footer) and the
+> v17 work (guides, month **calendar**, **share/invite**, **booking import**, **offline strip**) all stay.
 > Live: <https://tonsao2024.github.io/trip-manager/> •
 > full-feature offline demo: <https://tonsao2024.github.io/trip-manager/demo/> •
 > screenshots: [`docs/preview/`](docs/preview/index.html).
@@ -403,6 +405,56 @@ Design-system notes:
 - Firestore rules for the three new collections follow the existing model: every member can read and
   create/update; only an admin (or the author) can delete.
 
+### v19 changes — the five planner requests + “Vivid & Clear”
+
+ของที่เจ้าของแจ้งมา 5 ข้อ (ครบทุกข้อ):
+
+1. **ลากสลับตำแหน่งได้เฉพาะโหมดแก้ไข** — the plan only creates drag handles while edit mode is on and destroys
+   every instance on repaint / route change (`destroySortables()` inside `loadItems()`), so a read-only plan can
+   never be reordered. In “ดูทั้งหมด” every day is its own drag list (`data-day-group` + `reorderItinerary(tripId, day, …)`),
+   so a drag can no longer move a place to another date.
+2. **แดชบอร์ดมีส่วนของทีม** — a new `#team-board` card shows each sub-group's **ค่าใช้จ่ายต่อคน** and **รวมทีม**,
+   the ▲/▼ delta against the trip average, and how many plan places that team goes to.
+3. **ค่าใช้จ่าย: “เฉลี่ยต่อกลุ่ม → แต่ละกลุ่มเฉลี่ยต่อคน”** — the KPI tile headlines the **per-group** average with the
+   per-person figure underneath, and `#exp-group-avg` prints one card per team (own total, own per-person number,
+   how many places it visits) plus “ทั้งทริป” as the comparison base. **การ์ดสรุป 5 ใบอยู่ในแถวเดียวทุกขนาดจอ**
+   (`.kpi-strip` is a 5-column grid with a compact mobile block — it never wraps to a second row).
+4. **หน้าแผนการเดินทาง**:
+   - **“รายละเอียดสถานที่” ถูกถอดออก** — the map-popup / card-menu Web+Wikipedia look-up is gone from the UI
+     (`src/js/utils/placeDetails.js` stays on disk, dormant, for anyone who wants it back behind an option).
+   - **เลือกกลุ่ม/ทีมที่ไปในแต่ละสถานที่** — the place form has a team picker (`#it-group-tiles`, “ทุกทีม” = the
+     default for a place nobody has classified yet), the plan cards show the chips, and the dashboard /
+     expenses analysis counts the places per team (`placesForGroup()` in `src/js/utils/groups.js`, unit-tested).
+   - **หมวดหมู่ระบุที่เดียว** — the second “expense group” picker + its lock button are gone: one category in the
+     place form drives both the place and the expense group it bills into (`#it-category-group` shows the derived
+     group live).
+   - **ค่าใช้จ่ายที่ผูกอยู่แก้ในเมนูเดียวกัน** — the plan card's “แก้ไข/ผูกค่าใช้จ่าย” opens an in-page bottom sheet
+     that renders the **same expense form the ค่าใช้จ่าย page uses** (same four sections, same split/payer/receipt
+     widgets), writes to the same expense document, and syncs the place's estimate + `expenseId` back
+     (`syncPlanEstimateFromExpense()`); the linked expense can still be opened as a full page from the sheet.
+     Editing an amount no longer collides with a stale hand-made split: a prefilled split is re-fitted
+     proportionally until the user touches a row.
+5. **ดึงทีมไปวิเคราะห์ต่อ** — the per-place team pick feeds the team board (places per team) and the per-group
+   average strip; the per-group *money* stays allocation-based (every baht counted exactly once, straight from the
+   expense `allocations`).
+
+Palette (v18 “Bright”, pushed to fully saturated status colours):
+
+- `src/css/tokens.css`: success `#00a86b`, warning `#ef7d00`, danger `#ef2b3d`, info `#0d8ce0`, a brand-tinted
+  canvas `#eaf2ff` so white cards separate, and deeper ink (`--text #182437`, `--text-strong #0b1626`);
+  `src/css/refresh.css` makes selected chips/tabs and status badges saturated instead of tinted.
+
+Fixes found while shipping the above:
+
+- **หน้าค่าใช้จ่ายอ่าน “ทีม” ผิดตำแหน่ง** — the `Promise.all` feeding `renderExpenses()` listed expenses before
+  groups while the destructuring read position 4 as “groups”, so the per-team strip received expense documents
+  (8 empty cards) and the KPI never saw a team. The order now matches the destructuring.
+- **ลบทริปไม่ลบทีม** — `TRIP_SUBCOLLECTIONS` (`src/js/trips/index.js`) was missing `memberGroups`, leaving orphan
+  team documents behind after a trip delete.
+- **แก้ยอดค่าใช้จ่ายที่ผูกกับแผนแล้วบันทึกไม่ได้** (“ยอดแบ่งไม่ตรง”) — a prefilled split that is really equal is
+  now recognised as an equal split, and until the user types, the entered shares are re-fitted proportionally when
+  the total changes.
+
 ### v18 changes — renamed app, themes back, swipeable receipts
 
 Naming / shell:
@@ -444,11 +496,12 @@ Itinerary:
 - **Travel legs** between consecutive places show the drive from the previous item’s `travelToNextMinutes`,
   the haversine distance, the expected arrival and a warning when the next start time does not fit.
 - **One merged category list** for place categories and expense groups (`categoryChoices()` in
-  `src/js/utils/categories.js`): picking a place category decides which expense group its estimate bills into,
-  with a lock button to break the link when a place really belongs to another group.
+  `src/js/utils/categories.js`): picking a place category decides which expense group its estimate bills into.
+  (v19 removed the second picker + lock button completely — one category, one place.)
 - Optional **“รายละเอียดสถานที่เพิ่มเติม”** on cards, in the item menu and inside map popups: key-less
   OpenStreetMap (Overpass) + Wikipedia REST lookup (`src/js/utils/placeDetails.js`) for opening hours, phone,
   website, address, a short blurb and the maps links. Cached per session, 6.5 s timeout, silently skipped offline.
+  — **removed from the UI in v19** (the module stays on disk, dormant).
 
 Dashboard + misc:
 
