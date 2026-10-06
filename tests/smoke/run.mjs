@@ -1424,8 +1424,11 @@ check((q('#invite-code-value').textContent || '').replace(/[^A-Z0-9]/g, '') === 
 await click('#invite-code-regen');
 await waitFor(() => q('#confirm-ok'), { label: 'regen confirm' });
 await click('#confirm-ok');
-await waitFor(() => /[A-Z0-9]{3}-[A-Z0-9]{3}/.test(q('#invite-code-value')?.textContent || ''), { timeout: 15000, label: 'new code' }).catch(() => {});
-const newCode = q('#invite-code-value')?.textContent?.replace('-', '') || '';
+// v18: the wait must be for a code that is DIFFERENT from the old one — a plain
+// /[A-Z0-9]{3}-[A-Z0-9]{3}/ test also matches the outgoing 'FUJI-23'.
+const shownCode = () => String(q('#invite-code-value')?.textContent || '').replace(/[^A-Z0-9]/g, '');
+await waitFor(() => /^[A-Z0-9]{6}$/.test(shownCode()) && shownCode() !== 'FUJI23', { timeout: 12000, label: 'new code' }).catch(() => {});
+const newCode = shownCode();
 check(newCode.length === 6 && newCode !== 'FUJI23', 'invite: new code generated and shown');
 check(fsdb.__dump('trips/t1')?.inviteCode === newCode, 'invite: new code saved on the trip');
 
@@ -1592,9 +1595,13 @@ console.log('\n▶ v11: ใบเสร็จ — เลือกดูราย
     .catch(() => {});
   q('.bottom-sheet-backdrop')?.click();
   await sleep(320);
-  await waitFor(() => (q('#receipt-u1')?.textContent || '').includes('ทักท้วงจากใบเสร็จ'), { label: 'comment inside receipt' }).catch(() => {});
-  check((q('#receipt-u1')?.textContent || '').includes('ทักท้วงจากใบเสร็จ'), 'receipt: the comment shows inside the receipt itself');
-  check(!!q('#receipt-u1 .rcpt-comment'), 'receipt: comments are styled as flags on the item');
+  // v18: the receipt view is a swipe deck, so the comment arrives with a re-render of
+  // the deck + its print block — the old 4 s window was too tight on a loaded machine.
+  // Read the copy that belongs to the page (an open detail sheet keeps its own).
+  const inPage = () => (q('#settlement-content #receipt-u1')?.textContent || '').includes('ทักท้วงจากใบเสร็จ');
+  await waitFor(inPage, { timeout: 12000, label: 'comment inside receipt' }).catch(() => {});
+  check(inPage(), 'receipt: the comment shows inside the receipt itself');
+  check(!!q('#settlement-content #receipt-u1 .rcpt-comment'), 'receipt: comments are styled as flags on the item');
   await goto('#/trip/t1/settlement');
   await waitFor(() => q('#settle-overview'), { label: 'settlement again' });
   check(q('#settle-views .chip-active')?.dataset.view === 'overview', 'receipt: the page still opens on ภาพรวม');
