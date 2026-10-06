@@ -121,6 +121,81 @@ export function categoryColor(id) {
   return getCategoryDef(id)?.color || CATEGORY_COLORS[id] || 'var(--primary)';
 }
 
+/* ------------------------------------------------------------------\n   v18: ONE category list for places and money.
+   Before this, the plan had its own seven categories (ITINERARY_CATEGORIES) and
+   the expense book had another list (EXPENSE_CATEGORIES + the trip's own groups),
+   so the same lunch was “อาหาร” twice and a temple was “ท่องเที่ยว” for the map but
+   “ค่าเข้า/ตั๋ว” for the money. The merged list below is what the pickers show:
+   a place category carries the expense group it should bill into, and an expense
+   group can always be read back as a place category.
+   ------------------------------------------------------------------ */
+
+/** Place category → expense group it should book its estimate under. */
+export const PLACE_TO_EXPENSE = {
+  sightseeing: 'ticket',
+  food: 'food',
+  transport: 'transport',
+  stay: 'stay',
+  activity: 'activity',
+  shopping: 'shopping',
+  general: 'general'
+};
+
+/** Expense group → place category (only the ones that do NOT exist as places). */
+export const EXPENSE_TO_PLACE = {
+  ticket: 'sightseeing',
+  insurance: 'activity',
+  fee: 'general'
+};
+
+export function expenseGroupForPlace(id) {
+  const hit = PLACE_TO_EXPENSE[id];
+  return hit && getCategoryDef(hit) ? hit : 'general';
+}
+
+export function placeCategoryForExpense(id) {
+  const hit = EXPENSE_TO_PLACE[id];
+  return hit || (ITINERARY_CATEGORIES.some(c => c.id === id) ? id : 'general');
+}
+
+/**
+ * The merged picker list: every place category (with its expense group attached)
+ * first, then the trip's own groups that have no place equivalent — so a custom
+ * group such as “คาเฟ่” is selectable for a place too.
+ * @returns {{id:string,th:string,en:string,icon:string,expenseId:string,isPlace:boolean}[]}
+ */
+export function categoryChoices(lang = 'th') {
+  const out = ITINERARY_CATEGORIES.map(c => ({
+    ...c,
+    expenseId: expenseGroupForPlace(c.id),
+    isPlace: true
+  }));
+  const seen = new Set(out.map(c => c.id));
+  getAllExpenseCategories().forEach(c => {
+    const asPlace = placeCategoryForExpense(c.id);
+    // Built-in expense groups already represented by a place category are skipped.
+    if (seen.has(c.id) || (EXPENSE_CATEGORIES.some(e => e.id === c.id) && asPlace)) return;
+    seen.add(c.id);
+    out.push({ id: c.id, th: c.th || c.en, en: c.en || c.th, icon: c.icon || 'tag', expenseId: c.id, isPlace: false });
+  });
+  return out;
+}
+
+/**
+ * Expense group a merged choice bills into. A place category maps through
+ * PLACE_TO_EXPENSE; a trip-defined group is its own expense group.
+ */
+export function expenseGroupForChoice(id) {
+  const place = ITINERARY_CATEGORIES.find(c => c.id === id);
+  return place ? expenseGroupForPlace(id) : (getCategoryDef(id) ? id : 'general');
+}
+
+/** Label of a merged choice, in the right language. */
+export function categoryChoiceLabel(choice, lang = 'th') {
+  if (!choice) return '';
+  return lang === 'th' ? (choice.th || choice.en) : (choice.en || choice.th);
+}
+
 export function itineraryCategoryLabel(id, lang = 'th') {
   const def = ITINERARY_CATEGORIES.find(c => c.id === id);
   if (!def) return id || 'general';

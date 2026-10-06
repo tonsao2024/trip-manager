@@ -1,4 +1,4 @@
-import { CONFETTI_COLORS } from '../utils/brand.js';
+import { confettiColors } from '../utils/brand.js';
 // Micro-interaction helpers — reveal on scroll, animated numbers, confetti bursts.
 // All effects respect prefers-reduced-motion.
 
@@ -71,13 +71,14 @@ export function confetti({ x = window.innerWidth / 2, y = 90, count = 26, spread
   if (prefersReducedMotion()) return;
   const layer = confettiLayer();
   const frag = document.createDocumentFragment();
+  const palette = confettiColors();
   for (let i = 0; i < count; i++) {
     const piece = document.createElement('span');
     piece.className = 'confetti-piece';
     const size = 6 + Math.random() * 7;
     piece.style.width = `${size}px`;
     piece.style.height = `${size * (Math.random() > 0.5 ? 1 : 0.5)}px`;
-    piece.style.background = CONFETTI_COLORS[i % CONFETTI_COLORS.length];
+    piece.style.background = palette[i % palette.length];
     piece.style.left = `${x}px`;
     piece.style.top = `${y}px`;
     piece.style.setProperty('--cx', `${(Math.random() - 0.5) * spread}px`);

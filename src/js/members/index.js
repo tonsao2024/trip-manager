@@ -6,7 +6,7 @@ import { expensePayments } from '../utils/payments.js';
 // (The old `createMemberAccount` function returned "internal" on projects where
 // functions were never deployed — login then broke completely.)
 import { db, functions, serverTimestamp } from '../firebase.js';
-import { BRAND_PRIMARY } from '../utils/brand.js';
+import { brandPrimary } from '../utils/brand.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, limit, writeBatch, arrayUnion, arrayRemove
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -58,7 +58,7 @@ export async function getMember(tripId, memberId) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
-export function buildMemberDoc({ displayName, username = '', role = 'member', color = BRAND_PRIMARY, photoURL = '', permissions, order = 999, createdByName = '' }) {
+export function buildMemberDoc({ displayName, username = '', role = 'member', color = brandPrimary(), photoURL = '', permissions, order = 999, createdByName = '' }) {
   return {
     displayName: displayName || username || 'Member',
     username: (username || '').trim().toLowerCase(),
@@ -139,7 +139,7 @@ async function createMemberInner(tripId, data, { order = 999, onNotice } = {}) {
         tripId, username, pin: data.pin, displayName,
         role: data.role || 'member',
         photoURL: data.photoURL || null,
-        color: data.color || BRAND_PRIMARY,
+        color: data.color || brandPrimary(),
         permissions: data.permissions || undefined
       });
       if (res?.data?.memberUid) {
