@@ -105,6 +105,9 @@ export async function loadLeaflet() {
       link.id = 'leaflet-css';
       link.rel = 'stylesheet';
       link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      // If the CDN stylesheet is blocked, pins/tiles would stack unstyled —
+      // inject the critical layout subset so the map still renders correctly.
+      link.onerror = () => injectLeafletFallbackCss();
       document.head.appendChild(link);
     }
     try {
@@ -116,6 +119,35 @@ export async function loadLeaflet() {
     }
   })();
   return leafletPromise;
+}
+
+/** Emergency layout subset if the Leaflet CDN stylesheet cannot load. */
+function injectLeafletFallbackCss() {
+  if (document.getElementById('leaflet-fallback-css')) return;
+  const style = document.createElement('style');
+  style.id = 'leaflet-fallback-css';
+  style.textContent = [
+    '.leaflet-container{position:relative;overflow:hidden;background:#dde5ee;outline:0}',
+    '.leaflet-pane{position:absolute;left:0;top:0;z-index:400}',
+    '.leaflet-tile-pane{z-index:200}.leaflet-overlay-pane{z-index:400}',
+    '.leaflet-shadow-pane{z-index:500}.leaflet-marker-pane{z-index:600}',
+    '.leaflet-tooltip-pane{z-index:650}.leaflet-popup-pane{z-index:700}',
+    '.leaflet-tile,.leaflet-marker-icon,.leaflet-marker-shadow{position:absolute;left:0;top:0;user-select:none;-webkit-user-select:none}',
+    '.leaflet-marker-icon,.leaflet-marker-shadow{display:block}',
+    '.leaflet-container img.leaflet-tile{max-width:none!important;max-height:none!important}',
+    '.leaflet-top,.leaflet-bottom{position:absolute;z-index:400;pointer-events:none}',
+    '.leaflet-top{top:0}.leaflet-bottom{bottom:0}.leaflet-left{left:0}.leaflet-right{right:0}',
+    '.leaflet-control{pointer-events:auto}',
+    '.leaflet-container .leaflet-control-attribution{position:absolute;right:0;bottom:0;background:rgba(255,255,255,.75);font-size:10px;line-height:1.4;padding:1px 6px;color:#666}',
+    '.leaflet-popup{position:absolute;margin-bottom:20px}',
+    '.leaflet-popup-content-wrapper{background:#fff;color:#333;border-radius:12px;padding:1px;box-shadow:0 3px 14px rgba(0,0,0,.25)}',
+    '.leaflet-popup-content{margin:12px 16px;line-height:1.5;font-size:13px;min-width:120px}',
+    '.leaflet-popup-tip{background:#fff;box-shadow:0 3px 14px rgba(0,0,0,.25)}',
+    '.leaflet-bar{box-shadow:0 1px 5px rgba(0,0,0,.3);border-radius:8px;overflow:hidden}',
+    '.leaflet-bar a{background:#fff;color:#333;display:block;width:30px;height:30px;line-height:30px;text-align:center;text-decoration:none;font-size:18px}',
+    '.leaflet-control-zoom{margin:10px!important}'
+  ].join('\n');
+  document.head.appendChild(style);
 }
 
 function isDarkTheme() {
@@ -549,6 +581,90 @@ export async function renderItineraryMap(containerId, items, options = {}) {
 }
 
 /**
+ * Numbered markers for the ideas board (no order polyline — ideas are not a
+ * route). Popups show the photo (when attached), votes and a maps link.
+ * Markers are tagged exactly like itinerary pins so focusItineraryItem() can
+ * centre + open them too.
+ */
+export function addIdeaMarkers(map, L, ideas, opts = {}) {
+  if (!map || !L) return { markers: [], count: 0 };
+  const el = map.getContainer?.();
+  const entry = el ? MAP_REGISTRY.get(el) : null;
+  const layer = entry?.markers || L.layerGroup().addTo(map);
+  layer.clearLayers();
+  if (entry) entry.items = ideas || [];
+
+  const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary-raw').trim() || '#1f6bfb';
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--brand-yellow-raw').trim() || '#ffb02e';
+  const dirLabel = opts.directionsLabel || (opts.lang === 'en' ? 'Directions' : 'ไปที่นี่');
+  const latlngs = [];
+  const markers = [];
+
+  (ideas || []).forEach((idea, idx) => {
+    const pos = getItemLatLng(idea);
+    if (!pos) return;
+    const { lat, lng } = pos;
+    latlngs.push([lat, lng]);
+    const planned = idea.status === 'planned';
+    const color = planned ? '#00a86b' : (idx === 0 ? accent : primary);
+    const label = opts.numbered === false ? '💡' : String(idx + 1);
+    const icon = L.divIcon({
+      className: 'custom-marker',
+      html: `<div class="map-pin-marker${planned ? ' map-pin-marker--planned' : ''}" style="background:${color};"><span>${label}</span></div>`,
+      iconSize: [30, 40],
+      iconAnchor: [15, 38],
+      popupAnchor: [0, -34]
+    });
+    const marker = L.marker([lat, lng], { icon, riseOnHover: true }).addTo(layer);
+    marker._fujiItemId = idea.id;
+    const imgs = Array.isArray(idea.imageUrls) && idea.imageUrls.length
+      ? idea.imageUrls.filter(u => /^https?:\/\//i.test(String(u || ''))).slice(0, 1)
+      : (idea.imageUrl ? [idea.imageUrl] : []);
+    const thumb = imgs[0]
+      ? `<div class="map-popup-thumb"><img src="${escapePopupText(imgs[0])}" alt="" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`
+      : '';
+    const votes = idea.votes
+      ? (Array.isArray(idea.votes) ? idea.votes.filter(Boolean).length : Object.values(idea.votes).filter(Boolean).length)
+      : 0;
+    const mapsHref = googleMapsPlaceUrl(idea);
+    marker.bindPopup(`
+      <div class="map-popup">
+        ${thumb}
+        <b>${idx + 1}. ${escapePopupText(idea.title || '')}</b>
+        ${idea.address ? `<div class="map-popup-sub">${escapePopupText(idea.address)}</div>` : ''}
+        <div class="map-popup-sub">▲ ${votes} ${escapePopupText(opts.votesLabel || (opts.lang === 'en' ? 'votes' : 'โหวต'))}${planned ? ` • ${escapePopupText(opts.plannedLabel || (opts.lang === 'en' ? 'in the plan' : 'อยู่ในแผน'))}` : ''}</div>
+        <div class="map-popup-links">
+          ${mapsHref ? `<a href="${escapePopupText(mapsHref)}" target="_blank" rel="noopener">${escapePopupText(dirLabel || 'Google Maps')}</a>` : ''}
+        </div>
+      </div>`);
+    markers.push(marker);
+  });
+
+  if (latlngs.length && opts.fitBounds !== false) {
+    try {
+      if (latlngs.length === 1) map.setView(latlngs[0], opts.singleZoom || 13, { animate: true });
+      else map.fitBounds(latlngs, { padding: [56, 56], maxZoom: 15 });
+    } catch {}
+  }
+
+  return { markers, polyline: null, count: latlngs.length };
+}
+
+/**
+ * One-shot helper used by the ideas board: init + draw + fit.
+ */
+export async function renderIdeasMap(containerId, ideas, options = {}) {
+  const { map, L } = await initMap(containerId, {
+    zoom: options.zoom || 10,
+    center: options.center,
+    forceRecreate: options.forceRecreate === true
+  });
+  const result = addIdeaMarkers(map, L, ideas, options);
+  refreshMapSize(containerId);
+  return { map, L, ...result };
+}
+
+/**
  * Steer the map to an itinerary item's pinned coordinates and open its popup.
  * Works for virtual "back to hotel" cards too (they resolve to their master pin).
  * Returns false when there is no map or the item has no coordinates.
@@ -560,12 +676,15 @@ export function focusItineraryItem(containerId, items, itemId, { zoom = 16, open
   const item = list.find(i => i.id === itemId)
     || list.find(i => i.masterId === itemId)
     || { id: itemId };
-  // v18 (requested): tapping a card with coordinates must centre that pin, and the
-  // focused pin is lifted while the others dim, so it is obvious on the map.
+  // Tapping a card with coordinates must centre that pin, and the focused pin is
+  // lifted while the others dim, so it is obvious on the map.
   if (focus) setItemFocus(containerId, itemId);
   const pos = getItemLatLng(item);
   if (pos) {
     try {
+      // The container may have been measured while off-screen — re-measure
+      // first so the pin lands exactly in the visual centre of the map.
+      try { map.invalidateSize?.(); } catch { /* stub-safe */ }
       // Always head for the pin — keep a close zoom but never zoom out past 15.
       map.setView([pos.lat, pos.lng], Math.max(15, Math.min(zoom, map.getMaxZoom() || 18)), { animate: true });
     } catch { return false; }
@@ -578,17 +697,21 @@ export function focusItineraryItem(containerId, items, itemId, { zoom = 16, open
         const marker = layers.find(l => wantIds.includes(l._fujiItemId))
           || layers.find(l => wantIds.includes(l._fujiMasterId));
         marker?.openPopup?.();
+        // The popup's autopan nudges the pin off-centre — ease it back so the
+        // tapped pin sits in the middle of the map.
+        setTimeout(() => { try { map.panTo?.([pos.lat, pos.lng], { animate: true }); } catch { /* cosmetic */ } }, 420);
       } catch { /* popup is a bonus — focus still happened */ }
     }
     return true;
   }
-  // v18 (requested): a card WITHOUT coordinates used to do nothing at all. Now the
-  // map frames the rest of that day, so the place still gets its context.
+  // A card WITHOUT coordinates frames every pin of that day, so the place
+  // still gets its context.
   const dayKey = item.date || item.day || item.customDate || null;
   const pool = dayKey ? list.filter(i => (i.date || i.day || i.customDate) === dayKey) : list;
   const pts = pool.map(getItemLatLng).filter(Boolean);
   if (!pts.length) return false;
   try {
+    try { map.invalidateSize?.(); } catch { /* stub-safe */ }
     if (pts.length === 1) map.setView([pts[0].lat, pts[0].lng], 14, { animate: true });
     else map.fitBounds(pts.map(p => [p.lat, p.lng]), { padding: [46, 46], maxZoom: 15, animate: true });
   } catch { return false; }

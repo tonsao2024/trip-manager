@@ -69,6 +69,28 @@ export function voterNames(idea = {}, members = []) {
 }
 
 /**
+ * Image URLs attached to an idea (max 3). Reads the new `imageUrls` array and
+ * falls back to the legacy single `imageUrl`, so old ideas keep working.
+ */
+export function ideaImages(idea = {}) {
+  const fromArr = Array.isArray(idea.imageUrls) ? idea.imageUrls : [];
+  const legacy = idea.imageUrl ? [idea.imageUrl] : [];
+  return normalizeIdeaImages([...fromArr, ...legacy]);
+}
+
+/** Normalize user input into a storable max-3 http(s) URL array. */
+export function normalizeIdeaImages(input) {
+  const list = Array.isArray(input) ? input : [input];
+  const out = [];
+  for (const raw of list) {
+    const u = String(raw || '').trim();
+    if (/^https?:\/\//i.test(u) && !out.includes(u)) out.push(u);
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
+/**
  * Build the itinerary payload for “เพิ่มเข้าแผน”.
  * Keeps the idea's note/address/cost so the day plan is complete in one tap.
  */
@@ -86,7 +108,7 @@ export function ideaToItineraryPayload(idea = {}, { date = '', startAt = '', cat
     estimatedCostMinor: Number(idea.estimatedCostMinor) || 0,
     currency: idea.currency || 'THB',
     status: 'planned',
-    imageUrl: idea.imageUrl || ''
+    imageUrl: ideaImages(idea)[0] || idea.imageUrl || ''
   };
 }
 

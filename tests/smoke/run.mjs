@@ -1321,8 +1321,9 @@ console.log('\n▶ v9: one simple login screen (Google + email only)');
   await goto('#/login');
   await waitFor(() => q('#google-signin-btn'), { label: 'login page' });
   check(!!q('#google-signin-btn'), 'login: Google button is the primary action');
-  check(!!q('#admin-email') && !!q('#admin-pass'), 'login: email + password form present');
-  check(!!q('#account-signup-btn') && !!q('#account-reset-btn'), 'login: sign-up + forgot-password available');
+  check(!q('#admin-email') && !q('#admin-pass') && !q('#account-form'), 'login: Google-only — no email/password form');
+  check(!q('#account-signup-btn') && !q('#account-reset-btn'), 'login: Google-only — no sign-up / forgot-password');
+  check(q('#google-signin-btn') && q('.login-steps'), 'login: Google button with Thai guide steps');
   check(!q('#member-form') && !q('#member-pin') && !q('#member-user'), 'login: username + PIN form removed');
   check(!q('#tab-member') && !q('#tab-admin'), 'login: no member/admin tabs to choose from');
   check(!/ชื่อผู้ใช้ \+ PIN/.test(html$()) && !/member-pin/.test(html$()), 'login: PIN wording gone from the page');
@@ -2200,20 +2201,22 @@ console.log('\n▶ v17/v18 offline strip + colour themes');
 {
   check(!!window.document.getElementById('offline-strip-wrap'), 'offline: strip container exists in the shell');
   const css = fs.readFileSync(path.join(root, 'src/css/tokens.css'), 'utf8');
-  check(/#1f6bfb/.test(css) && /#ffb02e/.test(css), 'palette: brighter v18 brand colours in tokens.css');
+  check(/#1e4bff/.test(css) && /#ff9e00/.test(css), 'palette: vivid v20 brand colours in tokens.css');
   check(!/#2f6fe4/.test(css) && !/#f0ae52/.test(css), 'palette: the muted v17 hexes are gone from the tokens');
   check(!/#1d4ed8/.test(css) && !/#ffc81e/.test(css), 'palette: old True-tone colours gone');
-  // v19 “Vivid & Clear”: fully saturated status colours + a tinted canvas that
-  // lifts white cards, and quieter greys pushed out of the tokens.
-  check(/#00a86b/.test(css) && /#ef7d00/.test(css) && /#ef2b3d/.test(css) && /#0d8ce0/.test(css),
-    'palette v19: success / warning / danger / info are fully saturated');
+  // v20 “Vivid & Deep”: jewel-saturated status colours + a deeper brand canvas
+  // that lifts white cards, and quieter greys pushed out of the tokens.
+  check(/#00b368/.test(css) && /#f97316/.test(css) && /#f4113c/.test(css) && /#0090ff/.test(css),
+    'palette v20: success / warning / danger / info are fully saturated');
   check(!/#059669/.test(css) && !/#ea7317/.test(css) && !/#e63232/.test(css) && !/#1a8dd6/.test(css),
-    'palette v19: the older, softer status hexes are gone from the tokens');
-  check(/--page-bg:\s*#eaf2ff/i.test(css), 'palette v19: the canvas is brand-tinted so white cards separate');
-  check(/--text:\s*#182437/i.test(css) && /--text-strong:\s*#0b1626/i.test(css), 'palette v19: deeper ink for typography');
+    'palette v20: the older, softer status hexes are gone from the tokens');
+  check(!/#00a86b/.test(css) && !/#ef7d00/.test(css) && !/#ef2b3d/.test(css) && !/#0d8ce0/.test(css),
+    'palette v20: the v19 status hexes are replaced, not mixed in');
+  check(/--page-bg:\s*#d9e9ff/i.test(css), 'palette v20: the canvas is brand-tinted so white cards separate');
+  check(/--text:\s*#101d33/i.test(css) && /--text-strong:\s*#060f22/i.test(css), 'palette v20: deeper ink for typography');
   const refreshCss = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
   check(/\.chip-active, \.chip-active:hover/.test(refreshCss) && /--gradient-primary/.test(refreshCss),
-    'palette v19: selected chips/tabs are saturated, not tinted');
+    'palette v20: selected chips/tabs are saturated, not tinted');
   check(/\.badge-completed \{[^}]*--success-light/.test(refreshCss) && /\.badge-cancelled \{[^}]*--danger-light/.test(refreshCss),
     'palette v19: status badges carry vivid fills');
 

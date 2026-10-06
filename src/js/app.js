@@ -4,12 +4,12 @@ import { auth, db, isFirebaseConfigured, onAuthStateChanged, syncState } from '.
 import { Router } from './router.js';
 import { toast } from './components/toast.js';
 import { renderFujiMascot, renderEmptyState } from './components/fuji.js';
-import { loginAdmin, logout, hasStepUpSession } from './auth/index.js';
+import { logout, hasStepUpSession } from './auth/index.js';
 import { getMemberSession, clearMemberSession } from './auth/memberAuth.js';
 import { runSystemDiagnostics, formatDiagnosticsReport, DIAG } from './utils/diagnostics.js';
 import { listTrips, getTrip, createTrip, updateTrip, deleteTrip, duplicateTrip, uploadCoverImage, clearTripsCache, clearAllDataCache, regenerateInviteCode } from './trips/index.js';
 import {
-  signInWithGoogle, completeRedirectSignIn, signUpEmailAccount, sendAccountPasswordReset,
+  signInWithGoogle, completeRedirectSignIn,
   ensureUserProfile, findProfileByEmail
 } from './auth/accountAuth.js';
 import {
@@ -80,6 +80,7 @@ import {
 import {
   IDEA_STATUSES, ideaStatusDef, listIdeas, createIdea, updateIdea, deleteIdea, voteIdea,
   voteInfo, hasVoted, voteCount, sortIdeas, voterNames, ideasBudget, trendingIdeas, toggleVoteMap,
+  ideaImages, normalizeIdeaImages,
   listPendingIdeas, flushPendingIdeas, isLocalIdeaId
 } from './ideas/index.js';
 import {
@@ -92,7 +93,7 @@ import {
   deleteReservation, groupReservationsByDate, upcomingReservations, routeLabel,
   reservationToItineraryPayload, durationBetween, reservationWarnings
 } from './reservations/index.js';
-import { fetchDailyForecast, forecastForDates, datesBetween, weatherTip, weatherTone, isForecastRelevant } from './utils/weather.js';
+import { fetchDailyForecast, forecastForDates, forecastLabel, datesBetween, weatherTip, weatherTone, isForecastRelevant, geocodeCity, searchCities } from './utils/weather.js';
 import {
   DESTINATIONS, EXPLORE_CATEGORIES, destinationById, destinationPlaces, searchPlaces,
   matchDestinations, exploreCategoryCounts, suggestForTrip, bestTimeLabel, bestTimeIcon,
@@ -764,24 +765,12 @@ function addHeaderControls() {
   controlsDiv.id = 'header-controls';
   controlsDiv.className = 'flex items-center gap-1';
   controlsDiv.innerHTML = `
-    <button id="header-lang-btn" class="btn btn-ghost w-9 h-9 text-xs font-extrabold" style="min-height:36px;padding:0;" title="${t('language')}">${getLang() === 'th' ? 'EN' : 'TH'}</button>
     <button id="header-mode-btn" class="btn btn-ghost btn-icon w-9 h-9" title="Light / Dark / Auto">${icon('sun', 'w-[17px] h-[17px]')}</button>
   `;
 
   const referenceNode = rightGroup.querySelector('#refresh-btn');
   if (referenceNode && referenceNode.parentElement === rightGroup) rightGroup.insertBefore(controlsDiv, referenceNode);
   else rightGroup.appendChild(controlsDiv);
-
-  document.getElementById('header-lang-btn').onclick = () => {
-    const newLang = getLang() === 'th' ? 'en' : 'th';
-    setLang(newLang);
-    document.getElementById('header-lang-btn').textContent = newLang === 'th' ? 'EN' : 'TH';
-    renderDesktopNav();
-    updateBottomNav();
-    if (headerSubtitle && currentTrip) headerSubtitle.textContent = currentTrip.name;
-    toast.success(newLang === 'th' ? 'ภาษาไทย' : 'English');
-    setTimeout(() => router.handle(), 50);
-  };
 
   document.getElementById('header-mode-btn').onclick = cycleMode;
 
@@ -906,10 +895,7 @@ function openUserSheet(user) {
         <div class="input-group"><label class="input-label text-xs">${icon('image', 'w-3.5 h-3.5')} Photo URL</label><input id="edit-photo-url" class="input text-sm" value="${escapeHtml(user.photoURL || '')}" placeholder="https://..."></div>
         <button id="save-profile" class="btn btn-primary btn-sm w-full">${icon('save', 'w-4 h-4')} บันทึกโปรไฟล์</button>
       </div>
-      <div class="grid grid-cols-2 gap-2">
-        <button id="lang-toggle" class="btn btn-secondary btn-sm">${icon('languages', 'w-4 h-4')} ${getLang() === 'th' ? 'English' : 'ไทย'}</button>
-        <button id="appearance-btn" class="btn btn-secondary btn-sm">${icon('sun-moon', 'w-4 h-4')} ${t('appearance')}</button>
-      </div>
+      <button id="appearance-btn" class="btn btn-secondary btn-sm w-full">${icon('sun-moon', 'w-4 h-4')} ${t('appearance')}</button>
       <div class="grid grid-cols-2 gap-2">
         <button id="toggle-dark-sheet" class="btn btn-secondary btn-sm" data-mode-current></button>
         <button id="user-settings" class="btn btn-secondary btn-sm">${icon('settings', 'w-4 h-4')} ${t('settings')}</button>
@@ -928,13 +914,6 @@ function openUserSheet(user) {
     await doLogout();
   });
   document.getElementById('forget-device')?.addEventListener('click', () => { localStorage.clear(); location.hash = '#/login'; location.reload(); });
-  document.getElementById('lang-toggle')?.addEventListener('click', () => {
-    const newLang = getLang() === 'th' ? 'en' : 'th';
-    setLang(newLang);
-    toast.success(newLang === 'th' ? 'ภาษาไทย' : 'English');
-    sheet.close();
-    setTimeout(() => router.handle(), 100);
-  });
   document.getElementById('appearance-btn')?.addEventListener('click', () => {
     sheet.close();
     setTimeout(() => showAppearanceSheet(), 220);
@@ -1588,35 +1567,25 @@ function renderLogin() {
           <h1 class="text-[32px] font-bold mt-4 tracking-tight" style="font-family: var(--font-display);">${t('appName')}</h1>
           <p class="text-sm text-[var(--text-secondary)] mt-2">${t('tagline')}</p>
           <div class="flex justify-center gap-2 mt-4 flex-wrap">
-            <button id="login-lang" class="chip text-xs">${icon('languages', 'w-3.5 h-3.5')} ${lang === 'th' ? 'ไทย — Switch to EN' : 'EN — เปลี่ยนเป็นไทย'}</button>
             <button id="login-dark" class="chip text-xs" data-mode-current></button>
           </div>
         </div>
 
         <div class="card card-accent p-7 space-y-4">
-          <!-- Google first: the recommended way for members on the free plan -->
+          <!-- Google-only sign-in -->
           <button id="google-signin-btn" class="btn btn-google w-full btn-lg">
             <svg viewBox="0 0 48 48" class="w-5 h-5" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-            ${lang === 'th' ? 'เข้าสู่ระบบด้วยบัญชี Google' : 'Continue with Google'}
+            เข้าสู่ระบบด้วยบัญชี Google
           </button>
 
-          <div class="login-or"><span>${lang === 'th' ? 'หรือใช้บัญชีอีเมล' : 'or use an email account'}</span></div>
-
-          <form id="account-form" class="space-y-4">
-            <div class="input-group"><label class="input-label">${icon('mail', 'w-3.5 h-3.5')} ${t('email')}</label><input id="admin-email" class="input" type="email" placeholder="you@example.com" required autocomplete="email"></div>
-            <div class="input-group"><label class="input-label">${icon('key-round', 'w-3.5 h-3.5')} ${t('password')}</label><input id="admin-pass" class="input" type="password" required autocomplete="current-password"></div>
-            <label class="flex items-center gap-2 text-sm cursor-pointer"><input id="admin-remember" type="checkbox" checked class="accent-[var(--primary)] w-4 h-4"> ${t('rememberDevice')}</label>
-            <button class="btn btn-primary w-full btn-lg" type="submit">${icon('log-in', 'w-4 h-4')} ${lang==='th' ? 'เข้าสู่ระบบ' : 'Sign in'}</button>
-            <div class="btn-row">
-              <button type="button" id="account-signup-btn" class="btn btn-secondary btn-sm">${icon('user-plus', 'w-4 h-4')} ${lang==='th' ? 'สมัครบัญชีใหม่' : 'Create account'}</button>
-              <button type="button" id="account-reset-btn" class="btn btn-ghost btn-sm">${icon('help-circle', 'w-4 h-4')} ${lang==='th' ? 'ลืมรหัสผ่าน' : 'Forgot password'}</button>
-            </div>
-          </form>
+          <div class="login-steps">
+            <div class="login-step"><span class="step-num">1</span><span>กดปุ่มด้านบน แล้วเลือกบัญชี Google ของคุณ</span></div>
+            <div class="login-step"><span class="step-num">2</span><span>ขอรหัสเชิญทริปจากแอดมิน แล้วกดเข้าร่วม</span></div>
+            <div class="login-step"><span class="step-num">3</span><span>เริ่มวางแผนทริปด้วยกันได้เลย</span></div>
+          </div>
 
           <p class="text-[11px] text-center text-[var(--text-tertiary)] leading-relaxed">
-            ${lang === 'th'
-              ? 'สมาชิกใช้บัญชี Google ของตัวเองได้ — แอดมินทริปเป็นคนอนุมัติให้เข้าร่วมแต่ละทริป'
-              : 'Members sign in with their own Google account — the trip admin approves each trip.'}
+            สมาชิกใช้บัญชี Google ของตัวเองได้ — แอดมินทริปเป็นคนอนุมัติให้เข้าร่วมแต่ละทริป
           </p>
         </div>
 
@@ -1630,88 +1599,23 @@ function renderLogin() {
   queueIcons();
   updateModeIcons();
 
-  setTimeout(() => addPasswordToggle('admin-pass'), 10);
-
-  document.getElementById('login-lang').onclick = () => {
-    const newLang = lang === 'th' ? 'en' : 'th';
-    setLang(newLang);
-    renderLogin();
-    toast.success(newLang === 'th' ? 'ภาษาไทย' : 'English');
-  };
   document.getElementById('login-dark').onclick = cycleMode;
 
-  // ---- Google account (recommended for members, works on the free plan) ----
+  // ---- Google-only sign-in ----
   appEl.querySelector('#google-signin-btn').onclick = async (e) => {
     const btn = e.currentTarget;
     const originalHtml = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = `${spinner('w-5 h-5')} ${lang==='th' ? 'กำลังเปิด Google...' : 'Opening Google...'}`;
+    btn.innerHTML = `${spinner('w-5 h-5')} กำลังเปิด Google...`;
     queueIcons();
     try {
       const user = await signInWithGoogle(true);
       // null = we were redirected to Google and will come back here
       if (!user) return;
-      toast.success(lang==='th' ? `ยินดีต้อนรับ ${user.displayName || user.email}` : `Welcome ${user.displayName || user.email}`);
+      toast.success(`ยินดีต้อนรับ ${user.displayName || user.email}`);
       location.hash = '#/trips';
     } catch (err) {
-      toast.error(err.message || 'Google sign-in failed');
-      btn.disabled = false;
-      btn.innerHTML = originalHtml;
-      queueIcons();
-    }
-  };
-
-  // ---- Email account: sign up / forgot password ----
-  appEl.querySelector('#account-signup-btn').onclick = async () => {
-    const email = document.getElementById('admin-email').value.trim();
-    const pass = document.getElementById('admin-pass').value;
-    const name = await promptAction({
-      title: lang==='th' ? 'สมัครบัญชีสมาชิก' : 'Create member account',
-      message: lang==='th'
-        ? 'กรอกชื่อที่ต้องการให้เพื่อนเห็น แล้วระบบจะสมัครบัญชีให้ด้วยอีเมล/รหัสผ่านที่กรอกไว้ด้านบน'
-        : 'Enter the name your friends will see — the account is created with the email/password above.',
-      placeholder: lang==='th' ? 'เช่น นุ่น' : 'e.g. Nun',
-      confirmText: lang==='th' ? 'สมัคร' : 'Sign up', icon: 'user-plus'
-    });
-    if (!name) return;
-    const tLoad = toast.loading(lang==='th' ? 'กำลังสมัคร...' : 'Creating account...');
-    try {
-      await signUpEmailAccount(email, pass, name, document.getElementById('admin-remember').checked);
-      tLoad.close();
-      toast.success(lang==='th' ? 'สมัครสำเร็จ! ขั้นต่อไป: ขอรหัสเชิญทริปจากแอดมิน' : 'Account created! Next: ask the admin for a trip code');
-      location.hash = '#/trips';
-    } catch (err) {
-      tLoad.close();
-      toast.error(err.message);
-    }
-  };
-
-  appEl.querySelector('#account-reset-btn').onclick = async () => {
-    const email = document.getElementById('admin-email').value.trim();
-    if (!email) { toast.warning(lang==='th' ? 'กรอกอีเมลก่อน' : 'Enter your email first'); return; }
-    try {
-      await sendAccountPasswordReset(email);
-      toast.success(lang==='th' ? `ส่งลิงก์รีเซ็ตรหัสผ่านไปที่ ${email} แล้ว` : `Reset link sent to ${email}`);
-    } catch (err) { toast.error(err.message); }
-  };
-
-  appEl.querySelector('#account-form').onsubmit = async (e) => {
-    e.preventDefault();
-    const btn = e.target.querySelector('button[type="submit"]');
-    if (!btn) return;
-    btn.disabled = true;
-    const originalHtml = btn.innerHTML;
-    btn.innerHTML = `${spinner('w-4 h-4')} ${lang==='th' ? 'กำลังเข้าสู่ระบบ...' : 'Logging in...'}`;
-    queueIcons();
-    const tLoad = toast.loading(lang==='th' ? 'กำลังเข้าสู่ระบบ...' : 'Logging in...');
-    try {
-      await loginAdmin(document.getElementById('admin-email').value, document.getElementById('admin-pass').value, document.getElementById('admin-remember').checked);
-      tLoad.close();
-      toast.success(lang==='th' ? 'เข้าสู่ระบบสำเร็จ' : 'Signed in');
-      location.hash = '#/trips';
-    } catch (err) {
-      tLoad.close();
-      toast.error(err.message || 'Login failed');
+      toast.error(err.message || 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ');
       btn.disabled = false;
       btn.innerHTML = originalHtml;
       queueIcons();
@@ -2469,7 +2373,7 @@ async function renderDashboard(params) {
   const th = (a, b) => (lang === 'th' ? a : b);
 
   appEl.innerHTML = `
-    <div class="page-enter space-y-5">
+    <div class="page-enter space-y-5" id="dashboard-view">
       <!-- HERO -->
       <div class="hero-card" style="--hero-color:var(--primary-raw);">
         ${trip?.coverImage ? `<img src="${escapeHtml(trip.coverImage)}" class="hero-bg" alt="" onerror="this.style.display='none'">` : ''}
@@ -2491,6 +2395,7 @@ async function renderDashboard(params) {
               <button id="dash-edit-trip" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;">${icon('pencil', 'w-4 h-4')} ${th('แก้ไขทริป','Edit trip')}</button>
               <button id="add-place-quick" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;">${icon('map-pin', 'w-4 h-4')} ${t('addPlace')}</button>
               <button id="add-expense-quick" class="btn btn-sm btn-primary">${icon('wallet', 'w-4 h-4')} ${t('addExpense')}</button>
+              <button id="dash-density-btn" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;" title="สลับมุมมองกะทัดรัด/ปกติ">${icon('rows-3', 'w-4 h-4')} <span data-density-label>มุมมองกะทัดรัด</span></button>
             </div>
           </div>
         </div>
@@ -2550,6 +2455,16 @@ async function renderDashboard(params) {
           <span id="my-wallet-mood"></span>
         </div>
         <div id="my-wallet" class="my-wallet-grid"><div class="skeleton h-16"></div></div>
+
+        <!-- TEAMS live inside the wallet now: per-team cost per person + team total -->
+        <div class="dash-subhead">
+          <h4>
+            <span class="row-icon" style="width:26px;height:26px;border-radius:9px;">${icon('users-round', 'w-3.5 h-3.5')}</span>
+            ${th('ทีม • ค่าใช้จ่ายต่อคน / รวมทีม','Teams • cost per person / per team')}
+          </h4>
+          <button id="dash-teams-link" class="btn btn-ghost btn-sm text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการทีม','Manage teams')}</button>
+        </div>
+        <div id="team-board" class="team-board"><div class="skeleton h-16"></div></div>
       </div>
 
       <!-- TODAY / CURRENT -->
@@ -2590,6 +2505,8 @@ async function renderDashboard(params) {
         </div>
       </div>
 
+      <!-- MEMBERS + RECENT share one row on desktop (no more full-width sparse cards) -->
+      <div class="grid lg:grid-cols-2 gap-4 items-start">
       <!-- MEMBERS -->
       <div class="card p-5">
         <div class="flex items-center justify-between gap-2 mb-4">
@@ -2599,18 +2516,6 @@ async function renderDashboard(params) {
         <div id="member-board-content" class="space-y-3 stagger"><div class="skeleton h-16"></div></div>
       </div>
 
-      <!-- TEAMS (trip sub-groups): per-team cost per person + team total (a request) -->
-      <div class="card p-5">
-        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-          <h3 class="font-bold flex items-center gap-2">
-            <span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('users-round', 'w-4 h-4')}</span>
-            ${th('ทีม • ค่าใช้จ่ายต่อคน / รวมทีม','Teams • cost per person / per team')}
-          </h3>
-          <button id="dash-teams-link" class="btn btn-ghost btn-sm text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการทีม','Manage teams')}</button>
-        </div>
-        <div id="team-board" class="team-board"><div class="skeleton h-16"></div></div>
-      </div>
-
       <!-- RECENT EXPENSES -->
       <div class="card p-5">
         <div class="flex items-center justify-between gap-2 mb-3">
@@ -2618,6 +2523,7 @@ async function renderDashboard(params) {
           <button id="dash-expenses-link" class="btn btn-ghost btn-sm text-xs">${icon('wallet', 'w-3.5 h-3.5')} ${th('ดูทั้งหมด','View all')}</button>
         </div>
         <div id="recent-expenses" class="space-y-2 stagger"><div class="skeleton h-12"></div></div>
+      </div>
       </div>
 
       <!-- TRIP TOOLS (v16): prep progress • weather • next booking • top ideas -->
@@ -2636,6 +2542,25 @@ async function renderDashboard(params) {
   bind('dash-members-link', 'click', () => { location.hash = `#/trip/${tripId}/members`; });
   bind('dash-expenses-link', 'click', () => { location.hash = `#/trip/${tripId}/expenses`; });
   bind('dash-teams-link', 'click', () => { location.hash = `#/trip/${tripId}/members`; });
+
+  // Dashboard density: comfortable (default) vs compact — remembered per device.
+  const DASH_DENSITY_KEY = 'fuji_dash_density';
+  const isDashCompact = () => { try { return localStorage.getItem(DASH_DENSITY_KEY) === 'compact'; } catch { return false; } };
+  function applyDashDensity() {
+    const compact = isDashCompact();
+    document.getElementById('dashboard-view')?.classList.toggle('dash-compact', compact);
+    const btn = document.getElementById('dash-density-btn');
+    if (btn) {
+      btn.classList.toggle('is-active', compact);
+      const label = btn.querySelector('[data-density-label]');
+      if (label) label.textContent = compact ? 'มุมมองปกติ' : 'มุมมองกะทัดรัด';
+    }
+  }
+  bind('dash-density-btn', 'click', () => {
+    try { localStorage.setItem(DASH_DENSITY_KEY, isDashCompact() ? 'comfortable' : 'compact'); } catch {}
+    applyDashDensity();
+  });
+  applyDashDensity();
 
   // Countdown scene (independent of Firestore so it always renders)
   const cd = mountCountdown('countdown-scene', {
@@ -2931,7 +2856,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, groups = 
   /* ---- Up next ---- */
   const upcomingList = items.filter(i => i.date >= todayStr).slice(0, 4);
   setHtml('upnext-list', upcomingList.length ? upcomingList.map((it, idx) => `
-    <div class="flex gap-3 py-2.5 border-b last:border-0 items-center" style="border-color:var(--border);">
+    <div class="flex gap-3 py-2.5 border-b last:border-0 items-center dash-clickable dash-upnext" data-ui="${idx}" style="border-color:var(--border);" title="${th('กดเพื่อดูรายละเอียด','Tap for details')}">
       <div class="step-num">${idx + 1}</div>
       <div class="flex-1 min-w-0">
         <div class="font-medium text-sm truncate">${escapeHtml(it.title)}</div>
@@ -3164,8 +3089,291 @@ function renderDashboardData({ tripId, trip, expenses, members, items, groups = 
         </span>
       </button>`;
   }).join('') : `<p class="text-sm text-[var(--text-secondary)]">${th('ยังไม่มีค่าใช้จ่าย','No expenses yet')}</p>`);
+  /* ---- Dashboard inspection popups: every tile/row that pulls transactions
+     opens a detail popup with links to the related page. ---- */
+  const dashRow = (label, value, sub = '') => `
+    <div class="dash-pop-kv"><span>${label}</span><b>${value}</b>${sub}</div>`;
+  function openDashPopup({ icon: ic = 'info', title = '', subtitle = '', body = '', links = [] }) {
+    const sheet = showBottomSheet(`
+      <div class="space-y-3">
+        <div class="flex items-start gap-3">
+          <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--gradient-primary);color:#fff;flex-shrink:0;">${icon(ic, 'w-5 h-5')}</div>
+          <div class="min-w-0 flex-1">
+            <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${title}</h3>
+            ${subtitle ? `<p class="text-xs text-[var(--text-secondary)] mt-0.5">${subtitle}</p>` : ''}
+          </div>
+        </div>
+        ${body}
+        ${links.length ? `<div class="grid gap-2">${links.map((l, k) => `
+          <button class="btn ${l.primary ? 'btn-primary' : 'btn-secondary'} w-full justify-start" data-dl="${k}">${icon(l.icon || 'arrow-right', 'w-4 h-4')} ${l.label}</button>`).join('')}</div>` : ''}
+      </div>
+    `);
+    queueIcons();
+    sheet.sheet.querySelectorAll('[data-dl]').forEach(btn => btn.addEventListener('click', () => {
+      const l = links[Number(btn.dataset.dl)];
+      sheet.close();
+      if (l?.hash) location.hash = l.hash;
+      else if (typeof l?.onClick === 'function') l.onClick();
+    }));
+    // Expense rows inside a popup jump straight to that expense.
+    sheet.sheet.querySelectorAll('[data-pop-exp]').forEach(btn => btn.addEventListener('click', () => {
+      sheet.close();
+      location.hash = `#/trip/${tripId}/expenses/add?id=${btn.dataset.popExp}`;
+    }));
+    return sheet;
+  }
+  const dashExpRow = (e) => {
+    const payers = expensePayments(e).map(p => membersMap[p.memberId]?.displayName || '').filter(Boolean).join(', ');
+    return `<button class="dash-pop-row" data-pop-exp="${e.id}">
+      <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:color-mix(in srgb, ${categoryColor(e.category)} 18%, transparent);color:${categoryColor(e.category)};">${icon(categoryIcon(e.category), 'w-3.5 h-3.5')}</span>
+      <span class="min-w-0 flex-1 text-left">
+        <span class="block text-xs font-bold truncate">${escapeHtml(e.title || '')}</span>
+        <span class="block text-[10px] text-[var(--text-tertiary)]">${escapeHtml(e.date || '')}${payers ? ` • ${escapeHtml(payers)}` : ''}${e.isEstimated ? ` • ${th('ประมาณการ','est.')}` : ''}</span>
+      </span>
+      <b class="text-xs flex-shrink-0">${escapeHtml(formatCurrency(e.netTotalMinor || 0, e.currency || currency))}</b>
+    </button>`;
+  };
+  const dashExpList = (list, emptyTh = 'ไม่มีรายการในช่วงนี้', emptyEn = 'No items here') =>
+    list.length
+      ? `<div class="dash-pop-list">${list.map(dashExpRow).join('')}</div>`
+      : `<p class="text-xs text-[var(--text-tertiary)]">${th(emptyTh, emptyEn)}</p>`;
+  const byDateDesc = (a, b) => String(b.date || '').localeCompare(String(a.date || ''));
+
+  // KPI tiles → breakdown popups.
+  document.querySelectorAll('.kpi-tile[data-kpi]').forEach(tile => {
+    tile.classList.add('dash-clickable');
+    tile.setAttribute('title', th('กดเพื่อดูรายละเอียด', 'Tap for details'));
+    tile.addEventListener('click', (ev) => {
+      if (ev.target.closest('button, a')) return; // inner actions keep their job
+      const kind = tile.dataset.kpi;
+      if (kind === 'total') {
+        const top = Object.entries(byCategory)
+          .map(([cat, v]) => ({ cat, total: v.actual + v.estimate }))
+          .filter(x => x.total > 0).sort((a, b) => b.total - a.total).slice(0, 3);
+        openDashPopup({
+          icon: 'wallet', title: th('ยอดใช้จ่ายรวม', 'Total spending'),
+          subtitle: th(`${expenses.length} รายการ • แตะแถวเพื่อดูค่าใช้จ่าย`, `${expenses.length} items • tap a row to open it`),
+          body: `<div class="dash-pop-card">
+              ${dashRow(`${icon('check-circle', 'w-3.5 h-3.5')} ${th('จ่ายจริง','Actual')}`, fmt(actualMinor))}
+              ${dashRow(`${icon('hourglass', 'w-3.5 h-3.5')} ${th('ประมาณการ','Estimated')}`, fmt(estimatedMinor))}
+              ${dashRow(`${icon('user', 'w-3.5 h-3.5')} ${th('ส่วนของฉัน','My share')}`, fmt(myShare))}
+              ${top.length ? `<div class="dash-pop-sub">${th('หมวดที่ใช้มากสุด','Top categories')}</div>` + top.map(x => dashRow(`${icon(categoryIcon(x.cat), 'w-3.5 h-3.5')} ${escapeHtml(categoryLabel(x.cat, lang))}`, fmt(x.total))).join('') : ''}
+            </div>
+            ${dashExpList([...originalExpenses].sort(byDateDesc).slice(0, 5))}`,
+          links: [
+            { label: th('ดูค่าใช้จ่ายทั้งหมด', 'View all expenses'), hash: `#/trip/${tripId}/expenses`, icon: 'wallet', primary: true },
+            { label: th('ไปเคลียร์บิล', 'Go to settlement'), hash: `#/trip/${tripId}/settlement`, icon: 'hand-coins' }
+          ]
+        });
+      } else if (kind === 'budget') {
+        openDashPopup({
+          icon: 'piggy-bank', title: th('งบประมาณทริป', 'Trip budget'),
+          body: budget > 0 ? `<div class="dash-pop-card">
+              ${dashRow(th('งบทั้งหมด','Budget'), fmt(budget))}
+              ${dashRow(th('ใช้ไป','Used'), `${fmt(totalMinor)} • ${Math.min(100, Math.round((totalMinor / budget) * 100))}%`)}
+              ${dashRow(th('คงเหลือ','Left'), fmt(Math.max(0, budget - totalMinor)))}
+            </div>` : `<p class="text-sm text-[var(--text-secondary)]">${th('ยังไม่ได้ตั้งงบ — ตั้งงบรวม งบต่อคน หรืองบรายคนได้ที่หน้าตั้งค่า','No budget yet — set a trip, per-person or per-member budget in Settings.')}</p>`,
+          links: [{ label: th('ตั้งงบประมาณ', 'Set budget'), hash: `#/trip/${tripId}/settings`, icon: 'settings-2', primary: true }]
+        });
+      } else if (kind === 'balance') {
+        const myTx = (settlement.transactions || []).filter(tx => tx.from === myId || tx.to === myId);
+        openDashPopup({
+          icon: 'scale', title: th('ยอดของฉัน', 'My balance'),
+          body: `<div class="dash-pop-card">
+              ${dashRow(th('สุทธิ (ได้รับคืน + / ต้องจ่าย −)','Net (+ gets back / − pays)'), `<span style="color:${myNet >= 0 ? 'var(--success)' : 'var(--danger)'};">${fmt(myNet)}</span>`)}
+              ${dashRow(th('สำรองจ่ายไป','I fronted'), fmt(myPaid))}
+              ${dashRow(th('ส่วนที่ต้องรับผิดชอบ','My share'), fmt(myShare))}
+              ${dashRow(th('รายการเคลียร์ที่เกี่ยวกับฉัน','My settlements'), `${myTx.length} ${th('รายการ','items')}`)}
+            </div>`,
+          links: [
+            { label: th('ไปเคลียร์บิล', 'Go to settlement'), hash: `#/trip/${tripId}/settlement`, icon: 'hand-coins', primary: true },
+            { label: th('ดูค่าใช้จ่ายทั้งหมด', 'View all expenses'), hash: `#/trip/${tripId}/expenses`, icon: 'wallet' }
+          ]
+        });
+      } else if (kind === 'plan') {
+        openDashPopup({
+          icon: 'map-pinned', title: th('แผนการเดินทาง', 'Itinerary'),
+          body: `<div class="dash-pop-card">
+              ${dashRow(th('สถานที่ทั้งหมด','Places'), `${items.length}`)}
+              ${dashRow(th('จำนวนวัน','Days'), `${getTripDays(trip?.startDate, trip?.endDate).length}`)}
+              ${dashRow(th('สมาชิก','People'), `${members.length}`)}
+              ${dashRow(th('มีพิกัดบนแผนที่','Mapped'), `${withCoord}`)}
+            </div>`,
+          links: [
+            { label: th('ดูแผนการเดินทาง', 'View itinerary'), hash: `#/trip/${tripId}/itinerary`, icon: 'map-pinned', primary: true },
+            { label: t('addPlace'), hash: `#/trip/${tripId}/itinerary?action=add`, icon: 'plus' }
+          ]
+        });
+      }
+    });
+  });
+
+  // My wallet tiles → the same numbers, explained.
+  document.querySelectorAll('#my-wallet .my-wallet-tile').forEach((tile, wi) => {
+    tile.classList.add('dash-clickable');
+    tile.setAttribute('title', th('กดเพื่อดูรายละเอียด', 'Tap for details'));
+    tile.addEventListener('click', (ev) => {
+      if (ev.target.closest('button, a')) return;
+      const conf = [
+        { icon: 'globe', title: th('ยอดทริปรวม', 'Trip total'), rows: [[th('ทุกคนทุกใบรวมกัน','Everyone, all bills'), fmt(totalMinor)]] },
+        { icon: 'user', title: th('ยอดของฉัน', 'My total'), rows: [[th('ส่วนที่ต้องรับผิดชอบ','My share'), fmt(myShare)], [th('สำรองจ่ายไป','I fronted'), fmt(myPaid)]] },
+        { icon: 'scale', title: th('คงเหลือของฉัน', 'My balance'), rows: [[myNet >= 0 ? th('จะได้รับคืน','Gets back') : th('ต้องจ่ายคืน','Owes'), fmt(Math.abs(myNet))]] },
+        { icon: 'piggy-bank', title: th('งบของฉัน', 'My budget'), rows: myBudget > 0 ? [[th('งบ','Budget'), fmt(myBudget)], [th('ใช้ไป','Used'), `${myPct}%`], [myLeft >= 0 ? th('เหลือ','Left') : th('เกินงบ','Over'), fmt(Math.abs(myLeft))]] : [[th('สถานะ','Status'), th('ยังไม่ได้ตั้งงบ','No budget yet')]] }
+      ][wi] || { icon: 'info', title: '', rows: [] };
+      openDashPopup({
+        icon: conf.icon, title: conf.title,
+        body: `<div class="dash-pop-card">${conf.rows.map(([a, b]) => dashRow(a, b)).join('')}</div>`,
+        links: wi === 3
+          ? [{ label: th('ตั้งงบของฉัน', 'Set my budget'), hash: `#/trip/${tripId}/settings`, icon: 'settings-2', primary: true }]
+          : [
+            { label: th('ไปเคลียร์บิล', 'Go to settlement'), hash: `#/trip/${tripId}/settlement`, icon: 'hand-coins', primary: true },
+            { label: th('ดูค่าใช้จ่ายทั้งหมด', 'View all expenses'), hash: `#/trip/${tripId}/expenses`, icon: 'wallet' }
+          ]
+      });
+    });
+  });
+
+  // Current activity → the live item, inspected.
+  document.getElementById('current-activity')?.classList.add('dash-clickable');
+  document.getElementById('current-activity')?.addEventListener('click', () => {
+    const live = current || nextItem || items.find(i => i.date >= todayStr);
+    if (!live) {
+      openDashPopup({
+        icon: 'coffee', title: t('currentActivity'),
+        body: `<p class="text-sm text-[var(--text-secondary)]">${th('ยังไม่มีแผนสำหรับวันนี้','No plans for today')}</p>`,
+        links: [{ label: t('addPlace'), hash: `#/trip/${tripId}/itinerary?action=add`, icon: 'plus', primary: true }]
+      });
+      return;
+    }
+    openDashPopup({
+      icon: 'target', title: live.title || t('currentActivity'),
+      subtitle: `${formatDate(live.date, lang, trip?.timezone)} • ${formatTime(live.startAt, trip?.timezone)} – ${formatTime(live.endAt, trip?.timezone)}`,
+      body: `<div class="dash-pop-card">
+          ${live.address ? dashRow(th('สถานที่','Place'), escapeHtml(live.address)) : ''}
+          ${dashRow(th('หมวด','Category'), escapeHtml(categoryLabel(live.category || 'general', lang)))}
+          ${Number(live.estimateAmount) > 0 ? dashRow(th('ประมาณการ','Estimated'), escapeHtml(formatCurrency(toMinor(Number(live.estimateAmount), getCurrencyDecimals(live.estimateCurrency || currency)), live.estimateCurrency || currency))) : ''}
+        </div>`,
+      links: [{ label: th('ดูแผนของวันนี้', 'See this day'), hash: `#/trip/${tripId}/itinerary?date=${live.date || todayStr}`, icon: 'calendar-days', primary: true }]
+    });
+  });
+
+  // Up-next rows → each upcoming place, inspected.
+  document.querySelectorAll('#upnext-list .dash-upnext').forEach(row => row.addEventListener('click', () => {
+    const it = upcomingList[Number(row.dataset.ui)];
+    if (!it) return;
+    openDashPopup({
+      icon: 'sparkles', title: it.title || t('upNext'),
+      subtitle: `${formatDate(it.date, lang, trip?.timezone)} • ${formatTime(it.startAt, trip?.timezone)}`,
+      body: `<div class="dash-pop-card">
+          ${it.address ? dashRow(th('สถานที่','Place'), escapeHtml(it.address)) : ''}
+          ${dashRow(th('หมวด','Category'), escapeHtml(categoryLabel(it.category || 'general', lang)))}
+          ${Number(it.estimateAmount) > 0 ? dashRow(th('ประมาณการ','Estimated'), escapeHtml(formatCurrency(toMinor(Number(it.estimateAmount), getCurrencyDecimals(it.estimateCurrency || currency)), it.estimateCurrency || currency))) : ''}
+        </div>`,
+      links: [{ label: th('ดูแผนของวันนี้', 'See this day'), hash: `#/trip/${tripId}/itinerary?date=${it.date}`, icon: 'calendar-days', primary: true }]
+    });
+  }));
+
+  // Spend-by-category rows → the category's own transactions.
+  document.querySelectorAll('#category-stats .dash-cat-row').forEach(row => row.addEventListener('click', () => {
+    const cat = row.dataset.cat;
+    const v = byCategory[cat] || { actual: 0, estimate: 0, count: 0 };
+    const list = originalExpenses.filter(e => (e.category || 'general') === cat).sort(byDateDesc);
+    openDashPopup({
+      icon: categoryIcon(cat), title: categoryLabel(cat, lang),
+      subtitle: th(`${v.count} รายการ • แตะแถวเพื่อเปิดรายการนั้น`, `${v.count} items • tap a row to open it`),
+      body: `<div class="dash-pop-card">
+          ${dashRow(th('จ่ายจริง','Actual'), fmt(v.actual))}
+          ${dashRow(th('ประมาณการ','Estimated'), fmt(v.estimate))}
+          ${dashRow(th('รวม','Total'), fmt(v.actual + v.estimate))}
+        </div>
+        ${dashExpList(list.slice(0, 6))}`,
+      links: [{ label: th('ดูค่าใช้จ่ายทั้งหมด', 'View all expenses'), hash: `#/trip/${tripId}/expenses`, icon: 'wallet', primary: true }]
+    });
+  }));
+
+  // Estimated-vs-actual block → the two piles, inspected.
+  document.getElementById('estimate-compare')?.classList.add('dash-clickable');
+  document.getElementById('estimate-compare')?.addEventListener('click', () => {
+    openDashPopup({
+      icon: 'bar-chart-3', title: th('ประมาณการ vs จ่ายจริง', 'Estimated vs actual'),
+      body: `<div class="dash-pop-card">
+          ${dashRow(th('จ่ายจริงแล้ว','Paid'), fmt(actualMinor))}
+          ${dashRow(th('ประมาณการ/ต้องจอง','Estimated'), fmt(estimatedMinor))}
+          ${dashRow(th('เฉลี่ย/คน','Avg / person'), fmt(Math.round(totalMinor / memberCount)))}
+        </div>`,
+      links: [{ label: th('ดูค่าใช้จ่ายทั้งหมด', 'View all expenses'), hash: `#/trip/${tripId}/expenses`, icon: 'wallet', primary: true }]
+    });
+  });
+
+  // Member rows → that member's paid / share / net + their bills.
+  document.querySelectorAll('#member-board-content .member-row[data-mid]').forEach(row => row.addEventListener('click', () => {
+    const mid = row.dataset.mid;
+    const m = membersMap[mid];
+    const name = m?.displayName || (mid || '').slice(0, 6);
+    const bal = balances.find(b => b.memberId === mid)?.net || 0;
+    const mine = originalExpenses.filter(e =>
+      expensePayments(e).some(p => p.memberId === mid) || (e.allocations || []).some(a => a.memberId === mid)
+    ).sort(byDateDesc);
+    openDashPopup({
+      icon: 'user', title: name,
+      subtitle: mid === myId ? th('คุณ • แตะแถวเพื่อเปิดรายการนั้น', 'You • tap a row to open it') : th('แตะแถวเพื่อเปิดรายการนั้น', 'Tap a row to open it'),
+      body: `<div class="dash-pop-card">
+          ${dashRow(th('จ่ายไป','Paid'), fmt(paidBy[mid] || 0))}
+          ${dashRow(th('รับผิดชอบ','Share'), fmt(shareBy[mid] || 0))}
+          ${dashRow(bal >= 0 ? th('ได้รับคืน','Gets back') : th('ต้องจ่าย','Pays'), `<span style="color:${bal >= 0 ? 'var(--success)' : 'var(--danger)'};">${fmt(bal)}</span>`)}
+        </div>
+        ${dashExpList(mine.slice(0, 6))}`,
+      links: [
+        { label: th('ไปเคลียร์บิล', 'Go to settlement'), hash: `#/trip/${tripId}/settlement`, icon: 'hand-coins', primary: true },
+        { label: th('จัดการสมาชิก', 'Manage members'), hash: `#/trip/${tripId}/members`, icon: 'users' }
+      ]
+    });
+  }));
+
+  // Team cards → the team's money, inspected.
+  document.querySelectorAll('#team-board .team-card[data-gid]').forEach(card => card.addEventListener('click', () => {
+    let report = null;
+    try { report = groupBudgetReport(groups, expenses, members); } catch { report = null; }
+    if (!report) return;
+    const gid = card.dataset.gid;
+    const g = gid === '__trip' ? null : (report.groups || []).find(x => x.id === gid);
+    const places = gid === '__trip' ? items.length : placesForGroup(gid, items).length;
+    const stat = g || report.trip;
+    if (!stat) return;
+    openDashPopup({
+      icon: 'users-round', title: g ? g.name : th('ทั้งทริป', 'Whole trip'),
+      subtitle: g?.note ? escapeHtml(g.note) : th('แตะเพื่อจัดการทีมที่หน้าสมาชิก', 'Manage teams on the Members page'),
+      body: `<div class="dash-pop-card">
+          ${dashRow(th('เฉลี่ย / คน','Per person'), fmt(stat.perPersonMinor))}
+          ${dashRow(g ? th('รวมทีม','Team total') : th('รวมทั้งทริป','Trip total'), fmt(stat.shareMinor))}
+          ${dashRow(th('จ่ายไป','Paid'), fmt(stat.paidMinor))}
+          ${dashRow(th('สถานที่','Places'), `${places}`)}
+          ${(g?.members || []).length ? `<div class="dash-pop-sub">${th('สมาชิกในทีม','Team members')}</div><div class="team-members">${g.members.map(m => `<span class="team-member-chip">${escapeHtml(m.displayName || '')}</span>`).join('')}</div>` : ''}
+        </div>`,
+      links: [{ label: th('จัดการทีม', 'Manage teams'), hash: `#/trip/${tripId}/members`, icon: 'users', primary: true }]
+    });
+  }));
+
+  // Recent expenses → full inspection before jumping to edit.
   document.querySelectorAll('#recent-expenses [data-expense]').forEach(btn => btn.addEventListener('click', () => {
-    location.hash = `#/trip/${tripId}/expenses/add?id=${btn.dataset.expense}`;
+    const e = originalExpenses.find(x => x.id === btn.dataset.expense);
+    if (!e) { location.hash = `#/trip/${tripId}/expenses`; return; }
+    const payers = expensePayments(e).map(p => `${membersMap[p.memberId]?.displayName || p.memberId} • ${formatCurrency(p.amountMinor, e.currency || currency)}`);
+    const shared = (e.allocations || []).map(a => membersMap[a.memberId]?.displayName || a.memberId).filter(Boolean);
+    openDashPopup({
+      icon: categoryIcon(e.category), title: e.title || th('ค่าใช้จ่าย', 'Expense'),
+      subtitle: `${escapeHtml(categoryLabel(e.category, lang))} • ${escapeHtml(e.date || '')}${e.isEstimated ? ` • ${th('ประมาณการ','estimated')}` : ''}`,
+      body: `<div class="dash-pop-card">
+          ${dashRow(th('ยอดสุทธิ','Net'), escapeHtml(formatCurrency(e.netTotalMinor || 0, e.currency || currency)))}
+          ${payers.length ? dashRow(th('ผู้จ่าย','Paid by'), escapeHtml(payers.join(' · '))) : ''}
+          ${shared.length ? dashRow(`${th('หารกัน','Split')} (${shared.length})`, escapeHtml(shared.slice(0, 6).join(', ')) + (shared.length > 6 ? ` +${shared.length - 6}` : '')) : ''}
+          ${e.note ? dashRow(th('โน้ต','Note'), escapeHtml(String(e.note).slice(0, 120))) : ''}
+        </div>`,
+      links: [
+        { label: th('แก้ไขรายการ', 'Edit this expense'), hash: `#/trip/${tripId}/expenses/add?id=${e.id}`, icon: 'pencil', primary: true },
+        { label: th('ดูค่าใช้จ่ายทั้งหมด', 'View all expenses'), hash: `#/trip/${tripId}/expenses`, icon: 'wallet' }
+      ]
+    });
   }));
 
   queueIcons();
@@ -3251,7 +3459,13 @@ async function renderItinerary(params) {
         </div>
       </div>
 
-        <div id="date-chips" class="chip-row chip-row-scroll mb-4"></div>
+        <div id="itin-datebar" class="itin-datebar">
+          <button id="date-prev-btn" class="btn btn-ghost btn-icon btn-icon-sm itin-date-nav" title="${th('วันก่อนหน้า','Previous day')}" aria-label="${th('วันก่อนหน้า','Previous day')}">${icon('chevron-left', 'w-4 h-4')}</button>
+          <div id="date-chips" class="chip-row chip-row-scroll itin-date-chips"></div>
+          <button id="date-next-btn" class="btn btn-ghost btn-icon btn-icon-sm itin-date-nav" title="${th('วันถัดไป','Next day')}" aria-label="${th('วันถัดไป','Next day')}">${icon('chevron-right', 'w-4 h-4')}</button>
+          <span id="date-pos-label" class="itin-date-pos" hidden></span>
+          <button id="date-today-btn" class="btn btn-secondary btn-sm itin-date-today">${icon('locate-fixed', 'w-3.5 h-3.5')} ${th('วันนี้','Today')}</button>
+        </div>
         <div id="itinerary-list" class="space-y-3 stagger"></div>
         </div>
 
@@ -3319,6 +3533,40 @@ async function renderItinerary(params) {
   tripDays.forEach((d, i) => { dayColors[dayjs(d).format('YYYY-MM-DD')] = `hsl(${dayHues[i % dayHues.length]},72%,46%)`; });
 
   const chipsEl = document.getElementById('date-chips');
+  const tripDayStrs = tripDays.map(d => dayjs(d).format('YYYY-MM-DD'));
+  /** Single place that keeps the day chips + view-all toggle + position label
+   *  in sync, and keeps the active day scrolled into view (long trips). */
+  function syncDayUi() {
+    setText('view-all-label', showAll ? th('รายวัน','By day') : th('ดูทั้งหมด','View all'));
+    const viewBtn = document.getElementById('view-all-btn');
+    if (viewBtn) viewBtn.className = showAll ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+    const chips = document.getElementById('date-chips');
+    chips?.querySelectorAll('.chip').forEach(c => c.classList.remove('chip-active'));
+    const active = showAll
+      ? chips?.querySelector('[data-date="__all"]')
+      : chips?.querySelector(`[data-date="${selectedDate}"]`);
+    active?.classList.add('chip-active');
+    try { active?.scrollIntoView?.({ block: 'nearest', inline: 'center', behavior: 'smooth' }); } catch { /* cosmetic */ }
+    const pos = document.getElementById('date-pos-label');
+    if (pos) {
+      const idx = tripDayStrs.indexOf(selectedDate);
+      if (showAll || idx < 0 || !tripDayStrs.length) pos.hidden = true;
+      else {
+        pos.hidden = false;
+        pos.textContent = `${th('วันที่','Day')} ${idx + 1}/${tripDayStrs.length}`;
+      }
+    }
+  }
+  function stepDay(dir) {
+    if (!tripDayStrs.length) return;
+    showAll = false;
+    let idx = tripDayStrs.indexOf(selectedDate);
+    if (idx < 0) idx = dir > 0 ? -1 : tripDayStrs.length;
+    idx = Math.min(tripDayStrs.length - 1, Math.max(0, idx + dir));
+    if (tripDayStrs[idx]) selectedDate = tripDayStrs[idx];
+    syncDayUi();
+    loadItems();
+  }
   if (chipsEl) {
     chipsEl.innerHTML = tripDays.map(d => {
       const ds = dayjs(d).format('YYYY-MM-DD');
@@ -3328,23 +3576,39 @@ async function renderItinerary(params) {
       const ds = btn.dataset.date;
       if (ds === '__all') { showAll = true; }
       else { showAll = false; selectedDate = ds; }
-      document.getElementById('view-all-label').textContent = showAll ? th('รายวัน','By day') : th('ดูทั้งหมด','View all');
-      document.getElementById('view-all-btn').className = showAll ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
-      chipsEl.querySelectorAll('.chip').forEach(c => c.classList.remove('chip-active'));
-      btn.classList.add('chip-active');
+      syncDayUi();
       loadItems();
     }));
+    // Long trips open mid-list — bring the active day into view right away.
+    setTimeout(() => {
+      try { chipsEl.querySelector('.chip-active')?.scrollIntoView?.({ block: 'nearest', inline: 'center' }); } catch { /* cosmetic */ }
+    }, 60);
   }
+  syncDayUi();
 
   bind('view-all-btn', 'click', () => {
     showAll = !showAll;
-    setText('view-all-label', showAll ? th('รายวัน','By day') : th('ดูทั้งหมด','View all'));
-    const btn = document.getElementById('view-all-btn');
-    if (btn) btn.className = showAll ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
-    const chips = document.getElementById('date-chips');
-    chips?.querySelectorAll('.chip').forEach(c => c.classList.remove('chip-active'));
-    if (showAll) chips?.querySelector('[data-date="__all"]')?.classList.add('chip-active');
-    else chips?.querySelector(`[data-date="${selectedDate}"]`)?.classList.add('chip-active');
+    syncDayUi();
+    loadItems();
+  });
+  bind('date-prev-btn', 'click', () => stepDay(-1));
+  bind('date-next-btn', 'click', () => stepDay(1));
+  bind('date-today-btn', 'click', () => {
+    if (!tripDayStrs.length) return;
+    showAll = false;
+    const today = dayjs().format('YYYY-MM-DD');
+    if (tripDayStrs.includes(today)) selectedDate = today;
+    else {
+      // Today is outside the trip — jump to the nearest trip day instead.
+      let best = tripDayStrs[0];
+      let bestDiff = Infinity;
+      for (const ds of tripDayStrs) {
+        const diff = Math.abs(dayjs(ds).diff(dayjs(today), 'day'));
+        if (diff < bestDiff) { bestDiff = diff; best = ds; }
+      }
+      selectedDate = best;
+    }
+    syncDayUi();
     loadItems();
   });
 
@@ -3465,6 +3729,23 @@ async function renderItinerary(params) {
   };
   document.addEventListener('routechange', stopViewportWatch, { once: true });
 
+  // When the map scrolls back into view (long "view all" lists), Leaflet must
+  // re-measure — otherwise tiles render half-grey.
+  try {
+    if ('IntersectionObserver' in window) {
+      const mapCardEl = document.getElementById('map-card');
+      if (mapCardEl) {
+        const mapObserver = new IntersectionObserver((entries) => {
+          if (entries.some(e => e.isIntersecting) && mapVisible && mapReady) {
+            import('./maps/index.js').then(({ refreshMapSize }) => refreshMapSize('map')).catch(() => {});
+          }
+        }, { threshold: 0.05 });
+        mapObserver.observe(mapCardEl);
+        document.addEventListener('routechange', () => mapObserver.disconnect(), { once: true });
+      }
+    }
+  } catch { /* cosmetic only */ }
+
   /** Re-render the map markers. This NEVER wipes the container node that Leaflet owns. */
   async function refreshMap(items, { fit = false, forceRecreate = false } = {}) {
     if (!mapVisible) return;
@@ -3549,8 +3830,16 @@ async function renderItinerary(params) {
         refreshMapSize('map');
       }, 120);
     }
+    // On phones the map column sits above the list — bring it into view FIRST so
+    // the focus that follows is measured against the final layout (this is what
+    // keeps the pin truly centred after a scroll).
+    if (window.matchMedia?.('(max-width: 1023px)')?.matches) {
+      document.getElementById('map-card')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+      await new Promise(r => setTimeout(r, 280));
+    }
     try {
-      const { focusItineraryItem, getMap } = await import('./maps/index.js');
+      const { focusItineraryItem, getMap, refreshMapSize } = await import('./maps/index.js');
+      try { refreshMapSize('map'); } catch { /* cosmetic */ }
       // The whole visible day is passed so an unpinned place can still be framed
       // against its neighbours.
       const pool = visibleItems.length ? visibleItems : [target];
@@ -3558,11 +3847,6 @@ async function renderItinerary(params) {
         // Map not created yet (or pin not drawn yet) → apply once it is.
         pendingFocus = target;
         if (!mapReady) refreshMap(visibleItems);
-      }
-      // On phones the map column sits above the list — bring it into view so
-      // the pan to the pin is actually visible.
-      if (window.matchMedia?.('(max-width: 1023px)')?.matches) {
-        document.getElementById('map-card')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
       }
     } catch (e) { console.warn('[Itinerary] map focus failed', e?.message); }
   }
@@ -3892,8 +4176,8 @@ async function renderItinerary(params) {
         const est = estTripMinor(it);
         const meta = [
           `${formatTime(it.startAt, trip?.timezone)} – ${formatTime(it.endAt, trip?.timezone)}`,
-          it.virtualStay ? '' : formatDuration(it.durationMinutes),
-          it.isStay ? (it.virtualStay ? th(`กลับเข้าพัก • คืนที่ ${it.stayNight}/${it.stayNights}`, `back to hotel • night ${it.stayNight}/${it.stayNights}`) : th(`พัก ${it.stayNights} คืน`, `${it.stayNights} nights`)) : '',
+          (it.virtualStay || it.virtualDeparture) ? '' : formatDuration(it.durationMinutes),
+          it.isStay ? (it.virtualDeparture ? th(`เดินทางออกจากที่พัก • หลังคืนที่ ${it.stayNight}/${it.stayNights}`, `leave the hotel • after night ${it.stayNight}/${it.stayNights}`) : (it.virtualStay ? th(`กลับเข้าพัก • คืนที่ ${it.stayNight}/${it.stayNights}`, `back to hotel • night ${it.stayNight}/${it.stayNights}`) : th(`พัก ${it.stayNights} คืน`, `${it.stayNights} nights`))) : '',
           categoryLabel(it.category || 'general', lang),
           (!it.virtualStay && it.travelToNextMinutes > 0) ? `${th('เดินทางต่อ','travel')} ${formatDuration(it.travelToNextMinutes)}` : '',
           it.address && !it.virtualStay ? it.address : '',
@@ -3903,7 +4187,7 @@ async function renderItinerary(params) {
           <tr>
             <td style="width:34px;color:#6b7280;font-weight:700;">${it.virtualStay ? '🏨' : idx + 1}</td>
             <td>
-              <div class="itin-sheet-item-title">${escapeHtml(it.title || '')}</div>
+              <div class="itin-sheet-item-title">${escapeHtml((it.virtualDeparture ? `${th('เดินทางออกจากที่พัก', 'Leave the hotel')} — ` : (it.virtualStay ? `${th('กลับเข้าพัก', 'Back to hotel')} — ` : '')) + (it.title || ''))}</div>
               <div class="itin-sheet-item-meta">${meta}</div>
               ${it.notes ? `<div class="itin-sheet-note">${escapeHtml(it.notes)}</div>` : ''}
             </td>
@@ -4089,7 +4373,7 @@ async function renderItinerary(params) {
       if (slackMin < 0) warn = `<span class="itin-leg-warn">${icon('alert-triangle', 'w-3 h-3')} ${th(`ไม่พอเวลา ${formatDuration(Math.abs(slackMin))}`, `short by ${escapeHtml(formatDuration(Math.abs(slackMin)))}`)}</span>`;
       else if (slackMin <= 15) warn = `<span class="itin-leg-tight">${icon('timer', 'w-3 h-3')} ${th(`เหลือแค่ ${formatDuration(slackMin)}`, `only ${escapeHtml(formatDuration(slackMin))} spare`)}</span>`;
     }
-    const stay = prev.durationMinutes ? `<span class="itin-leg-stay">${th('แวะ', 'stay')} ${escapeHtml(formatDuration(Number(prev.durationMinutes) || 0))}</span>` : '';
+    const stay = prev.durationMinutes ? `<span class="itin-leg-stay">${th('ระยะเวลาเดินทาง', 'travel time')} ${escapeHtml(formatDuration(Number(prev.durationMinutes) || 0))}</span>` : '';
     return `
       <div class="itin-leg ${mins > 0 ? '' : 'itin-leg--near'} ${warn ? 'itin-leg--warn' : ''}" aria-hidden="false">
         <div class="itin-leg-rail"><span class="itin-leg-dot"></span><span class="itin-leg-line"></span></div>
@@ -4114,21 +4398,25 @@ async function renderItinerary(params) {
     const pendingPayer = fullMinor > 0 && (it.estimatePayerPending === true || (!payerName && !(it.estimateShareWith || []).length));
     const sharedNames = (it.estimateShareWith || []).map(id => members.find(m => m.id === id)?.displayName).filter(Boolean);
     const statusDef = ITINERARY_STATUSES.find(st => st.id === (it.status || 'planned'));
-    const isVirtual = Boolean(it.virtualStay);
+    const isReturn = Boolean(it.virtualStay);
+    const isDeparture = Boolean(it.virtualDeparture);
+    const isVirtual = isReturn || isDeparture;
     const isCheckin = it.stayRole === 'checkin';
     const nights = Number(it.stayNights) || 0;
-    const title = isVirtual ? `${th('กลับเข้าพัก', 'Back to hotel')} — ${it.title}` : it.title;
+    const title = isDeparture
+      ? `${th('เดินทางออกจากที่พัก', 'Leave the hotel')} — ${it.title}`
+      : (isReturn ? `${th('กลับเข้าพัก', 'Back to hotel')} — ${it.title}` : it.title);
 
     return `
-      <div class="itin-card card card-hover ${draggable ? 'cursor-move' : ''} ${isVirtual ? 'itin-card--stay-return' : ''} ${isCheckin ? 'itin-card--stay' : ''}" data-id="${it.id}" draggable="${draggable && !isVirtual}">
+      <div class="itin-card card card-hover ${draggable ? 'cursor-move' : ''} ${isReturn ? 'itin-card--stay-return' : ''} ${isDeparture ? 'itin-card--departure' : ''} ${isCheckin ? 'itin-card--stay' : ''}" data-id="${it.id}" draggable="${draggable && !isVirtual}">
         <div class="itin-body">
           <div class="flex items-start gap-3">
-            <div class="step-num ${isVirtual ? 'step-num--stay' : ''}">${isVirtual ? icon('bed-double', 'w-3.5 h-3.5') : idx + 1}</div>
+            <div class="step-num ${isVirtual ? 'step-num--stay' : ''}">${isDeparture ? icon('log-out', 'w-3.5 h-3.5') : (isReturn ? icon('bed-double', 'w-3.5 h-3.5') : idx + 1)}</div>
             <div class="flex-1 min-w-0">
               <div class="flex items-start justify-between gap-2">
                 <h3 class="font-semibold text-sm leading-snug">${escapeHtml(title)}</h3>
                 <span class="flex items-center gap-1 flex-shrink-0">
-                  ${it.isStay ? `<span class="badge badge-stay text-[10px]">${icon(isVirtual ? 'moon' : 'bed-double', 'w-2.5 h-2.5')} ${isVirtual ? th(`คืนที่ ${it.stayNight}/${nights}`, `night ${it.stayNight}/${nights}`) : th(`พัก ${nights} คืน`, `${nights} nights`)}</span>` : ''}
+                  ${it.isStay ? `<span class="badge badge-stay text-[10px]">${icon(isDeparture ? 'sunrise' : (isVirtual ? 'moon' : 'bed-double'), 'w-2.5 h-2.5')} ${isDeparture ? th(`ออกจากที่พัก • หลังคืนที่ ${it.stayNight}/${nights}`, `check-out • after night ${it.stayNight}/${nights}`) : (isVirtual ? th(`คืนที่ ${it.stayNight}/${nights}`, `night ${it.stayNight}/${nights}`) : th(`พัก ${nights} คืน`, `${nights} nights`))}</span>` : ''}
                   <span class="badge badge-${it.status || 'planned'} text-[10px]">${escapeHtml(statusDef ? (lang==='th'?statusDef.th:statusDef.en) : (it.status || 'planned'))}</span>
                 </span>
               </div>
@@ -4326,7 +4614,7 @@ async function renderItinerary(params) {
               onEnd: async () => {
                 const newOrder = Array.from(container.querySelectorAll('[data-id]'))
                   .map(node => node.dataset.id)
-                  .filter(id => !String(id).includes('@stay-'));
+                  .filter(id => !String(id).includes('@stay-') && !String(id).includes('@leave-'));
                 const tLoad = toast.loading(th('กำลังจัดลำดับ...', 'Reordering...'));
                 try {
                   // “ดูทั้งหมด” keeps one list per day, so a drag can never move a
@@ -9456,7 +9744,6 @@ async function renderSettings(params) {
         <h3 class="font-bold flex items-center gap-2">${icon('palette', 'w-4 h-4')} ${th('ชุดสี & การแสดงผล','Colour theme & display')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เลือกธีมที่ถูกใจ แล้วปรับสี/ความสดใสเองได้ — มีผลทุกหน้า รวมถึงโหมดมืดและรูปที่ส่งออก','Pick a palette you like and fine-tune the colours — it applies everywhere, including dark mode and exported images.')}</p>
         ${themePickerHtml({ idPrefix: 'settings' })}
-        <button id="lang-switch" class="btn btn-secondary w-full btn-sm">${icon('languages', 'w-4 h-4')} ${lang === 'th' ? 'English' : 'ภาษาไทย'}</button>
       </div>
 
       <!-- v18: the profile picture lands here, so the account lives with it -->
@@ -9909,14 +10196,6 @@ async function renderSettings(params) {
     setTimeout(() => location.reload(), 400);
   });
   bind('account-logout', 'click', async () => { await doLogout(); });
-  bind('lang-switch', 'click', () => {
-    const newLang = lang === 'th' ? 'en' : 'th';
-    setLang(newLang);
-    toast.success(newLang === 'th' ? 'ภาษาไทย' : 'English');
-    renderSettings(params);
-    renderDesktopNav();
-    updateBottomNav();
-  });
 
   // Expense groups preview (values come from the shared registry).
   (function paintCategoryChips() {
@@ -10092,8 +10371,7 @@ async function paintDashboardTools({ tripId, trip, members = [], items = [], lan
       </div>
     </a>`;
 
-  const weatherCard = (trip?.startDate && isForecastRelevant(trip.startDate, dayjs().format('YYYY-MM-DD')))
-    ? `<div class="card p-5" id="dash-weather"><div class="skeleton h-16"></div></div>` : '';
+  const weatherCard = `<div class="card p-5" id="dash-weather-multi"><div class="skeleton h-24"></div></div>`;
 
   const bookingCard = nextOnes.length ? `
     <div class="card p-5">
@@ -10156,52 +10434,227 @@ async function paintDashboardTools({ tripId, trip, members = [], items = [], lan
   queueIcons();
 
   box.querySelectorAll('[data-dash-copy]').forEach(btn => btn.addEventListener('click', () => copyToClipboard(btn.dataset.dashCopy)));
-  if (weatherCard) paintTripWeather(trip, items, lang);
+  if (weatherCard) paintWeatherWidget(tripId, trip, items, lang);
   initReveal(box);
 }
 
-/** Compact forecast strip for the trip window (Open-Meteo, no key). */
-async function paintTripWeather(trip, items = [], lang = getLang()) {
-  const el = document.getElementById('dash-weather');
-  if (!el || !trip) return;
+/* ---- Weather widget: today + 7 days, multi-city (Open-Meteo, no key) ---- */
+const WX_MAX_CITIES = 5;
+const wxKey = (tripId) => `fuji_weather_cities_${tripId}`;
+function loadWxCities(tripId) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(wxKey(tripId)) || '[]');
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter(c => c && (c.name || (c.lat != null && c.lon != null)))
+      .slice(0, WX_MAX_CITIES)
+      .map(c => ({ name: String(c.name || ''), lat: c.lat != null ? Number(c.lat) : null, lon: c.lon != null ? Number(c.lon) : null, admin: c.admin || '', country: c.country || '' }));
+  } catch { return []; }
+}
+function saveWxCities(tripId, cities) {
+  try { localStorage.setItem(wxKey(tripId), JSON.stringify((cities || []).slice(0, WX_MAX_CITIES))); } catch { /* private mode */ }
+}
+function wxCityLabel(c = {}) {
+  return [c.name, c.admin || c.country].filter(Boolean).join(' • ');
+}
+
+async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
+  const el = document.getElementById('dash-weather-multi');
+  if (!el) return;
   const th = (a, b) => (lang === 'th' ? a : b);
-  const today = dayjs().format('YYYY-MM-DD');
-  const start = trip.startDate > today ? trip.startDate : today;
-  const endCandidate = trip.endDate && trip.endDate > start ? trip.endDate : dayjs(start).add(6, 'day').format('YYYY-MM-DD');
-  const horizon = dayjs().add(15, 'day').format('YYYY-MM-DD');
-  const end = endCandidate < horizon ? endCandidate : horizon;
-  const dates = datesBetween(start, end, 16);
-  if (!dates.length) { el.remove(); return; }
 
-  const located = (items || []).find(i => hasCoords(i));
-  const point = coordOf(located);
-  const place = point ? { lat: point.lat, lon: point.lng } : (trip.city || trip.country || '');
+  let cities = loadWxCities(tripId);
+  // First run: seed from the trip city, plus the first pinned plan place when
+  // it looks like a different spot — so the widget is useful immediately.
+  if (!cities.length) {
+    if (trip?.city) {
+      try {
+        const g = await geocodeCity(trip.city);
+        cities.push(g?.lat != null
+          ? { name: trip.city, lat: g.lat, lon: g.lon, admin: g.admin || '', country: g.country || '' }
+          : { name: trip.city, lat: null, lon: null });
+      } catch { cities.push({ name: trip.city, lat: null, lon: null }); }
+    }
+    const pinned = (items || []).find(i => hasCoords(i));
+    if (pinned && cities.length < WX_MAX_CITIES) {
+      const p = coordOf(pinned);
+      const dup = cities.some(c => c.lat != null && Math.abs(c.lat - p.lat) < 0.05 && Math.abs(c.lon - p.lng) < 0.05);
+      if (p && !dup) cities.push({ name: pinned.title || th('จุดในแผน', 'Planned place'), lat: p.lat, lon: p.lng });
+    }
+    saveWxCities(tripId, cities);
+  }
+  let activeIdx = 0;
+  let loading = true;
+  let loadFailed = false;
+  let days = [];
 
-  const forecast = await fetchDailyForecast(place, { startDate: dates[0], endDate: dates[dates.length - 1] });
-  const days = forecastForDates(forecast, dates).filter(d => !d.missing);
-  if (!el.isConnected) return;
-  if (!days.length) { el.remove(); return; }
+  async function loadActive() {
+    const city = cities[activeIdx];
+    days = [];
+    loadFailed = false;
+    loading = true;
+    paint();
+    if (!city) { loading = false; paint(); return; }
+    const start = dayjs().format('YYYY-MM-DD');
+    const end = dayjs().add(7, 'day').format('YYYY-MM-DD');
+    const place = (city.lat != null && city.lon != null) ? { lat: city.lat, lon: city.lon } : (city.name || '');
+    try {
+      const forecast = await fetchDailyForecast(place, { startDate: start, endDate: end });
+      days = forecastForDates(forecast, datesBetween(start, end, 8)).filter(d => !d.missing);
+      if (!days.length) loadFailed = true;
+    } catch { loadFailed = true; }
+    loading = false;
+    if (el.isConnected) paint();
+  }
 
-  const tip = weatherTip(days, lang);
-  el.innerHTML = `
-    <div class="flex items-center justify-between gap-2 mb-3">
-      <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);">${icon('cloud-sun', 'w-4 h-4')}</span> ${t('weather')}</h3>
-      <span class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(trip.city || trip.country || '')} • Open-Meteo</span>
-    </div>
-    <div class="weather-strip">
-      ${days.map(d => {
-        const tone = weatherTone(d.tone);
-        return `<div class="weather-chip" style="background:${tone.bg}; border-color:${tone.line}; color:${tone.fg};" title="${escapeHtml(lang === 'th' ? d.labelTh : d.labelEn)}${d.rainChance != null ? ` • ${d.rainChance}%` : ''}">
-          <span class="weather-chip-day">${dayjs(d.date).format('DD MMM')}</span>
-          ${icon(d.icon, 'w-4 h-4')}
-          <span class="weather-chip-temp">${Math.round(d.max ?? 0)}°<small>${Math.round(d.min ?? 0)}°</small></span>
-          ${d.rainChance != null && d.rainChance >= 40 ? `<span class="weather-chip-rain">${icon('droplets', 'w-2.5 h-2.5')}${d.rainChance}%</span>` : ''}
-        </div>`;
-      }).join('')}
-    </div>
-    ${tip ? `<p class="text-[11px] text-[var(--text-secondary)] mt-2">${icon('info', 'w-3 h-3')} ${escapeHtml(tip)}</p>` : ''}
-  `;
-  queueIcons();
+  function paint() {
+    const city = cities[activeIdx];
+    const today = days[0];
+    const tone = weatherTone(today?.tone);
+    const tip = weatherTip(days, lang);
+    el.innerHTML = `
+      <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
+        <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);">${icon('cloud-sun', 'w-4 h-4')}</span> ${t('weather')}</h3>
+        <button class="btn btn-ghost btn-sm text-[11px]" data-wx="manage" style="min-height:28px;padding:2px 8px;">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการเมือง', 'Cities')}</button>
+      </div>
+      ${cities.length > 1 ? `<div class="chip-row chip-row-scroll mb-2">${cities.map((c, k) => `
+        <button class="chip ${k === activeIdx ? 'chip-active' : ''}" data-wx="city" data-k="${k}">${escapeHtml(c.name || '?')}</button>`).join('')}</div>` : ''}
+      ${loading ? `<div class="skeleton h-24"></div>` : ''}
+      ${!loading && !city ? `<div class="wx-empty">
+        <p class="text-xs text-[var(--text-secondary)] mb-2">${th('ยังไม่มีเมือง — เพิ่มเมืองแรกเพื่อดูอากาศวันนี้ + 7 วัน', 'No cities yet — add your first city for today + 7 days.')}</p>
+        <button class="btn btn-primary btn-sm" data-wx="manage">${icon('plus', 'w-4 h-4')} ${th('เพิ่มเมือง', 'Add city')}</button>
+      </div>` : ''}
+      ${!loading && city && loadFailed ? `<div class="wx-empty">
+        <p class="text-xs font-semibold mb-1">${th('โหลดอากาศไม่สำเร็จ', 'Weather failed to load')}</p>
+        <p class="text-[11px] text-[var(--text-tertiary)] mb-2">${th('เช็กเน็ตแล้วลองใหม่', 'Check your connection and retry.')}</p>
+        <button class="btn btn-secondary btn-sm" data-wx="retry">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่', 'Retry')}</button>
+      </div>` : ''}
+      ${!loading && city && !loadFailed && today ? `
+      <div class="wx-today mb-2" style="background:${tone.bg}; border-color:${tone.line}; color:${tone.fg};">
+        <div class="min-w-0">
+          <p class="wx-today-kicker">${escapeHtml(wxCityLabel(city))} • ${th('วันนี้', 'Today')}</p>
+          <p class="wx-today-temp">${Math.round(today.max ?? 0)}°<small> / ${Math.round(today.min ?? 0)}°</small></p>
+          <p class="wx-today-desc">${icon(today.icon || 'cloud', '')} ${escapeHtml(forecastLabel(today, lang))}${today.rainChance != null ? ` • ${icon('droplets', '')} ${today.rainChance}%` : ''}</p>
+        </div>
+        <div class="wx-today-icon">${icon(today.icon || 'cloud', '')}</div>
+      </div>
+      <div class="weather-strip">
+        ${days.slice(1).map(d => {
+          const t2 = weatherTone(d.tone);
+          return `<div class="weather-chip" style="background:${t2.bg}; border-color:${t2.line}; color:${t2.fg};" title="${escapeHtml(forecastLabel(d, lang))}${d.rainChance != null ? ` • ${d.rainChance}%` : ''}">
+            <span class="weather-chip-day">${dayjs(d.date).format('DD MMM')}</span>
+            ${icon(d.icon, 'w-4 h-4')}
+            <span class="weather-chip-temp">${Math.round(d.max ?? 0)}°<small>${Math.round(d.min ?? 0)}°</small></span>
+            ${d.rainChance != null && d.rainChance >= 40 ? `<span class="weather-chip-rain">${icon('droplets', 'w-2.5 h-2.5')}${d.rainChance}%</span>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
+      ${tip ? `<p class="text-[11px] text-[var(--text-secondary)] mt-2">${icon('info', 'w-3 h-3')} ${escapeHtml(tip)}</p>` : ''}` : ''}
+      <p class="text-[10px] text-[var(--text-tertiary)] mt-2 text-right">Open-Meteo</p>
+    `;
+    queueIcons();
+    el.querySelectorAll('[data-wx]').forEach(btn => btn.addEventListener('click', () => {
+      const act = btn.dataset.wx;
+      if (act === 'city') { activeIdx = Number(btn.dataset.k) || 0; loadActive(); }
+      else if (act === 'retry') loadActive();
+      else if (act === 'manage') openWxManager();
+    }));
+  }
+
+  /** Bottom-sheet city manager: search + add + remove (max 5). */
+  function openWxManager() {
+    const sheet = showBottomSheet(`
+      <div class="space-y-3">
+        <div class="flex items-start gap-3">
+          <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--gradient-primary);color:#fff;flex-shrink:0;">${icon('cloud-sun', 'w-5 h-5')}</div>
+          <div class="min-w-0">
+            <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${th('เมืองที่ติดตาม', 'Tracked cities')}</h3>
+            <p class="text-xs text-[var(--text-secondary)] mt-0.5">${th(`สูงสุด ${WX_MAX_CITIES} เมือง`, `Up to ${WX_MAX_CITIES} cities`)}</p>
+          </div>
+        </div>
+        <div class="input-group" style="margin:0;">
+          <div class="relative">
+            <input id="wx-search" class="input text-sm" style="padding-left:34px;" placeholder="${th('ค้นหาเมือง… เช่น โตเกียว เชียงใหม่', 'Search cities… e.g. Tokyo, Paris')}" autocomplete="off">
+            <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-tertiary);">${icon('search', 'w-4 h-4')}</span>
+          </div>
+        </div>
+        <div id="wx-results" class="space-y-1.5"></div>
+        <div id="wx-list" class="space-y-1.5"></div>
+        <button id="wx-done" class="btn btn-primary w-full">${th('เสร็จ', 'Done')}</button>
+      </div>
+    `);
+    queueIcons();
+    const paintList = () => {
+      const listEl = sheet.sheet.querySelector('#wx-list');
+      if (!listEl) return;
+      listEl.innerHTML = cities.length ? cities.map((c, k) => `
+        <div class="dash-pop-row" style="cursor:default;">
+          <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('map-pin', 'w-3.5 h-3.5')}</span>
+          <span class="min-w-0 flex-1 text-left">
+            <span class="block text-xs font-bold truncate">${escapeHtml(c.name || '?')}${k === activeIdx ? ` <span class="text-[10px] font-bold" style="color:var(--primary-strong);">• ${th('กำลังดู', 'viewing')}</span>` : ''}</span>
+            <span class="block text-[10px] text-[var(--text-tertiary)] truncate">${escapeHtml([c.admin, c.country].filter(Boolean).join(', ')) || `${Number(c.lat)?.toFixed?.(2) ?? ''} ${Number(c.lon)?.toFixed?.(2) ?? ''}`}</span>
+          </span>
+          ${k !== activeIdx ? `<button class="btn btn-ghost btn-sm text-[11px]" data-wx-pick="${k}">${th('ดู', 'View')}</button>` : ''}
+          <button class="icon-btn" data-wx-del="${k}" aria-label="${th('ลบ', 'Remove')}" style="width:30px;height:30px;">${icon('x', 'w-3.5 h-3.5')}</button>
+        </div>`).join('')
+        : `<p class="text-xs text-[var(--text-tertiary)]">${th('ยังไม่มีเมือง — ค้นหาด้านบนเพื่อเพิ่ม', 'No cities yet — search above to add one.')}</p>`;
+      queueIcons();
+      listEl.querySelectorAll('[data-wx-pick]').forEach(b => b.addEventListener('click', () => {
+        activeIdx = Number(b.dataset.wxPick) || 0; paintList(); loadActive();
+      }));
+      listEl.querySelectorAll('[data-wx-del]').forEach(b => b.addEventListener('click', () => {
+        const k = Number(b.dataset.wxDel);
+        cities.splice(k, 1);
+        if (activeIdx >= cities.length) activeIdx = Math.max(0, cities.length - 1);
+        saveWxCities(tripId, cities); paintList(); loadActive();
+      }));
+    };
+    paintList();
+    const input = sheet.sheet.querySelector('#wx-search');
+    const resultsEl = sheet.sheet.querySelector('#wx-results');
+    let timer = null;
+    let seq = 0;
+    input?.addEventListener('input', () => {
+      clearTimeout(timer);
+      const q = input.value;
+      timer = setTimeout(async () => {
+        const my = ++seq;
+        if (!String(q || '').trim()) { if (resultsEl) resultsEl.innerHTML = ''; return; }
+        if (resultsEl) resultsEl.innerHTML = `<p class="text-[11px] text-[var(--text-tertiary)]">${th('กำลังค้นหา…', 'Searching…')}</p>`;
+        const hits = await searchCities(q, 6);
+        if (my !== seq || !resultsEl?.isConnected) return;
+        resultsEl.innerHTML = hits.length ? hits.map((h, k) => `
+          <button class="dash-pop-row w-full" data-wx-hit="${k}">
+            <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--bg-secondary);color:var(--text-secondary);">${icon('map-pin', 'w-3.5 h-3.5')}</span>
+            <span class="min-w-0 flex-1 text-left">
+              <span class="block text-xs font-bold truncate">${escapeHtml(h.name || '')}</span>
+              <span class="block text-[10px] text-[var(--text-tertiary)] truncate">${escapeHtml([h.admin, h.country].filter(Boolean).join(', '))}</span>
+            </span>
+            ${icon('plus', 'w-4 h-4')}
+          </button>`).join('')
+          : `<p class="text-[11px] text-[var(--text-tertiary)]">${th('ไม่เจอเมืองนี้ — ลองสะกดแบบอังกฤษ', 'No matches — try the English spelling.')}</p>`;
+        queueIcons();
+        resultsEl.querySelectorAll('[data-wx-hit]').forEach(b => b.addEventListener('click', () => {
+          const h = hits[Number(b.dataset.wxHit)];
+          if (!h) return;
+          if (cities.length >= WX_MAX_CITIES) { toast.error(th(`เพิ่มได้สูงสุด ${WX_MAX_CITIES} เมือง`, `Maximum ${WX_MAX_CITIES} cities`)); return; }
+          if (cities.some(c => c.lat != null && Math.abs(c.lat - h.lat) < 0.01 && Math.abs(c.lon - h.lon) < 0.01)) {
+            toast.error(th('มีเมืองนี้แล้ว', 'Already added')); return;
+          }
+          cities.push({ name: h.name, lat: h.lat, lon: h.lon, admin: h.admin || '', country: h.country || '' });
+          saveWxCities(tripId, cities);
+          activeIdx = cities.length - 1;
+          input.value = '';
+          resultsEl.innerHTML = '';
+          paintList();
+          loadActive();
+        }));
+      }, 400);
+    });
+    sheet.sheet.querySelector('#wx-done')?.addEventListener('click', () => sheet.close());
+  }
+
+  loadActive();
 }
 
 /* ================================================================== *
@@ -10677,6 +11130,11 @@ async function renderIdeas(params) {
   try { ideas = await listIdeas(tripId); } catch (e) { loadError = e?.message || String(e); }
   if (isStale(token)) return;
 
+  // The day plan, for the “how far is this idea from the plan?” comparison.
+  let planItems = [];
+  try { planItems = await fetchItinerary(tripId, null).catch(() => []) || []; } catch { planItems = []; }
+  if (isStale(token)) return;
+
   // v18.2: ideas that could not be written to Firestore (old rules) live on this
   // device — count them so the board can say so instead of dropping the text.
   let pendingCount = listPendingIdeas(tripId).length;
@@ -10713,6 +11171,24 @@ async function renderIdeas(params) {
 
       ${loadError ? `<div class="card p-4 text-xs" style="background:var(--warning-bg); border-color:color-mix(in srgb, var(--warning) 35%, transparent);">${icon('info', 'w-4 h-4')} ${escapeHtml(loadError)}</div>` : ''}
       <div id="idea-pending-slot"></div>
+      <div class="card p-3" id="ideas-map-card">
+        <div class="flex items-center justify-between gap-2 px-1 pb-2 flex-wrap">
+          <h3 class="font-bold text-sm flex items-center gap-2">${icon('map', 'w-4 h-4')} ${th('แผนที่ไอเดีย','Ideas map')}</h3>
+          <div class="flex items-center gap-2">
+            <span id="ideas-map-count" class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:var(--bg-secondary);">0 ${th('หมุด','pins')}</span>
+            <button id="ideas-map-fit" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:2px 8px;">${icon('maximize', 'w-3 h-3')} ${th('พอดีจอ','Fit')}</button>
+          </div>
+        </div>
+        <div id="ideas-map-wrap" class="relative rounded-2xl overflow-hidden" style="border:1px solid var(--border);">
+          <div id="ideas-map" class="map-frame w-full" style="height:min(38vh, 320px);"></div>
+          <div id="ideas-map-status" class="map-status"><span class="skeleton" style="width:26px;height:26px;border-radius:50%;"></span> <span>${th('กำลังโหลดแผนที่...','Loading map...')}</span></div>
+          <div id="ideas-map-empty" class="map-status hidden"><div class="text-center px-4">
+            <div class="row-icon mx-auto mb-2" style="width:40px;height:40px;">${icon('map-pin', 'w-5 h-5')}</div>
+            <p class="text-xs text-[var(--text-secondary)]">${th('ใส่พิกัด (lat,lng) ให้ไอเดีย เพื่อให้แสดงหมุดบนแผนที่','Add coordinates (lat,lng) to an idea to see it here')}</p>
+          </div></div>
+        </div>
+        <p class="text-[10px] text-[var(--text-tertiary)] flex items-center gap-1 px-1 pt-2">${icon('info', 'w-3 h-3')} ${th('กดปุ่มหมุดบนการ์ด → แผนที่พาไปที่ไอเดียนั้น • หมุดเขียว = อยู่ในแผนแล้ว','Tap the pin button on a card → the map jumps to that idea • green pin = already in the plan')}</p>
+      </div>
       <div id="ideas-list" class="grid gap-3 stagger sm:grid-cols-2"></div>
     </div>
   `;
@@ -10791,11 +11267,35 @@ async function renderIdeas(params) {
     queueIcons();
   }
 
+  /** Ideas currently on screen (filter + sort applied) — the map mirrors this. */
+  let listedIdeas = [];
+  let ideasMapReady = false;
+
+  function ideaKmLabel(km) {
+    if (!Number.isFinite(km)) return '';
+    return km < 1
+      ? `${Math.max(1, Math.round(km * 1000))} ${th('ม.','m')}`
+      : `${km.toFixed(km < 10 ? 1 : 0)} ${th('กม.','km')}`;
+  }
+
+  /** Closest planned place to an idea (both need coordinates). */
+  function nearestPlanFor(idea) {
+    if (!hasCoords(idea)) return null;
+    let best = null;
+    for (const p of planItems) {
+      if (!hasCoords(p)) continue;
+      const km = haversineKm(idea, p);
+      if (!best || km < best.km) best = { km, item: p };
+    }
+    return best;
+  }
+
   function paintIdeas() {
     const box = document.getElementById('ideas-list');
     if (!box) return;
     const filtered = filter === 'all' ? ideas : ideas.filter(i => (filter === 'planned' ? i.status === 'planned' : i.status !== 'planned'));
     const sorted = sortIdeas(filtered, sortMode, { lang });
+    listedIdeas = sorted;
     if (!sorted.length) {
       box.innerHTML = `<div class="col-span-full">${renderEmptyState({
         icon: 'lightbulb',
@@ -10805,14 +11305,20 @@ async function renderIdeas(params) {
       })}</div>`;
       bind('idea-empty-add', 'click', () => openIdeaForm(null));
       queueIcons();
+      paintIdeasMap();
       return;
     }
-    box.innerHTML = sorted.map(idea => {
+    const planPinned = planItems.some(p => hasCoords(p));
+    box.innerHTML = sorted.map((idea, idx) => {
       const info = voteInfo(idea);
       const voted = hasVoted(idea, myId);
       const voters = voterNames(idea, members).slice(0, 4);
       const status = ideaStatusDef(idea.status);
       const queued = idea.pendingSync === true || isLocalIdeaId(idea.id);
+      const imgs = ideaImages(idea);
+      const pinned = hasCoords(idea);
+      const c = pinned ? coordOf(idea) : null;
+      const near = nearestPlanFor(idea);
       return `
       <div class="card p-4 idea-card ${queued ? 'is-queued' : ''}" data-idea="${idea.id}">
         <div class="flex items-start gap-3">
@@ -10822,22 +11328,33 @@ async function renderIdeas(params) {
           </button>
           <div class="flex-1 min-w-0">
             <div class="flex items-start justify-between gap-2">
-              <h3 class="font-bold text-sm leading-snug min-w-0">${escapeHtml(idea.title || '')}</h3>
+              <h3 class="font-bold text-sm leading-snug min-w-0"><span class="idea-num" title="${th('หมายเลขหมุดบนแผนที่','Pin number on the map')}">${idx + 1}</span> ${escapeHtml(idea.title || '')}</h3>
               <span class="flex items-center gap-1 flex-shrink-0">
                 ${queued ? `<span class="badge badge-pending text-[10px]" title="${th('บันทึกในเครื่องนี้ รอซิงก์ขึ้นคลาวด์','Saved on this device, waiting to sync')}">${icon('cloud-off', 'w-2.5 h-2.5')} ${th('รอซิงก์','pending')}</span>` : ''}
                 <span class="badge ${idea.status === 'planned' ? 'badge-completed' : 'badge-planned'} text-[10px]">${icon(status.icon, 'w-2.5 h-2.5')} ${lang === 'th' ? status.th : status.en}</span>
               </span>
             </div>
             ${idea.note ? `<p class="text-xs text-[var(--text-secondary)] mt-1">${escapeHtml(idea.note)}</p>` : ''}
+            ${imgs.length ? `<div class="idea-imgs mt-2">${imgs.map((u, k) => `
+              <button type="button" class="idea-img" data-act="image" data-id="${idea.id}" data-img="${k}" title="${th('กดเพื่อดูรูป','Tap to view')}">
+                <img src="${escapeHtml(u)}" alt="" loading="lazy" onerror="this.closest('.idea-img').style.display='none'">
+              </button>`).join('')}
+              <span class="idea-img-hint">${icon('images', 'w-3 h-3')} ${imgs.length}/3</span>
+            </div>` : ''}
             <div class="flex items-center gap-2 flex-wrap mt-1.5">
               <span class="badge badge-planned text-[10px]">${icon(categoryIcon(normalizeCategory(idea.category)), 'w-2.5 h-2.5')} ${escapeHtml(categoryLabel(normalizeCategory(idea.category), lang))}</span>
               ${idea.address ? `<span class="meta-line">${icon('map-pin', 'w-3 h-3')} <span class="truncate" style="max-width:220px;">${escapeHtml(idea.address)}</span></span>` : ''}
               ${Number(idea.estimatedCostMinor) > 0 ? `<span class="badge badge-skipped text-[10px]">${icon('coins', 'w-2.5 h-2.5')} ${escapeHtml(formatCurrency(Number(idea.estimatedCostMinor), idea.currency || trip?.baseCurrency || 'THB'))}</span>` : ''}
             </div>
+            ${pinned ? `<button type="button" class="idea-pin-line" data-act="locate" data-id="${idea.id}" title="${th('พาแผนที่ไปที่ไอเดียนั้น','Show on the map')}">${icon('crosshair', 'w-3 h-3')} <span class="font-mono">${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}</span> <span class="idea-pin-go">${th('ดูบนแผนที่','View on map')}</span></button>` : ''}
+            ${pinned && near ? `<button type="button" class="idea-near-line" data-act="compare" data-id="${idea.id}" title="${th('เทียบระยะกับแผนแต่ละวัน','Compare with each day')}">${icon('route', 'w-3 h-3')} ${th('ห่างจากแผน','from the plan')} <b>~${ideaKmLabel(near.km)}</b> <span class="truncate" style="max-width:170px;">• ${escapeHtml(near.item.title || '')}</span></button>`
+              : (pinned && !planPinned ? `<p class="idea-near-line is-muted">${icon('route', 'w-3 h-3')} ${th('แผนยังไม่มีพิกัดให้เทียบระยะ','The plan has no pins to compare with yet')}</p>` : '')}
             ${voters.length ? `<p class="text-[10px] text-[var(--text-tertiary)] mt-1.5">${icon('users', 'w-3 h-3')} ${escapeHtml(voters.join(', '))}${info.count > voters.length ? ` +${info.count - voters.length}` : ''}</p>` : ''}
             <div class="flex items-center gap-1 flex-wrap mt-2">
               ${idea.url ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(idea.url)}" target="_blank" rel="noopener">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
               ${idea.address ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(googleMapsPlaceUrl(idea.address, idea.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
+              ${pinned ? `<button class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" data-act="locate" data-id="${idea.id}">${icon('crosshair', 'w-3.5 h-3.5')} ${th('หมุด','Pin')}</button>` : ''}
+              ${pinned && planPinned ? `<button class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" data-act="compare" data-id="${idea.id}">${icon('git-compare', 'w-3.5 h-3.5')} ${th('เทียบกับแผน','Compare')}</button>` : ''}
               ${idea.status === 'planned'
                 ? `<span class="badge badge-completed text-[10px]">${icon('check', 'w-3 h-3')} ${th('อยู่ในแผน','In the plan')}${idea.plannedDate ? ` • ${escapeHtml(idea.plannedDate)}` : ''}</span>`
                 : `<button class="btn btn-accent btn-sm text-[11px]" style="min-height:30px;padding:2px 10px;" data-act="plan" data-id="${idea.id}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>`}
@@ -10850,6 +11367,162 @@ async function renderIdeas(params) {
     }).join('');
     queueIcons();
     initReveal(box);
+    paintIdeasMap();
+  }
+
+  /** Board map mirrors the listed ideas (same order → same numbers). */
+  async function paintIdeasMap() {
+    const mapEl = document.getElementById('ideas-map');
+    if (!mapEl) return;
+    const statusEl = document.getElementById('ideas-map-status');
+    const emptyEl = document.getElementById('ideas-map-empty');
+    try {
+      statusEl?.classList.remove('hidden');
+      emptyEl?.classList.add('hidden');
+      const { renderIdeasMap, refreshMapSize, setMapLang } = await import('./maps/index.js');
+      setMapLang('ideas-map', lang);
+      const res = await renderIdeasMap('ideas-map', listedIdeas, {
+        fitBounds: true,
+        lang,
+        directionsLabel: th('ไปที่นี่', 'Directions'),
+        votesLabel: th('โหวต', 'votes'),
+        plannedLabel: th('อยู่ในแผน', 'in the plan')
+      });
+      ideasMapReady = true;
+      statusEl?.classList.add('hidden');
+      emptyEl?.classList.toggle('hidden', (res.count || 0) > 0);
+      setText('ideas-map-count', `${res.count || 0} ${th('หมุด','pins')}`);
+      refreshMapSize('ideas-map');
+      setTimeout(() => refreshMapSize('ideas-map'), 450);
+    } catch (e) {
+      console.warn('[Ideas] map failed', e?.message);
+      if (statusEl) {
+        statusEl.classList.remove('hidden');
+        statusEl.innerHTML = `<div class="text-center px-4">
+          <p class="text-xs font-semibold" style="color:var(--danger);">${th('โหลดแผนที่ไม่สำเร็จ','Map failed to load')}</p>
+          <button id="ideas-map-retry" class="btn btn-secondary btn-sm mt-2">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่','Retry')}</button>
+        </div>`;
+        queueIcons();
+        bind('ideas-map-retry', 'click', () => paintIdeasMap());
+      }
+    }
+  }
+
+  /** Jump the board map to one idea's pin (centred, popup open). */
+  async function focusIdeaOnMap(ideaId) {
+    const idea = ideas.find(i => i.id === ideaId);
+    if (!idea || !hasCoords(idea)) return;
+    document.getElementById('ideas-map-card')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+    await new Promise(r => setTimeout(r, 240));
+    try {
+      const { focusItineraryItem, getMap, refreshMapSize } = await import('./maps/index.js');
+      try { refreshMapSize('ideas-map'); } catch { /* cosmetic */ }
+      const pool = listedIdeas.length ? listedIdeas : ideas;
+      if (!getMap('ideas-map') || !focusItineraryItem('ideas-map', pool, ideaId)) {
+        await paintIdeasMap();
+        setTimeout(() => { try { focusItineraryItem('ideas-map', pool, ideaId); } catch {} }, 160);
+      }
+    } catch (e) { console.warn('[Ideas] map focus failed', e?.message); }
+  }
+
+  /** Photo viewer for an idea's attached images (max 3). */
+  function openIdeaLightbox(idea, startIdx = 0) {
+    const imgs = ideaImages(idea);
+    if (!imgs.length) return;
+    let cur = Math.min(Math.max(0, startIdx | 0), imgs.length - 1);
+    const dlg = showModal(`
+      <div class="idea-lightbox">
+        <div class="flex items-start justify-between gap-2 mb-2">
+          <h3 class="font-bold text-sm pr-2 min-w-0 truncate">${icon('images', 'w-4 h-4')} ${escapeHtml(idea.title || '')}</h3>
+          <button class="icon-btn flex-shrink-0" data-lb="close" aria-label="${th('ปิด','Close')}">${icon('x', 'w-4 h-4')}</button>
+        </div>
+        <div class="idea-lightbox-main">
+          ${imgs.length > 1 ? `<button class="idea-lightbox-nav" data-lb="prev" aria-label="‹">${icon('chevron-left', 'w-5 h-5')}</button>` : ''}
+          <img data-lb="img" src="${escapeHtml(imgs[cur])}" alt="" onerror="this.style.opacity='.25'">
+          ${imgs.length > 1 ? `<button class="idea-lightbox-nav" data-lb="next" aria-label="›">${icon('chevron-right', 'w-5 h-5')}</button>` : ''}
+        </div>
+        <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
+          <span class="text-[11px] font-bold text-[var(--text-tertiary)]" data-lb="count">${cur + 1} / ${imgs.length}</span>
+          <a data-lb="open" class="btn btn-ghost btn-sm text-[11px]" href="${escapeHtml(imgs[cur])}" target="_blank" rel="noopener">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดรูปต้นฉบับ','Open original')}</a>
+        </div>
+        ${imgs.length > 1 ? `<div class="idea-lightbox-thumbs">${imgs.map((u, k) => `
+          <button data-lb="thumb" data-k="${k}" class="${k === cur ? 'is-active' : ''}"><img src="${escapeHtml(u)}" alt="" loading="lazy" onerror="this.closest('[data-lb=thumb]').style.display='none'"></button>`).join('')}</div>` : ''}
+      </div>
+    `);
+    queueIcons();
+    const paint = () => {
+      const img = dlg.modal.querySelector('[data-lb="img"]');
+      if (img) { img.style.opacity = ''; img.src = imgs[cur]; }
+      const open = dlg.modal.querySelector('[data-lb="open"]');
+      if (open) open.href = imgs[cur];
+      const count = dlg.modal.querySelector('[data-lb="count"]');
+      if (count) count.textContent = `${cur + 1} / ${imgs.length}`;
+      dlg.modal.querySelectorAll('[data-lb="thumb"]').forEach(b => b.classList.toggle('is-active', Number(b.dataset.k) === cur));
+    };
+    dlg.modal.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-lb]');
+      if (!btn || btn.tagName === 'A') return;
+      const act = btn.dataset.lb;
+      if (act === 'close') dlg.close();
+      if (act === 'prev') { cur = (cur - 1 + imgs.length) % imgs.length; paint(); }
+      if (act === 'next') { cur = (cur + 1) % imgs.length; paint(); }
+      if (act === 'thumb') { cur = Number(btn.dataset.k) || 0; paint(); }
+    });
+  }
+
+  /** Per-day distance breakdown: is this idea near any planned day? */
+  function openIdeaCompareSheet(idea) {
+    const c = coordOf(idea);
+    const byDay = {};
+    if (c) {
+      for (const p of planItems) {
+        if (!hasCoords(p) || !p.date) continue;
+        const km = haversineKm(idea, p);
+        if (!byDay[p.date] || km < byDay[p.date].km) byDay[p.date] = { km, item: p };
+      }
+    }
+    const days = Object.entries(byDay).sort(([a], [b]) => a.localeCompare(b));
+    const best = nearestPlanFor(idea);
+    const sheet = showBottomSheet(`
+      <div class="space-y-3">
+        <div class="flex items-start gap-3">
+          <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('git-compare', 'w-5 h-5')}</div>
+          <div class="min-w-0">
+            <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${th('เทียบไอเดียกับแผน','Compare with the plan')}</h3>
+            <p class="text-xs text-[var(--text-secondary)] mt-0.5 truncate">${escapeHtml(idea.title || '')}${c ? ` • <span class="font-mono">${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}</span>` : ''}</p>
+          </div>
+        </div>
+        ${!c ? `<div class="card p-3 text-xs" style="background:var(--warning-bg);">${icon('crosshair', 'w-4 h-4')} ${th('ไอเดียนี้ยังไม่มีพิกัด — กดแก้ไขแล้วใส่ lat,lng เพื่อเทียบระยะได้','This idea has no pin yet — edit it and add lat,lng to compare distances.')}</div>` : ''}
+        ${c && !days.length ? `<div class="card p-3 text-xs" style="background:var(--bg-secondary);">${icon('map-pin', 'w-4 h-4')} ${th('แผนการเดินทางยังไม่มีพิกัด — ใส่พิกัดให้สถานที่ในแผนก่อน แล้วค่อยกลับมาเทียบ','The itinerary has no pins yet — add coordinates to planned places first.')}</div>` : ''}
+        ${best ? `<div class="idea-compare-best">
+          <span class="idea-compare-best-label">${icon('trophy', 'w-3.5 h-3.5')} ${th('ใกล้แผนที่สุด','Closest to the plan')}</span>
+          <b>~${ideaKmLabel(best.km)}</b>
+          <span class="truncate">${escapeHtml(best.item.title || '')} • ${escapeHtml(best.item.date || '')}</span>
+          ${best.item.date ? `<button class="btn btn-secondary btn-sm" data-day="${escapeHtml(best.item.date)}">${icon('calendar-days', 'w-3.5 h-3.5')} ${th('ดูวันนี้','See day')}</button>` : ''}
+        </div>` : ''}
+        ${days.length ? `<div class="space-y-1.5">${days.map(([day, v]) => `
+          <div class="idea-compare-row">
+            <span class="idea-compare-day">${dayjs(day).format('DD MMM')}</span>
+            <span class="min-w-0 flex-1">
+              <span class="block text-xs font-semibold truncate">${escapeHtml(v.item.title || '')}</span>
+              <span class="block text-[10px] text-[var(--text-tertiary)]">${th('ใกล้สุดของวันนี้','nearest this day')}</span>
+            </span>
+            <b class="text-xs font-bold">~${ideaKmLabel(v.km)}</b>
+            <button class="btn btn-ghost btn-sm text-[11px]" data-day="${escapeHtml(day)}">${icon('arrow-right', 'w-3.5 h-3.5')}</button>
+          </div>`).join('')}</div>` : ''}
+        <div class="flex gap-2">
+          <button id="idea-compare-close" class="btn btn-secondary flex-1">${th('ปิด','Close')}</button>
+          ${!c ? `<button id="idea-compare-edit" class="btn btn-primary flex-1">${icon('pencil', 'w-4 h-4')} ${th('ใส่พิกัด','Add pin')}</button>` : ''}
+        </div>
+      </div>
+    `);
+    queueIcons();
+    document.getElementById('idea-compare-close')?.addEventListener('click', () => sheet.close());
+    document.getElementById('idea-compare-edit')?.addEventListener('click', () => { sheet.close(); openIdeaForm(idea); });
+    sheet.sheet.querySelectorAll('[data-day]').forEach(btn => btn.addEventListener('click', () => {
+      sheet.close();
+      location.hash = `#/trip/${tripId}/itinerary?date=${btn.dataset.day}`;
+    }));
   }
 
   async function toggleVote(idea) {
@@ -10886,6 +11559,7 @@ async function renderIdeas(params) {
             category,
             address: idea.address || '',
             coordinates: idea.coordinates || '',
+            imageUrl: ideaImages(idea)[0] || idea.imageUrl || '',
             notes: idea.url ? `${th('ลิงก์','Link')}: ${idea.url}` : '',
             status: 'planned',
             estimateAmount: Number(idea.estimatedCostMinor) > 0 ? fromMinor(Number(idea.estimatedCostMinor), getCurrencyDecimals(idea.currency || 'THB')) : 0,
@@ -10927,6 +11601,13 @@ async function renderIdeas(params) {
           <textarea id="idea-note" class="input" style="min-height:70px;" placeholder="${th('ทำไมถึงอยากไป เปิดกี่โมง ฯลฯ','Why go, opening hours, tips…')}">${escapeHtml(idea?.note || '')}</textarea></div>
         <div class="input-group"><label class="input-label">${icon('link', 'w-3.5 h-3.5')} ${th('ลิงก์','Link')}</label>
           <input id="idea-url" class="input text-sm" value="${escapeHtml(idea?.url || '')}" placeholder="https://..."></div>
+        <div class="input-group"><label class="input-label">${icon('images', 'w-3.5 h-3.5')} ${th('รูปภาพ (ลิงก์ URL สูงสุด 3 รูป)','Photos (up to 3 URLs)')}</label>
+          <div class="grid gap-2">
+            ${[0, 1, 2].map(k => `
+            <input id="idea-img-${k + 1}" class="input text-sm font-mono" value="${escapeHtml((ideaImages(idea || {})[k]) || '')}" placeholder="https://${th('ลิงก์รูปที่','image link ')}${k + 1} • https://..." autocomplete="off">`).join('')}
+          </div>
+          <div id="idea-img-previews" class="idea-form-previews"></div>
+          <p class="input-hint">${th('วางลิงก์รูป (https://...) สูงสุด 3 รูป — สมาชิกกดดูรูปใหญ่ได้จากการ์ด','Paste up to 3 image links (https://...) — members tap the card to view them full-size.')}</p></div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div class="input-group"><label class="input-label">${icon('map-pin', 'w-3.5 h-3.5')} ${th('ที่อยู่','Address')}</label>
             <input id="idea-address" class="input text-sm" value="${escapeHtml(idea?.address || '')}" placeholder="${th('ที่อยู่หรือชื่อสถานที่','Address or place')}"></div>
@@ -10950,12 +11631,24 @@ async function renderIdeas(params) {
     `);
     queueIcons();
     bindMoneyInputs(sheet.sheet);
+    // Live thumbnails for the 3 photo URL fields.
+    const ideaImgPreview = () => {
+      const wrap = sheet.sheet.querySelector('#idea-img-previews');
+      if (!wrap) return;
+      const urls = [1, 2, 3]
+        .map(k => String(sheet.sheet.querySelector(`#idea-img-${k}`)?.value || '').trim())
+        .filter(u => /^https?:\/\//i.test(u));
+      wrap.innerHTML = urls.map(u => `<span class="idea-form-preview"><img src="${escapeHtml(u)}" alt="" loading="lazy" onerror="this.parentElement.style.display='none'"></span>`).join('');
+    };
+    sheet.sheet.querySelectorAll('#idea-img-1, #idea-img-2, #idea-img-3').forEach(inp => inp.addEventListener('input', ideaImgPreview));
+    ideaImgPreview();
     document.getElementById('idea-cancel')?.addEventListener('click', () => sheet.close());
     document.getElementById('idea-save')?.addEventListener('click', async () => {
       const title = String(document.getElementById('idea-title')?.value || '').trim();
       if (!title) return toast.error(th('ต้องมีชื่อสถานที่', 'Place name is required'));
       const cur = document.getElementById('idea-cur')?.value || 'THB';
       const cost = parseCurrencyInput(document.getElementById('idea-cost')?.value || '') || 0;
+      const imageUrls = normalizeIdeaImages([1, 2, 3].map(k => document.getElementById(`idea-img-${k}`)?.value || ''));
       const payload = {
         title,
         note: String(document.getElementById('idea-note')?.value || '').trim(),
@@ -10963,6 +11656,8 @@ async function renderIdeas(params) {
         address: String(document.getElementById('idea-address')?.value || '').trim(),
         category: document.getElementById('idea-cat')?.value || 'sightseeing',
         coordinates: parseCoordinates(document.getElementById('idea-coords')?.value || ''),
+        imageUrls,
+        imageUrl: imageUrls[0] || '',
         estimatedCostMinor: toMinor(cost, getCurrencyDecimals(cur)),
         currency: cur
       };

@@ -1,9 +1,9 @@
-/* Trip Manager by TonSkywalker — Design System v19 “Vivid & Clear”
-   The v19 repaint pushes the whole UI away from anything pale or muddy: a
-   brighter tinted canvas so white cards pop, deeper ink for typography, borders
-   that carry the brand hue, and vivid status colours (success / warning / error
-   / info) that read at a glance. Nothing here is pastel — saturation stays high
-   in both light and dark mode, while contrast stays above WCAG AA for body text.
+/* Trip Manager by TonSkywalker — Design System v20 “Vivid & Deep”
+   The v20 repaint pushes every hue to full saturation: an electric royal-blue
+   brand with a cyan tail, a hot amber accent, jewel-tone companions and status
+   colours that read instantly. Light mode sits on a deeper sky canvas so white
+   cards pop; dark mode drops into a rich indigo-navy night with neon-bright
+   accents. Nothing here is pastel or muddy — contrast stays above WCAG AA.
 
    A colour THEME (LINE / Facebook / Instagram / … or a custom pair) only writes
    the raw brand variables below — `src/js/utils/themes.js` sets them on <html>,
@@ -11,23 +11,23 @@
    mode, exports and JS colours all follow the theme at once. */
 
 :root {
-  /* ---- Brand base: sky blue + sunset amber (default “Sky light” theme) ---- */
-  --primary-raw: #1f6bfb;          /* vivid sky blue — the brand colour */
-  --grad-1: #1f6bfb;               /* gradient start (deep sky) */
-  --grad-2: #57a6ff;               /* gradient end   (soft sky) */
-  --brand-yellow-raw: #ffb02e;     /* sunset amber — accent / highlight */
-  --brand-ink-raw: #28374d;        /* slate ink used for text + shadows */
-  --brand-mist-raw: #a9ccf0;       /* sky mist — quiet secondary surface */
-  --brand-steel-raw: #4a90d9;      /* steel blue — info / day hues */
-  --brand-sand-raw: #fdf3e2;       /* warm sand — soft section tint */
+  /* ---- Brand base: electric royal blue + hot amber (default “Sky light” theme) ---- */
+  --primary-raw: #1e4bff;          /* vivid royal blue — the brand colour */
+  --grad-1: #2038ff;               /* gradient start (electric ultramarine) */
+  --grad-2: #00b4ff;               /* gradient end   (vivid sky cyan) */
+  --brand-yellow-raw: #ff9e00;     /* hot amber — accent / highlight */
+  --brand-ink-raw: #1c2b4a;        /* deep ink used for text + shadows */
+  --brand-mist-raw: #4fd6be;       /* vivid aqua mist — secondary surface */
+  --brand-steel-raw: #2f7fe0;      /* vivid steel blue — info / day hues */
+  --brand-sand-raw: #ffe9c4;       /* warm sand — soft section tint */
   /* Page canvas of each mode — a theme may repaint these (see themes.js). */
-  --page-bg: #eaf2ff;
-  --page-bg-dark: #070c14;
+  --page-bg: #d9e9ff;
+  --page-bg-dark: #05081a;
 
   /* ---- Derived primary palette (light mode) ---- */
   --primary: var(--primary-raw);
   --primary-hover: color-mix(in srgb, var(--primary-raw) 86%, #0b2f8f);
-  --primary-light: color-mix(in srgb, var(--primary-raw) 14%, #fff);
+  --primary-light: color-mix(in srgb, var(--primary-raw) 13%, #fff);
   --primary-lighter: color-mix(in srgb, var(--primary-raw) 7%, #fff);
   --primary-dark: color-mix(in srgb, var(--primary-raw) 74%, #12294f);
   --primary-soft: color-mix(in srgb, var(--primary-raw) 18%, transparent);
@@ -37,97 +37,97 @@
   /* ---- Accent amber (never used behind white body text) ---- */
   --brand-yellow: var(--brand-yellow-raw);
   --brand-yellow-soft: color-mix(in srgb, var(--brand-yellow-raw) 34%, transparent);
-  --brand-yellow-tint: color-mix(in srgb, var(--brand-yellow-raw) 22%, #fff);
-  --brand-yellow-line: color-mix(in srgb, var(--brand-yellow-raw) 52%, #fff);
+  --brand-yellow-tint: color-mix(in srgb, var(--brand-yellow-raw) 20%, #fff);
+  --brand-yellow-line: color-mix(in srgb, var(--brand-yellow-raw) 55%, #fff);
   --brand-yellow-strong: color-mix(in srgb, var(--brand-yellow-raw) 72%, #a35c00);
-  --brand-yellow-ink: #95570a;     /* amber-family text on light surfaces */
+  --brand-yellow-ink: #8a4d00;     /* amber-family text on light surfaces */
   --on-accent: #3f2905;            /* text on a solid amber fill */
-  --shadow-accent: 0 8px 22px color-mix(in srgb, var(--brand-yellow-raw) 46%, transparent);
+  --shadow-accent: 0 8px 22px color-mix(in srgb, var(--brand-yellow-raw) 52%, transparent);
 
-  /* ---- Sage mist + sand tints (quiet, elegant secondary surfaces) ---- */
+  /* ---- Aqua mist + sand tints (vivid secondary surfaces) ---- */
   --mist: var(--brand-mist-raw);
   --mist-soft: color-mix(in srgb, var(--brand-mist-raw) 30%, transparent);
-  --mist-tint: color-mix(in srgb, var(--brand-mist-raw) 24%, #fff);
-  --mist-ink: color-mix(in srgb, var(--brand-mist-raw) 55%, #1f3a33);
-  --sand-tint: color-mix(in srgb, var(--brand-sand-raw) 70%, #fff);
+  --mist-tint: color-mix(in srgb, var(--brand-mist-raw) 20%, #fff);
+  --mist-ink: color-mix(in srgb, var(--brand-mist-raw) 55%, #0c3d33);
+  --sand-tint: color-mix(in srgb, var(--brand-sand-raw) 72%, #fff);
   --steel: var(--brand-steel-raw);
-  --steel-tint: color-mix(in srgb, var(--brand-steel-raw) 18%, #fff);
-  --steel-ink: color-mix(in srgb, var(--brand-steel-raw) 74%, #17323f);
+  --steel-tint: color-mix(in srgb, var(--brand-steel-raw) 16%, #fff);
+  --steel-ink: color-mix(in srgb, var(--brand-steel-raw) 78%, #10283f);
 
-  /* ---- Surfaces: crisp white cards on a clearly tinted canvas (layering) ---- */
+  /* ---- Surfaces: crisp white cards on a deep sky canvas (layering) ---- */
   --bg: var(--page-bg);
-  --bg-secondary: color-mix(in srgb, var(--primary-raw) 11%, #ffffff);
-  --bg-tertiary: color-mix(in srgb, var(--primary-raw) 18%, #eef5ff);
+  --bg-secondary: color-mix(in srgb, var(--primary-raw) 10%, #ffffff);
+  --bg-tertiary: color-mix(in srgb, var(--primary-raw) 17%, #e8f2ff);
   --surface: #ffffff;
-  --surface-2: color-mix(in srgb, var(--primary-raw) 8%, #ffffff);
-  --surface-3: color-mix(in srgb, var(--primary-raw) 15%, #e8f1ff);
+  --surface-2: color-mix(in srgb, var(--primary-raw) 7%, #ffffff);
+  --surface-3: color-mix(in srgb, var(--primary-raw) 14%, #e6efff);
   --card: #ffffff;
   --card-hover: #ffffff;
-  --text: #182437;
-  --text-strong: #0b1626;
-  --text-secondary: #45566d;
-  --text-tertiary: #6b7c92;
-  --border: color-mix(in srgb, var(--primary-raw) 27%, #c6dbf4);
-  --border-strong: color-mix(in srgb, var(--primary-raw) 47%, #9fbde3);
-  --border-light: color-mix(in srgb, var(--primary-raw) 16%, #d6e6f9);
+  --text: #101d33;
+  --text-strong: #060f22;
+  --text-secondary: #33445f;
+  --text-tertiary: #5a6b85;
+  --border: color-mix(in srgb, var(--primary-raw) 34%, #b9d2f5);
+  --border-strong: color-mix(in srgb, var(--primary-raw) 55%, #8fb4ec);
+  --border-light: color-mix(in srgb, var(--primary-raw) 20%, #cbdef8);
 
-  --shadow-xs: 0 1px 3px color-mix(in srgb, var(--primary-raw) 10%, rgba(12,23,38,0.06));
-  --shadow-sm: 0 3px 14px color-mix(in srgb, var(--primary-raw) 14%, rgba(12,23,38,0.08));
-  --shadow: 0 12px 28px color-mix(in srgb, var(--primary-raw) 15%, rgba(12,23,38,0.10));
-  --shadow-md: 0 18px 40px color-mix(in srgb, var(--primary-raw) 18%, rgba(12,23,38,0.12));
-  --shadow-lg: 0 28px 66px color-mix(in srgb, var(--primary-raw) 22%, rgba(12,23,38,0.16));
-  --shadow-soft: 0 12px 40px color-mix(in srgb, var(--primary-raw) 17%, transparent);
+  --shadow-xs: 0 1px 3px color-mix(in srgb, var(--primary-raw) 14%, rgba(12,23,38,0.08));
+  --shadow-sm: 0 3px 14px color-mix(in srgb, var(--primary-raw) 18%, rgba(12,23,38,0.10));
+  --shadow: 0 12px 28px color-mix(in srgb, var(--primary-raw) 20%, rgba(12,23,38,0.12));
+  --shadow-md: 0 18px 40px color-mix(in srgb, var(--primary-raw) 23%, rgba(12,23,38,0.14));
+  --shadow-lg: 0 28px 66px color-mix(in srgb, var(--primary-raw) 27%, rgba(12,23,38,0.18));
+  --shadow-soft: 0 12px 40px color-mix(in srgb, var(--primary-raw) 22%, transparent);
   --shadow-inner: inset 0 1px 0 rgba(255,255,255,0.95);
-  --shadow-primary: 0 12px 28px color-mix(in srgb, var(--primary-raw) 44%, transparent);
-  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary-raw) 38%, transparent);
+  --shadow-primary: 0 12px 28px color-mix(in srgb, var(--primary-raw) 50%, transparent);
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary-raw) 42%, transparent);
 
   /* ---- Companion accents (member colours, day markers, category chips).
-     v18.1: pushed saturation and brightness up for a more vivid, lively look. ---- */
-  --accent-blue: #0f5ef5;
-  --accent-sky: #3d96ff;
-  --accent-steel: #3a82d4;
-  --accent-teal: #00b88a;
-  --accent-sage: #4cb88a;
-  --accent-green: #10a85e;
-  --accent-lime: #7dcc30;
-  --accent-amber: #ffa020;
-  --accent-orange: #ff7a2e;
-  --accent-coral: #ff5544;
-  --accent-rose: #f03570;
-  --accent-violet: #7c3ff0;
-  --accent-slate: #5a7590;
+     v20: full jewel saturation — vivid in both light and dark mode. ---- */
+  --accent-blue: #0b4dff;
+  --accent-sky: #0d9bff;
+  --accent-steel: #2f7fe0;
+  --accent-teal: #00c48c;
+  --accent-sage: #35d09a;
+  --accent-green: #0abf5b;
+  --accent-lime: #83e000;
+  --accent-amber: #ff9e00;
+  --accent-orange: #ff6200;
+  --accent-coral: #ff4438;
+  --accent-rose: #f20f6d;
+  --accent-violet: #7a2bf5;
+  --accent-slate: #5b6cff;
 
   /* ---- Gradients ----
      `--gradient-primary` is set INLINE by a theme (see themes.js) — e.g. the
      Instagram theme paints the real IG rainbow. The values here are the
      “Sky light” default and the fallback for every other brand colour. */
-  --gradient-primary: linear-gradient(135deg, var(--grad-1) 0%, var(--grad-2) 55%, color-mix(in srgb, var(--grad-2) 55%, #ffffff) 100%);
+  --gradient-primary: linear-gradient(135deg, var(--grad-1) 0%, var(--grad-2) 58%, color-mix(in srgb, var(--grad-2) 70%, #ffffff) 100%);
   --gradient-blue: var(--gradient-primary);
   --gradient-duo: linear-gradient(135deg, var(--grad-1) 0%, var(--grad-2) 52%, var(--brand-yellow-raw) 100%);
-  --gradient-sun: linear-gradient(135deg, color-mix(in srgb, var(--brand-yellow-raw) 82%, #fff) 0%, var(--brand-yellow-raw) 58%, color-mix(in srgb, var(--brand-yellow-raw) 78%, #f08a10) 100%);
-  --gradient-fuji: linear-gradient(135deg, var(--grad-1) 0%, color-mix(in srgb, var(--grad-2) 70%, var(--grad-1)) 50%, var(--grad-2) 100%);
-  --gradient-fuji-soft: linear-gradient(135deg, color-mix(in srgb, var(--grad-1) 15%, transparent) 0%, color-mix(in srgb, var(--grad-2) 15%, transparent) 100%);
+  --gradient-sun: linear-gradient(135deg, #ffc42e 0%, var(--brand-yellow-raw) 58%, #ff7300 100%);
+  --gradient-fuji: linear-gradient(135deg, var(--grad-1) 0%, color-mix(in srgb, var(--grad-1) 42%, #7a2bf5) 50%, var(--grad-2) 100%);
+  --gradient-fuji-soft: linear-gradient(135deg, color-mix(in srgb, var(--grad-1) 17%, transparent) 0%, color-mix(in srgb, var(--grad-2) 17%, transparent) 100%);
   --gradient-vivid: linear-gradient(120deg, var(--grad-1) 0%, color-mix(in srgb, var(--grad-1) 42%, var(--grad-2)) 48%, var(--brand-yellow-raw) 100%);
-  --gradient-mist: linear-gradient(140deg, var(--mist-tint) 0%, color-mix(in srgb, var(--brand-steel-raw) 14%, #fff) 100%);
+  --gradient-mist: linear-gradient(140deg, var(--mist-tint) 0%, color-mix(in srgb, var(--brand-steel-raw) 16%, #fff) 100%);
   --gradient-mesh:
-    radial-gradient(at 18% 26%, color-mix(in srgb, var(--grad-1) 17%, transparent) 0%, transparent 52%),
-    radial-gradient(at 82% 16%, color-mix(in srgb, var(--brand-yellow-raw) 19%, transparent) 0%, transparent 50%),
-    radial-gradient(at 52% 84%, color-mix(in srgb, var(--brand-mist-raw) 24%, transparent) 0%, transparent 52%);
+    radial-gradient(at 18% 26%, color-mix(in srgb, var(--grad-1) 22%, transparent) 0%, transparent 52%),
+    radial-gradient(at 82% 16%, color-mix(in srgb, var(--brand-yellow-raw) 24%, transparent) 0%, transparent 50%),
+    radial-gradient(at 52% 84%, color-mix(in srgb, var(--brand-mist-raw) 28%, transparent) 0%, transparent 52%);
   --gradient-glass: linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.66) 100%);
 
-  /* ---- Status colours (v19: fully saturated, unmistakable at a glance) ---- */
-  --success: #00a86b;
-  --success-light: color-mix(in srgb, #00a86b 22%, #fff);
-  --success-bg: color-mix(in srgb, #00a86b 14%, #fff);
-  --warning: #ef7d00;
-  --warning-light: color-mix(in srgb, #ef7d00 26%, #fff);
-  --warning-bg: color-mix(in srgb, #ef7d00 16%, #fff);
-  --danger: #ef2b3d;
-  --danger-light: color-mix(in srgb, #ef2b3d 22%, #fff);
-  --danger-bg: color-mix(in srgb, #ef2b3d 14%, #fff);
-  --info: #0d8ce0;
-  --info-light: color-mix(in srgb, #0d8ce0 22%, #fff);
-  --info-bg: color-mix(in srgb, #0d8ce0 14%, #fff);
+  /* ---- Status colours (v20: fully saturated jewel tones) ---- */
+  --success: #00b368;
+  --success-light: color-mix(in srgb, #00b368 20%, #fff);
+  --success-bg: color-mix(in srgb, #00b368 13%, #fff);
+  --warning: #f97316;
+  --warning-light: color-mix(in srgb, #f97316 24%, #fff);
+  --warning-bg: color-mix(in srgb, #f97316 15%, #fff);
+  --danger: #f4113c;
+  --danger-light: color-mix(in srgb, #f4113c 20%, #fff);
+  --danger-bg: color-mix(in srgb, #f4113c 13%, #fff);
+  --info: #0090ff;
+  --info-light: color-mix(in srgb, #0090ff 20%, #fff);
+  --info-bg: color-mix(in srgb, #0090ff 13%, #fff);
 
   /* ---- Space / radius / type ---- */
   --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
@@ -163,81 +163,81 @@
 }
 
 /* =========================================================
-   Dark mode — deep ink surfaces, tinted by the active theme
+   Dark mode — deep indigo-night surfaces, neon-bright accents
    ========================================================= */
 [data-theme="dark"] {
   /* primary lightened so it reads well as text/accent on dark surfaces */
-  --primary: color-mix(in srgb, var(--primary-raw) 62%, #fff);
-  --primary-hover: color-mix(in srgb, var(--primary-raw) 74%, #fff);
-  --primary-light: color-mix(in srgb, var(--primary-raw) 28%, #151a22);
-  --primary-lighter: color-mix(in srgb, var(--primary-raw) 16%, #151a22);
-  --primary-dark: color-mix(in srgb, var(--primary-raw) 46%, #fff);
-  --primary-soft: color-mix(in srgb, var(--primary-raw) 34%, transparent);
-  --primary-strong: color-mix(in srgb, var(--primary-raw) 46%, #fff);
+  --primary: color-mix(in srgb, var(--primary-raw) 58%, #fff);
+  --primary-hover: color-mix(in srgb, var(--primary-raw) 70%, #fff);
+  --primary-light: color-mix(in srgb, var(--primary-raw) 30%, #121a30);
+  --primary-lighter: color-mix(in srgb, var(--primary-raw) 18%, #121a30);
+  --primary-dark: color-mix(in srgb, var(--primary-raw) 44%, #fff);
+  --primary-soft: color-mix(in srgb, var(--primary-raw) 38%, transparent);
+  --primary-strong: color-mix(in srgb, var(--primary-raw) 42%, #fff);
   --on-primary: #06101f;
 
-  /* brighter amber so it still pops on ink */
-  --brand-yellow: color-mix(in srgb, var(--brand-yellow-raw) 94%, #fff);
-  --brand-yellow-soft: color-mix(in srgb, var(--brand-yellow-raw) 38%, transparent);
-  --brand-yellow-tint: color-mix(in srgb, var(--brand-yellow-raw) 21%, #161b24);
-  --brand-yellow-line: color-mix(in srgb, var(--brand-yellow-raw) 46%, #161b24);
-  --brand-yellow-strong: color-mix(in srgb, var(--brand-yellow-raw) 82%, #fff);
-  --brand-yellow-ink: #ffcf7a;
+  /* hot amber so it still pops on ink */
+  --brand-yellow: color-mix(in srgb, var(--brand-yellow-raw) 92%, #fff);
+  --brand-yellow-soft: color-mix(in srgb, var(--brand-yellow-raw) 42%, transparent);
+  --brand-yellow-tint: color-mix(in srgb, var(--brand-yellow-raw) 23%, #141a28);
+  --brand-yellow-line: color-mix(in srgb, var(--brand-yellow-raw) 50%, #141a28);
+  --brand-yellow-strong: color-mix(in srgb, var(--brand-yellow-raw) 80%, #fff);
+  --brand-yellow-ink: #ffd08a;
   --on-accent: #241804;
-  --shadow-accent: 0 8px 26px color-mix(in srgb, var(--brand-yellow-raw) 34%, transparent);
+  --shadow-accent: 0 8px 26px color-mix(in srgb, var(--brand-yellow-raw) 40%, transparent);
 
-  --mist: color-mix(in srgb, var(--brand-mist-raw) 84%, #fff);
-  --mist-soft: color-mix(in srgb, var(--brand-mist-raw) 28%, transparent);
-  --mist-tint: color-mix(in srgb, var(--brand-mist-raw) 20%, #161b24);
-  --mist-ink: #d4e6e2;
-  --sand-tint: color-mix(in srgb, var(--brand-sand-raw) 18%, #161b24);
-  --steel: color-mix(in srgb, var(--brand-steel-raw) 84%, #fff);
-  --steel-tint: color-mix(in srgb, var(--brand-steel-raw) 25%, #161b24);
-  --steel-ink: #c9e2ef;
+  --mist: color-mix(in srgb, var(--brand-mist-raw) 82%, #fff);
+  --mist-soft: color-mix(in srgb, var(--brand-mist-raw) 30%, transparent);
+  --mist-tint: color-mix(in srgb, var(--brand-mist-raw) 22%, #141a28);
+  --mist-ink: #c9f2e6;
+  --sand-tint: color-mix(in srgb, var(--brand-sand-raw) 18%, #141a28);
+  --steel: color-mix(in srgb, var(--brand-steel-raw) 82%, #fff);
+  --steel-tint: color-mix(in srgb, var(--brand-steel-raw) 27%, #141a28);
+  --steel-ink: #c4e2ff;
 
   --bg: var(--page-bg-dark);
-  --bg-secondary: color-mix(in srgb, var(--primary-raw) 16%, #121826);
-  --bg-tertiary: color-mix(in srgb, var(--primary-raw) 22%, #1a2231);
-  --surface: color-mix(in srgb, var(--primary-raw) 14%, #151c2a);
-  --surface-2: color-mix(in srgb, var(--primary-raw) 19%, #1b2334);
-  --surface-3: color-mix(in srgb, var(--primary-raw) 25%, #222d42);
-  --card: color-mix(in srgb, var(--primary-raw) 14%, #151c2a);
-  --card-hover: color-mix(in srgb, var(--primary-raw) 20%, #1d2739);
-  --text: #f1f6fd;
+  --bg-secondary: color-mix(in srgb, var(--primary-raw) 18%, #0d1428);
+  --bg-tertiary: color-mix(in srgb, var(--primary-raw) 24%, #141d36);
+  --surface: color-mix(in srgb, var(--primary-raw) 16%, #0f1730);
+  --surface-2: color-mix(in srgb, var(--primary-raw) 21%, #151f3a);
+  --surface-3: color-mix(in srgb, var(--primary-raw) 27%, #1c2947);
+  --card: color-mix(in srgb, var(--primary-raw) 16%, #0f1730);
+  --card-hover: color-mix(in srgb, var(--primary-raw) 22%, #182441);
+  --text: #f2f7ff;
   --text-strong: #ffffff;
-  --text-secondary: #c4d1e2;
-  --text-tertiary: #9aabc0;
-  --border: color-mix(in srgb, var(--primary-raw) 34%, #2a3547);
-  --border-strong: color-mix(in srgb, var(--primary-raw) 50%, #3c5174);
-  --border-light: color-mix(in srgb, var(--primary-raw) 22%, #232e42);
+  --text-secondary: #c9d6ee;
+  --text-tertiary: #93a7c4;
+  --border: color-mix(in srgb, var(--primary-raw) 38%, #26334f);
+  --border-strong: color-mix(in srgb, var(--primary-raw) 55%, #3a4f7e);
+  --border-light: color-mix(in srgb, var(--primary-raw) 25%, #1f2a45);
 
-  --shadow-xs: 0 1px 3px rgba(0,0,0,0.32);
-  --shadow-sm: 0 2px 10px rgba(0,0,0,0.36);
-  --shadow: 0 8px 24px rgba(0,0,0,0.42);
-  --shadow-md: 0 14px 34px rgba(0,0,0,0.48);
-  --shadow-lg: 0 24px 60px rgba(0,0,0,0.55);
-  --shadow-soft: 0 10px 40px rgba(0,0,0,0.45);
+  --shadow-xs: 0 1px 3px rgba(0,0,0,0.36);
+  --shadow-sm: 0 2px 10px rgba(0,0,0,0.40);
+  --shadow: 0 8px 24px rgba(0,0,0,0.46);
+  --shadow-md: 0 14px 34px rgba(0,0,0,0.52);
+  --shadow-lg: 0 24px 60px rgba(0,0,0,0.58);
+  --shadow-soft: 0 10px 40px rgba(0,0,0,0.48);
   --shadow-inner: inset 0 1px 0 rgba(255,255,255,0.07);
-  --shadow-primary: 0 10px 28px color-mix(in srgb, var(--primary-raw) 52%, transparent);
+  --shadow-primary: 0 10px 28px color-mix(in srgb, var(--primary-raw) 58%, transparent);
 
-  --success: #2fd39a;
-  --success-light: color-mix(in srgb, #2fd39a 20%, #151a23);
-  --success-bg: color-mix(in srgb, #2fd39a 13%, #151a23);
-  --warning: #ffc14d;
-  --warning-light: color-mix(in srgb, #ffc14d 20%, #151a23);
-  --warning-bg: color-mix(in srgb, #ffc14d 13%, #151a23);
-  --danger: #ff8b84;
-  --danger-light: color-mix(in srgb, #ff8b84 20%, #151a23);
-  --danger-bg: color-mix(in srgb, #ff8b84 13%, #151a23);
-  --info: #7cc8ff;
-  --info-light: color-mix(in srgb, #7cc8ff 20%, #151a23);
-  --info-bg: color-mix(in srgb, #7cc8ff 13%, #151a23);
+  --success: #34e0a1;
+  --success-light: color-mix(in srgb, #34e0a1 22%, #121a26);
+  --success-bg: color-mix(in srgb, #34e0a1 14%, #121a26);
+  --warning: #ffb02e;
+  --warning-light: color-mix(in srgb, #ffb02e 22%, #121a26);
+  --warning-bg: color-mix(in srgb, #ffb02e 14%, #121a26);
+  --danger: #ff6f91;
+  --danger-light: color-mix(in srgb, #ff6f91 22%, #121a26);
+  --danger-bg: color-mix(in srgb, #ff6f91 14%, #121a26);
+  --info: #5cc4ff;
+  --info-light: color-mix(in srgb, #5cc4ff 22%, #121a26);
+  --info-bg: color-mix(in srgb, #5cc4ff 14%, #121a26);
 
   --gradient-glass: linear-gradient(180deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.02) 100%);
   --gradient-mesh:
-    radial-gradient(at 18% 26%, color-mix(in srgb, var(--grad-1) 22%, transparent) 0%, transparent 52%),
-    radial-gradient(at 82% 16%, color-mix(in srgb, var(--brand-yellow-raw) 15%, transparent) 0%, transparent 50%),
-    radial-gradient(at 52% 84%, color-mix(in srgb, var(--brand-mist-raw) 14%, transparent) 0%, transparent 52%);
+    radial-gradient(at 18% 26%, color-mix(in srgb, var(--grad-1) 26%, transparent) 0%, transparent 52%),
+    radial-gradient(at 82% 16%, color-mix(in srgb, var(--brand-yellow-raw) 18%, transparent) 0%, transparent 50%),
+    radial-gradient(at 52% 84%, color-mix(in srgb, var(--brand-mist-raw) 17%, transparent) 0%, transparent 52%);
 }
 
 * { font-family: var(--font-sans); }

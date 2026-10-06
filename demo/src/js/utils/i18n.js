@@ -1,4 +1,4 @@
-// i18n - Thai / English
+// i18n - Thai only (single language)
 const translations = {
   th: {
     appName: "Fuji Trip Planner",
@@ -120,148 +120,26 @@ const translations = {
     addItem: "เพิ่มรายการ",
     itemPlaceholder: "พิมพ์รายการแล้วกด Enter",
     resetChecks: "รีเซ็ตเครื่องหมายถูก"
-  },
-  en: {
-    appName: "Fuji Trip Planner",
-    tagline: "Plan trips • Split expenses • Settle bills",
-    login: "Login",
-    logout: "Logout",
-    admin: "Admin",
-    member: "Member",
-    email: "Email",
-    password: "Password",
-    username: "Username",
-    pin: "PIN",
-    rememberDevice: "Remember this device",
-    loginAdmin: "Admin Login",
-    loginMember: "Member Login",
-    selectTrip: "Select Trip",
-    createTrip: "Create New Trip",
-    dashboard: "Dashboard",
-    itinerary: "Itinerary",
-    map: "Map",
-    expenses: "Expenses",
-    settlement: "Settlement",
-    members: "Members",
-    importExport: "Import / Export",
-    settings: "Settings",
-    more: "More",
-    totalExpense: "Total Expense",
-    myBalance: "My Balance",
-    countdown: "Countdown",
-    currentActivity: "Current Activity",
-    upNext: "Up Next",
-    noData: "No data",
-    noTrip: "No trips yet",
-    createFirstTrip: "Create your first trip to start planning",
-    addPlace: "Add Place",
-    addExpense: "Add Expense",
-    editMode: "Edit Mode",
-    exitEdit: "Exit Edit",
-    loading: "Loading...",
-    saving: "Saving...",
-    success: "Success",
-    error: "Error",
-    warning: "Warning",
-    tripName: "Trip Name",
-    country: "Country",
-    city: "City",
-    startDate: "Start Date",
-    endDate: "End Date",
-    timezone: "Timezone",
-    baseCurrency: "Base Currency",
-    themeColor: "Theme Color",
-    coverImage: "Cover Image",
-    save: "Save",
-    cancel: "Cancel",
-    delete: "Delete",
-    edit: "Edit",
-    add: "Add",
-    search: "Search",
-    filter: "Filter",
-    all: "All",
-    today: "Today",
-    noReceipt: "No Receipt",
-    payer: "Payer",
-    splitMethod: "Split Method",
-    equal: "Equal",
-    unequal: "Unequal",
-    percent: "Percent",
-    shares: "Shares",
-    netTotal: "Net Total",
-    copyLine: "Copy for LINE",
-    exportPng: "Export PNG",
-    exportPdf: "Export PDF",
-    noDebt: "No debt",
-    allCleared: "All cleared!",
-    balances: "Net per person",
-    transactions: "Transactions to do",
-    theme: "Color Theme",
-    appearance: "Appearance",
-    brandLocked: "The palette is locked to Sky light (sky / amber / mist) — only light, dark or auto can be changed",
-    language: "Language",
-    light: "Light",
-    dark: "Dark",
-    pastelGreen: "Pastel Green",
-    fuji: "Fuji",
-    sakura: "Sakura",
-    ocean: "Ocean",
-    sunset: "Sunset",
-    lavender: "Lavender",
-    // --- v16: Wanderlog-style trip tools ---
-    prep: "Prep",
-    checklists: "Checklists",
-    packing: "Packing list",
-    todo: "To-do list",
-    ideas: "Places to visit",
-    ideasBoard: "Places to visit",
-    bookings: "Bookings",
-    reservations: "Reservations",
-    weather: "Weather",
-    addIdea: "Add idea",
-    addBooking: "Add booking",
-    vote: "Vote",
-    votes: "Votes",
-    addToPlan: "Add to itinerary",
-    inPlan: "In the itinerary",
-    confirmCode: "Confirmation code",
-    copied: "Copied",
-    route: "Route",
-    optimizeRoute: "Optimise route order",
-    exportCalendar: "Export calendar (.ics)",
-    progress: "Progress",
-    assignTo: "Assign to",
-    unassigned: "Unassigned",
-    items: "items",
-    done: "done",
-    remaining: "left",
-    clearDone: "Clear completed",
-    templates: "Templates",
-    useTemplate: "Use this template",
-    addItem: "Add item",
-    itemPlaceholder: "Type an item and press Enter",
-    resetChecks: "Reset all checkmarks"
   }
 };
 
-let currentLang = localStorage.getItem('fuji_lang') || 'th'; // Default Thai as requested
-
+// Thai-only: the English pack and the language switcher were removed.
+// t()/getLang()/setLang() keep their signatures so every call site works unchanged.
 export function t(key) {
-  return translations[currentLang]?.[key] || translations['en']?.[key] || key;
+  return translations.th[key] || key;
 }
 
 export function setLang(lang) {
-  if (['th','en'].includes(lang)) {
-    currentLang = lang;
-    localStorage.setItem('fuji_lang', lang);
-    document.documentElement.lang = lang;
-    window.dispatchEvent(new CustomEvent('langchange', { detail: lang }));
+  if (lang && lang !== 'th') {
+    try { console.warn('[i18n] English was removed — staying on Thai.'); } catch {}
   }
+  try { localStorage.setItem('fuji_lang', 'th'); } catch {}
+  try { document.documentElement.lang = 'th'; } catch {}
 }
 
-export function getLang() { return currentLang; }
+export function getLang() { return 'th'; }
 
-export function getTranslations() { return translations[currentLang]; }
+export function getTranslations() { return translations.th; }
 
 // Auto set html lang
-document.documentElement.lang = currentLang;
+try { document.documentElement.lang = 'th'; } catch {}
