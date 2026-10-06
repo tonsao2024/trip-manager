@@ -167,6 +167,26 @@ async function fetchJson(url, timeoutMs = 8000) {
   }
 }
 
+/**
+ * City search → up to `count` matches [{ lat, lon, name, country, admin }].
+ * Never throws — the widget shows “no results” instead.
+ */
+export async function searchCities(query, count = 6) {
+  const q = String(query || '').trim();
+  if (!q) return [];
+  try {
+    const n = Math.min(10, Math.max(1, Number(count) || 6));
+    const json = await fetchJson(`${GEOCODE_URL}?name=${encodeURIComponent(q)}&count=${n}&language=th&format=json`);
+    return (json?.results || []).map(hit => ({
+      lat: hit.latitude, lon: hit.longitude,
+      name: hit.name, country: hit.country || '', admin: hit.admin1 || ''
+    }));
+  } catch (e) {
+    console.warn('city search failed', e?.message || e);
+    return [];
+  }
+}
+
 /** City name → { lat, lon, name, country } (cached per query). */
 export async function geocodeCity(query) {
   const q = String(query || '').trim();

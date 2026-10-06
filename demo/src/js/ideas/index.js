@@ -13,6 +13,7 @@ import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, orderBy 
 export {
   IDEA_STATUSES, ideaStatusDef, voteInfo, hasVoted, toggleVoteMap, voteCount,
   sortIdeas, voterNames, ideaToItineraryPayload, ideasBudget, trendingIdeas,
+  ideaImages, normalizeIdeaImages,
   LOCAL_IDEA_PREFIX, isLocalIdeaId, pendingIdeaRecord, mergeIdeas, pendingIdeaCount
 } from '../utils/ideas.js';
 import {

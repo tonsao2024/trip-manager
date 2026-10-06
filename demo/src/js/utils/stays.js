@@ -40,10 +40,15 @@ export function splitStayMinor(totalMinor, nights) {
  * - Every following night gets a virtual "return to hotel" card
  *   (`virtualStay: true`, `masterId` = the real item id) placed at the end of
  *   that day (order 9000+) around `returnTime`.
- * - Each entry carries `stayNightMinor` / `stayNightAmount` — that night's
- *   share of the total — so per-day money totals distribute correctly.
+ * - Every morning AFTER a stayed night gets a virtual "leave the hotel" card
+ *   (`virtualDeparture: true`, `masterId` = the real item id, order -9000+)
+ *   around `departureTime`, so each day's route visibly starts from the
+ *   accommodation of the night before (check-out morning included).
+ * - Each night entry carries `stayNightMinor` / `stayNightAmount` — that
+ *   night's share of the total — so per-day money totals distribute correctly.
+ *   Departure cards carry no cost (0) — they are route links, not spending.
  */
-export function expandStayItems(items, { returnTime = '21:00' } = {}) {
+export function expandStayItems(items, { returnTime = '21:00', departureTime = '08:00' } = {}) {
   const out = [];
   for (const it of items || []) {
     const nights = stayNights(it);
@@ -82,6 +87,25 @@ export function expandStayItems(items, { returnTime = '21:00' } = {}) {
           status: it.status || 'planned'
         });
       }
+      // Morning departure after this night (always — even check-out morning).
+      const leaveDate = checkIn.add(k + 1, 'day').format('YYYY-MM-DD');
+      const leaveAt = dayjs(`${leaveDate}T${departureTime}:00`).toDate();
+      out.push({
+        ...base,
+        id: `${it.id}@leave-${leaveDate}`,
+        masterId: it.id,
+        virtualDeparture: true,
+        stayRole: 'departure',
+        date: leaveDate,
+        startAt: leaveAt,
+        endAt: dayjs(leaveAt).add(15, 'minute').toDate(),
+        durationMinutes: 0,
+        travelToNextMinutes: 0,
+        order: -9000 + k,
+        status: 'planned',
+        stayNightMinor: 0,
+        stayNightAmount: 0
+      });
     }
   }
   return out;
