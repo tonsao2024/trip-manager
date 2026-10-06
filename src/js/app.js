@@ -1380,7 +1380,7 @@ function showAppearanceSheet() {
   `);
   updateModeIcons();
   queueIcons();
-  bindThemePicker(sheet.sheet, { onChange: () => { if (appEl.querySelector('#dash-mascot')) router.handle(); } });
+  bindThemePicker(sheet.sheet, { onChange: () => { if (location.hash.includes('/dashboard')) router.handle(); } });
   document.getElementById('theme-done')?.addEventListener('click', () => {
     sheet.close();
     // redraw the current page so JS-side colours (day pins, avatars) refresh
@@ -2484,26 +2484,16 @@ async function renderDashboard(params) {
         </div>
       </div>
 
-      <!-- COUNTDOWN ANIMATION + น้องฟูจิ (v18 mascot: tap to make it wiggle) -->
-      <div class="card p-4 md:p-5 dash-buddy-card">
-        <div class="dash-buddy-row">
-          <div class="dash-buddy-copy">
-            <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
-              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('timer', 'w-4 h-4')}</span> ${t('countdown')} • ${th('วิ่งไปหาฟูจิ','Run to Fuji')}</h3>
-              <div id="live-since" class="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1.5">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="w-3 h-3" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-                <span data-live-label></span>
-              </div>
-            </div>
-            <div id="countdown-scene"></div>
-          </div>
-          <div class="dash-buddy" id="dash-mascot">
-            <div class="dash-buddy-name">${icon('heart', 'w-3 h-3')} ${th('น้องฟูจิ', 'Fuji')}</div>
-            ${renderFujiBuddy({ mood: 'happy', size: 150, id: 'fuji-buddy' })}
-            <button type="button" class="btn btn-ghost btn-sm dash-buddy-pat" id="buddy-pat">${icon('hand', 'w-3.5 h-3.5')} ${th('ลูบหัวน้อง', 'Pet Fuji')}</button>
-            <p class="dash-buddy-hint">${th('แตะน้องเพื่อดูแลและให้กำลังใจ', 'Tap the mascot for a little cheer')}</p>
+      <!-- COUNTDOWN ANIMATION -->
+      <div class="card p-4 md:p-5">
+        <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('timer', 'w-4 h-4')}</span> ${t('countdown')}</h3>
+          <div id="live-since" class="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1.5">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="w-3 h-3" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            <span data-live-label></span>
           </div>
         </div>
+        <div id="countdown-scene"></div>
       </div>
 
       <!-- KPI TILES -->
@@ -3075,57 +3065,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
   // paints itself as soon as its data arrives.
   paintDashboardTools({ tripId, trip, members: members || [], items: items || [], lang }).catch(e => console.warn('dash tools failed', e?.message));
 
-  paintDashboardBuddy({ trip, expenses, members, items, totalMinor, balances, lang });
 }
-
-/**
- * น้องฟูจิ on the dashboard (v18): the mascot’s mood is read from the trip —
- * over budget → worried, unsettled bills → “wallet”, trip about to start →
- * cheering, late night → sleepy. Tapping it makes it wiggle and say something.
- */
-function paintDashboardBuddy({ trip, expenses = [], members = [], items = [], totalMinor = 0, balances = [], lang = getLang() }) {
-  const host = document.getElementById('dash-mascot');
-  if (!host) return;
-  const budget = Number(trip?.budgetTotal) > 0 ? Number(trip.budgetTotal) : 0;
-  const overBudget = budget > 0 && totalMinor > budget;
-  // Anybody still carrying a debt → the mascot keeps an eye on the money.
-  const unsettled = (balances || []).filter(b => Math.abs(b?.net || 0) > 1).length;
-  const daysToStart = trip?.startDate ? dayjs(trip.startDate).startOf('day').diff(dayjs().startOf('day'), 'day') : null;
-  const mood = fujiBuddyMood({
-    daysToStart: Number.isFinite(daysToStart) ? daysToStart : null,
-    overBudget,
-    unsettledMinor: unsettled,
-    hasPlan: (items || []).length > 0
-  });
-  const buddy = host.querySelector('.fuji-buddy');
-  if (buddy) {
-    buddy.outerHTML = renderFujiBuddy({ mood, size: 150, id: 'fuji-buddy' });
-  }
-  const label = host.querySelector('.dash-buddy-name');
-  if (label) {
-    const moodTh = { happy: 'ร่าเริง', cheer: 'เชียร์สุดตัว', chill: 'ชิลล์ ๆ', sleepy: 'ง่วงนอน', worry: 'ห่วงงบ', wallet: 'ดูเรื่องเงิน' }[mood] || 'ร่าเริง';
-    const moodEn = { happy: 'cheerful', cheer: 'excited', chill: 'relaxed', sleepy: 'sleepy', worry: 'worried', wallet: 'watching the money' }[mood] || 'cheerful';
-    label.innerHTML = `${icon('heart', 'w-3 h-3')} ${lang === 'th' ? 'น้องฟูจิ' : 'Fuji'} <span class="dash-buddy-mood">${lang === 'th' ? moodTh : moodEn}</span>`;
-  }
-  const next = document.getElementById('buddy-pat');
-  if (next) {
-    next.onclick = () => {
-      const b = host.querySelector('.fuji-buddy');
-      if (!b) return;
-      b.classList.remove('is-tapped');
-      void b.offsetWidth;
-      b.classList.add('is-tapped');
-      const text = fujiBuddyLine(mood, lang);
-      b.appendChild(Object.assign(document.createElement('span'), { className: 'fuji-buddy-speech is-pop', textContent: text }));
-      setTimeout(() => b.querySelector('.fuji-buddy-speech')?.remove(), 3200);
-      toast.info(`🗻 ${text}`);
-      celebrateFrom(b);
-    };
-  }
-  // Tap the mascot itself → same cheer, without the confetti noise
-  host.querySelector('.fuji-buddy')?.addEventListener('click', () => next?.click());
-}
-
 async function renderItinerary(params) {
   const tripId = params.tripId;
   const token = beginRender();
@@ -6146,6 +6086,7 @@ async function renderSettlement(params) {
 
       <div class="chip-row mb-4" id="settle-views">
         <button class="chip chip-active" data-view="overview">${icon('scale', 'w-3.5 h-3.5')} ${th('ภาพรวม','Overview')}</button>
+        <button class="chip" data-view="debt-map">${icon('map', 'w-3.5 h-3.5')} ${th('แผนที่หนี้','Debt map')}</button>
         <button class="chip" data-view="receipts">${icon('hand', 'w-3.5 h-3.5')} ${th('ใบเสร็จรายคน (ปัดการ์ด)','Receipt cards — swipe')}</button>
         <button class="chip" data-view="receipts-list">${icon('list', 'w-3.5 h-3.5')} ${th('แบบรายการยาว','Long list')}</button>
       </div>
@@ -6927,9 +6868,156 @@ async function renderSettlement(params) {
     });
   }
 
+  /** v18.1: Debt map — SVG graph showing who owes whom with amounts on edges */
+  function debtMapHtml() {
+    const txns = state.transactions || [];
+    if (!txns.length) {
+      return `<div class="card p-5">${renderEmptyState({ icon: 'party-popper', title: t('noDebt'), desc: t('allCleared') })}</div>`;
+    }
+    const members = state.statements || [];
+    const membersMap = state.membersMap || {};
+    // Arrange members in a circle
+    const n = members.length;
+    const cx = 300, cy = 250, radius = Math.min(200, 60 + n * 30);
+    const positions = {};
+    members.forEach((m, i) => {
+      const angle = (2 * Math.PI * i / n) - Math.PI / 2;
+      positions[m.memberId] = {
+        x: cx + radius * Math.cos(angle),
+        y: cy + radius * Math.sin(angle),
+        member: m
+      };
+    });
+    // Calculate edge offsets to prevent overlapping lines
+    // Group transactions between the same pair of members
+    const edgeGroups = {};
+    txns.forEach(tx => {
+      const key = [tx.from, tx.to].sort().join('|');
+      if (!edgeGroups[key]) edgeGroups[key] = [];
+      edgeGroups[key].push(tx);
+    });
+    // Render edges with offset curves
+    let edgesHtml = '';
+    const edgeLabels = [];
+    Object.entries(edgeGroups).forEach(([key, txGroup]) => {
+      const [a, b] = key.split('|');
+      const posA = positions[a], posB = positions[b];
+      if (!posA || !posB) return;
+      const count = txGroup.length;
+      txGroup.forEach((tx, idx) => {
+        const fromPos = positions[tx.from];
+        const toPos = positions[tx.to];
+        if (!fromPos || !toPos) return;
+        // Offset perpendicular to the line to avoid overlapping
+        const dx = toPos.x - fromPos.x;
+        const dy = toPos.y - fromPos.y;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+        const nx = -dy / len;
+        const ny = dx / len;
+        const offset = (idx - (count - 1) / 2) * 18;
+        const midX = (fromPos.x + toPos.x) / 2 + nx * offset;
+        const midY = (fromPos.y + toPos.y) / 2 + ny * offset;
+        // Control point for the curve
+        const ctrlX = midX + nx * 20;
+        const ctrlY = midY + ny * 20;
+        const fromColor = membersMap[tx.from]?.color || 'var(--primary)';
+        edgesHtml += `<path d="M${fromPos.x},${fromPos.y} Q${ctrlX},${ctrlY} ${toPos.x},${toPos.y}" 
+          fill="none" stroke="${escapeHtml(fromColor)}" stroke-width="2.5" stroke-opacity="0.7"
+          marker-end="url(#arrow-${escapeHtml(tx.from?.slice(0,6) || 'x')})"/>`;
+        edgeLabels.push({ x: midX, y: midY, amount: tx.amountMinor, from: tx.from, to: tx.to });
+      });
+    });
+    // Render nodes
+    let nodesHtml = '';
+    members.forEach((m, i) => {
+      const pos = positions[m.memberId];
+      if (!pos) return;
+      const color = m.color || 'var(--primary)';
+      const initial = (m.displayName || '?').charAt(0).toUpperCase();
+      const isMe = m.memberId === currentUser?.uid;
+      nodesHtml += `
+        <g class="debt-map-node" data-member="${escapeHtml(m.memberId)}">
+          <circle cx="${pos.x}" cy="${pos.y}" r="28" fill="${escapeHtml(color)}" opacity="0.15"/>
+          <circle cx="${pos.x}" cy="${pos.y}" r="22" fill="${escapeHtml(color)}"/>
+          <text x="${pos.x}" y="${pos.y + 1}" text-anchor="middle" dominant-baseline="central" 
+                fill="#fff" font-size="12" font-weight="900" font-family="var(--font-display)">${escapeHtml(initial)}</text>
+          <text x="${pos.x}" y="${pos.y + 38}" text-anchor="middle" fill="var(--text)" 
+                font-size="10" font-weight="700" font-family="var(--font-sans)">${escapeHtml(m.displayName || '')}</text>
+          ${isMe ? `<text x="${pos.x}" y="${pos.y + 50}" text-anchor="middle" fill="var(--text-tertiary)" font-size="8" font-weight="600">(${th('คุณ','you')})</text>` : ''}
+          <text x="${pos.x}" y="${pos.y - 34}" text-anchor="middle" 
+                fill="${m.netMinor >= 0 ? '#059669' : '#e63232'}" font-size="9.5" font-weight="800" 
+                font-family="var(--font-mono)">${m.netMinor >= 0 ? '+' : '−'}${money(Math.abs(m.netMinor))}</text>
+        </g>`;
+    });
+    // Render labels on edges
+    let labelsHtml = '';
+    // Simple collision avoidance: if labels are too close, shift them
+    edgeLabels.forEach((label, idx) => {
+      const fromName = (membersMap[label.from]?.displayName || '?').slice(0, 6);
+      const toName = (membersMap[label.to]?.displayName || '?').slice(0, 6);
+      labelsHtml += `
+        <g class="debt-map-label">
+          <rect x="${label.x - 42}" y="${label.y - 10}" width="84" height="20" rx="6" 
+                fill="var(--surface)" stroke="var(--border)" stroke-width="1" opacity="0.92"/>
+          <text x="${label.x}" y="${label.y + 3}" text-anchor="middle" 
+                fill="var(--text-strong)" font-size="9" font-weight="800" font-family="var(--font-mono)">${money(label.amount)}</text>
+        </g>`;
+    });
+    // Arrow marker definitions
+    let markerDefs = '';
+    const uniqueFroms = [...new Set(txns.map(tx => tx.from))];
+    uniqueFroms.forEach(uid => {
+      const color = membersMap[uid]?.color || 'var(--primary)';
+      markerDefs += `<marker id="arrow-${escapeHtml(uid.slice(0,6))}" viewBox="0 0 10 10" refX="9" refY="5" 
+        markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="${escapeHtml(color)}" opacity="0.8"/>
+      </marker>`;
+    });
+    const svgWidth = 600;
+    const svgHeight = 500;
+    return `
+      <div class="card p-5">
+        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <h3 class="font-bold flex items-center gap-2">
+            <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('map', 'w-4 h-4')}</span>
+            ${th('แผนที่หนี้ — ใครต้องจ่ายใคร','Debt map — who owes whom')}
+            <span class="badge badge-planned text-[10px]">${txns.length} ${th('รายการ','transactions')}</span>
+          </h3>
+          <span class="text-[10px] text-[var(--text-tertiary)]">${th('เส้นและตัวเลขแสดงยอดที่ต้องโอน','Lines and numbers show transfer amounts')}</span>
+        </div>
+        <div class="debt-map-container" style="overflow-x:auto;">
+          <svg viewBox="0 0 ${svgWidth} ${svgHeight}" width="100%" style="max-width:${svgWidth}px; min-height:320px; display:block; margin:0 auto;">
+            <defs>${markerDefs}</defs>
+            ${edgesHtml}
+            ${labelsHtml}
+            ${nodesHtml}
+          </svg>
+        </div>
+        <div class="mt-3 grid gap-1.5" style="max-width:480px; margin:0 auto;">
+          ${txns.map(tx => {
+            const fromM = membersMap[tx.from];
+            const toM = membersMap[tx.to];
+            return `<div class="flex items-center gap-2 text-xs p-2 rounded-xl" style="background:var(--bg-secondary);">
+              <span class="avatar" style="width:22px;height:22px;font-size:9px;background:${escapeHtml(fromM?.color || 'var(--primary)')};">${escapeHtml((fromM?.displayName || '?').charAt(0).toUpperCase())}</span>
+              <span class="font-semibold truncate">${escapeHtml(fromM?.displayName || '')}</span>
+              <span style="color:var(--text-tertiary);">${icon('arrow-right', 'w-3 h-3')}</span>
+              <span class="avatar" style="width:22px;height:22px;font-size:9px;background:${escapeHtml(toM?.color || 'var(--primary)')};">${escapeHtml((toM?.displayName || '?').charAt(0).toUpperCase())}</span>
+              <span class="font-semibold truncate">${escapeHtml(toM?.displayName || '')}</span>
+              <span class="ml-auto font-bold font-mono">${money(tx.amountMinor)}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }
+
   function renderView() {
     const content = document.getElementById('settlement-content');
     if (!content) return;
+    if (view === 'debt-map') {
+      content.innerHTML = debtMapHtml();
+      queueIcons();
+      return;
+    }
     if (view === 'overview') {
       content.innerHTML = overviewHtml();
       queueIcons();
@@ -7005,8 +7093,9 @@ async function renderSettlement(params) {
   document.querySelectorAll('#settle-views [data-view]').forEach(btn => btn.addEventListener('click', () => {
     const wanted = btn.dataset.view;
     receiptMode = wanted === 'receipts-list' ? 'list' : 'deck';
-    view = 'receipts';
     if (wanted === 'overview') view = 'overview';
+    else if (wanted === 'debt-map') view = 'debt-map';
+    else view = 'receipts';
     try { localStorage.setItem('fuji_receipt_mode', receiptMode); } catch { /* ignore */ }
     document.querySelectorAll('#settle-views .chip').forEach(c => c.classList.remove('chip-active'));
     btn.classList.add('chip-active');
@@ -8342,7 +8431,14 @@ async function renderSettings(params) {
         <span class="badge ${perms.isAdmin ? 'badge-completed' : 'badge-planned'}">${icon(perms.isAdmin ? 'shield-check' : 'eye', 'w-3 h-3')} ${escapeHtml(perms.role)}</span>
       </div>
 
-      <div class="card card-accent p-5 space-y-4">
+      <div class="settings-tabs" id="settings-tabs">
+        <button class="settings-tab active" data-settings-tab="trip">${icon('compass', 'w-3.5 h-3.5')} ${th('ข้อมูลทริป','Trip')}</button>
+        <button class="settings-tab" data-settings-tab="appearance">${icon('palette', 'w-3.5 h-3.5')} ${th('การแสดงผล','Appearance')}</button>
+        <button class="settings-tab" data-settings-tab="system">${icon('database', 'w-3.5 h-3.5')} ${th('ระบบ','System')}</button>
+        <button class="settings-tab" data-settings-tab="advanced">${icon('settings-2', 'w-3.5 h-3.5')} ${th('เพิ่มเติม','Advanced')}</button>
+      </div>
+
+      <div class="card card-accent p-5 space-y-4" data-settings-section="trip">
         <h3 class="font-bold flex items-center gap-2">${icon('compass', 'w-4 h-4')} ${th('ข้อมูลทริป', 'Trip details')}</h3>
         <div class="input-group"><label class="input-label">${icon('sparkles', 'w-3.5 h-3.5')} ${t('tripName')}</label><input id="s-name" class="input" value="${escapeHtml(trip?.name || '')}"></div>
         <div class="input-group"><label class="input-label">${icon('align-left', 'w-3.5 h-3.5')} ${th('รายละเอียด','Description')}</label><textarea id="s-desc" class="input" style="min-height:70px;">${escapeHtml(trip?.description || '')}</textarea></div>
@@ -8389,7 +8485,7 @@ async function renderSettings(params) {
         <button id="save-settings" class="btn btn-primary w-full">${icon('save', 'w-4 h-4')} ${t('save')}</button>
       </div>
 
-      <div class="card p-5 space-y-4">
+      <div class="card p-5 space-y-4" data-settings-section="trip">
         <h3 class="font-bold flex items-center gap-2">${icon('piggy-bank', 'w-4 h-4')} ${th('งบประมาณ (บาท)','Budget (THB)')}</h3>
         <div class="grid grid-cols-2 gap-3">
           <div class="input-group"><label class="input-label">${icon('wallet', 'w-3.5 h-3.5')} ${th('งบประมาณรวม','Total budget')}</label><input id="s-budget-total" class="input money-input" type="text" inputmode="decimal" value="${fmtBudgetInput(trip?.budgetTotal)}" placeholder="50,000"><p class="input-hint">THB (บาท) • ${th('งบของทั้งทริป','whole-trip budget')}</p></div>
@@ -8422,7 +8518,7 @@ async function renderSettings(params) {
       </div>
 
       <!-- v18: the colour theme picker lives here (LINE / Facebook / IG / custom) -->
-      <div class="card p-5 space-y-3" id="settings-appearance-card">
+      <div class="card p-5 space-y-3" id="settings-appearance-card" data-settings-section="appearance">
         <h3 class="font-bold flex items-center gap-2">${icon('palette', 'w-4 h-4')} ${th('ชุดสี & การแสดงผล','Colour theme & display')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เลือกธีมที่ถูกใจ แล้วปรับสี/ความสดใสเองได้ — มีผลทุกหน้า รวมถึงโหมดมืดและรูปที่ส่งออก','Pick a palette you like and fine-tune the colours — it applies everywhere, including dark mode and exported images.')}</p>
         ${themePickerHtml({ idPrefix: 'settings' })}
@@ -8430,7 +8526,7 @@ async function renderSettings(params) {
       </div>
 
       <!-- v18: the profile picture lands here, so the account lives with it -->
-      <div class="card p-5 space-y-3" id="settings-account-card">
+      <div class="card p-5 space-y-3" id="settings-account-card" data-settings-section="appearance">
         <h3 class="font-bold flex items-center gap-2">${icon('user-cog', 'w-4 h-4')} ${th('บัญชีและอุปกรณ์','Account & device')}</h3>
         <div class="flex items-center gap-3">
           <div class="avatar" style="width:44px;height:44px;background:var(--gradient-primary);">${avatarInitialHtml(currentUser)}</div>
@@ -8450,21 +8546,21 @@ async function renderSettings(params) {
         <p class="text-[10px] text-[var(--text-tertiary)] font-mono">${escapeHtml(currentUser?.uid?.slice(0, 12) || '')}</p>
       </div>
 
-      <div class="card p-5 space-y-3" id="expense-groups-card">
+      <div class="card p-5 space-y-3" id="expense-groups-card" data-settings-section="system">
         <h3 class="font-bold flex items-center gap-2">${icon('layout-grid', 'w-4 h-4')} ${th('กลุ่มค่าใช้จ่าย','Expense groups')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เพิ่ม แก้ไขชื่อ/สี/ไอคอน หรือลบกลุ่มของทริปนี้ได้ ทุกหน้าจะใช้กลุ่มใหม่ทันที','Add, rename, recolour or delete groups for this trip — every screen picks them up.')}</p>
         <div id="settings-cat-list" class="flex flex-wrap gap-1.5"></div>
         <button id="settings-manage-cats" class="btn btn-secondary btn-sm w-full">${icon('settings-2', 'w-4 h-4')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage groups')}</button>
       </div>
 
-      <div class="card p-5 space-y-3" id="trip-cards-card">
+      <div class="card p-5 space-y-3" id="trip-cards-card" data-settings-section="system">
         <h3 class="font-bold flex items-center gap-2">${icon('credit-card', 'w-4 h-4')} ${th('บัตรเครดิตของทริป','Trip credit cards')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('ฟอร์มค่าใช้จ่ายจะเลือกบัตรได้จากรายการนี้เท่านั้น — เพิ่ม/แก้ไข/ลบที่นี่ได้ เพื่อป้องกันการกรอกบัตรมั่ว','Expense forms can only pick cards from this list — add/edit/delete here to stop random card names.')}</p>
         <div id="settings-cards-list" class="flex flex-wrap gap-1.5"></div>
         <button id="settings-manage-cards" class="btn btn-secondary btn-sm w-full">${icon('settings-2', 'w-4 h-4')} ${th('จัดการบัตรเครดิต','Manage cards')}</button>
       </div>
 
-      <div class="card p-5 space-y-3" id="invite-card">
+      <div class="card p-5 space-y-3" id="invite-card" data-settings-section="system">
         <h3 class="font-bold flex items-center gap-2">${icon('ticket', 'w-4 h-4')} ${th('รหัสเชิญเข้าร่วมทริป','Trip invite code')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('ส่งรหัสนี้ให้เพื่อน — พวกเขาล็อกอินด้วยบัญชี Google/อีเมล แล้วกรอกรหัสเพื่อขอเข้าร่วม จากนั้นกดอนุมัติได้ที่หน้าสมาชิก','Share this code with friends — they sign in with Google/email, enter it to request access, and you approve them on the Members page.')}</p>
         <div class="flex items-center gap-2 flex-wrap">
@@ -8475,14 +8571,14 @@ async function renderSettings(params) {
         <p class="text-[10px] text-[var(--text-tertiary)]">${th('รหัสจะสุ่มใหม่ได้ทุกเมื่อ — คนที่ยังไม่ได้อนุมัติจะใช้รหัสเดิมไม่ได้อีก','You can rotate the code anytime — old codes stop working immediately.')}</p>
       </div>
 
-      <div class="card p-5 space-y-3">
+      <div class="card p-5 space-y-3" data-settings-section="system">
         <h3 class="font-bold flex items-center gap-2">${icon('stethoscope', 'w-4 h-4')} ${th('ตรวจสอบระบบ','System check')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เช็กว่าล็อกอินสมาชิก, Cloud Functions และ Firestore Rules พร้อมใช้งานไหม (ใช้เวลาไม่กี่วินาที)','Checks member login, Cloud Functions and Firestore rules (a few seconds).')}</p>
         <button id="run-diagnostics" class="btn btn-secondary w-full">${icon('play', 'w-4 h-4')} ${th('เริ่มตรวจสอบ','Run check')}</button>
         <div id="diag-results" class="space-y-2"></div>
       </div>
 
-      <div class="card p-5 space-y-3" style="border-color: color-mix(in srgb, var(--danger) 35%, var(--border));">
+      <div class="card p-5 space-y-3" style="border-color: color-mix(in srgb, var(--danger) 35%, var(--border));" data-settings-section="advanced">
         <h3 class="font-bold flex items-center gap-2" style="color:var(--danger);">${icon('alert-triangle', 'w-4 h-4')} ${th('เขตอันตราย','Danger zone')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('ลบทริปจะลบแผนการเดินทาง ค่าใช้จ่าย สมาชิก และเอกสารทั้งหมดอย่างถาวร','Deleting a trip removes its itinerary, expenses, members and documents permanently.')}</p>
         <div class="btn-row">
@@ -8492,7 +8588,7 @@ async function renderSettings(params) {
         <p class="text-[10px] text-[var(--text-tertiary)] font-mono">Trip ID: ${escapeHtml(tripId)}</p>
       </div>
 
-      <div class="card p-5 space-y-2" id="about-card">
+      <div class="card p-5 space-y-2" id="about-card" data-settings-section="advanced">
         <h3 class="font-bold flex items-center gap-2">${icon('info', 'w-4 h-4')} ${th('เกี่ยวกับแอป','About')}</h3>
         <div class="app-wordmark">
           <span class="app-wordmark-logo">${icon('mount-snow', 'w-4 h-4')}</span>
@@ -8522,6 +8618,21 @@ async function renderSettings(params) {
   `;
   queueIcons();
   initReveal(appEl);
+
+  /* ---- Settings tabs (v18.1) ---- */
+  const settingsTabBar = document.getElementById('settings-tabs');
+  if (settingsTabBar) {
+    const applySettingsTab = (tabId) => {
+      settingsTabBar.querySelectorAll('.settings-tab').forEach(t => t.classList.toggle('active', t.dataset.settingsTab === tabId));
+      appEl.querySelectorAll('[data-settings-section]').forEach(card => {
+        card.style.display = card.dataset.settingsSection === tabId ? '' : 'none';
+      });
+    };
+    settingsTabBar.querySelectorAll('.settings-tab').forEach(tab => {
+      tab.addEventListener('click', () => applySettingsTab(tab.dataset.settingsTab));
+    });
+    applySettingsTab('trip');
+  }
 
   const colorInput = document.getElementById('s-color');
   const colorText = document.getElementById('s-color-text');

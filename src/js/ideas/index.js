@@ -44,6 +44,7 @@ export async function createIdea(tripId, data = {}, uid = null) {
   if (!db) throw new Error('DB not ready');
   const title = String(data.title || '').trim();
   if (!title) throw new Error('ต้องมีชื่อสถานที่');
+  const resolvedUid = actorUid(uid) || 'unknown';
   const ref = await addDoc(ideasCol(tripId), {
     title,
     note: String(data.note || '').trim(),
@@ -54,13 +55,13 @@ export async function createIdea(tripId, data = {}, uid = null) {
     imageUrl: data.imageUrl || '',
     estimatedCostMinor: Number(data.estimatedCostMinor) || 0,
     currency: data.currency || 'THB',
-    votes: data.votes || (actorUid(uid) ? { [actorUid(uid)]: true } : {}), // the author votes for it by default
+    votes: data.votes || (resolvedUid !== 'unknown' ? { [resolvedUid]: true } : {}), // the author votes for it by default
     status: 'idea',
     plannedItemId: null,
     plannedDate: null,
-    createdBy: actorUid(uid),
+    createdBy: resolvedUid,
     createdAt: serverTimestamp(),
-    updatedBy: actorUid(uid),
+    updatedBy: resolvedUid,
     updatedAt: serverTimestamp()
   });
   return ref.id;

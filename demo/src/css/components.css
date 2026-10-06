@@ -2737,3 +2737,31 @@ html, body { max-width: 100%; overflow-x: clip; }
 }
 .weather-chip--mini[hidden] { display: none; }
 .weather-chip--mini svg { width: 13px; height: 13px; }
+
+/* ---- Settings tabs (v18.1) ---- */
+.settings-tabs {
+  display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 8px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.settings-tabs::-webkit-scrollbar { display: none; }
+.settings-tab {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px;
+  padding: 8px 16px; border-radius: var(--radius-full);
+  border: 1.5px solid var(--border); background: var(--surface);
+  font-size: 12.5px; font-weight: 700; color: var(--text-secondary);
+  cursor: pointer; white-space: nowrap;
+  transition: background .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease;
+}
+.settings-tab:hover { border-color: color-mix(in srgb, var(--primary-raw) 40%, var(--border)); color: var(--text); }
+.settings-tab.active {
+  background: var(--gradient-primary); color: var(--on-primary);
+  border-color: transparent; box-shadow: var(--shadow-primary);
+}
+
+/* ---- Debt map (settlement) ---- */
+.debt-map-container { border-radius: var(--radius-md); overflow: hidden; }
+.debt-map-container svg { background: var(--bg-secondary); border-radius: var(--radius-md); }
+.debt-map-node { cursor: pointer; transition: transform .15s ease; }
+.debt-map-node:hover { transform: scale(1.08); }
+.debt-map-label rect { transition: fill .15s ease; }
+

@@ -616,17 +616,20 @@ select.input { border-radius: var(--radius); }
 
 .rcpt-deck-stage { position: relative; min-height: 340px; perspective: 1000px; }
 .rcpt-deck-peek {
-  position: absolute; inset: 0; pointer-events: none; filter: saturate(.7); opacity: .6;
-  transform: translateY(10px) scale(.965); transition: transform .2s ease, opacity .2s ease;
+  position: absolute; inset: 0; pointer-events: none; filter: saturate(.7); opacity: .45;
+  transform: translateY(16px) scale(.94); transition: transform .2s ease, opacity .2s ease;
+  z-index: 0;
 }
 .rcpt-deck-peek .rcpt-deck-card { cursor: default; }
+/* v18.1: the main card sits above the peek card with proper spacing, no overlap */
 .rcpt-deck-card {
-  position: relative; display: flex; flex-direction: column; gap: 10px; padding: 16px;
+  position: relative; display: flex; flex-direction: column; gap: 10px; padding: 18px;
   border-radius: 20px; background: var(--surface);
-  border: 1px solid color-mix(in srgb, var(--deck-color, var(--primary)) 34%, var(--border));
-  box-shadow: 0 12px 26px rgba(15,23,42,.13), 0 2px 6px rgba(15,23,42,.06);
+  border: 1.5px solid color-mix(in srgb, var(--deck-color, var(--primary)) 34%, var(--border));
+  box-shadow: 0 14px 30px rgba(15,23,42,.14), 0 2px 8px rgba(15,23,42,.07);
   touch-action: pan-y; user-select: none; cursor: grab;
   will-change: transform;
+  z-index: 2;
 }
 .rcpt-deck-card:active { cursor: grabbing; }
 .rcpt-deck-card::before {
