@@ -56,12 +56,14 @@ export function joinPermissionHelp(lang = 'th', { projectId = null, action = 'jo
   const th = String(lang).startsWith('th');
   const what = action === 'approve'
     ? (th ? 'บันทึกการอนุมัติสมาชิก' : 'saving the member approval')
-    : (th ? 'บันทึกคำขอเข้าร่วมทริป' : 'saving the join request');
+    : action === 'save'
+      ? (th ? 'บันทึกไอเดีย / เช็กลิสต์ / รายการจอง' : 'saving an idea, checklist or reservation')
+      : (th ? 'บันทึกคำขอเข้าร่วมทริป' : 'saving the join request');
   return {
     title: th ? 'ยังไม่ได้ Publish Firestore Rules' : 'Firestore rules are not published yet',
     message: th
-      ? `Firestore ไม่อนุญาตให้${what} เพราะกฎที่ใช้งานอยู่ในโปรเจกต์ยังไม่มีคอลเลกชัน joinRequests / publicProfiles / categories — แก้ได้ใน 1 นาที`
-      : `Firestore denied ${what} because the published rules have no joinRequests / publicProfiles / categories collection yet — it takes a minute to fix.`,
+      ? `Firestore ไม่อนุญาตให้${what} เพราะกฎที่เผยแพร่อยู่ในโปรเจกต์เก่ากว่าโค้ดของแอป (ยังไม่มีคอลเลกชัน ideas / checklists / reservations หรือเขียนแบบจำกัดสมาชิกเกินไป) — แก้ได้ใน 1 นาที`
+      : `Firestore denied ${what} because the published rules are older than this app's code (no ideas / checklists / reservations collection, or a membership check that the device has not passed yet) — it takes a minute to fix.`,
     steps: th ? [
       'กดปุ่ม "เปิด Firebase Console" ด้านล่าง (ต้องเป็นบัญชีเจ้าของโปรเจกต์)',
       'ไปที่แท็บ Rules แล้วเลือก "แก้ไข" วางกฎทั้งหมดจากปุ่ม "คัดลอกกฎทั้งหมด" แทนของเดิม',
@@ -73,7 +75,7 @@ export function joinPermissionHelp(lang = 'th', { projectId = null, action = 'jo
     ],
     consoleUrl: consoleRulesUrl(projectId),
     repoUrl: REPO_RULES_URL,
-    missing: ['publicProfiles', 'trips/{tripId}/joinRequests', 'users/{uid}/joinRequests', 'trips/{tripId}/categories', 'trips/{tripId}/comments', 'trips/{tripId}/activity']
+    missing: ['publicProfiles', 'trips/{tripId}/joinRequests', 'users/{uid}/joinRequests', 'trips/{tripId}/categories', 'trips/{tripId}/comments', 'trips/{tripId}/activity', 'trips/{tripId}/ideas', 'trips/{tripId}/checklists', 'trips/{tripId}/reservations']
   };
 }
 

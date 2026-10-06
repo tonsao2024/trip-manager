@@ -4,12 +4,22 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Fuji Trip Planner — ตัวอย่างฟังก์ชันครบ (offline demo)</title>
-  <meta name="description" content="Modern trip planner with group expense splitting, place guides, bookings, checklists and settlement">
-  <meta name="theme-color" id="meta-theme-color" content="#2f6fe4">
+  <meta name="description" content="Trip Manager by TonSkywalker —แอปวางแผนทริปแบบกลุ่ม แบ่งค่าใช้จ่าย เคลียร์บิล แผนการเดินทางและแผนที่ (จัดทำโดย TonSkywalker — ห้ามเผยแพร่เชิงพาณิชย์)">
+  <meta name="application-name" content="Trip Manager">
+  <meta name="author" content="TonSkywalker">
+  <meta name="copyright" content="© 2024–2026 TonSkywalker. All rights reserved.">
+  <meta name="theme-color" id="meta-theme-color" content="#1f6bfb">
   <!-- Build identity — source of truth: src/js/utils/buildInfo.js (a unit test keeps these in sync) -->
-  <meta name="app-version" content="17">
+  <meta name="app-version" content="18">
   <meta name="app-palette" content="Sky light">
-  <meta name="app-updated" content="2026-10-05">
+  <meta name="app-updated" content="2026-10-06">
+  <meta property="og:title" content="Trip Manager by TonSkywalker">
+  <meta property="og:description" content="วางแผนทริป • แบ่งค่าใช้จ่าย • เคลียร์บิล ครบในแอปเดียว โดย TonSkywalker">
+  <!-- Logo ในแถบบราวเซอร์ (favicon) — ไฟล์จริงในโฟลเดอร์ public/ และแบบ inline ที่ตามธีมสี -->
+  <link rel="icon" id="favicon-tint" type="image/svg+xml" href="./public/favicon.svg">
+  <link rel="shortcut icon" href="./public/favicon.svg">
+  <link rel="apple-touch-icon" href="./public/apple-touch-icon.png">
+  <link rel="mask-icon" href="./public/favicon.svg" color="#1f6bfb">
   <!-- No PWA -->
 
   <!-- Fonts -->
@@ -21,11 +31,11 @@
   <link rel="stylesheet" href="./vendor/tailwind.css">
   
 
-  <!-- Design System v17 “Sky light” (cache-busted) -->
-  <link rel="stylesheet" href="./src/css/tokens.css?v=17">
-  <link rel="stylesheet" href="./src/css/components.css?v=17">
-  <link rel="stylesheet" href="./src/css/refresh.css?v=17">
-  <link rel="stylesheet" href="./src/css/animations.css?v=17">
+  <!-- Design System v18 “Bright” (cache-busted) -->
+  <link rel="stylesheet" href="./src/css/tokens.css?v=18">
+  <link rel="stylesheet" href="./src/css/components.css?v=18">
+  <link rel="stylesheet" href="./src/css/refresh.css?v=18">
+  <link rel="stylesheet" href="./src/css/animations.css?v=18">
 
   <!-- Lucide Icons -->
   <script src="./vendor/lucide.min.js"></script>
@@ -82,6 +92,21 @@
     #logo-link:active { transform: scale(0.97); }
     .logo-badge { transition: box-shadow 0.3s ease; }
     #logo-link:hover .logo-badge { box-shadow: var(--shadow-primary); }
+    /* “by TonSkywalker” — deliberately small next to the product name */
+    .app-by {
+      font-size: 9.5px; font-weight: 700; letter-spacing: .02em; opacity: .72;
+      margin-left: 6px; white-space: nowrap; color: var(--text-secondary);
+    }
+    @media (min-width: 768px) { .app-by { font-size: 10px; } }
+    /* profile picture = settings (a small gear badge hints at it) */
+    #user-avatar-btn.has-settings { position: relative; }
+    .avatar-gear {
+      position: absolute; right: -3px; bottom: -3px; width: 18px; height: 18px;
+      border-radius: 9999px; display: grid; place-items: center;
+      background: var(--surface); border: 1px solid var(--border);
+      box-shadow: var(--shadow-xs); color: var(--primary-strong);
+    }
+    .avatar-gear i, .avatar-gear svg { width: 11px; height: 11px; }
   </style>
 </head>
 <body data-demo="1" class="min-h-screen bg-[var(--bg)] text-[var(--text)]">
@@ -89,7 +114,7 @@
     <span class="demo-dot"></span>
     <b>เวอร์ชันตัวอย่าง</b>
     <span>ทริปฟูจิ 2027 • ใช้ได้ทุกฟังก์ชันแบบออฟไลน์</span>
-    <span class="demo-stamp">v17 Sky light • อัปเดตล่าสุด 5 ต.ค. 2569 • build 2026-10-05 16:51 • 438c44d</span>
+    <span class="demo-stamp">v18 Sky light • อัปเดตล่าสุด 6 ต.ค. 2569 • build 2026-10-06 03:23 • 24bafff</span>
     <button class="demo-btn" id="demo-banner-hide">ซ่อน</button>
   </div>
   <script>
@@ -115,19 +140,22 @@
   <header id="app-header" class="sticky top-0 z-30" style="height: var(--header-h);">
     <div class="max-w-[1280px] mx-auto px-4 h-full flex items-center justify-between gap-3">
       <!-- Logo = home (trip list) -->
-      <a href="#/trips" id="logo-link" class="flex items-center gap-3 group" title="หน้าแรก — รายการทริป" aria-label="Fuji Planner Home">
+      <a href="#/trips" id="logo-link" class="flex items-center gap-3 group" title="หน้าแรก — รายการทริป" aria-label="Trip Manager — หน้าแรก">
         <span class="logo-badge w-10 h-10 rounded-full grid place-items-center shadow-sm animate-float" style="background: var(--gradient-primary); border: 2px solid rgba(255,255,255,0.9);">
           <svg viewBox="0 0 100 100" width="26" height="26" aria-hidden="true">
-            <circle cx="72" cy="28" r="15" fill="#f0ae52"/>
+            <circle cx="72" cy="28" r="15" fill="var(--brand-yellow-raw)"/>
             <path d="M4 82 L46 18 L88 82 Z" fill="rgba(255,255,255,0.96)"/>
-            <path d="M34 36 L46 18 L58 36 L52 41 L46 34 L40 41 Z" fill="rgba(47,111,228,0.32)"/>
-            <path d="M34 36 L46 18 L58 36 L52 41 L46 34 L40 41 Z" fill="none" stroke="rgba(47,111,228,0.55)" stroke-width="2.4"/>
-            <rect x="4" y="84" width="92" height="6" rx="3" fill="#f0ae52"/>
+            <path d="M34 36 L46 18 L58 36 L52 41 L46 34 L40 41 Z" fill="color-mix(in srgb, var(--primary-raw) 32%, transparent)"/>
+            <path d="M34 36 L46 18 L58 36 L52 41 L46 34 L40 41 Z" fill="none" stroke="color-mix(in srgb, var(--primary-raw) 60%, transparent)" stroke-width="2.4"/>
+            <rect x="4" y="84" width="92" height="6" rx="3" fill="var(--brand-yellow-raw)"/>
           </svg>
         </span>
-        <span>
-          <span class="block font-bold text-[16px] leading-none tracking-tight" style="font-family: var(--font-display);">Fuji Planner</span>
-          <span id="header-subtitle" class="block text-[11px] text-[var(--text-tertiary)] mt-0.5 font-medium">plan • pack • split • settle</span>
+        <span class="min-w-0">
+          <span class="block leading-none tracking-tight" style="font-family: var(--font-display);">
+            <span class="font-bold text-[16px]">Trip&nbsp;Manager</span>
+            <span class="app-by" title="จัดทำโดย TonSkywalker">by TonSkywalker</span>
+          </span>
+          <span id="header-subtitle" class="block text-[11px] text-[var(--text-tertiary)] mt-0.5 font-medium">plan • split • settle • travel</span>
         </span>
       </a>
 
@@ -142,7 +170,10 @@
         <!-- Theme, Lang, Mode controls injected by app.js -->
         <button id="refresh-btn" class="btn btn-ghost btn-icon btn-press" aria-label="Refresh"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
         <div id="user-menu" class="relative ml-1">
-          <button id="user-avatar-btn" class="avatar w-10 h-10 text-[13px] btn-press" style="background: var(--gradient-primary);">?</button>
+          <!-- v18: the profile picture is the single entry point for Settings -->
+          <button id="user-avatar-btn" class="avatar w-10 h-10 text-[13px] btn-press has-settings" style="background: var(--gradient-primary);" title="ตั้งค่า — Settings" aria-label="ตั้งค่า application">
+            ?<span class="avatar-gear" aria-hidden="true"><i data-lucide="settings"></i></span>
+          </button>
         </div>
       </div>
     </div>
@@ -193,6 +224,28 @@
     <button data-route="#/trip/more" class="bottom-nav-item"><i data-lucide="more-horizontal"></i><span>เพิ่มเติม</span></button>
   </nav>
 
+  <!-- Global footer — version + update date + copyright (always visible) -->
+  <footer id="app-footer" class="app-footer">
+    <div class="max-w-[1280px] mx-auto px-4">
+      <p class="app-footer-brand">
+        <span class="app-footer-name">Trip Manager</span>
+        <span class="app-by">by TonSkywalker</span>
+        <span class="app-footer-badge" data-build-stamp></span>
+      </p>
+      <p class="app-footer-meta">
+        <span data-footer-version>v18</span>
+        <span aria-hidden="true">•</span>
+        <span data-footer-updated>อัปเดตล่าสุด 6 ต.ค. 2569</span>
+        <span aria-hidden="true">•</span>
+        <span data-footer-palette>ชุดสี Sky light</span>
+      </p>
+      <p class="app-footer-legal">
+        © 2024–2026 TonSkywalker — สงวนลิขสิทธิ์
+        <span class="app-footer-legal-alt">ห้ามทำซ้ำ เผยแพร่ ดัดแปลง หรือใช้เชิงพาณิชย์ก่อนได้รับอนุญาตเป็นลายลักษณ์อักษร</span>
+      </p>
+    </div>
+  </footer>
+
   <!-- FAB -->
   <button id="fab" class="fab hidden btn-press" aria-label="Add"><i data-lucide="plus" class="w-6 h-6"></i></button>
 
@@ -225,6 +278,6 @@
 
   <!-- App (cache-busted) -->
   <script type="module" src="./vendor/demo-seed.js"></script>
-  <script type="module" src="./src/js/app.js?v=17"></script>
+  <script type="module" src="./src/js/app.js?v=18"></script>
 </body>
 </html>

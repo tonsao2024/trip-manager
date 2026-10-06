@@ -3,9 +3,20 @@
 // Pure templates + progress helpers live in ../utils/checklists.js and are
 // re-exported here so views only need a single import.
 // ─────────────────────────────────────────────────────────────────────────────
-import { db, serverTimestamp } from '../firebase.js';
-import { BRAND_PRIMARY } from '../utils/brand.js';
+import { db, auth, serverTimestamp } from '../firebase.js';
+import { brandPrimary } from '../utils/brand.js';
 import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+/**
+ * v18: the security rules gate deletes on `createdBy`, and the ideas board used to
+ * also gate *creates* on it — so a write with `createdBy: null` was rejected with
+ * "Missing or insufficient permissions" even by the trip owner. Always resolve the
+ * actor here, from the live auth session, when the caller did not pass one.
+ */
+function actorUid(uid) {
+  if (uid) return uid;
+  try { return auth?.currentUser?.uid || null; } catch { return null; }
+}
 
 export {
   CHECKLIST_TEMPLATES, itemId, itemsFromTemplate, checklistProgress, checklistsProgress,
@@ -41,10 +52,10 @@ export async function createChecklist(tripId, data = {}, uid = null) {
     title: String(data.title || '').trim() || 'เช็กลิสต์',
     kind: data.kind === 'todo' ? 'todo' : 'packing',
     icon: data.icon || (data.kind === 'todo' ? 'list-checks' : 'luggage'),
-    color: data.color || BRAND_PRIMARY,
+    color: data.color || brandPrimary(),
     order: Number.isFinite(data.order) ? data.order : Date.now(),
     items,
-    createdBy: uid,
+    createdBy: actorUid(uid),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     updatedBy: uid
@@ -54,7 +65,7 @@ export async function createChecklist(tripId, data = {}, uid = null) {
 
 export async function updateChecklist(tripId, checklistId, patch = {}, uid = null) {
   if (!db) throw new Error('DB not ready');
-  const payload = { ...patch, updatedBy: uid, updatedAt: serverTimestamp() };
+  const payload = { ...patch, updatedBy: actorUid(uid), updatedAt: serverTimestamp() };
   delete payload.id;
   await updateDoc(doc(db, `trips/${tripId}/checklists/${checklistId}`), payload);
 }

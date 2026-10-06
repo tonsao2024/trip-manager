@@ -407,8 +407,14 @@ export function addItineraryMarkers(map, L, items, dayColors, opts = {}) {
   const entry = el ? MAP_REGISTRY.get(el) : null;
   const layer = entry?.markers || L.layerGroup().addTo(map);
   layer.clearLayers();
+  // v18: the popup’s “more details” button is delegated from the container, so the
+  // current items must be reachable from the entry (see bindPopupDetails).
+  if (entry) entry.items = items || [];
+  bindPopupDetails(el);
 
-  const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary-raw').trim() || '#2f6fe4';
+  const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary-raw').trim() || '#1f6bfb';
+  const thawLabel = opts.moreLabel || (opts.lang === 'en' ? 'More about this place' : 'รายละเอียดสถานที่เพิ่มเติม');
+  const dirLabel = opts.directionsLabel || (opts.lang === 'en' ? 'Directions' : 'ไปที่นี่');
   const latlngs = [];
   const markers = [];
 
@@ -435,6 +441,7 @@ export function addItineraryMarkers(map, L, items, dayColors, opts = {}) {
     const money = (item.estimateMinor || item.estimateAmount)
       ? `<div class="map-popup-money">≈ ${escapePopupText(item.estimateCurrency || '')} ${Number(item.estimateAmount ?? (item.estimateMinor / 100)).toLocaleString()}</div>`
       : '';
+    const mapsHref = googleMapsPlaceUrl(item);
     marker.bindPopup(`
       <div class="map-popup">
         ${thumb}
@@ -442,6 +449,11 @@ export function addItineraryMarkers(map, L, items, dayColors, opts = {}) {
         ${item.address ? `<div class="map-popup-sub">${escapePopupText(item.address)}</div>` : ''}
         ${item.startAt ? `<div class="map-popup-sub">${escapePopupText(new Date(item.startAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }))}</div>` : ''}
         ${money}
+        <div class="map-popup-links">
+          ${mapsHref ? `<a href="${escapePopupText(mapsHref)}" target="_blank" rel="noopener">${escapePopupText(dirLabel || 'Google Maps')}</a>` : ''}
+          <button type="button" class="map-popup-more-btn" data-place-more="${escapePopupText(item.id)}">${escapePopupText(thawLabel || 'รายละเอียดสถานที่เพิ่มเติม')}</button>
+        </div>
+        <div class="map-popup-more" data-more-for="${escapePopupText(item.id)}"></div>
       </div>`);
     markers.push(marker);
   });
@@ -468,6 +480,59 @@ export function addItineraryMarkers(map, L, items, dayColors, opts = {}) {
  * One-shot helper used by the itinerary page: init + draw + fit.
  * Safe to call repeatedly (e.g. after adding a new place with coordinates).
  */
+/**
+ * v18: “รายละเอียดสถานที่เพิ่มเติม” inside a map popup.
+ *
+ * One delegated listener per container element (bound at most once) answers the
+ * button by asking the optional, key-less place-details helper (Overpass +
+ * Wikipedia). The popup stays usable when the network is not there: the module
+ * returns `ok:false` and we render the links we do have.
+ */
+const POPUP_BOUND = new WeakSet();
+function bindPopupDetails(el) {
+  if (!el || POPUP_BOUND.has(el)) return;
+  POPUP_BOUND.add(el);
+  el.addEventListener('click', async (ev) => {
+    const btn = ev.target?.closest?.('[data-place-more]');
+    if (!btn) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const id = btn.getAttribute('data-place-more');
+    const entry = MAP_REGISTRY.get(el);
+    const item = (entry?.items || []).find(i => i && (i.id === id || i.masterId === id));
+    const box = el.querySelector(`[data-more-for="${(window.CSS && CSS.escape) ? CSS.escape(id) : id}"]`);
+    if (!item || !box) return;
+    if (box.dataset.loaded === '1') {
+      box.classList.toggle('is-open');
+      return;
+    }
+    box.innerHTML = `<div class="place-details place-details--loading"><span class="place-details-spinner"></span>${'กำลังค้นหา…'}</div>`;
+    box.classList.add('is-open');
+    btn.disabled = true;
+    try {
+      const { fetchPlaceDetails, placeDetailsHtml, placeDetailsSupported } = await import('../utils/placeDetails.js');
+      if (!placeDetailsSupported(item)) {
+        box.innerHTML = placeDetailsHtml({ ok: false, mapsUrl: googleMapsPlaceUrl(item) }, { lang: entry?.lang || 'th' });
+      } else {
+        const details = await fetchPlaceDetails(item, { lang: entry?.lang || 'th' });
+        box.innerHTML = placeDetailsHtml(details, { lang: entry?.lang || 'th', compact: true });
+        box.dataset.loaded = '1';
+      }
+    } catch (e) {
+      box.innerHTML = placeDetailsHtml({ ok: false, mapsUrl: googleMapsPlaceUrl(item) }, { lang: entry?.lang || 'th' });
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+/** Let the map remember which language the UI is in (for the details labels). */
+export function setMapLang(containerId, lang) {
+  const el = document.getElementById(containerId) || CONTAINER_IDS.get(containerId);
+  const entry = el ? MAP_REGISTRY.get(el) : null;
+  if (entry) entry.lang = lang;
+}
+
 export async function renderItineraryMap(containerId, items, options = {}) {
   const { map, L } = await initMap(containerId, {
     zoom: options.zoom || 10,
@@ -484,29 +549,70 @@ export async function renderItineraryMap(containerId, items, options = {}) {
  * Works for virtual "back to hotel" cards too (they resolve to their master pin).
  * Returns false when there is no map or the item has no coordinates.
  */
-export function focusItineraryItem(containerId, items, itemId, { zoom = 16, openPopup = true } = {}) {
+export function focusItineraryItem(containerId, items, itemId, { zoom = 16, openPopup = true, focus = true } = {}) {
   const map = getMap(containerId);
   if (!map || !itemId) return false;
   const list = items || [];
   const item = list.find(i => i.id === itemId)
     || list.find(i => i.masterId === itemId)
     || { id: itemId };
+  // v18 (requested): tapping a card with coordinates must centre that pin, and the
+  // focused pin is lifted while the others dim, so it is obvious on the map.
+  if (focus) setItemFocus(containerId, itemId);
   const pos = getItemLatLng(item);
-  if (!pos) return false;
-  try {
-    // Always head for the pin — keep a close zoom but never zoom out past 15.
-    map.setView([pos.lat, pos.lng], Math.max(15, Math.min(zoom, map.getMaxZoom() || 18)), { animate: true });
-  } catch { return false; }
-  if (openPopup) {
+  if (pos) {
     try {
-      const el = map.getContainer?.();
-      const entry = el ? MAP_REGISTRY.get(el) : null;
-      const wantIds = [item.masterId, item.id, itemId].filter(Boolean);
-      const layers = entry?.markers?.getLayers?.() || [];
-      const marker = layers.find(l => wantIds.includes(l._fujiItemId))
-        || layers.find(l => wantIds.includes(l._fujiMasterId));
-      marker?.openPopup?.();
-    } catch { /* popup is a bonus — focus still happened */ }
+      // Always head for the pin — keep a close zoom but never zoom out past 15.
+      map.setView([pos.lat, pos.lng], Math.max(15, Math.min(zoom, map.getMaxZoom() || 18)), { animate: true });
+    } catch { return false; }
+    if (openPopup) {
+      try {
+        const el = map.getContainer?.();
+        const entry = el ? MAP_REGISTRY.get(el) : null;
+        const wantIds = [item.masterId, item.id, itemId].filter(Boolean);
+        const layers = entry?.markers?.getLayers?.() || [];
+        const marker = layers.find(l => wantIds.includes(l._fujiItemId))
+          || layers.find(l => wantIds.includes(l._fujiMasterId));
+        marker?.openPopup?.();
+      } catch { /* popup is a bonus — focus still happened */ }
+    }
+    return true;
   }
+  // v18 (requested): a card WITHOUT coordinates used to do nothing at all. Now the
+  // map frames the rest of that day, so the place still gets its context.
+  const dayKey = item.date || item.day || item.customDate || null;
+  const pool = dayKey ? list.filter(i => (i.date || i.day || i.customDate) === dayKey) : list;
+  const pts = pool.map(getItemLatLng).filter(Boolean);
+  if (!pts.length) return false;
+  try {
+    if (pts.length === 1) map.setView([pts[0].lat, pts[0].lng], 14, { animate: true });
+    else map.fitBounds(pts.map(p => [p.lat, p.lng]), { padding: [46, 46], maxZoom: 15, animate: true });
+  } catch { return false; }
+  return true;
+}
+
+/**
+ * v18: highlight one pin of a day's layer group and dim the rest.
+ * `itemId = null` restores every pin to full strength.
+ */
+export function setItemFocus(containerId, itemId) {
+  const el = document.getElementById(containerId) || CONTAINER_IDS.get(containerId);
+  const entry = el ? MAP_REGISTRY.get(el) : null;
+  const layers = entry?.markers?.getLayers?.() || [];
+  if (!layers.length) return false;
+  const master = itemId ? (entry?.items?.find?.(i => i?.id === itemId)?.masterId || null) : null;
+  const wanted = [itemId, master].filter(Boolean);
+  layers.forEach(l => {
+    const on = !itemId || wanted.includes(l._fujiItemId) || wanted.includes(l._fujiMasterId);
+    try {
+      const node = l.getElement?.() || l._icon || null;
+      if (node) {
+        node.style.opacity = on ? '1' : '0.42';
+        node.style.transition = 'opacity .22s ease, filter .22s ease';
+        node.style.filter = on ? 'none' : 'saturate(.55)';
+      }
+      l.setZIndexOffset?.(on && itemId ? 1200 : 0);
+    } catch { /* vector layers vary — the dim is cosmetic only */ }
+  });
   return true;
 }

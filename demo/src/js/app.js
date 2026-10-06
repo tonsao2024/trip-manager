@@ -34,8 +34,15 @@ import { expensesInThb, convertCurrency, formatCurrency, formatAmount, parseCurr
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses } from './utils/settlement.js';
 import { splitCustom, splitEqual } from './utils/split.js';
 import { escapeHtml } from './utils/sanitize.js';
-import { APP_VERSION, APP_PALETTE, APP_UPDATED_ISO, appUpdatedLabel, appBuildLabel } from './utils/buildInfo.js';
-import { BRAND, BRAND_PRIMARY, MEMBER_COLORS, DAY_HUES } from './utils/brand.js';
+import { APP_VERSION, APP_VERSION_LABEL, APP_UPDATED_ISO, APP_NAME, APP_AUTHOR, APP_NAME_BY, appUpdatedLabel, appUpdatedShort, appBuildLabel, appFooterLabel, copyrightNote } from './utils/buildInfo.js';
+import { BRAND, BRAND_PRIMARY, brandPalette, brandPrimary, memberColors as themeMemberColors, dayHues as themeDayHues, memberColorAt, categoryColorChoices } from './utils/brand.js';
+import {
+  THEMES, DEFAULT_THEME_ID, CUSTOM_THEME_ID, themeName, applyStoredTheme, applyTheme,
+  readStoredTheme, saveTheme, themeVars, buildCustomPalette, mix as mixThemeColor, lighten as lightenThemeColor
+} from './utils/themes.js';
+import { renderFujiBuddy, fujiBuddyMood, fujiBuddyLine } from './components/mascot.js';
+import { deckOrder, deckStep, deckSummary, swipeIntent, swipeTilt, deckPositionLabel } from './utils/deck.js';
+import { fetchPlaceDetails, placeDetailsSupported, placeDetailsHtml } from './utils/placeDetails.js';
 import { showBottomSheet, showModal } from './components/modal.js';
 import { confirmAction, promptAction } from './components/confirm.js';
 import { mountCountdown, computeCountdown, countdownHeadline } from './components/countdown.js';
@@ -47,7 +54,8 @@ import { googleMapsPlaceUrl, googleMapsDirectionsUrl, BASE_LAYERS, setMapLayer, 
 import {
   EXPENSE_CATEGORIES, CATEGORY_ICONS, categoryLabel, categoryIcon, categoryColor,
   ITINERARY_CATEGORIES, ITINERARY_STATUSES, normalizeCategory,
-  getAllExpenseCategories, getCategoryDef, isCustomCategory, setCustomCategories
+  getAllExpenseCategories, getCategoryDef, isCustomCategory, setCustomCategories,
+  categoryChoices, categoryChoiceLabel, expenseGroupForChoice, placeCategoryForExpense
 } from './utils/categories.js';
 import {
   loadTripCategories, saveCategory, deleteCategory, countCategoryUsage,
@@ -95,7 +103,7 @@ import {
   printPlanUrl, formatCode, appBaseUrl
 } from './utils/share.js';
 import { buildIcs, downloadIcs, itineraryToEvents, reservationsToEvents } from './utils/ics.js';
-import { optimizeDayOrder, dayDirectionsUrl, travelTimeLabel, hasCoords, coordOf } from './utils/route.js';
+import { optimizeDayOrder, dayDirectionsUrl, travelTimeLabel, hasCoords, coordOf, haversineKm } from './utils/route.js';
 import { t, setLang, getLang } from './utils/i18n.js';
 
 const appEl = document.getElementById('app');
@@ -490,11 +498,13 @@ let currentUser = null;
 let currentTripId = localStorage.getItem('fuji_current_trip') || null;
 let currentTrip = null;
 
-// --- Brand (v16) — TRUE TONE: blue + yellow, one fixed palette -----------
-// The old "ชุดสี" picker (9 pastel + 8 gradient presets) was removed on purpose:
-// the app now always uses the brand colours below, and only light / dark / auto
-// remain selectable. `data-color` is no longer written to <html>.
-/* Palette lives in utils/brand.js (v17 “Sky light” — one fixed brand, no picker). */
+// --- Brand / colour themes (v18) -----------------------------------------
+// v17 locked the app to one palette; v18 brings the “ชุดสี” picker back — LINE,
+// Facebook, Instagram, a dozen more, and a fully custom palette. A theme only
+// writes the brand raw variables on <html> (utils/themes.js) and everything else
+// is derived with color-mix() in tokens.css, so light mode, dark mode, the map,
+// the day pins and the PNG exports all follow along.
+/* Palette defaults live in utils/brand.js, the theme list in utils/themes.js. */
 
 const MODE_ICONS = { light: 'sun', dark: 'moon', auto: 'monitor' };
 const MODE_LABELS = { light: 'สว่าง', dark: 'มืด', auto: 'อัตโนมัติ' };
@@ -511,6 +521,7 @@ function resolveMode(mode) {
 function effectiveTheme() {
   return document.documentElement.getAttribute('data-theme') || 'light';
 }
+
 /**
  * The build identity lives in utils/buildInfo.js. index.html carries the same
  * values so crawlers/preview images see them without JS; keep them in sync here
@@ -521,14 +532,60 @@ function syncBuildMeta() {
   if (meta && meta.getAttribute('content') !== APP_UPDATED_ISO) meta.setAttribute('content', APP_UPDATED_ISO);
   const version = document.querySelector('meta[name="app-version"]');
   if (version && version.getAttribute('content') !== APP_VERSION) version.setAttribute('content', APP_VERSION);
+  paintAppFooter();
+}
+
+/**
+ * v18: the footer under every page carries the version, the last-updated date, the
+ * live palette and the copyright line. The markup ships in index.html so it is
+ * readable before the app boots; this pass replaces those static values with the
+ * real ones (and keeps them right after a language or palette change).
+ */
+function paintAppFooter() {
+  const lang = getLang();
+  const th = (a, b) => (String(lang).startsWith('th') ? a : b);
+  const state = (() => { try { return readStoredTheme(); } catch { return { id: DEFAULT_THEME_ID }; } })();
+  const palette = themeName(state?.id, lang) || APP_PALETTE;
+  const set = (sel, text) => {
+    document.querySelectorAll(sel).forEach(el => { if (text) el.textContent = text; });
+  };
+  set('#app-footer [data-footer-version]', APP_VERSION_LABEL);
+  set('#app-footer [data-footer-updated]', `${th('อัปเดตล่าสุด', 'Updated')} ${appUpdatedShort(lang)}`);
+  set('#app-footer [data-footer-palette]', `${th('ชุดสี', 'Palette')} ${palette}`);
+  set('#app-footer [data-footer-copyright]', copyrightNote(lang));
+  const stamp = document.querySelector('#app-footer [data-build-stamp]');
+  if (stamp) stamp.textContent = appBuildLabel(lang, palette);
+  const title = document.getElementById('app-title');
+  if (title && /Fuji Planner/i.test(title.textContent)) title.textContent = APP_NAME_BY;
 }
 
 function updateMetaThemeColor() {
   const meta = document.getElementById('meta-theme-color');
   if (!meta) return;
-  const raw = getComputedStyle(document.documentElement).getPropertyValue('--primary-raw').trim();
+  const raw = (brandPalette().blue) || getComputedStyle(document.documentElement).getPropertyValue('--primary-raw').trim();
   meta.setAttribute('content', raw || BRAND_PRIMARY);
+  // Keep the browser-tab icon colour in sync with the theme (inline SVG favicon).
+  const tint = document.getElementById('favicon-tint');
+  if (tint) {
+    const pal = brandPalette();
+    tint.setAttribute('href', `data:image/svg+xml,${encodeURIComponent(faviconSvg(pal.blue || BRAND_PRIMARY, pal.amber || BRAND.yellow))}`);
+  }
 }
+
+/** Inline favicon so the tab icon follows the active theme. */
+function faviconSvg(primary = '#1f6bfb', accent = '#ffb02e') {
+  const p = primary || '#1f6bfb';
+  const a = accent || '#ffb02e';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${p}"/><stop offset="1" stop-color="${a}"/></linearGradient></defs>
+<rect width="64" height="64" rx="16" fill="url(#g)"/>
+<circle cx="45" cy="19" r="8" fill="#fff" opacity=".9"/>
+<path d="M8 52 L32 16 L56 52 Z" fill="#fff"/>
+<path d="M23 34 L32 16 L41 34 L37 38 L32 31 L27 38 Z" fill="${p}" opacity=".45"/>
+<rect x="8" y="54" width="48" height="4" rx="2" fill="#fff" opacity=".85"/>
+</svg>`;
+}
+
 function updateModeIcons() {
   const mode = getStoredMode();
   const eff = effectiveTheme();
@@ -566,15 +623,39 @@ try {
 } catch {}
 
 function initTheme() {
-  // Single fixed brand palette — make sure no legacy data-color from an older
-  // version keeps an old (green/pink/…) theme alive after the upgrade.
-  document.documentElement.removeAttribute('data-color');
-  localStorage.removeItem('fuji_color_theme');
+  // v18: apply the saved colour theme (LINE / Facebook / Instagram / custom …)
+  // before the first paint, then the light/dark mode on top of it.
+  try { applyStoredTheme(); } catch (e) { console.warn('[Theme] apply failed', e?.message); }
   document.documentElement.setAttribute('data-theme', resolveMode(getStoredMode()));
   updateMetaThemeColor();
   syncBuildMeta();
   // Defer icon updates until DOM/lucide ready
   setTimeout(() => { updateModeIcons(); renderIcons(); }, 120);
+}
+
+/**
+ * Paint a theme and tell the app to redraw (map tiles, day colours, exports).
+ * @param {string} id theme id ('sky', 'line', 'insta', 'custom', …)
+ * @param {object} custom { primary, accent, intensity } for the custom theme
+ */
+function chooseTheme(id, custom = null, { silent = false } = {}) {
+  const state = applyTheme(id, custom);
+  saveTheme({ id: state.id, custom: state.custom });
+  updateMetaThemeColor();
+  document.dispatchEvent(new CustomEvent('themepalette', { detail: { id: state.id } }));
+  document.dispatchEvent(new CustomEvent('themechange', { detail: { mode: getStoredMode(), eff: effectiveTheme(), palette: state.id } }));
+  renderDesktopNav();
+  paintAppFooter();
+  if (!silent) {
+    const name = themeName(state.id, getLang());
+    toast.success(getLang() === 'th' ? `ใช้ชุดสี ${name}` : `${name} palette applied`);
+  }
+  return state;
+}
+
+/** Theme currently in use (id + custom values). */
+function currentTheme() {
+  try { return readStoredTheme(); } catch { return { id: DEFAULT_THEME_ID, custom: {} }; }
 }
 
 // Cycle light → dark → auto
@@ -599,6 +680,9 @@ function setTrip(tripId) {
 }
 
 // --- Desktop Nav - instant ---
+// v18 keeps the top bar short: the trip’s core work only. ชวนไปที่นี่ / การจอง /
+// เตรียมตัว / ปฏิทิน were taken out of the menu on request, and ตั้งค่า now lives
+// behind the profile picture (top-right) instead of in the menu.
 function renderDesktopNav() {
   if (!currentTripId) { desktopNavEl.innerHTML = ''; return; }
   const base = `#/trip/${currentTripId}`;
@@ -608,15 +692,10 @@ function renderDesktopNav() {
     { label: t('dashboard'), path: `${base}/dashboard`, icon: 'layout-dashboard' },
     { label: t('itinerary'), path: `${base}/itinerary`, icon: 'map-pinned' },
     { label: t('ideas'), path: `${base}/ideas`, icon: 'lightbulb' },
-    { label: getLang() === 'th' ? 'ชวนไปที่นี่' : 'Explore', path: `${base}/explore`, icon: 'compass' },
-    { label: getLang() === 'th' ? 'ปฏิทิน' : 'Calendar', path: `${base}/calendar`, icon: 'calendar-days' },
-    { label: t('bookings'), path: `${base}/bookings`, icon: 'ticket' },
-    { label: t('prep'), path: `${base}/prep`, icon: 'clipboard-check' },
     { label: t('expenses'), path: `${base}/expenses`, icon: 'wallet' },
     { label: t('settlement'), path: `${base}/settlement`, icon: 'hand-coins' },
     { label: t('members'), path: `${base}/members`, icon: 'users' },
     { label: getLang() === 'th' ? 'เอกสาร' : 'Documents', path: `${base}/documents`, icon: 'folder' },
-    { label: t('settings'), path: `${base}/settings`, icon: 'settings' },
   ];
   desktopNavEl.innerHTML = items.map(i => {
     const active = currentHash.startsWith(i.path) ? 'chip-active active' : '';
@@ -624,6 +703,7 @@ function renderDesktopNav() {
   }).join('');
   queueIcons();
 }
+
 
 // --- Bottom Nav - instant ---
 function updateBottomNav() {
@@ -695,6 +775,13 @@ function addHeaderControls() {
 
   updateModeIcons();
   queueIcons();
+}
+
+/** Photo or initials for a signed-in account (settings → account card). */
+function avatarInitialHtml(user) {
+  const name = user?.displayName || user?.email || '';
+  if (user?.photoURL) return `<img src="${escapeHtml(user.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">`;
+  return escapeHtml(name ? getInitials(name) : '?');
 }
 
 function updateUserDisplay(user) {
@@ -773,6 +860,22 @@ async function doLogout() {
   toast.success(getLang() === 'th' ? 'ออกจากระบบแล้ว' : 'Signed out');
   if (location.hash !== '#/login') location.hash = '#/login';
   setTimeout(() => router.handle(), 60);
+}
+
+/**
+ * The profile picture is the ONLY settings entry point (v18): tapping it opens the
+ * trip's settings page — and the account card that lives there. Without a trip
+ * (e.g. on the trip list) it falls back to the account sheet.
+ */
+function openAvatarAction(user = currentUser) {
+  if (!user) { location.hash = '#/login'; return; }
+  if (currentTripId) {
+    const target = `#/trip/${currentTripId}/settings`;
+    if (location.hash === target) router.handle();
+    else location.hash = target;
+    return;
+  }
+  openUserSheet(user);
 }
 
 function openUserSheet(user) {
@@ -913,6 +1016,23 @@ if (typeof window !== 'undefined') {
 }
 
 /**
+ * v18: a denied write on the ideas board / prep / reservations is nearly always
+ * “the published rules are older than the app”. A bare `permission-denied` toast
+ * taught the user nothing, so route those errors to the rules-help sheet instead.
+ * Returns true when the help sheet was shown.
+ */
+async function notifyWriteDenied(e, { action = 'save', fallback = '' } = {}) {
+  if (!isPermissionError(e)) return false;
+  try {
+    await showRulesHelpSheet({ lang: getLang(), action });
+    return true;
+  } catch {
+    toast.error(fallback || th('ไม่มีสิทธิ์บันทึก (Firestore rules)', 'Missing or insufficient permissions'));
+    return true;
+  }
+}
+
+/**
  * Firestore denied a join/approve action → show exactly what to publish.
  * The member may not own the project, so the sheet also prepares a message they
  * can forward to the trip admin.
@@ -979,7 +1099,7 @@ function renderMemberSessionUi(session) {
   const label = (session.displayName || session.username || 'M')[0]?.toUpperCase() || 'M';
   if (session.photoURL) userAvatarBtn.innerHTML = `<img src="${escapeHtml(session.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">`;
   else userAvatarBtn.textContent = label;
-  userAvatarBtn.onclick = () => openUserSheet(currentUser);
+  userAvatarBtn.onclick = () => openAvatarAction(currentUser);
   updateUserDisplay(currentUser);
   renderDesktopNav();
   updateBottomNav();
@@ -1005,7 +1125,7 @@ if (!isFirebaseConfigured) {
         userAvatarBtn.innerHTML = `<img src="${escapeHtml(user.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">`;
       }
       updateUserDisplay(user);
-      userAvatarBtn.onclick = () => openUserSheet(user);
+      userAvatarBtn.onclick = () => openAvatarAction(user);
       // Route handling: preserve deep links, only bounce to /trips from login screen
       if (pendingAuthRoute) {
         const target = pendingAuthRoute;
@@ -1070,53 +1190,202 @@ if (isFirebaseConfigured && !currentUser) {
   }
 }
 
+/* ================================================================== *
+ * Appearance & colour themes (v18)
+ *   • a grid of ready-made palettes (LINE / Facebook / Instagram / …)
+ *   • a “custom” palette: pick the two brand colours + a vividness slider
+ *   • light / dark / auto
+ * The picker is a plain HTML + bind helper so the sheet and the Settings page
+ * can share it. Everything is applied through utils/themes.js → CSS variables.
+ * ================================================================== */
+
+function themeSwatchHtml(colors, size = 16) {
+  return `<span class="theme-swatch-row">${colors.filter(Boolean).map(c =>
+    `<span class="theme-swatch-dot" style="background:${escapeHtml(c)};width:${size}px;height:${size}px;"></span>`).join('')}</span>`;
+}
+
+function themePickerHtml({ idPrefix = 'tp', showModes = true } = {}) {
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const active = currentTheme();
+  const themes = THEMES.filter(t => t.id !== CUSTOM_THEME_ID);
+  const cards = themes.map(t => {
+    const art = t.gradient || 'linear-gradient(135deg, ' + t.vars['--grad-1'] + ', ' + t.vars['--grad-2'] + ')';
+    return `
+    <button type="button" class="theme-card ${active.id === t.id ? 'is-active' : ''}" data-theme-id="${t.id}" title="${escapeHtml(lang === 'th' ? t.hint : t.en)}">
+      <span class="theme-card-art" style="background:${escapeHtml(art)}">
+        <span class="theme-card-fuji" aria-hidden="true"></span>
+        ${themeSwatchHtml([t.vars['--brand-yellow-raw'], t.vars['--brand-mist-raw'], t.vars['--brand-steel-raw']], 9)}
+      </span>
+      <span class="theme-card-name">${escapeHtml(lang === 'th' ? t.th : t.en)}</span>
+      <span class="theme-card-check">${icon('check', 'w-3 h-3')}</span>
+    </button>`;
+  }).join('');
+  const pal = brandPalette();
+  const custom = active.custom || {};
+  return `
+    <div class="theme-picker" data-theme-picker="${idPrefix}">
+      <div class="theme-section-title">${icon('palette', 'w-3.5 h-3.5')} ${th('ชุดสีของแอป', 'App colour theme')}
+        <span class="theme-current-name">${escapeHtml(themeName(active.id, lang))}</span></div>
+      <div class="theme-grid">${cards}
+        <button type="button" class="theme-card ${active.id === CUSTOM_THEME_ID ? 'is-active' : ''}" data-theme-id="${CUSTOM_THEME_ID}">
+          <span class="theme-card-art theme-card-art--custom" style="background:linear-gradient(135deg, ${escapeHtml(custom.primary || '#1f6bfb')}, ${escapeHtml(custom.accent || '#ffb02e')})">
+            <span class="theme-card-fuji" aria-hidden="true"></span>
+            <span class="theme-card-plus">${icon('sliders-horizontal', 'w-3.5 h-3.5')}</span>
+          </span>
+          <span class="theme-card-name">${th('กำหนดเอง…', 'Custom')}</span>
+          <span class="theme-card-check">${icon('check', 'w-3 h-3')}</span>
+        </button>
+      </div>
+
+      <div class="theme-custom ${active.id === CUSTOM_THEME_ID ? '' : 'hidden'}" data-theme-custom>
+        <div class="theme-custom-row">
+          <label class="theme-custom-label">${icon('droplet', 'w-3.5 h-3.5')} ${th('สีหลัก', 'Primary')}
+            <input type="color" class="theme-color-input" data-theme-part="primary" value="${escapeHtml(custom.primary || '#1f6bfb')}">
+            <input type="text" class="input text-xs theme-hex-input" data-theme-part-hex="primary" value="${escapeHtml(custom.primary || '#1f6bfb')}" maxlength="7" spellcheck="false">
+          </label>
+          <label class="theme-custom-label">${icon('sparkles', 'w-3.5 h-3.5')} ${th('สีเน้น', 'Accent')}
+            <input type="color" class="theme-color-input" data-theme-part="accent" value="${escapeHtml(custom.accent || '#ffb02e')}">
+            <input type="text" class="input text-xs theme-hex-input" data-theme-part-hex="accent" value="${escapeHtml(custom.accent || '#ffb02e')}" maxlength="7" spellcheck="false">
+          </label>
+        </div>
+        <label class="theme-custom-slider">${icon('sun', 'w-3.5 h-3.5')} ${th('ความสดใส', 'Vividness')}
+          <input type="range" min="0" max="100" step="5" value="${Number(custom.intensity ?? 72)}" data-theme-part="intensity">
+          <output class="theme-slider-out">${Number(custom.intensity ?? 72)}%</output>
+        </label>
+        <div class="theme-preview-card" style="border-color:${escapeHtml(pal.blue)}44;">
+          <span class="badge" style="background:${escapeHtml(pal.blue)};color:#fff;">${th('ปุ่ม', 'Button')}</span>
+          <span class="badge" style="background:${escapeHtml(pal.amber)};color:#3f2905;">${th('เน้น', 'Accent')}</span>
+          <span class="text-xs font-bold">${th('ตัวอย่างการ์ด', 'Preview card')}</span>
+          <span class="text-[11px] text-[var(--text-secondary)]">${th('สีพื้นหลัง/การ์ดปรับตามอัตโนมัติ', 'Surfaces follow automatically')}</span>
+        </div>
+        <div class="btn-row mt-1">
+          <button type="button" class="btn btn-ghost btn-sm" data-theme-reset="${DEFAULT_THEME_ID}">${icon('rotate-ccw', 'w-3.5 h-3.5')} ${th('คืนค่าชุดสีเริ่มต้น', 'Reset to Sky light')}</button>
+        </div>
+      </div>
+
+      ${showModes ? `
+      <div class="theme-section-title">${icon('contrast', 'w-3.5 h-3.5')} ${th('โหมดการแสดงผล', 'Light / dark')}</div>
+      <div class="mode-grid">
+        <button class="mode-option ${getStoredMode() === 'light' ? 'active' : ''}" data-mode="light">${icon('sun', 'w-5 h-5')} ${th('สว่าง', 'Light')}</button>
+        <button class="mode-option ${getStoredMode() === 'dark' ? 'active' : ''}" data-mode="dark">${icon('moon', 'w-5 h-5')} ${th('มืด', 'Dark')}</button>
+        <button class="mode-option ${getStoredMode() === 'auto' ? 'active' : ''}" data-mode="auto">${icon('monitor', 'w-5 h-5')} Auto</button>
+      </div>` : ''}
+    </div>`;
+}
+
+/** Wire a theme picker rendered by `themePickerHtml()` inside `root`. */
+function bindThemePicker(root, { onChange = null } = {}) {
+  if (!root) return;
+  const lang = getLang();
+  const paintActive = () => {
+    const active = currentTheme();
+    root.querySelectorAll('[data-theme-id]').forEach(btn => btn.classList.toggle('is-active', btn.dataset.themeId === active.id));
+    root.querySelector('[data-theme-custom]')?.classList.toggle('hidden', active.id !== CUSTOM_THEME_ID);
+    const label = root.querySelector('.theme-current-name');
+    if (label) label.textContent = themeName(active.id, lang);
+  };
+
+  const readCustom = (patch = {}) => {
+    const state = currentTheme();
+    // Starting to tweak a preset theme: seed the custom colours from it, so the
+    // first tweak only changes the one colour the user touched.
+    const cur = state.id === CUSTOM_THEME_ID ? (state.custom || {})
+      : { ...state.custom, primary: state.vars?.['--primary-raw'] || (state.custom || {}).primary, accent: state.vars?.['--brand-yellow-raw'] || (state.custom || {}).accent };
+    const next = { ...cur, ...patch };
+    if (patch.primary === undefined && root.querySelector('[data-theme-part="primary"]')) next.primary = root.querySelector('[data-theme-part="primary"]').value;
+    if (patch.accent === undefined && root.querySelector('[data-theme-part="accent"]')) next.accent = root.querySelector('[data-theme-part="accent"]').value;
+    if (patch.intensity === undefined && root.querySelector('[data-theme-part="intensity"]')) next.intensity = Number(root.querySelector('[data-theme-part="intensity"]').value);
+    return next;
+  };
+
+  root.querySelectorAll('[data-theme-id]').forEach(btn => btn.addEventListener('click', () => {
+    const id = btn.dataset.themeId;
+    chooseTheme(id, id === CUSTOM_THEME_ID ? readCustom() : null);
+    paintActive();
+    onChange?.('theme', id);
+  }));
+
+  root.querySelectorAll('[data-theme-part]').forEach(input => {
+    const ev = input.type === 'range' ? 'input' : 'change';
+    input.addEventListener(ev, () => {
+      const part = input.dataset.themePart;
+      const patch = { [part]: part === 'intensity' ? Number(input.value) : input.value };
+      if (part === 'intensity') {
+        const out = root.querySelector('.theme-slider-out');
+        if (out) out.textContent = `${input.value}%`;
+      }
+      // Tweaking a colour always switches to the custom theme (a preset is fixed).
+      const next = readCustom(patch);
+      chooseTheme(CUSTOM_THEME_ID, next, { silent: true });
+      const hexInput = patch.primary ? root.querySelector('[data-theme-part-hex="primary"]') : (patch.accent ? root.querySelector('[data-theme-part-hex="accent"]') : null);
+      if (hexInput && next[hexInput.dataset.themePartHex]) hexInput.value = next[hexInput.dataset.themePartHex];
+      paintActive();
+      onChange?.('custom', CUSTOM_THEME_ID);
+    });
+  });
+
+  root.querySelectorAll('[data-theme-part-hex]').forEach(input => {
+    input.addEventListener('change', () => {
+      const part = input.dataset.themePartHex;
+      const val = String(input.value || '').trim();
+      if (!/^#[0-9a-fA-F]{6}$/.test(val)) { input.value = currentTheme().custom?.[part] || ''; return; }
+      const colorInput = root.querySelector(`[data-theme-part="${part}"]`);
+      if (colorInput) colorInput.value = val.toLowerCase();
+      chooseTheme(CUSTOM_THEME_ID, readCustom({ [part]: val.toLowerCase() }));
+      paintActive();
+      onChange?.('custom', CUSTOM_THEME_ID);
+    });
+  });
+
+  root.querySelector('[data-theme-reset]')?.addEventListener('click', () => {
+    chooseTheme(DEFAULT_THEME_ID, null);
+    const fresh = buildCustomPalette({});
+    const primary = root.querySelector('[data-theme-part="primary"]');
+    const accent = root.querySelector('[data-theme-part="accent"]');
+    if (primary) primary.value = fresh['--primary-raw'];
+    if (accent) accent.value = fresh['--brand-yellow-raw'];
+    paintActive();
+    onChange?.('theme', DEFAULT_THEME_ID);
+  });
+
+  root.querySelectorAll('.mode-option').forEach(btn => btn.addEventListener('click', () => {
+    applyMode(btn.dataset.mode, { silent: true });
+    root.querySelectorAll('.mode-option').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    paintActive();
+    onChange?.('mode', btn.dataset.mode);
+    const eff = effectiveTheme();
+    toast.success(btn.dataset.mode === 'auto' ? `อัตโนมัติ (${eff === 'dark' ? 'มืด' : 'สว่าง'})` : (eff === 'dark' ? 'ธีมกลางคืน' : 'ธีมสว่าง'));
+  }));
+  paintActive();
+}
+
 /**
- * Appearance sheet — light / dark / auto only.
- * (The colour-set picker was removed: the app always uses the Sky-light brand,
- *  so there is nothing to pick besides the mode.)
+ * Appearance sheet — the colour theme, the light/dark mode and nothing else.
+ * Reached from the profile picture (Settings) and from the account sheet.
  */
 function showAppearanceSheet() {
-  const mode = getStoredMode();
+  const lang = getLang();
   const sheet = showBottomSheet(`
     <div class="flex items-center gap-3 mb-1">
-      <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('sun-moon', 'w-5 h-5')}</div>
+      <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('palette', 'w-5 h-5')}</div>
       <div>
         <h3 class="font-bold text-lg leading-tight" style="font-family: var(--font-display);">${t('appearance')}</h3>
-        <p class="text-xs text-[var(--text-secondary)]">${t('brandLocked')}</p>
+        <p class="text-xs text-[var(--text-secondary)]">${lang === 'th' ? 'เลือกชุดสีที่ชอบ แล้วปรับต่อเองได้' : 'Pick a palette — then fine-tune it yourself'}</p>
       </div>
     </div>
-
-    <div class="card p-3 mt-3 flex items-center gap-3" style="background:var(--surface-2);">
-      <span class="brand-sun">${icon('sun', 'w-4 h-4')}</span>
-      <div class="flex-1 min-w-0">
-        <p class="text-xs font-bold">${getLang() === 'th' ? 'ชุดสีของแอป' : 'App brand colours'}</p>
-        <p class="text-[11px] text-[var(--text-secondary)]">${getLang() === 'th' ? 'ฟ้า–ทราย–เขียวมิสต์ (Sky light) ใช้เหมือนกันทุกหน้า' : 'Sky light — sky blue, sunset amber, sage mist. The same on every screen'}</p>
-      </div>
-      <span class="flex gap-1"><span style="width:18px;height:18px;border-radius:9999px;background:${BRAND.blue};display:inline-block;box-shadow:0 0 0 1px rgba(0,0,0,.06);"></span><span style="width:18px;height:18px;border-radius:9999px;background:${BRAND.blueLight};display:inline-block;box-shadow:0 0 0 1px rgba(0,0,0,.06);"></span><span style="width:18px;height:18px;border-radius:9999px;background:${BRAND.mist};display:inline-block;box-shadow:0 0 0 1px rgba(0,0,0,.06);"></span><span style="width:18px;height:18px;border-radius:9999px;background:${BRAND.yellow};display:inline-block;box-shadow:0 0 0 1px rgba(0,0,0,.06);"></span></span>
-    </div>
-
-    <div class="theme-section-title">${icon('contrast', 'w-3.5 h-3.5')} ${getLang() === 'th' ? 'โหมดการแสดงผล' : 'Appearance'}</div>
-    <div class="mode-grid">
-      <button class="mode-option ${mode === 'light' ? 'active' : ''}" data-mode="light">${icon('sun', 'w-5 h-5')} ${getLang() === 'th' ? 'สว่าง' : 'Light'}</button>
-      <button class="mode-option ${mode === 'dark' ? 'active' : ''}" data-mode="dark">${icon('moon', 'w-5 h-5')} ${getLang() === 'th' ? 'มืด' : 'Dark'}</button>
-      <button class="mode-option ${mode === 'auto' ? 'active' : ''}" data-mode="auto">${icon('monitor', 'w-5 h-5')} Auto</button>
-    </div>
-
-    <button class="btn btn-primary w-full mt-5" id="theme-done">${icon('check', 'w-4 h-4')} ${getLang() === 'th' ? 'เสร็จสิ้น' : 'Done'}</button>
+    <div class="mt-3">${themePickerHtml({ idPrefix: 'sheet' })}</div>
+    <button class="btn btn-primary w-full mt-5" id="theme-done">${icon('check', 'w-4 h-4')} ${lang === 'th' ? 'เสร็จสิ้น' : 'Done'}</button>
   `);
   updateModeIcons();
   queueIcons();
-
-  sheet.sheet.querySelectorAll('.mode-option').forEach(btn => {
-    btn.addEventListener('click', () => {
-      applyMode(btn.dataset.mode, { silent: true });
-      sheet.sheet.querySelectorAll('.mode-option').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const eff = effectiveTheme();
-      toast.success(btn.dataset.mode === 'auto' ? `อัตโนมัติ (${eff === 'dark' ? 'มืด' : 'สว่าง'})` : (eff === 'dark' ? 'ธีมกลางคืน' : 'ธีมสว่าง'));
-    });
+  bindThemePicker(sheet.sheet, { onChange: () => { if (appEl.querySelector('#dash-mascot')) router.handle(); } });
+  document.getElementById('theme-done')?.addEventListener('click', () => {
+    sheet.close();
+    // redraw the current page so JS-side colours (day pins, avatars) refresh
+    setTimeout(() => { try { router.handle(); } catch { /* ignore */ } }, 60);
   });
-  document.getElementById('theme-done')?.addEventListener('click', () => sheet.close());
 }
 
 // --- Routes ---
@@ -1677,7 +1946,7 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
         startDate, endDate,
         timezone: document.getElementById('tf-tz').value,
         baseCurrency: document.getElementById('tf-cur').value,
-        themeColor: BRAND_PRIMARY, // brand-locked (kept in the schema for older exports)
+        themeColor: brandPrimary(), // kept in the schema for older exports
         status: document.getElementById('tf-status').value,
         exchangeRateToTHB: parseFloat(document.getElementById('tf-rate').value) || 1,
         coverFile, coverBlob: croppedBlob,
@@ -2215,16 +2484,26 @@ async function renderDashboard(params) {
         </div>
       </div>
 
-      <!-- COUNTDOWN ANIMATION -->
-      <div class="card p-4 md:p-5">
-        <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
-          <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('timer', 'w-4 h-4')}</span> ${t('countdown')} • ${th('วิ่งไปหาฟูจิ','Run to Fuji')}</h3>
-          <div id="live-since" class="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1.5">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="w-3 h-3" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-            <span data-live-label></span>
+      <!-- COUNTDOWN ANIMATION + น้องฟูจิ (v18 mascot: tap to make it wiggle) -->
+      <div class="card p-4 md:p-5 dash-buddy-card">
+        <div class="dash-buddy-row">
+          <div class="dash-buddy-copy">
+            <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
+              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('timer', 'w-4 h-4')}</span> ${t('countdown')} • ${th('วิ่งไปหาฟูจิ','Run to Fuji')}</h3>
+              <div id="live-since" class="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1.5">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="w-3 h-3" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                <span data-live-label></span>
+              </div>
+            </div>
+            <div id="countdown-scene"></div>
+          </div>
+          <div class="dash-buddy" id="dash-mascot">
+            <div class="dash-buddy-name">${icon('heart', 'w-3 h-3')} ${th('น้องฟูจิ', 'Fuji')}</div>
+            ${renderFujiBuddy({ mood: 'happy', size: 150, id: 'fuji-buddy' })}
+            <button type="button" class="btn btn-ghost btn-sm dash-buddy-pat" id="buddy-pat">${icon('hand', 'w-3.5 h-3.5')} ${th('ลูบหัวน้อง', 'Pet Fuji')}</button>
+            <p class="dash-buddy-hint">${th('แตะน้องเพื่อดูแลและให้กำลังใจ', 'Tap the mascot for a little cheer')}</p>
           </div>
         </div>
-        <div id="countdown-scene"></div>
       </div>
 
       <!-- KPI TILES -->
@@ -2795,6 +3074,56 @@ function renderDashboardData({ tripId, trip, expenses, members, items, currency,
   // Fire-and-forget: the v16 tools row (prep • weather • bookings • ideas)
   // paints itself as soon as its data arrives.
   paintDashboardTools({ tripId, trip, members: members || [], items: items || [], lang }).catch(e => console.warn('dash tools failed', e?.message));
+
+  paintDashboardBuddy({ trip, expenses, members, items, totalMinor, balances, lang });
+}
+
+/**
+ * น้องฟูจิ on the dashboard (v18): the mascot’s mood is read from the trip —
+ * over budget → worried, unsettled bills → “wallet”, trip about to start →
+ * cheering, late night → sleepy. Tapping it makes it wiggle and say something.
+ */
+function paintDashboardBuddy({ trip, expenses = [], members = [], items = [], totalMinor = 0, balances = [], lang = getLang() }) {
+  const host = document.getElementById('dash-mascot');
+  if (!host) return;
+  const budget = Number(trip?.budgetTotal) > 0 ? Number(trip.budgetTotal) : 0;
+  const overBudget = budget > 0 && totalMinor > budget;
+  // Anybody still carrying a debt → the mascot keeps an eye on the money.
+  const unsettled = (balances || []).filter(b => Math.abs(b?.net || 0) > 1).length;
+  const daysToStart = trip?.startDate ? dayjs(trip.startDate).startOf('day').diff(dayjs().startOf('day'), 'day') : null;
+  const mood = fujiBuddyMood({
+    daysToStart: Number.isFinite(daysToStart) ? daysToStart : null,
+    overBudget,
+    unsettledMinor: unsettled,
+    hasPlan: (items || []).length > 0
+  });
+  const buddy = host.querySelector('.fuji-buddy');
+  if (buddy) {
+    buddy.outerHTML = renderFujiBuddy({ mood, size: 150, id: 'fuji-buddy' });
+  }
+  const label = host.querySelector('.dash-buddy-name');
+  if (label) {
+    const moodTh = { happy: 'ร่าเริง', cheer: 'เชียร์สุดตัว', chill: 'ชิลล์ ๆ', sleepy: 'ง่วงนอน', worry: 'ห่วงงบ', wallet: 'ดูเรื่องเงิน' }[mood] || 'ร่าเริง';
+    const moodEn = { happy: 'cheerful', cheer: 'excited', chill: 'relaxed', sleepy: 'sleepy', worry: 'worried', wallet: 'watching the money' }[mood] || 'cheerful';
+    label.innerHTML = `${icon('heart', 'w-3 h-3')} ${lang === 'th' ? 'น้องฟูจิ' : 'Fuji'} <span class="dash-buddy-mood">${lang === 'th' ? moodTh : moodEn}</span>`;
+  }
+  const next = document.getElementById('buddy-pat');
+  if (next) {
+    next.onclick = () => {
+      const b = host.querySelector('.fuji-buddy');
+      if (!b) return;
+      b.classList.remove('is-tapped');
+      void b.offsetWidth;
+      b.classList.add('is-tapped');
+      const text = fujiBuddyLine(mood, lang);
+      b.appendChild(Object.assign(document.createElement('span'), { className: 'fuji-buddy-speech is-pop', textContent: text }));
+      setTimeout(() => b.querySelector('.fuji-buddy-speech')?.remove(), 3200);
+      toast.info(`🗻 ${text}`);
+      celebrateFrom(b);
+    };
+  }
+  // Tap the mascot itself → same cheer, without the confetti noise
+  host.querySelector('.fuji-buddy')?.addEventListener('click', () => next?.click());
 }
 
 async function renderItinerary(params) {
@@ -2831,7 +3160,6 @@ async function renderItinerary(params) {
         <div class="btn-row">
           <button id="view-all-btn" class="btn btn-secondary btn-sm">${icon('calendar-days', 'w-4 h-4')} <span id="view-all-label">${th('ดูทั้งหมด','View all')}</span></button>
           <button id="toggle-map-btn" class="btn btn-primary btn-sm">${icon('map', 'w-4 h-4')} ${th('แผนที่','Map')}</button>
-          <a href="#/trip/${tripId}/calendar" class="btn btn-secondary btn-sm">${icon('calendar-days', 'w-4 h-4')} ${th('ปฏิทิน','Calendar')}</a>
           <button id="itin-share-btn" class="btn btn-secondary btn-sm">${icon('share-2', 'w-4 h-4')} ${th('แชร์','Share')}</button>
           <button id="export-png-btn" class="btn btn-secondary btn-sm" title="${th('PNG ทั้งแผน','Whole-plan PNG')}">${icon('image', 'w-4 h-4')} PNG</button>
           <button id="export-day-png-btn" class="btn btn-secondary btn-sm" title="${th('PNG เฉพาะวันนี้','PNG for one day')}">${icon('calendar-down', 'w-4 h-4')} PNG ${th('รายวัน','per day')}</button>
@@ -2929,7 +3257,8 @@ async function renderItinerary(params) {
   const dayColors = {};
   // Day colours follow the True-tone brand: blue → yellow → supporting cool hues,
   // so day 1 is the brand blue and day 2 the brand yellow.
-  tripDays.forEach((d, i) => { dayColors[dayjs(d).format('YYYY-MM-DD')] = `hsl(${DAY_HUES[i % DAY_HUES.length]},68%,46%)`; });
+  const dayHues = themeDayHues();
+  tripDays.forEach((d, i) => { dayColors[dayjs(d).format('YYYY-MM-DD')] = `hsl(${dayHues[i % dayHues.length]},72%,46%)`; });
 
   const chipsEl = document.getElementById('date-chips');
   if (chipsEl) {
@@ -3162,7 +3491,10 @@ async function renderItinerary(params) {
       const res = await renderItineraryMap('map', located, {
         dayColors,
         fitBounds: true,
-        forceRecreate
+        forceRecreate,
+        lang,
+        moreLabel: th('รายละเอียดสถานที่เพิ่มเติม', 'More about this place'),
+        directionsLabel: th('ไปที่นี่', 'Directions')
       });
       mapReady = true;
       mapStatus(located.length ? 'ready' : 'empty');
@@ -3177,7 +3509,7 @@ async function renderItinerary(params) {
         const target = pendingFocus;
         pendingFocus = null;
         const { focusItineraryItem } = await import('./maps/index.js');
-        setTimeout(() => focusItineraryItem('map', [target], target.id), 90);
+        setTimeout(() => focusItineraryItem('map', (items || []).length ? items : [target], target.id), 90);
       }
     } catch (e) {
       console.error('Map failed', e);
@@ -3192,17 +3524,24 @@ async function renderItinerary(params) {
    * "กดการ์ดสถานที่ → แผนที่มุ่งไปที่หมุดเสมอ" (task #1).
    * Resolves the place (virtual stay nights resolve to their master hotel pin),
    * makes sure the map is on screen, then pans + opens the pin's popup.
+   * v18: a place with no coordinates is returned as well — the caller then frames
+   * that day on the map instead of doing nothing.
    */
   async function resolveFocusItem(itemId) {
     if (!itemId) return null;
-    let target = visibleItems.find(i => i.id === itemId) || visibleItems.find(i => i.masterId === itemId);
-    if (target?.coordinates) return target;
+    const local = visibleItems.find(i => i.id === itemId) || visibleItems.find(i => i.masterId === itemId);
+    if (local) {
+      if (local.coordinates) return local;
+      const master = local.masterId ? visibleItems.find(i => i.id === local.masterId) : null;
+      if (master?.coordinates) return master;
+      return local;   // unpinned — focusItineraryItem falls back to the day's bounds
+    }
     // The pin may live on a day that is not currently shown — look in the full plan.
     try {
       const all = await fetchItinerary(tripId, null);
-      const masterId = target?.masterId || itemId;
+      const masterId = local?.masterId || itemId;
       const found = (all || []).find(i => i.id === itemId) || (all || []).find(i => i.id === masterId);
-      if (found?.coordinates) return found;
+      if (found) return found;
     } catch { /* offline → fall through */ }
     return null;
   }
@@ -3225,7 +3564,10 @@ async function renderItinerary(params) {
     }
     try {
       const { focusItineraryItem, getMap } = await import('./maps/index.js');
-      if (!getMap('map') || !focusItineraryItem('map', [target], target.id)) {
+      // The whole visible day is passed so an unpinned place can still be framed
+      // against its neighbours.
+      const pool = visibleItems.length ? visibleItems : [target];
+      if (!getMap('map') || !focusItineraryItem('map', pool, target.id)) {
         // Map not created yet (or pin not drawn yet) → apply once it is.
         pendingFocus = target;
         if (!mapReady) refreshMap(visibleItems);
@@ -3725,6 +4067,53 @@ async function renderItinerary(params) {
   }
 
   /* ------------------------- list rendering ------------------------- */
+  /**
+   * v18 (requested): the plan is a sequence, not a pile of cards — so between two
+   * consecutive places we draw the travel leg: how long the move takes (from the
+   * previous place's “travel to next” field), how far it is, and whether the next
+   * start time actually leaves room for it.
+   */
+  function itinLegHtml(prev, next) {
+    if (!prev || !next) return '';
+    const mins = Math.max(0, Math.round(Number(prev.travelToNextMinutes) || 0));
+    const km = haversineKm(prev, next);
+    const prevEnd = prev.endAt || (prev.startAt && prev.durationMinutes
+      ? dayjs(prev.startAt).add(Number(prev.durationMinutes) || 0, 'minute').toDate() : null);
+    const arriveAt = prevEnd && mins > 0 ? dayjs(prevEnd).add(mins, 'minute') : (prevEnd ? dayjs(prevEnd) : null);
+    const nextStart = next.startAt ? dayjs(next.startAt) : null;
+    const slackMin = arriveAt && nextStart ? nextStart.diff(arriveAt, 'minute') : null;
+
+    // Nothing to say at all (no travel time, no distance, no times) → no connector.
+    if (!mins && !km && slackMin === null) return '';
+
+    const mode = !km ? null : (km <= 0.7 ? 'walk' : km <= 3 ? 'bike' : 'car');
+    const modeIcon = mode === 'walk' ? 'footprints' : mode === 'bike' ? 'bike' : 'car';
+    const bits = [];
+    if (mins > 0) bits.push(`<span class="itin-leg-time">${icon(modeIcon || 'navigation', 'w-3 h-3')} ${th('เดินทาง', 'travel')} <b>${escapeHtml(formatDuration(mins))}</b></span>`);
+    else bits.push(`<span class="itin-leg-time">${icon(modeIcon || 'navigation', 'w-3 h-3')} <b>${th('เดินถึงกัน', 'within walking distance')}</b></span>`);
+    if (km > 0) bits.push(`<span class="itin-leg-km">${km < 1 ? `${Math.round(km * 1000)} ม.` : `${km.toFixed(1)} กม.`}</span>`);
+    if (mins > 0 && arriveAt) {
+      bits.push(`<span class="itin-leg-arrive">${th('ถึงราว', 'arrive ~')} <b>${escapeHtml(formatTime(arriveAt.toDate()))}</b></span>`);
+    }
+    let warn = '';
+    if (slackMin !== null && mins > 0) {
+      if (slackMin < 0) warn = `<span class="itin-leg-warn">${icon('alert-triangle', 'w-3 h-3')} ${th(`ไม่พอเวลา ${formatDuration(Math.abs(slackMin))}`, `short by ${escapeHtml(formatDuration(Math.abs(slackMin)))}`)}</span>`;
+      else if (slackMin <= 15) warn = `<span class="itin-leg-tight">${icon('timer', 'w-3 h-3')} ${th(`เหลือแค่ ${formatDuration(slackMin)}`, `only ${escapeHtml(formatDuration(slackMin))} spare`)}</span>`;
+    }
+    const stay = prev.durationMinutes ? `<span class="itin-leg-stay">${th('แวะ', 'stay')} ${escapeHtml(formatDuration(Number(prev.durationMinutes) || 0))}</span>` : '';
+    return `
+      <div class="itin-leg ${mins > 0 ? '' : 'itin-leg--near'} ${warn ? 'itin-leg--warn' : ''}" aria-hidden="false">
+        <div class="itin-leg-rail"><span class="itin-leg-dot"></span><span class="itin-leg-line"></span></div>
+        <div class="itin-leg-body">${bits.join('<span class="itin-leg-sep">•</span>')}${stay}${warn}</div>
+      </div>`;
+  }
+
+  /** Cards of one day, with the travel legs drawn between them. */
+  function dayCardsHtml(list, { draggable = false } = {}) {
+    const arr = list || [];
+    return arr.map((it, idx) => itemCardHtml(it, idx, { draggable }) + (idx < arr.length - 1 ? itinLegHtml(it, arr[idx + 1]) : '')).join('');
+  }
+
   function itemCardHtml(it, idx, { draggable = false } = {}) {
     const cur = it.estimateCurrency || currency;
     const rate = resolveTripThbRate(trip, itineraryExpenses, cur);
@@ -3784,12 +4173,65 @@ async function renderItinerary(params) {
             <button type="button" class="itin-thumb-more" data-act="more" data-id="${it.id}" title="${th('เพิ่มเติม','More')}" aria-label="${th('เมนูรายการ','Item menu')}">${icon('more-vertical', 'w-3.5 h-3.5')}</button>
             <div class="itin-more-menu" data-more-menu="${it.id}">
               ${isVirtual ? '' : `<button data-act="status" data-id="${it.id}">${icon('circle-check', 'w-4 h-4')} ${th('เปลี่ยนสถานะ','Change status')}</button>`}
+              ${hasCoords(it) ? `<button data-act="details" data-id="${it.id}">${icon('search', 'w-4 h-4')} ${th('รายละเอียดสถานที่เพิ่มเติม','More place details')}</button>` : ''}
               <button data-act="edit" data-id="${it.id}">${icon('pencil', 'w-4 h-4')} ${isVirtual ? th('แก้ไขการจองพัก','Edit the stay') : t('edit')}</button>
               ${isVirtual ? '' : `<button data-act="delete" data-id="${it.id}" class="is-danger">${icon('trash-2', 'w-4 h-4')} ${t('delete')}</button>`}
             </div>
           </div>
         </div>
       </div>`;
+  }
+
+  /**
+   * v18 (optional extra): “รายละเอียดสถานที่เพิ่มเติม” for one pinned place.
+   * Key-less OpenStreetMap (Overpass) + Wikipedia, fetched on demand and cached per
+   * session by utils/placeDetails.js. Everything is optional — the sheet always
+   * offers the Google Maps link, even offline.
+   */
+  async function openPlaceDetails(item) {
+    const pos = coordOf(item);
+    const mapsUrl = item.googleMapsUrl
+      || (pos ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${pos.lat},${pos.lng}`)}` : '');
+    const sheet = showBottomSheet(`
+      <div class="place-sheet">
+        <div class="place-sheet-head">
+          <div class="row-icon" style="width:38px;height:38px;border-radius:12px;">${icon('search', 'w-4 h-4')}</div>
+          <div class="min-w-0">
+            <h3 class="font-bold text-sm leading-tight" style="font-family:var(--font-display);">${escapeHtml(item.title || '')}</h3>
+            <p class="text-[11px] text-[var(--text-tertiary)]">${pos ? `${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)}` : escapeHtml(item.address || '')}</p>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="place-sheet-close" style="margin-left:auto;">${icon('x', 'w-4 h-4')}</button>
+        </div>
+        <div id="place-sheet-body" class="place-sheet-body">
+          <div class="place-details place-details--loading"><span class="place-details-spinner"></span>${th('กำลังค้นหาจาก OpenStreetMap…', 'Looking it up on OpenStreetMap…')}</div>
+        </div>
+        <div class="btn-row mt-3">
+          ${mapsUrl ? `<a class="btn btn-secondary btn-sm" href="${escapeHtml(mapsUrl)}" target="_blank" rel="noopener">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดใน Google Maps', 'Open in Google Maps')}</a>` : ''}
+          <button class="btn btn-ghost btn-sm" id="place-copy-coords">${icon('copy', 'w-3.5 h-3.5')} ${th('คัดลอกพิกัด', 'Copy coordinates')}</button>
+        </div>
+      </div>
+    `);
+    document.getElementById('place-sheet-close')?.addEventListener('click', () => sheet.close());
+    document.getElementById('place-copy-coords')?.addEventListener('click', async () => {
+      if (!pos) return toast.error(th('ไม่มีพิกัดให้คัดลอก', 'No coordinates to copy'));
+      try { await navigator.clipboard.writeText(`${pos.lat},${pos.lng}`); toast.success(th('คัดลอกแล้ว', 'Copied')); }
+      catch { toast.error(`${pos.lat},${pos.lng}`); }
+    });
+    try {
+      const details = await fetchPlaceDetails(item, { lang });
+      const body = document.getElementById('place-sheet-body');
+      if (body) body.innerHTML = placeDetailsHtml(details, { lang });
+      queueIcons();
+    } catch (e) {
+      const body = document.getElementById('place-sheet-body');
+      if (body) body.innerHTML = placeDetailsHtmlSafe({ ok: false, mapsUrl });
+    }
+  }
+
+  /** placeDetailsHtml is optional — never let it break the sheet. */
+  function placeDetailsHtmlSafe(details) {
+    try { return placeDetailsHtml(details, { lang }); }
+    catch { return `<div class="place-details place-details--empty">${th('ดึงข้อมูลไม่ได้ตอนนี้', 'Could not load details')}</div>`; }
   }
 
   async function loadItems() {
@@ -3835,11 +4277,11 @@ async function renderItinerary(params) {
               <span class="text-[10px] text-[var(--text-tertiary)] ml-auto">${itineraryMoney(dayItems)}</span>
               <button class="itin-day-export-btn" data-export-day="${escapeHtml(day)}" title="${th('ส่งออก PNG ของวันนี้','Export this day as a PNG')}">${icon('image', 'w-3.5 h-3.5')} PNG</button>
             </h3>
-            <div class="space-y-3 stagger">${dayItems.map((it, idx) => itemCardHtml(it, idx, { draggable: editMode })).join('')}</div>
+            <div class="space-y-3 stagger">${dayCardsHtml(dayItems, { draggable: editMode })}</div>
           </div>
         `).join('');
       } else {
-        listEl.innerHTML = items.map((it, idx) => itemCardHtml(it, idx, { draggable: editMode })).join('');
+        listEl.innerHTML = dayCardsHtml(items, { draggable: editMode });
       }
 
       listEl.querySelectorAll('[data-export-day]').forEach(btn => btn.addEventListener('click', async (e) => {
@@ -3884,6 +4326,7 @@ async function renderItinerary(params) {
         if (btn.dataset.act === 'edit') openItemForm(item, item.date);
         if (btn.dataset.act === 'delete') await removeItem(item);
         if (btn.dataset.act === 'status') await changeStatus(item);
+        if (btn.dataset.act === 'details') await openPlaceDetails(item);
       }));
 
       // Tapping anywhere on a place card sends the map straight to that pin —
@@ -4004,6 +4447,13 @@ async function renderItinerary(params) {
     const durInit = toUnit(it.durationMinutes ?? 60);
     const travelInit = toUnit(it.travelToNextMinutes ?? 0);
     const initPayer = it.estimatePayerPending ? '__pending' : (it.estimatePayerId || currentUser.uid);
+    // v18 (requested): one merged category control. By default the expense group
+    // simply follows the place category; the lock is only broken when this place
+    // really bills into another group (e.g. a temple visited on a guided tour).
+    const estimateFollow = !it.estimateCategory
+      || normalizeCategory(it.estimateCategory) === expenseGroupForChoice(normalizeCategory(it.category || 'general'));
+    let estimateLinked = estimateFollow;
+    const estimateInit = it.estimateCategory || expenseGroupForChoice(normalizeCategory(it.category || 'general'));
 
     const sheet = showBottomSheet(`
       <div class="space-y-3">
@@ -4064,8 +4514,9 @@ async function renderItinerary(params) {
             </div>
           </div>
 
-          <div class="input-group"><label class="input-label">${icon('tag', 'w-3.5 h-3.5')} ${th('หมวดหมู่','Category')}</label>
-            <select id="it-category" class="input">${ITINERARY_CATEGORIES.map(c => `<option value="${c.id}" ${(it.category || 'general') === c.id ? 'selected' : ''}>${lang==='th'?c.th:c.en}</option>`).join('')}</select>
+          <div class="input-group"><label class="input-label">${icon('tag', 'w-3.5 h-3.5')} ${th('หมวดหมู่ (ใช้ได้ทั้งสถานที่และค่าใช้จ่าย)','Category — place and money, one list')}</label>
+            <select id="it-category" class="input">${categoryChoices(lang).map(c => `<option value="${c.id}" ${(it.category || 'general') === c.id ? 'selected' : ''}>${escapeHtml(categoryChoiceLabel(c, lang))}</option>`).join('')}</select>
+            <p class="input-hint mt-1">${th('เลือกครั้งเดียว — ระบบจับคู่ให้เองว่าจะลงกลุ่มค่าใช้จ่ายไหน','One pick — the expense group it bills into is matched for you')}</p>
           </div>
 
           <div class="input-group">
@@ -4107,8 +4558,13 @@ async function renderItinerary(params) {
                   <select id="it-estimate-currency" class="input">${tripCurrencyList(trip, [it.estimateCurrency, currency]).map(c => `<option value="${c}" ${(it.estimateCurrency || currency) === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
                 </div>
               </div>
-              <div class="input-group"><label class="input-label text-[12px]">${icon('tag', 'w-3.5 h-3.5')} ${th('หมวดค่าใช้จ่าย','Expense category')}</label>
-                <select id="it-estimate-category" class="input">${getAllExpenseCategories().map(c => `<option value="${c.id}" ${normalizeCategory(it.estimateCategory || 'general') === c.id ? 'selected' : ''}>${lang==='th'?(c.th||c.en):(c.en||c.th)}</option>`).join('')}</select>
+              <div class="input-group">
+                <label class="input-label text-[12px] flex items-center gap-2">${icon('tag', 'w-3.5 h-3.5')} <span>${th('หมวดค่าใช้จ่าย','Expense group')}</span>
+                  <button type="button" id="it-est-link" class="chip text-[10px]" style="min-height:22px;padding:2px 8px;margin-left:auto;">
+                    ${icon(estimateLinked ? 'link' : 'link-off', 'w-3 h-3')} <span data-link-label>${estimateLinked ? th('ตามหมวดหมู่สถานที่', 'follows the place category') : th('เลือกเอง', 'chosen by hand')}</span>
+                  </button>
+                </label>
+                <select id="it-estimate-category" class="input" ${estimateLinked ? 'disabled' : ''}>${getAllExpenseCategories().map(c => `<option value="${c.id}" ${normalizeCategory(estimateInit) === c.id ? 'selected' : ''}>${lang==='th'?(c.th||c.en):(c.en||c.th)}</option>`).join('')}</select>
               </div>
               <div class="input-group">
                 <label class="input-label text-[12px]">${icon('user', 'w-3.5 h-3.5')} ${th('ใครจ่าย','Paid by')}</label>
@@ -4154,6 +4610,27 @@ async function renderItinerary(params) {
       </div>
     `);
     queueIcons();
+
+    /* ---- v18: the merged category control (place category ⇄ expense group) ---- */
+    const catSelect = document.getElementById('it-category');
+    const estSelect = document.getElementById('it-estimate-category');
+    const estLinkBtn = document.getElementById('it-est-link');
+    const syncEstimateGroup = () => {
+      if (!estSelect || !estimateLinked) return;
+      estSelect.value = expenseGroupForChoice(catSelect?.value || 'general');
+    };
+    catSelect?.addEventListener('change', syncEstimateGroup);
+    estLinkBtn?.addEventListener('click', () => {
+      estimateLinked = !estimateLinked;
+      if (estSelect) {
+        estSelect.disabled = estimateLinked;
+        syncEstimateGroup();
+      }
+      estLinkBtn.innerHTML = `${icon(estimateLinked ? 'link' : 'link-off', 'w-3 h-3')} <span data-link-label>${estimateLinked ? th('ตามหมวดหมู่สถานที่', 'follows the place category') : th('เลือกเอง', 'chosen by hand')}</span>`;
+      estLinkBtn.classList.toggle('chip-active', estimateLinked);
+      queueIcons();
+    });
+    if (estLinkBtn) estLinkBtn.classList.toggle('chip-active', estimateLinked);
 
     const estimateToggle = document.getElementById('it-has-estimate');
     estimateToggle.addEventListener('change', () => {
@@ -4309,7 +4786,9 @@ async function renderItinerary(params) {
           status: document.getElementById('it-status').value,
           estimateAmount,
           estimateCurrency: document.getElementById('it-estimate-currency').value,
-          estimateCategory: document.getElementById('it-estimate-category').value,
+          estimateCategory: estimateLinked
+            ? expenseGroupForChoice(document.getElementById('it-category').value)
+            : document.getElementById('it-estimate-category').value,
           estimatePayerId: payerId === '__pending' ? '' : payerId,
           estimatePayerPending: payerId === '__pending',
           estimateShareWith: shareIds,
@@ -4708,7 +5187,22 @@ async function renderExpenses(params) {
           </section>`;
       }).join('');
     } else {
-      listEl.innerHTML = items.map(e => expenseCardHtml(e)).join('');
+      // v18 (requested): the flat list shows the same running total that the
+      // “แยกตามวัน” view prints per day — so switching views never loses the sum.
+      let listTotal = null;
+      try { listTotal = sumExpenses(expensesInThb(items, trip)); } catch { /* missing rate */ }
+      const listRate = resolveTripThbRate(trip, allLoaded, currency);
+      const listThb = listTotal != null && currency !== 'THB' && listRate
+        ? origTextChipHtml(formatCurrency(convertCurrency(listTotal, 'THB', currency, 1 / listRate), currency)) : '';
+      const dayCount = new Set(items.map(e => e.date).filter(Boolean)).size;
+      listEl.innerHTML = `
+        <div class="expense-day-total-bar">
+          <span>${icon('wallet', 'w-3.5 h-3.5')} ${th('ยอดรวมทั้งทริป (ตามตัวกรองนี้)', 'Trip total (this filter)')}</span>
+          <b class="money-primary">${listTotal == null ? th('ยังไม่มีเรท THB', 'THB rate needed') : formatCurrency(listTotal, 'THB')}</b>
+          ${listThb}
+          <i>${items.length} ${th('รายการ', 'items')}${dayCount ? ` • ${dayCount} ${th('วัน', 'days')}` : ''}</i>
+        </div>
+        ${items.map(e => expenseCardHtml(e)).join('')}`;
     }
     listEl.querySelectorAll('[data-comment]').forEach(btn => btn.addEventListener('click', async (ev) => {
       ev.stopPropagation();
@@ -5651,7 +6145,8 @@ async function renderSettlement(params) {
 
       <div class="chip-row mb-4" id="settle-views">
         <button class="chip chip-active" data-view="overview">${icon('scale', 'w-3.5 h-3.5')} ${th('ภาพรวม','Overview')}</button>
-        <button class="chip" data-view="receipts">${icon('receipt-text', 'w-3.5 h-3.5')} ${th('ใบเสร็จรายคน','Per-person receipts')}</button>
+        <button class="chip" data-view="receipts">${icon('hand', 'w-3.5 h-3.5')} ${th('ใบเสร็จรายคน (ปัดการ์ด)','Receipt cards — swipe')}</button>
+        <button class="chip" data-view="receipts-list">${icon('list', 'w-3.5 h-3.5')} ${th('แบบรายการยาว','Long list')}</button>
       </div>
 
       <div id="settlement-content" class="space-y-4"><div class="skeleton h-32"></div></div>
@@ -5662,6 +6157,9 @@ async function renderSettlement(params) {
   let state = { expenses: [], members: [], membersMap: {}, statements: [], balances: [], transactions: [] };
   let view = 'overview';   // ภาพรวมเป็นค่าเริ่มต้น (สลับเป็นใบเสร็จรายคนได้)
   let receiptFilter = 'all';  // 'all' = ใบเสร็จทุกคน, หรือ memberId ของคนที่เลือกดู
+  // v18: ใบเสร็จรายคนแสดงเป็นการ์ดปัดได้ (Tinder-style) — สลับเป็นรายการยาวได้
+  let receiptMode = 'deck';
+  let deckIndex = 0;
   let commentsAll = [];       // ความเห็น/ทักท้วงของทั้งทริป (ใช้ในใบเสร็จด้วย)
   let commentMap = new Map();
 
@@ -5884,7 +6382,7 @@ async function renderSettlement(params) {
 
         <div class="receipt-foot">
           ${settled ? `<span class="receipt-stamp">${icon('check-circle-2', 'w-3 h-3')} ${th('เคลียร์ครบแล้ว','Fully settled')}</span><br>` : ''}
-          ${currency !== 'THB' && thbRate ? `1 ${escapeHtml(currency)} ≈ ${formatAmount(thbRate, 4)} THB • ` : ''}${th('ออกโดย Fuji Planner','Generated by Fuji Planner')} • ${escapeHtml(new Date().toLocaleString(lang === 'th' ? 'th-TH' : 'en-GB'))}
+          ${currency !== 'THB' && thbRate ? `1 ${escapeHtml(currency)} ≈ ${formatAmount(thbRate, 4)} THB • ` : ''}${th(`ออกโดย ${APP_NAME_BY}`, `Generated by ${APP_NAME_BY}`)} • ${escapeHtml(new Date().toLocaleString(lang === 'th' ? 'th-TH' : 'en-GB'))}
         </div>
 
         <div class="btn-row mt-3 no-export">
@@ -6105,6 +6603,7 @@ async function renderSettlement(params) {
           // The overview is on screen — render the receipts again before capturing.
           view = 'receipts';
           receiptFilter = 'all';   // make sure the receipt we capture exists
+          receiptMode = 'deck';
           document.querySelectorAll('#settle-views .chip').forEach(c => c.classList.toggle('chip-active', c.dataset.view === 'receipts'));
           renderView();
         }
@@ -6182,6 +6681,242 @@ async function renderSettlement(params) {
     }));
   }
 
+  /* ---------------- v18: ใบเสร็จแบบการ์ดปัด (Tinder-style deck) ---------------- */
+
+  /** The deck always holds every statement — the picker only decides who is on top. */
+  function deckList() {
+    return deckOrder(state.statements, { myId: currentUser?.uid || null, lang });
+  }
+
+  function deckCardHtml(m, idx, total) {
+    const sum = deckSummary(m, { money, lang });
+    const th2 = thbOf(Math.abs(m.netMinor));
+    const tone = sum.positive ? 'is-positive' : 'is-negative';
+    const chips = ['cash', 'card', 'transfer'].filter(k => m.paidByMethod[k] > 0)
+      .map(k => `<span class="rcpt-chip rcpt-chip--${k}">${icon(methodIcon(k), 'w-3 h-3')} ${methodLabel(k)} <b>${money(m.paidByMethod[k])}</b></span>`).join('');
+    const topRows = sum.top.length
+      ? sum.top.map(i => `
+          <div class="rcpt-deck-row">
+            <span class="rcpt-deck-row-mark ${i.role === 'paid' ? 'is-in' : 'is-out'}">${icon(i.role === 'paid' ? 'arrow-down-circle' : 'arrow-up-circle', 'w-3 h-3')}</span>
+            <span class="rcpt-deck-row-title">${escapeHtml(i.title)}${i.estimated ? ` <i class="rcpt-mini-badge rcpt-mini-badge--est">${th('ประมาณการ', 'est.')}</i>` : ''}</span>
+            <span class="rcpt-deck-row-amount">${escapeHtml(i.amount)}</span>
+          </div>`).join('')
+      : `<p class="rcpt-empty">${th('ยังไม่มีรายการ', 'No items yet')}</p>`;
+    return `
+      <article class="rcpt-deck-card ${tone}" data-deck-card="${escapeHtml(m.memberId)}" tabindex="0"
+               role="button" aria-label="${escapeHtml(m.displayName)}"
+               style="--deck-color:${escapeHtml(m.color || 'var(--primary)')};">
+        <header class="rcpt-deck-head">
+          <div class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">
+            ${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" alt="" class="w-full h-full rounded-full object-cover">` : escapeHtml(sum.initials)}
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="rcpt-deck-kicker">${th('ใบเสร็จของ', 'Receipt for')} • ${idx + 1}/${total}</p>
+            <h4 class="rcpt-deck-name">${escapeHtml(m.displayName)}${m.memberId === currentUser?.uid ? ` <span class="rcpt-deck-you">${th('คุณ', 'you')}</span>` : ''}</h4>
+          </div>
+          <span class="rcpt-deck-mood">${moodFaceHtml(balanceMood(m.netMinor), { size: 34, lang })}</span>
+        </header>
+        <div class="rcpt-deck-balance">
+          <span class="rcpt-deck-balance-label">${sum.settled ? th('เคลียร์ครบแล้ว', 'All settled') : sum.positive ? th('จะได้รับคืน', 'Gets back') : th('ต้องจ่ายคืน', 'Owes')}</span>
+          <strong class="rcpt-deck-balance-value">${sum.positive ? '+' : '−'}${escapeHtml(sum.headline)}</strong>
+          ${th2 ? `<span class="rcpt-deck-balance-thb">≈ ${escapeHtml(th2)}</span>` : ''}
+        </div>
+        <div class="rcpt-deck-totals">
+          <span>${th('รับ', 'Paid')} <b>${escapeHtml(sum.paidLabel)}</b> <i>${m.paidCount} ${th('รายการ', 'items')}</i></span>
+          <span>${th('หัก', 'Share')} <b>${escapeHtml(sum.owedLabel)}</b> <i>${m.shareCount} ${th('คน', 'pax')}</i></span>
+        </div>
+        ${chips ? `<div class="rcpt-deck-chips">${chips}</div>` : ''}
+        <div class="rcpt-deck-rows">${topRows}</div>
+        ${m.items.length > 3 ? `<button type="button" class="rcpt-deck-more" data-deck-open>${icon('expand', 'w-3.5 h-3.5')} ${th(`ดูรายละเอียดทั้งหมด (${m.items.length} รายการ)`, `Open full receipt (${m.items.length} items)`)}</button>`
+          : `<button type="button" class="rcpt-deck-more" data-deck-open>${icon('expand', 'w-3.5 h-3.5')} ${th('ดูรายละเอียด', 'Open details')}</button>`}
+        <footer class="rcpt-deck-foot">
+          <span class="rcpt-deck-hint">${icon('move-horizontal', 'w-3 h-3')} ${th('ปัดซ้าย/ขวาเพื่อเปลี่ยนคน • แตะการ์ดเพื่อดูรายละเอียด', 'Swipe to switch person • tap for details')}</span>
+          ${sum.flagged ? `<span class="rcpt-deck-flag">${icon('message-square', 'w-3 h-3')} ${sum.flagged}</span>` : ''}
+        </footer>
+      </article>`;
+  }
+
+  function deckHtml() {
+    const list = deckList();
+    if (!list.length) {
+      return `<div class="card p-4">${renderEmptyState({ icon: 'receipt-text', title: th('ยังไม่มีใบเสร็จ', 'No receipts yet'), desc: th('เพิ่มค่าใช้จ่ายแล้วกลับมาดูใหม่', 'Add expenses and come back') })}</div>`;
+    }
+    if (deckIndex >= list.length || deckIndex < 0) deckIndex = 0;
+    const current = list[deckIndex];
+    const next = list[deckStep(deckIndex, 1, list.length)];
+    return `
+      <div class="rcpt-deck" id="rcpt-deck">
+        ${receiptPickerHtml()}
+        <div class="deck-people no-export" id="deck-people">
+          ${list.map((m, i) => `
+            <button type="button" class="deck-person ${i === deckIndex ? 'is-active' : ''}" data-deck-goto="${i}" title="${escapeHtml(m.displayName)}">
+              <span class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">
+                ${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" alt="" class="w-full h-full rounded-full object-cover">` : escapeHtml((m.displayName || '?').trim().charAt(0).toUpperCase())}
+              </span>
+              <span class="deck-person-name">${escapeHtml(m.displayName)}</span>
+              <span class="deck-person-amt ${m.netMinor >= 0 ? 'is-pos' : 'is-neg'}">${m.netMinor >= 0 ? '+' : '−'}${escapeHtml(money(Math.abs(m.netMinor || 0)))}</span>
+            </button>`).join('')}
+        </div>
+        <div class="rcpt-deck-stage" id="deck-stage">
+          ${deckCardHtml(current, deckIndex, list.length)}
+          ${next && list.length > 1 ? `<div class="rcpt-deck-peek" aria-hidden="true">${deckCardHtml(next, deckStep(deckIndex, 1, list.length), list.length)}</div>` : ''}
+          <div class="rcpt-deck-badge rcpt-deck-badge--prev" data-deck-badge="prev">${icon('chevron-left', 'w-4 h-4')} ${th('คนก่อนหน้า', 'previous')}</div>
+          <div class="rcpt-deck-badge rcpt-deck-badge--next" data-deck-badge="next">${th('คนถัดไป', 'next')} ${icon('chevron-right', 'w-4 h-4')}</div>
+        </div>
+        <div class="rcpt-deck-nav no-export">
+          <button type="button" class="btn btn-secondary btn-sm" data-deck-step="-1" aria-label="${th('คนก่อนหน้า', 'previous')}">${icon('chevron-left', 'w-4 h-4')}</button>
+          <span class="deck-pos" data-deck-pos>${escapeHtml(deckPositionLabel(deckIndex, list.length, lang))}</span>
+          <button type="button" class="btn btn-secondary btn-sm" data-deck-step="1" aria-label="${th('คนถัดไป', 'next')}">${icon('chevron-right', 'w-4 h-4')}</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-deck-open>${icon('maximize', 'w-3.5 h-3.5')} ${th('รายละเอียด', 'Details')}</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-export-receipt="${escapeHtml(current.memberId)}">${icon('image', 'w-3.5 h-3.5')} PNG</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-deck-mode="list">${icon('list', 'w-3.5 h-3.5')} ${th('แบบรายการยาว', 'Long list')}</button>
+        </div>
+        <p class="deck-tip text-[10.5px] text-[var(--text-tertiary)] text-center mt-1">${th('ใช้ปุ่ม ← → บนคีย์บอร์ด หรือลากการ์ดปัดได้', 'Use the ← → keys, or drag the card')}</p>
+      </div>`;
+  }
+
+  /** Open the full receipt of one member in a sheet (scrollable, exportable). */
+  function openReceiptDetail(memberId) {
+    const m = state.statements.find(x => x.memberId === memberId) || deckList()[deckIndex];
+    if (!m) return;
+    const detail = showBottomSheet(`
+      <div class="receipt-detail-head">
+        <div class="avatar" style="width:40px;height:40px;background:${escapeHtml(m.color || 'var(--primary)')};">
+          ${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" alt="" class="w-full h-full rounded-full object-cover">` : escapeHtml((m.displayName || '?').trim().charAt(0).toUpperCase())}
+        </div>
+        <div class="min-w-0">
+          <h3 class="font-bold text-base leading-tight" style="font-family:var(--font-display);">${escapeHtml(m.displayName)}</h3>
+          <p class="text-[11px] text-[var(--text-secondary)]">${th('ใบเสร็จทั้งหมดของคนนี้', 'This person’s full receipt')} • ${m.items.length} ${th('รายการ', 'items')}</p>
+        </div>
+        <button class="btn btn-ghost btn-sm no-export" id="rd-close" style="margin-left:auto;">${icon('x', 'w-4 h-4')}</button>
+      </div>
+      <div class="receipt-detail-body" id="receipt-detail-${escapeHtml(m.memberId)}">${receiptHtml(m)}</div>
+      <div class="btn-row mt-3 no-export" id="rd-switch"></div>
+    `, { className: 'sheet--wide' });
+    const all = deckList();
+    const switchBar = document.getElementById('rd-switch');
+    if (switchBar) {
+      switchBar.innerHTML = all.map(x => `
+        <button type="button" class="deck-person deck-person--mini ${x.memberId === m.memberId ? 'is-active' : ''}" data-detail-person="${escapeHtml(x.memberId)}">
+          <span class="avatar" style="background:${escapeHtml(x.color || 'var(--primary)')};width:24px;height:24px;font-size:10px;">${escapeHtml((x.displayName || '?').trim().charAt(0).toUpperCase())}</span>
+        </button>`).join('');
+      switchBar.querySelectorAll('[data-detail-person]').forEach(btn => btn.addEventListener('click', () => {
+        detail.close();
+        const idx = all.findIndex(x => x.memberId === btn.dataset.detailPerson);
+        if (idx >= 0) { deckIndex = idx; renderView(); }
+        setTimeout(() => openReceiptDetail(btn.dataset.detailPerson), 60);
+      }));
+    }
+    document.getElementById('rd-close')?.addEventListener('click', () => detail.close());
+    bindReceiptActions();
+    queueIcons();
+  }
+
+  /** Drag / keyboard behaviour for the deck (pointer events, no libraries). */
+  function mountDeck() {
+    const stage = document.getElementById('deck-stage');
+    const deck = document.getElementById('rcpt-deck');
+    if (!stage || !deck) return;
+    const card = stage.querySelector('[data-deck-card]');
+    if (!card) return;
+
+    const go = (delta) => {
+      const list = deckList();
+      if (!list.length) return;
+      deckIndex = deckStep(deckIndex, delta, list.length);
+      renderView();
+    };
+    const open = () => {
+      const cur = deckList()[deckIndex];
+      if (cur) openReceiptDetail(cur.memberId);
+    };
+
+    let dragging = false, startX = 0, startY = 0, dx = 0, dy = 0, moved = false;
+    const setTransform = () => {
+      const tilt = swipeTilt(dx, stage.clientWidth || 360);
+      card.style.transform = `translate(${dx}px, ${dy * 0.25}px) rotate(${tilt}deg)`;
+      card.style.transition = 'none';
+      const peek = stage.querySelector('.rcpt-deck-peek');
+      if (peek) {
+        const p = Math.min(1, Math.abs(dx) / Math.max(160, (stage.clientWidth || 360) * 0.6));
+        peek.style.transform = `translateY(${10 - p * 10}px) scale(${0.965 + p * 0.035})`;
+        peek.style.opacity = String(0.6 + p * 0.4);
+      }
+      stage.querySelector('[data-deck-badge="next"]')?.classList.toggle('is-on', dx < -60);
+      stage.querySelector('[data-deck-badge="prev"]')?.classList.toggle('is-on', dx > 60);
+    };
+    const resetTransform = () => {
+      card.style.transition = 'transform .28s cubic-bezier(.2,.9,.3,1)';
+      card.style.transform = '';
+      stage.querySelector('.rcpt-deck-peek')?.style.setProperty('transform', '');
+      stage.querySelectorAll('[data-deck-badge]').forEach(b => b.classList.remove('is-on'));
+    };
+    const onDown = (e) => {
+      if (e.target.closest('button, a, input, select, textarea, .no-export')) return;
+      dragging = true; moved = false;
+      startX = e.clientX; startY = e.clientY; dx = 0; dy = 0;
+      card.setPointerCapture?.(e.pointerId);
+    };
+    const onMove = (e) => {
+      if (!dragging) return;
+      dx = e.clientX - startX; dy = e.clientY - startY;
+      if (Math.abs(dx) > 6 || Math.abs(dy) > 6) moved = true;
+      if (moved) setTransform();
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      const intent = swipeIntent({ dx, dy, width: stage.clientWidth || 360 });
+      if (intent === 'next' || intent === 'prev') {
+        const out = intent === 'next' ? -1 : 1;
+        card.style.transition = 'transform .22s ease-in, opacity .22s ease-in';
+        card.style.transform = `translate(${out * (window.innerWidth || 600)}px, ${dy * 0.3}px) rotate(${out * 18}deg)`;
+        card.style.opacity = '0';
+        setTimeout(() => go(out), 130);
+      } else if (intent === 'open' || !moved) {
+        resetTransform();
+        open();
+      } else resetTransform();
+      dx = 0; dy = 0;
+    };
+    card.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+
+    const onKey = (e) => {
+      if (!document.getElementById('rcpt-deck')) return;
+      if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
+      else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+    };
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('routechange', () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    }, { once: true });
+
+    deck.querySelectorAll('[data-deck-step]').forEach(btn => btn.addEventListener('click', () => go(Number(btn.dataset.deckStep) || 1)));
+    deck.querySelectorAll('[data-deck-goto]').forEach(btn => btn.addEventListener('click', () => {
+      deckIndex = Number(btn.dataset.deckGoto) || 0;
+      renderView();
+    }));
+    deck.querySelectorAll('[data-deck-open]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); open(); }));
+    deck.querySelectorAll('[data-deck-mode]').forEach(btn => btn.addEventListener('click', () => {
+      receiptMode = btn.dataset.deckMode === 'list' ? 'list' : 'deck';
+      try { localStorage.setItem('fuji_receipt_mode', receiptMode); } catch { /* ignore */ }
+      renderView();
+    }));
+    // the tap on the whole card also opens the detail (only when it was a tap)
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('button, a, .no-export')) return;
+      if (moved) return;
+      open();
+    });
+  }
+
   function renderView() {
     const content = document.getElementById('settlement-content');
     if (!content) return;
@@ -6192,17 +6927,40 @@ async function renderSettlement(params) {
       bindReceiptActions();
       return;
     }
-    // ใบเสร็จรายคน: ดูของทุกคน หรือเลือกดูทีละคน (ตามที่ขอ — กรองตามชื่อสมาชิก)
+    // ใบเสร็จรายคน: การ์ดปัดได้ (ค่าเริ่มต้น v18) หรือรายการยาวแบบเดิม
     if (receiptFilter !== 'all' && !state.statements.some(m => m.memberId === receiptFilter)) receiptFilter = 'all';
+    if (view === 'receipts' && receiptMode === 'deck' && state.statements.length) {
+      // the picker above the deck also moves the deck to that person
+      if (receiptFilter !== 'all') {
+        const at = deckList().findIndex(m => m.memberId === receiptFilter);
+        if (at >= 0) deckIndex = at;
+      }
+      const visible = receiptFilter === 'all' ? state.statements : state.statements.filter(m => m.memberId === receiptFilter);
+      // ใบเสร็จแบบยาวถูกซ่อนไว้บนจอ แต่ใช้ตอนสั่งพิมพ์ (ทุกใบเสร็จในหน้าเดียว)
+      // For a big group that copy is expensive, so beyond 8 people it is built only
+      // for whoever is on top of the deck — PNG/PDF export creates the rest on demand.
+      const printable = visible.length > 8 && receiptFilter === 'all' ? [visible[deckIndex]].filter(Boolean) : visible;
+      content.innerHTML = `${deckHtml()}${pendingHtml()}${transactionsHtml()}<div class="print-only receipt-grid mt-3">${printable.map(receiptHtml).join('')}</div>`;
+      queueIcons();
+      bindReceiptActions();
+      mountDeck();
+      return;
+    }
     const visible = receiptFilter === 'all' ? state.statements : state.statements.filter(m => m.memberId === receiptFilter);
-    content.innerHTML = `${receiptPickerHtml()}<div class="receipt-grid">${visible.map(receiptHtml).join('')}</div>${pendingHtml()}${transactionsHtml()}`;
+    content.innerHTML = `${receiptPickerHtml()}<div class="receipt-grid">${visible.map(receiptHtml).join('')}</div>${pendingHtml()}${transactionsHtml()}${state.statements.length ? `<div class="btn-row mt-2"><button class="btn btn-secondary btn-sm" data-deck-mode="deck">${icon('hand', 'w-3.5 h-3.5')} ${th('ดูแบบปัดการ์ด', 'Swipe cards')}</button></div>` : ''}`;
     queueIcons();
     bindReceiptActions();
+    content.querySelectorAll('[data-deck-mode]').forEach(btn => btn.addEventListener('click', () => {
+      receiptMode = btn.dataset.deckMode === 'deck' ? 'deck' : 'list';
+      try { localStorage.setItem('fuji_receipt_mode', receiptMode); } catch { /* ignore */ }
+      renderView();
+    }));
   }
 
   async function load() {
     const content = document.getElementById('settlement-content');
     if (!content) return;
+    try { receiptMode = localStorage.getItem('fuji_receipt_mode') === 'list' ? 'list' : 'deck'; } catch { /* ignore */ }
     try {
       const { expenses, members } = await fetchSettlementData(tripId);
       commentsAll = await listComments(tripId, { limitCount: 400 }).catch(() => []);
@@ -6235,7 +6993,11 @@ async function renderSettlement(params) {
   }
 
   document.querySelectorAll('#settle-views [data-view]').forEach(btn => btn.addEventListener('click', () => {
-    view = btn.dataset.view;
+    const wanted = btn.dataset.view;
+    receiptMode = wanted === 'receipts-list' ? 'list' : 'deck';
+    view = 'receipts';
+    if (wanted === 'overview') view = 'overview';
+    try { localStorage.setItem('fuji_receipt_mode', receiptMode); } catch { /* ignore */ }
     document.querySelectorAll('#settle-views .chip').forEach(c => c.classList.remove('chip-active'));
     btn.classList.add('chip-active');
     renderView();
@@ -6418,7 +7180,7 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
         <div class="input-group">
           <label class="input-label">${th('สี','Colour')}</label>
           <div class="chip-row" id="cat-colors">
-            ${CATEGORY_COLOR_CHOICES.map(col => `<button type="button" class="chip ${((existing?.color || BRAND_PRIMARY) === col) ? 'chip-active' : ''}" data-color="${col}" style="background:${col}22; border-color:${col};">${icon('circle', 'w-3 h-3')} ${col}</button>`).join('')}
+            ${categoryColorChoices().map(col => `<button type="button" class="chip ${((existing?.color || brandPrimary()) === col) ? 'chip-active' : ''}" data-color="${col}" style="background:${col}22; border-color:${col};">${icon('circle', 'w-3 h-3')} ${col}</button>`).join('')}
           </div>
         </div>
         <div id="cat-preview" class="diag-row"></div>
@@ -6673,7 +7435,7 @@ function openMemberForm(tripId, member = null, { onSaved } = {}) {
               ${MEMBER_ROLES.map(r => `<option value="${r.id}" ${(m.role || 'member') === r.id ? 'selected' : ''}>${lang==='th'?r.th:r.en}</option>`).join('')}
             </select>
           </div>
-          <div class="input-group"><label class="input-label">${icon('palette', 'w-3.5 h-3.5')} ${th('สีประจำตัว','Color')}</label><input id="m-color" type="color" value="${m.color || BRAND_PRIMARY}" class="w-full h-11 rounded-xl cursor-pointer border" style="border-color:var(--border);"></div>
+          <div class="input-group"><label class="input-label">${icon('palette', 'w-3.5 h-3.5')} ${th('สีประจำตัว','Color')}</label><input id="m-color" type="color" value="${m.color || brandPrimary()}" class="w-full h-11 rounded-xl cursor-pointer border" style="border-color:var(--border);"></div>
         </div>
         <div class="input-group"><label class="input-label">${icon('image', 'w-3.5 h-3.5')} ${th('รูปโปรไฟล์ (URL)','Photo URL')}</label><input id="m-photo" class="input" placeholder="https://..." autocomplete="off" value="${escapeHtml(m.photoURL || '')}"></div>
         ${isEdit ? `
@@ -7328,7 +8090,7 @@ async function renderImportExport(params) {
     ];
     if (!events.length) throw new Error(th('ยังไม่มีข้อมูลให้ส่งออก', 'Nothing to export yet'));
     const suffix = kind === 'all' ? 'trip' : kind;
-    downloadIcs(`${(trip?.name || 'trip').replace(/\s+/g, '-')}-${suffix}.ics`, buildIcs(events, { calendarName: `${trip?.name || 'Trip'} — Fuji Planner` }));
+    downloadIcs(`${(trip?.name || 'trip').replace(/\s+/g, '-')}-${suffix}.ics`, buildIcs(events, { calendarName: `${trip?.name || 'Trip'} — ${APP_NAME_BY}` }));
     return events.length;
   });
   bind('ics-all', 'click', async () => { const n = await exportIcs('all'); if (n) toast.success(th(`ส่งออก ${n} กิจกรรมแล้ว`, `Exported ${n} events`)); });
@@ -7650,23 +8412,33 @@ async function renderSettings(params) {
         <button id="save-budget" class="btn btn-secondary w-full">${icon('save', 'w-4 h-4')} ${th('บันทึกงบประมาณ','Save budget')}</button>
       </div>
 
-      <div class="card p-5 space-y-4" id="settings-appearance-card">
-        <h3 class="font-bold flex items-center gap-2">${icon('sun-moon', 'w-4 h-4')} ${th('การแสดงผล','Appearance')}</h3>
-        <div class="flex items-center gap-3 p-3 rounded-xl" style="background:var(--surface-2); border:1px solid var(--border);">
-          <span class="brand-sun">${icon('sun', 'w-4 h-4')}</span>
-          <div class="flex-1 min-w-0">
-            <p class="text-xs font-bold">${th('ชุดสีของแอป: น้ำเงิน–เหลือง','App brand colours: blue + yellow')}</p>
-            <p class="text-[11px] text-[var(--text-secondary)]">${th('ชุดสีถูกล็อกไว้ให้ทุกหน้าเป็นแบรนด์เดียว เลือกได้เฉพาะโหมดสว่าง/มืด','The palette is locked to one brand — only light / dark / auto can be chosen')}</p>
-          </div>
-          <span class="flex gap-1"><span style="width:18px;height:18px;border-radius:9999px;background:${BRAND.blue};display:inline-block;"></span><span style="width:18px;height:18px;border-radius:9999px;background:${BRAND.yellow};display:inline-block;"></span></span>
-        </div>
-        <div class="theme-section-title">${icon('contrast', 'w-3.5 h-3.5')} ${th('โหมดการแสดงผล','Appearance')}</div>
-        <div class="mode-grid" id="settings-modes">
-          <button class="mode-option ${mode === 'light' ? 'active' : ''}" data-mode="light">${icon('sun', 'w-5 h-5')} ${th('สว่าง','Light')}</button>
-          <button class="mode-option ${mode === 'dark' ? 'active' : ''}" data-mode="dark">${icon('moon', 'w-5 h-5')} ${th('มืด','Dark')}</button>
-          <button class="mode-option ${mode === 'auto' ? 'active' : ''}" data-mode="auto">${icon('monitor', 'w-5 h-5')} Auto</button>
-        </div>
+      <!-- v18: the colour theme picker lives here (LINE / Facebook / IG / custom) -->
+      <div class="card p-5 space-y-3" id="settings-appearance-card">
+        <h3 class="font-bold flex items-center gap-2">${icon('palette', 'w-4 h-4')} ${th('ชุดสี & การแสดงผล','Colour theme & display')}</h3>
+        <p class="text-xs text-[var(--text-secondary)]">${th('เลือกธีมที่ถูกใจ แล้วปรับสี/ความสดใสเองได้ — มีผลทุกหน้า รวมถึงโหมดมืดและรูปที่ส่งออก','Pick a palette you like and fine-tune the colours — it applies everywhere, including dark mode and exported images.')}</p>
+        ${themePickerHtml({ idPrefix: 'settings' })}
         <button id="lang-switch" class="btn btn-secondary w-full btn-sm">${icon('languages', 'w-4 h-4')} ${lang === 'th' ? 'English' : 'ภาษาไทย'}</button>
+      </div>
+
+      <!-- v18: the profile picture lands here, so the account lives with it -->
+      <div class="card p-5 space-y-3" id="settings-account-card">
+        <h3 class="font-bold flex items-center gap-2">${icon('user-cog', 'w-4 h-4')} ${th('บัญชีและอุปกรณ์','Account & device')}</h3>
+        <div class="flex items-center gap-3">
+          <div class="avatar" style="width:44px;height:44px;background:var(--gradient-primary);">${avatarInitialHtml(currentUser)}</div>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-bold truncate">${escapeHtml(currentUser?.displayName || currentUser?.email || 'User')}</p>
+            <p class="text-[11px] text-[var(--text-tertiary)] truncate">${escapeHtml(currentUser?.email || '')}</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <button id="account-edit" class="btn btn-secondary btn-sm">${icon('pencil', 'w-3.5 h-3.5')} ${th('แก้ไขโปรไฟล์','Edit profile')}</button>
+          <button id="account-appearance" class="btn btn-secondary btn-sm">${icon('sun-moon', 'w-3.5 h-3.5')} ${th('โหมดสว่าง/มืด','Light / dark')}</button>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <button id="account-cache" class="btn btn-ghost btn-sm">${icon('eraser', 'w-3.5 h-3.5')} ${th('ล้างแคชอุปกรณ์','Clear device cache')}</button>
+          <button id="account-logout" class="btn btn-sm" style="background:var(--danger-bg);color:var(--danger);border:1.5px solid color-mix(in srgb, var(--danger) 32%, transparent);">${icon('log-out', 'w-3.5 h-3.5')} ${t('logout')}</button>
+        </div>
+        <p class="text-[10px] text-[var(--text-tertiary)] font-mono">${escapeHtml(currentUser?.uid?.slice(0, 12) || '')}</p>
       </div>
 
       <div class="card p-5 space-y-3" id="expense-groups-card">
@@ -7713,16 +8485,29 @@ async function renderSettings(params) {
 
       <div class="card p-5 space-y-2" id="about-card">
         <h3 class="font-bold flex items-center gap-2">${icon('info', 'w-4 h-4')} ${th('เกี่ยวกับแอป','About')}</h3>
-        <div class="flex items-center gap-3 flex-wrap text-xs">
-          <span class="badge badge-planned">${icon('sparkles', 'w-3 h-3')} ${escapeHtml(APP_VERSION)} • ${escapeHtml(APP_PALETTE)}</span>
-          <span class="text-[var(--text-secondary)]" data-build-stamp>${icon('calendar-check', 'w-3.5 h-3.5')} ${escapeHtml(appUpdatedLabel(lang))}</span>
+        <div class="app-wordmark">
+          <span class="app-wordmark-logo">${icon('mount-snow', 'w-4 h-4')}</span>
+          <span class="min-w-0">
+            <span class="app-wordmark-name">${escapeHtml(APP_NAME)}</span>
+            <span class="app-wordmark-by">${th('โดย', 'by')} ${escapeHtml(APP_AUTHOR)}</span>
+          </span>
         </div>
-        <p class="text-[11px] text-[var(--text-secondary)]">${th('ชุดสีถูกออกแบบใหม่ทั้งชุด (ไม่มีตัวเลือกชุดสี) — เลือกได้เฉพาะโหมดสว่าง/มืด/อัตโนมัติ','One fixed brand palette (no colour picker) — only light / dark / auto can be chosen.')}</p>
+        <div class="flex items-center gap-2 flex-wrap text-xs">
+          <span class="badge badge-planned">${icon('tag', 'w-3 h-3')} ${th('เวอร์ชัน', 'Version')} ${escapeHtml(APP_VERSION_LABEL)}</span>
+          <span class="badge badge-completed" data-build-updated>${icon('calendar-check', 'w-3 h-3')} ${escapeHtml(appUpdatedLabel(lang))}</span>
+          <span class="badge badge-skipped" data-build-theme>${icon('palette', 'w-3 h-3')} ${escapeHtml(th('ชุดสี', 'Palette'))} ${escapeHtml(themeName(currentTheme().id, lang))}</span>
+        </div>
+        <div class="about-details" data-build-stamp>
+          <div><span>${th('อัปเดตล่าสุด', 'Last updated')}</span><b>${escapeHtml(appUpdatedShort(lang))}</b> <i>(${escapeHtml(APP_UPDATED_ISO)})</i></div>
+          <div><span>${th('ชุดสีที่ใช้', 'Active palette')}</span><b>${escapeHtml(themeName(currentTheme().id, lang))}</b> • ${escapeHtml(brandPalette().blue)} / ${escapeHtml(brandPalette().amber)}</div>
+          <div><span>${th('เวอร์ชันเว็บ', 'Web build')}</span><b>${escapeHtml(APP_VERSION_LABEL)} · build ${escapeHtml(APP_UPDATED_ISO)}</b></div>
+        </div>
+        <p class="copyright-line">${icon('copyright', 'w-3 h-3')} ${escapeHtml(copyrightNote(lang))}</p>
         <div class="btn-row">
           <a class="btn btn-secondary btn-sm" href="${appBaseUrl()}demo/" target="_blank" rel="noopener">${icon('external-link', 'w-4 h-4')} ${th('ตัวอย่างฟังก์ชันครบ','Full-feature demo')}</a>
           <a class="btn btn-ghost btn-sm" href="${appBaseUrl()}docs/ARCHITECTURE.md" target="_blank" rel="noopener">${icon('file-text', 'w-4 h-4')} ${th('เอกสารระบบ','Docs')}</a>
         </div>
-        <p class="text-[10px] text-[var(--text-tertiary)] font-mono">build ${escapeHtml(APP_UPDATED_ISO)} • ${escapeHtml(APP_VERSION)}</p>
+        <p class="text-[10px] text-[var(--text-tertiary)] font-mono">build ${escapeHtml(APP_UPDATED_ISO)} • ${escapeHtml(APP_VERSION)} • ${escapeHtml(APP_NAME_BY)}</p>
       </div>
     </div>
   `;
@@ -8012,7 +8797,7 @@ async function renderSettings(params) {
         exchangeRateToTHB: parseFloat(document.getElementById('s-thb-rate').value) || 1,
         // Extra currencies used in this trip + their THB rates (multi-currency)
         ...readTripCurrencyFields(),
-        themeColor: trip?.themeColor || BRAND_PRIMARY,
+        themeColor: trip?.themeColor || brandPrimary(),
         status: document.getElementById('trip-status').value,
         ...extra
       };
@@ -8043,11 +8828,33 @@ async function renderSettings(params) {
     memberBudgets: readMemberBudgets()
   }));
 
-  document.querySelectorAll('#settings-modes .mode-option').forEach(btn => btn.addEventListener('click', () => {
-    applyMode(btn.dataset.mode);
-    document.querySelectorAll('#settings-modes .mode-option').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-  }));
+  // Colour theme picker (v18) — palette cards, custom colours, vividness, modes.
+  bindThemePicker(document.getElementById('settings-appearance-card'), {
+    onChange: () => {
+      // Re-paint things JS owns: day colours, avatars, the settings swatches.
+      renderDesktopNav();
+      const stamp = document.querySelector('#about-card [data-build-stamp]');
+      if (stamp) stamp.innerHTML = `${icon('calendar-check', 'w-3.5 h-3.5')} ${escapeHtml(appUpdatedLabel(lang))}`;
+      queueIcons();
+    }
+  });
+  updateModeIcons();
+
+  bind('account-edit', 'click', () => openUserSheet(currentUser));
+  bind('account-appearance', 'click', () => showAppearanceSheet());
+  bind('account-cache', 'click', async () => {
+    const ok = await confirmAction({
+      title: th('ล้างแคชของอุปกรณ์นี้?', 'Clear this device\'s cache?'),
+      message: th('ข้อมูลยังอยู่ใน Firebase — แค่ล้างค่าที่จำไว้ในเครื่อง (ธีมทริป, แคชรายชื่อ, สถานะล็อกอินสมาชิก)', 'Your data stays in Firebase — only what this device remembered is cleared (theme, caches, member session).'),
+      confirmText: th('ล้าง', 'Clear'), danger: true, icon: 'eraser'
+    });
+    if (!ok) return;
+    ['fuji_color_theme', 'fuji_map_layer', 'fuji_exp_group', 'fuji_datacache'].forEach(k => { try { localStorage.removeItem(k); } catch {} });
+    clearAllDataCache?.();
+    toast.success(th('ล้างแคชแล้ว', 'Cache cleared'));
+    setTimeout(() => location.reload(), 400);
+  });
+  bind('account-logout', 'click', async () => { await doLogout(); });
   bind('lang-switch', 'click', () => {
     const newLang = lang === 'th' ? 'en' : 'th';
     setLang(newLang);
@@ -8574,7 +9381,7 @@ async function renderPrep(params) {
       <div class="card p-4" data-list="${list.id}">
         <div class="flex items-start justify-between gap-2 flex-wrap">
           <div class="flex items-center gap-2 min-w-0">
-            <span class="row-icon" style="width:36px;height:36px;border-radius:12px;background:${escapeHtml(list.color || BRAND_PRIMARY)}1f;color:${escapeHtml(list.color || BRAND_PRIMARY)};">${icon(list.icon || (list.kind === 'todo' ? 'list-checks' : 'luggage'), 'w-4 h-4')}</span>
+            <span class="row-icon" style="width:36px;height:36px;border-radius:12px;background:${escapeHtml(list.color || brandPrimary())}1f;color:${escapeHtml(list.color || brandPrimary())};">${icon(list.icon || (list.kind === 'todo' ? 'list-checks' : 'luggage'), 'w-4 h-4')}</span>
             <div class="min-w-0">
               <h3 class="font-bold text-sm truncate">${escapeHtml(list.title || '')}</h3>
               <p class="text-[11px] text-[var(--text-secondary)]">${p.done}/${p.total} • ${list.kind === 'todo' ? t('todo') : t('packing')}</p>
@@ -8779,7 +9586,7 @@ async function renderPrep(params) {
     const tLoad = toast.loading(th('กำลังสร้าง...', 'Creating...'));
     try {
       const items = [{ id: `${Date.now().toString(36)}`, text: '', done: false, assignee: null }].filter(i => i.text);
-      const payload = { title: String(name).trim(), kind: 'packing', icon: 'luggage', color: BRAND_PRIMARY, order: lists.length, items: items.length ? items : [{ id: `${Date.now().toString(36)}a`, text: th('รายการแรก','First item'), done: false, assignee: null }] };
+      const payload = { title: String(name).trim(), kind: 'packing', icon: 'luggage', color: brandPrimary(), order: lists.length, items: items.length ? items : [{ id: `${Date.now().toString(36)}a`, text: th('รายการแรก','First item'), done: false, assignee: null }] };
       const id = await createChecklist(tripId, payload, currentUser?.uid);
       lists.push({ id, ...payload });
       tLoad.close();
@@ -8971,7 +9778,7 @@ async function renderIdeas(params) {
             status: 'planned',
             estimateAmount: Number(idea.estimatedCostMinor) > 0 ? fromMinor(Number(idea.estimatedCostMinor), getCurrencyDecimals(idea.currency || 'THB')) : 0,
             estimateCurrency: idea.estimatedCostMinor ? (idea.currency || trip?.baseCurrency || 'THB') : '',
-            estimateCategory: normalizeCategory(idea.category),
+            estimateCategory: expenseGroupForChoice(idea.category || 'general'),
             estimateShareWith: members.map(m => m.id),
             estimateAutoAdd: true
           };
@@ -9016,7 +9823,7 @@ async function renderIdeas(params) {
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div class="input-group"><label class="input-label">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('หมวดหมู่','Category')}</label>
-            <select id="idea-cat" class="input">${ITINERARY_CATEGORIES.map(c => `<option value="${c.id}" ${normalizeCategory(idea?.category) === c.id ? 'selected' : ''}>${escapeHtml(lang === 'th' ? c.th : c.en)}</option>`).join('')}</select></div>
+            <select id="idea-cat" class="input">${categoryChoices(lang).map(c => `<option value="${c.id}" ${normalizeCategory(idea?.category) === c.id ? 'selected' : ''}>${escapeHtml(categoryChoiceLabel(c, lang))}</option>`).join('')}</select></div>
           <div class="input-group"><label class="input-label">${icon('coins', 'w-3.5 h-3.5')} ${th('ค่าใช้จ่ายประมาณ','Estimated cost')}</label>
             <div class="flex gap-2">
               <input id="idea-cost" class="input money-input flex-1" type="text" inputmode="decimal" value="${escapeHtml(toolAmountValue(idea?.estimatedCostMinor, idea?.currency || trip?.baseCurrency || 'THB'))}" placeholder="0">
@@ -9060,7 +9867,10 @@ async function renderIdeas(params) {
         sheet.close();
         toast.success(th('บันทึกแล้ว', 'Saved'));
         paintIdeas(); paintStats();
-      } catch (e) { tLoad.close(); toast.error(e.message || String(e)); }
+      } catch (e) {
+        tLoad.close();
+        if (!await notifyWriteDenied(e, { fallback: e?.message || String(e) })) toast.error(e.message || String(e));
+      }
     });
     setTimeout(() => document.getElementById('idea-title')?.focus(), 250);
   }
@@ -9692,7 +10502,7 @@ async function renderExplore(params) {
             status: 'planned',
             estimateAmount: rate ? Number(place.cost) || 0 : 0,
             estimateCurrency: rate ? (place.currency || baseCurrency) : '',
-            estimateCategory: normalizeCategory(place.category),
+            estimateCategory: expenseGroupForChoice(place.category || 'general'),
             estimateShareWith: members.map(m => m.id),
             estimateAutoAdd: true
           };
@@ -10138,19 +10948,16 @@ function initOfflineStrip() {
 function renderMore(params) {
   const tripId = params.tripId;
   const lang = getLang();
+  // v18: ชวนไปที่นี่ / การจอง / เตรียมตัว / ปฏิทินทริป were removed from the menus,
+  // and ตั้งค่า is only reachable through the profile picture (top-right).
   const menuItems = [
     { href: '#/trips', icon: 'compass', label: lang==='th' ? 'สลับทริป / ทริปทั้งหมด' : 'Switch trip / All trips', highlight: true },
     { href: `#/trip/${tripId}/dashboard`, icon: 'layout-dashboard', label: t('dashboard') },
     { href: `#/trip/${tripId}/settlement`, icon: 'hand-coins', label: t('settlement') },
     { href: `#/trip/${tripId}/members`, icon: 'users', label: t('members') },
-    { href: `#/trip/${tripId}/prep`, icon: 'clipboard-check', label: t('prep') },
     { href: `#/trip/${tripId}/ideas`, icon: 'lightbulb', label: t('ideas') },
-    { href: `#/trip/${tripId}/explore`, icon: 'compass', label: lang==='th' ? 'ชวนไปที่นี่ (ไกด์สถานที่)' : 'Explore (place guides)' },
-    { href: `#/trip/${tripId}/calendar`, icon: 'calendar-days', label: lang==='th' ? 'ปฏิทินทริป' : 'Trip calendar' },
-    { href: `#/trip/${tripId}/bookings`, icon: 'ticket', label: t('bookings') },
     { href: `#/trip/${tripId}/documents`, icon: 'folder', label: lang==='th' ? 'เอกสารสำคัญ' : 'Documents' },
     { href: `#/trip/${tripId}/import`, icon: 'package', label: t('importExport') },
-    { href: `#/trip/${tripId}/settings`, icon: 'settings', label: t('settings') },
   ];
   appEl.innerHTML = `
     <div class="page-enter max-w-[640px] mx-auto space-y-4">
@@ -10196,7 +11003,7 @@ function renderMore(params) {
         <p class="text-xs text-[var(--text-secondary)]">${escapeHtml(currentUser?.email || '')}</p>
         <p class="text-[10px] text-[var(--text-tertiary)] mt-1 font-mono">UID: ${escapeHtml(currentUser?.uid?.slice(0,12) || '')}...</p>
       </div>
-      <p class="text-center text-[10px] text-[var(--text-tertiary)]">${icon('info', 'w-3 h-3 inline')} ${lang==='th' ? 'แตะโลโก้ Fuji Planner มุมซ้ายบน เพื่อไปหน้ารายการทริป' : 'Tap the Fuji Planner logo (top-left) to reach your trips'}</p>
+      <p class="text-center text-[10px] text-[var(--text-tertiary)]">${icon('info', 'w-3 h-3 inline')} ${lang==='th' ? 'แตะโลโก้ซ้ายบนเพื่อไปหน้ารายการทริป • แตะรูปโปรไฟล์ขวาบนเพื่อเปิด “ตั้งค่า”' : 'Tap the logo (top-left) for your trips • tap the profile picture (top-right) for Settings'}</p>
       <p class="build-stamp text-center" data-build-stamp>
         ${icon('sparkles', 'w-3 h-3')} ${escapeHtml(appBuildLabel(lang))}
       </p>

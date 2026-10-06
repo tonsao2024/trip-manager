@@ -719,7 +719,9 @@ console.log('\n▶ v9: expense groups can be added, edited and deleted');
   window.document.getElementById('cat-th').value = 'นวด/สปา';
   window.document.getElementById('cat-en').value = 'Massage / Spa';
   q('#cat-icons [data-icon="heart-pulse"]').click();
-  q('#cat-colors [data-color="#3f9d94"]').click();   // v17 palette (teal)'s replacement
+  // v18: the swatches follow the active colour theme, so the test picks whatever the
+  // palette offers instead of a hardcoded hex.
+  q('#cat-colors [data-color]')?.click();
   await click('#cat-save');
   await waitFor(() => [...fsdb.__store.keys()].some(k => k.startsWith('trips/t1/categories/')), { timeout: 6000, label: 'group saved' }).catch(() => {});
   const savedCat = [...fsdb.__store.entries()].find(([k]) => k.startsWith('trips/t1/categories/'));
@@ -1422,8 +1424,11 @@ check((q('#invite-code-value').textContent || '').replace(/[^A-Z0-9]/g, '') === 
 await click('#invite-code-regen');
 await waitFor(() => q('#confirm-ok'), { label: 'regen confirm' });
 await click('#confirm-ok');
-await waitFor(() => /[A-Z0-9]{3}-[A-Z0-9]{3}/.test(q('#invite-code-value')?.textContent || ''), { timeout: 6000, label: 'new code' }).catch(() => {});
-const newCode = q('#invite-code-value')?.textContent?.replace('-', '') || '';
+// v18: the wait must be for a code that is DIFFERENT from the old one — a plain
+// /[A-Z0-9]{3}-[A-Z0-9]{3}/ test also matches the outgoing 'FUJI-23'.
+const shownCode = () => String(q('#invite-code-value')?.textContent || '').replace(/[^A-Z0-9]/g, '');
+await waitFor(() => /^[A-Z0-9]{6}$/.test(shownCode()) && shownCode() !== 'FUJI23', { timeout: 12000, label: 'new code' }).catch(() => {});
+const newCode = shownCode();
 check(newCode.length === 6 && newCode !== 'FUJI23', 'invite: new code generated and shown');
 check(fsdb.__dump('trips/t1')?.inviteCode === newCode, 'invite: new code saved on the trip');
 
@@ -1590,9 +1595,13 @@ console.log('\n▶ v11: ใบเสร็จ — เลือกดูราย
     .catch(() => {});
   q('.bottom-sheet-backdrop')?.click();
   await sleep(320);
-  await waitFor(() => (q('#receipt-u1')?.textContent || '').includes('ทักท้วงจากใบเสร็จ'), { label: 'comment inside receipt' }).catch(() => {});
-  check((q('#receipt-u1')?.textContent || '').includes('ทักท้วงจากใบเสร็จ'), 'receipt: the comment shows inside the receipt itself');
-  check(!!q('#receipt-u1 .rcpt-comment'), 'receipt: comments are styled as flags on the item');
+  // v18: the receipt view is a swipe deck, so the comment arrives with a re-render of
+  // the deck + its print block — the old 4 s window was too tight on a loaded machine.
+  // Read the copy that belongs to the page (an open detail sheet keeps its own).
+  const inPage = () => (q('#settlement-content #receipt-u1')?.textContent || '').includes('ทักท้วงจากใบเสร็จ');
+  await waitFor(inPage, { timeout: 12000, label: 'comment inside receipt' }).catch(() => {});
+  check(inPage(), 'receipt: the comment shows inside the receipt itself');
+  check(!!q('#settlement-content #receipt-u1 .rcpt-comment'), 'receipt: comments are styled as flags on the item');
   await goto('#/trip/t1/settlement');
   await waitFor(() => q('#settle-overview'), { label: 'settlement again' });
   check(q('#settle-views .chip-active')?.dataset.view === 'overview', 'receipt: the page still opens on ภาพรวม');
@@ -1984,15 +1993,43 @@ console.log('\n▶ v17 booking import — paste a confirmation e-mail');
   check(text$().includes('XT4K9P'), 'import: card appears on the bookings page');
 }
 
-console.log('\n▶ v17 offline strip + palette lock');
+console.log('\n▶ v17/v18 offline strip + colour themes');
 {
   check(!!window.document.getElementById('offline-strip-wrap'), 'offline: strip container exists in the shell');
-  check(!/fuji_color_theme/.test(String(window.localStorage.getItem('fuji_color_theme') || '')), 'palette: no colour-theme key stored');
   const css = fs.readFileSync(path.join(root, 'src/css/tokens.css'), 'utf8');
-  check(/#2f6fe4/.test(css) && /#f0ae52/.test(css), 'palette: “Sky light” brand colours in tokens.css');
+  check(/#1f6bfb/.test(css) && /#ffb02e/.test(css), 'palette: brighter v18 brand colours in tokens.css');
+  check(!/#2f6fe4/.test(css) && !/#f0ae52/.test(css), 'palette: the muted v17 hexes are gone from the tokens');
   check(!/#1d4ed8/.test(css) && !/#ffc81e/.test(css), 'palette: old True-tone colours gone');
+
+  // v18: colour themes are back (LINE / Facebook / Instagram …), each editable per user.
+  const themesSrc = fs.readFileSync(path.join(root, 'src/js/utils/themes.js'), 'utf8');
+  const themeIds = [...themesSrc.matchAll(/^\s*id: '([a-z0-9-]+)',/gm)].map(m => m[1]);
+  check(['line', 'facebook', 'insta'].every(id => themeIds.includes(id)), 'themes: LINE / Facebook / Instagram presets exist');
+  check(themeIds.length >= 12, `themes: ${themeIds.length} presets to choose from`);
+  const storedTheme = String(window.localStorage.getItem('fuji_color_theme') || '');
+  check(!storedTheme || /"id":\s*"([a-z0-9-]+)"/.test(storedTheme) || themeIds.includes((JSON.parse(storedTheme) || {}).id),
+    'themes: the stored choice is a real theme id');
+
+  // v18: the nav no longer offers the four crowded entries, and settings is avatar-only.
+  const appSrc = fs.readFileSync(path.join(root, 'src/js/app.js'), 'utf8');
+  const at = appSrc.indexOf('function renderDesktopNav');
+  const navBlock = appSrc.slice(at, appSrc.indexOf('function updateBottomNav', at));
+  check(/function renderDesktopNav/.test(navBlock) && !/\/calendar|\/bookings|\/prep|\/explore|\/settings/.test(navBlock),
+    'nav: calendar / bookings / prep / explore / settings are not menu entries');
+  check(/openAvatarAction/.test(appSrc), 'nav: settings opens from the avatar');
+
+  // v18: mascot + swipe deck + place details are real modules, not dead imports.
+  const shell = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  check(fs.existsSync(path.join(root, 'src/js/components/mascot.js')) && /dash-buddy/.test(appSrc), 'mascot: the dashboard buddy is rendered');
+  check(fs.existsSync(path.join(root, 'src/js/utils/deck.js')) && /rcpt-deck-card/.test(appSrc), 'deck: receipts are swipeable cards');
+  check(fs.existsSync(path.join(root, 'src/js/utils/placeDetails.js')), 'details: the optional place lookup module exists');
+  check(/data-footer-version/.test(shell) && /data-footer-updated/.test(shell) && /TonSkywalker/.test(shell),
+    'shell: version, update date and copyright live in the footer');
+  check(/Trip&nbsp;Manager|Trip Manager/.test(shell) && !/<title>Fuji Planner/.test(shell), 'shell: renamed to Trip Manager by TonSkywalker');
+
   const refresh = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
   check(/\.explore-hero/.test(refresh) && /\.cal-cell/.test(refresh) && /\.demo-banner/.test(refresh), 'styles: v17 component sheet covers the new pages');
+  check(/\.theme-grid/.test(refresh) && /\.rcpt-deck-card/.test(refresh) && /\.app-footer/.test(refresh), 'styles: v18 theme / deck / footer styles shipped');
 }
 
 console.log('\n▶ delete the whole trip (UI)');

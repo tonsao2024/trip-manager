@@ -2,8 +2,19 @@
 // Reservations — Firestore CRUD for trips/{tripId}/reservations/{id}
 // Pure helpers are in ../utils/reservations.js and re-exported here.
 // ─────────────────────────────────────────────────────────────────────────────
-import { db, serverTimestamp } from '../firebase.js';
+import { db, auth, serverTimestamp } from '../firebase.js';
 import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, orderBy } from '../../../vendor/firebase/firestore.js';
+
+/**
+ * v18: the security rules gate deletes on `createdBy`, and the ideas board used to
+ * also gate *creates* on it — so a write with `createdBy: null` was rejected with
+ * "Missing or insufficient permissions" even by the trip owner. Always resolve the
+ * actor here, from the live auth session, when the caller did not pass one.
+ */
+function actorUid(uid) {
+  if (uid) return uid;
+  try { return auth?.currentUser?.uid || null; } catch { return null; }
+}
 
 export {
   RESERVATION_TYPES, reservationTypeDef, sortReservations, reservationStamp, isUpcoming,
@@ -54,9 +65,9 @@ export async function createReservation(tripId, data = {}, uid = null) {
     notes: String(data.notes || '').trim(),
     coordinates: data.coordinates || null,
     linkedItemId: data.linkedItemId || null,
-    createdBy: uid,
+    createdBy: actorUid(uid),
     createdAt: serverTimestamp(),
-    updatedBy: uid,
+    updatedBy: actorUid(uid),
     updatedAt: serverTimestamp()
   });
   return ref.id;
@@ -64,7 +75,7 @@ export async function createReservation(tripId, data = {}, uid = null) {
 
 export async function updateReservation(tripId, reservationId, patch = {}, uid = null) {
   if (!db) throw new Error('DB not ready');
-  const payload = { ...patch, updatedBy: uid, updatedAt: serverTimestamp() };
+  const payload = { ...patch, updatedBy: actorUid(uid), updatedAt: serverTimestamp() };
   delete payload.id;
   await updateDoc(doc(db, `trips/${tripId}/reservations/${reservationId}`), payload);
 }

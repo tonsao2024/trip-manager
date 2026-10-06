@@ -406,8 +406,8 @@ export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeout
 export function formatDiagnosticsReport({ tripId = null, results = [], lang = 'th', now = new Date() } = {}) {
   const icon = { ok: '✅', warn: '⚠️', fail: '❌' };
   const head = pick(lang,
-    `ผลตรวจสอบระบบ Fuji Planner — ${now.toISOString()}`,
-    `Fuji Planner system check — ${now.toISOString()}`);
+    `ผลตรวจสอบระบบ Trip Manager — ${now.toISOString()}`,
+    `Trip Manager system check — ${now.toISOString()}`);
   const lines = [head, `trip: ${tripId || '-'}`, `ua: ${typeof navigator !== 'undefined' ? navigator.userAgent : '-'}`];
   for (const r of results) {
     lines.push(`${icon[r.status] || '•'} ${r.label}: ${r.detail}${r.fix ? `\n   → ${String(r.fix).replace(/\n/g, '\n   → ')}` : ''}`);
