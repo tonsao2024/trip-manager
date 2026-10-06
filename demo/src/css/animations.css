@@ -247,3 +247,58 @@
 @media (prefers-reduced-motion: reduce) {
   .ps-art *, .note-card { animation: none !important; }
 }
+
+/* =========================================================
+   v18 — น้องฟูจิ (fluffy dashboard mascot) + card deck
+   ========================================================= */
+.fuji-buddy { position: relative; display: inline-grid; place-items: center; cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; }
+.fuji-buddy svg { overflow: visible; display: block; }
+.fuji-buddy-body { transform-origin: 81px 128px; animation: buddyBob 3.4s ease-in-out infinite; }
+.fuji-buddy-mountain, .fuji-buddy-fluff, .fuji-buddy-fur { transform-origin: 81px 128px; }
+.fuji-buddy-fluff { fill: none; stroke: color-mix(in srgb, var(--grad-1) 35%, #ffffff); stroke-width: 5; stroke-linecap: round; opacity: .9; }
+.fuji-buddy-snow { transform-origin: 81px 40px; animation: buddySnow 6.5s ease-in-out infinite; }
+.fuji-buddy-eye { fill: var(--brand-ink-raw); transform-origin: center; animation: buddyBlink 5.6s infinite; }
+.fuji-buddy-eye path { stroke: var(--brand-ink-raw); stroke-width: 3; stroke-linecap: round; fill: none; }
+.fuji-buddy-star { fill: var(--brand-yellow); animation: buddyStar 1.8s ease-in-out infinite; }
+.fuji-buddy-blush { animation: buddyBlush 4.2s ease-in-out infinite; }
+.fuji-buddy-arm { transform-origin: 22px 108px; animation: buddyWave 2.9s ease-in-out infinite; }
+.fuji-buddy-arm--right { transform-origin: 140px 108px; animation: buddyWave 2.9s ease-in-out infinite reverse; }
+.fuji-buddy-halo { transform-origin: 128px 30px; animation: buddySun 6s ease-in-out infinite; }
+.fuji-buddy-rays { transform-origin: 128px 30px; animation: spinSlow 22s linear infinite; }
+.fuji-buddy-shadow { fill: var(--brand-ink-raw); opacity: .14; animation: buddyShadow 3.4s ease-in-out infinite; }
+.fuji-buddy-cloud { animation: buddyCloud 9s ease-in-out infinite; }
+.fuji-buddy-sparks path { opacity: .8; }
+.fuji-buddy-spark-a { animation: buddySpark 2.6s ease-in-out infinite; transform-origin: 30px 46px; }
+.fuji-buddy-spark-b { animation: buddySpark 3.2s ease-in-out .5s infinite; transform-origin: 136px 68px; }
+.fuji-buddy-spark-c { animation: buddySpark 2.9s ease-in-out 1s infinite; transform-origin: 48px 21px; }
+.fuji-buddy:hover .fuji-buddy-body,
+.fuji-buddy:focus-visible .fuji-buddy-body { animation: buddyWiggle .6s ease-in-out infinite; }
+.fuji-buddy.is-tapped .fuji-buddy-body { animation: buddyJump .62s cubic-bezier(.3,1.6,.5,1) 2; }
+.fuji-buddy.is-tapped .fuji-buddy-arm { animation: buddyWave .5s ease-in-out 4; }
+.fuji-buddy.mood-worry .fuji-buddy-body { animation: buddyShiver 2.4s ease-in-out infinite; }
+.fuji-buddy.mood-sleepy .fuji-buddy-body { animation: buddyBob 5.4s ease-in-out infinite; }
+
+.fuji-buddy-speech {
+  position: absolute; left: 50%; bottom: -6px; transform: translate(-50%, 8px) scale(.92);
+  max-width: 230px; padding: 6px 11px; border-radius: 14px 14px 14px 4px;
+  background: var(--surface); border: 1px solid var(--border-strong); color: var(--text-strong);
+  font-size: 11.5px; font-weight: 700; line-height: 1.45; text-align: center;
+  box-shadow: var(--shadow-sm); opacity: 0; pointer-events: none; z-index: 3;
+}
+.fuji-buddy-speech.is-pop { animation: buddySay .32s cubic-bezier(.2,1.5,.4,1) forwards; }
+.fuji-buddy-speech.is-fade { animation: buddyFade .8s ease forwards; }
+@keyframes buddySay { to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+@keyframes buddyFade { to { opacity: 0; transform: translate(-50%, -6px) scale(.97); } }
+@keyframes buddyBob { 0%,100% { transform: translateY(0) rotate(0deg) scale(1); } 30% { transform: translateY(-4px) rotate(-1.6deg) scale(1.012); } 65% { transform: translateY(-1px) rotate(1.4deg) scale(1.004); } }
+@keyframes buddyWiggle { 0%,100% { transform: rotate(-2.2deg); } 50% { transform: rotate(2.2deg); } }
+@keyframes buddyShiver { 0%,100% { transform: translateX(0) rotate(0); } 20% { transform: translateX(-2px) rotate(-1.2deg); } 40% { transform: translateX(2px) rotate(1.2deg); } 60% { transform: translateX(-1px) rotate(-.8deg); } 80% { transform: translateX(1px) rotate(.8deg); } }
+@keyframes buddyJump { 0% { transform: translateY(0) scale(1); } 35% { transform: translateY(-14px) scale(1.06,.94); } 60% { transform: translateY(2px) scale(.97,1.04); } 100% { transform: translateY(0) scale(1); } }
+@keyframes buddyWave { 0%,100% { transform: rotate(-6deg); } 50% { transform: rotate(14deg); } }
+@keyframes buddyBlink { 0%,44%,52%,100% { transform: scaleY(1); } 48% { transform: scaleY(.08); } }
+@keyframes buddyStar { 0%,100% { transform: scale(1) rotate(0deg); } 50% { transform: scale(1.18) rotate(10deg); } }
+@keyframes buddyBlush { 0%,100% { opacity: .42; } 50% { opacity: .72; } }
+@keyframes buddySun { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-4px) scale(1.06); } }
+@keyframes buddyShadow { 0%,100% { transform: scaleX(1); opacity: .16; } 50% { transform: scaleX(.9); opacity: .1; } }
+@keyframes buddyCloud { 0%,100% { transform: translateX(-6px); } 50% { transform: translateX(10px); } }
+@keyframes buddySpark { 0%,100% { opacity: .15; transform: scale(.7) rotate(0deg); } 50% { opacity: 1; transform: scale(1.25) rotate(18deg); } }
+@keyframes buddySnow { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-1.4px); } }

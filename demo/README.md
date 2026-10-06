@@ -20,6 +20,6 @@ It deploys with the rest of the repo (GitHub Pages / Firebase Hosting serve
 demo/ as-is). PNG/PDF export and file uploads are intentionally disabled in
 the demo - they need the real browser libraries.
 
-Updated: 5 ต.ค. 2569 (2026-10-05) • v17 Sky light
+Updated: 6 ต.ค. 2569 (2026-10-06) • v18 Sky light
 
-Build: 2026-10-05 16:51 • 438c44d
+Build: 2026-10-06 03:23 • 24bafff

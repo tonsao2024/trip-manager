@@ -1,5 +1,5 @@
 import { db, storage, serverTimestamp, isStorageAvailable } from '../firebase.js';
-import { BRAND_PRIMARY } from '../utils/brand.js';
+import { brandPrimary } from '../utils/brand.js';
 import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, query, where, limit, arrayUnion, arrayRemove } from '../../../vendor/firebase/firestore.js';
 import { ref as storageRef, uploadBytes, getDownloadURL } from '../../../vendor/firebase/storage.js';
 import { compressImage } from '../utils/helpers.js';
@@ -304,7 +304,7 @@ export async function createTrip(data, userId) {
     timezone: data.timezone || 'Asia/Bangkok',
     baseCurrency: data.baseCurrency || 'THB',
     coverImage: coverImageUrl,
-    themeColor: data.themeColor || BRAND_PRIMARY, // brand-locked since v16 (kept for older exports)
+    themeColor: data.themeColor || brandPrimary(), // brand-locked since v16 (kept for older exports)
     status: 'draft',
     memberUids: [userId],
     // Members join by typing this code; the admin approves the request.
@@ -324,7 +324,7 @@ export async function createTrip(data, userId) {
         displayName: data.creatorName || 'Admin',
         role: 'trip_admin',
         status: 'active',
-        color: BRAND_PRIMARY, // member colour default (brand blue)
+        color: brandPrimary(), // member colour default (brand blue)
         avatar: '',
         permissions: { canEditItinerary: true, canEditExpense: true, canManageMembers: true },
         createdAt: serverTimestamp(),
@@ -442,7 +442,7 @@ export async function duplicateTrip(sourceTrip, userId, { nameSuffix = ' (สำ
     timezone: sourceTrip.timezone || 'Asia/Bangkok',
     baseCurrency: sourceTrip.baseCurrency || 'THB',
     coverImage: sourceTrip.coverImage || '',
-    themeColor: sourceTrip.themeColor || BRAND_PRIMARY,
+    themeColor: sourceTrip.themeColor || brandPrimary(),
     creatorName: 'Admin'
   }, userId);
 

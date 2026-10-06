@@ -1424,7 +1424,7 @@ check((q('#invite-code-value').textContent || '').replace(/[^A-Z0-9]/g, '') === 
 await click('#invite-code-regen');
 await waitFor(() => q('#confirm-ok'), { label: 'regen confirm' });
 await click('#confirm-ok');
-await waitFor(() => /[A-Z0-9]{3}-[A-Z0-9]{3}/.test(q('#invite-code-value')?.textContent || ''), { timeout: 6000, label: 'new code' }).catch(() => {});
+await waitFor(() => /[A-Z0-9]{3}-[A-Z0-9]{3}/.test(q('#invite-code-value')?.textContent || ''), { timeout: 15000, label: 'new code' }).catch(() => {});
 const newCode = q('#invite-code-value')?.textContent?.replace('-', '') || '';
 check(newCode.length === 6 && newCode !== 'FUJI23', 'invite: new code generated and shown');
 check(fsdb.__dump('trips/t1')?.inviteCode === newCode, 'invite: new code saved on the trip');

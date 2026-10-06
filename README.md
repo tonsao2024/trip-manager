@@ -1,10 +1,13 @@
-# Fuji Trip Planner & Group Expense Manager
+# Trip Manager (Fuji Trip Planner & Group Expense Manager)
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
-> **v17 “Sky light” — updated 5 Oct 2026.** One fixed sky-blue/amber palette (the colour-theme picker is
-> gone for good), a repainted mobile **and** desktop UI, plus the Wanderlog gaps: place guides, a month
-> **calendar**, **share/invite**, **booking import from e-mail** and an **offline strip**.
+> **v18 “Trip Manager by TonSkywalker” — updated 6 Oct 2026.** The app was renamed (the tab icon and a
+> small `by TonSkywalker` wordmark came with it) and got its **colour themes back** — 13 presets (LINE,
+> Facebook, Instagram, …) plus custom colours and a vividness slider, remembered per device. The receipts
+> are now **swipeable cards**, the dashboard has an animated **Mt-Fuji buddy**, the plan shows **travel legs**
+> between places, and a **footer with version + last-updated date + copyright** sits under every page.
+> The v17 work (guides, month **calendar**, **share/invite**, **booking import**, **offline strip**) stays.
 > Live: <https://tonsao2024.github.io/trip-manager/> •
 > full-feature offline demo: <https://tonsao2024.github.io/trip-manager/demo/> •
 > screenshots: [`docs/preview/`](docs/preview/index.html).
@@ -284,7 +287,11 @@ firebase emulators:start --only firestore,auth,functions,storage
 - Settlement minimal transactions, copy LINE, export PNG/PDF
 - **Excel import/export for itinerary + expenses (templates, bilingual headers) — trip admins only**
 - Import template CSV/XLSX/JSON with validation
-- Dark/Light/Auto mode persisted; **one fixed “Sky light” brand palette** — sky blue `#2f6fe4` →
+- Dark/Light/Auto mode persisted; **colour themes** (v18) — `src/js/utils/themes.js` holds 13 presets
+  (`sky` is the “Sky light” default: sky blue `#1f6bfb` → amber `#ffb02e`), each of which can be overridden by
+  the per-user custom colours + vividness slider. Everything else in the app reads the active theme through
+  `src/js/utils/brand.js` (`brandPalette()`, `memberColorAt()`, `dayHues()`, `confettiColors()`), so the map
+  pins, avatars, charts and exports follow the palette. Saved under `fuji_color_theme`.
   `#64a1da`, amber `#f0ae52`, sage mist `#abc1bf`, steel `#639cb5`, slate ink `#374656` on airy
   `#f5f8fc` surfaces (v17 repaint; the v16 blue/yellow “True tone” values are gone). The old ชุดสี
   picker (12 themes + gradients, per-trip colours) no longer exists, so every screen shares one look
@@ -385,7 +392,7 @@ document storage, Excel import/export. What was still missing became this releas
 
 Design-system notes:
 
-- **Colour themes removed.** `--primary-raw #1d4ed8`, `--grad-2 #3b82f6`, `--brand-yellow-raw #ffc81e`,
+- **Colour themes removed** (v16 decision, reversed again in v18). `--primary-raw #1d4ed8`, `--grad-2 #3b82f6`, `--brand-yellow-raw #ffc81e`,
   `--brand-ink-raw #17203a`; every shade is derived with `color-mix()` so light **and** dark mode stay
   readable from one palette. `data-color` and `fuji_color_theme` are actively cleared on boot, and the
   Appearance sheet now only offers Light / Dark / Auto (`.mode-option`).
@@ -396,11 +403,69 @@ Design-system notes:
 - Firestore rules for the three new collections follow the existing model: every member can read and
   create/update; only an admin (or the author) can delete.
 
+### v18 changes — renamed app, themes back, swipeable receipts
+
+Naming / shell:
+
+- **“Fuji Planner” → “Trip Manager by TonSkywalker”** (`src/js/utils/buildInfo.js` is the single source:
+  `APP_NAME`, `APP_AUTHOR`, `APP_NAME_BY`, `APP_TITLE`). The header wordmark keeps `by TonSkywalker` small,
+  the sign-in page, ICS calendar name, PNG receipt footer, diagnostics report and `<title>` all use it, and the
+  browser tab gets a themed icon: `public/favicon.svg` (+ generated `favicon-32/192/512.png`,
+  `apple-touch-icon.png`, `tools/make-favicon.mjs` regenerates them without ImageMagick).
+- **Always-visible footer** (`#app-footer` in `index.html`): version, last-updated date, the live palette name
+  and the copyright line. `paintAppFooter()` fills it from `buildInfo.js` after boot, on language change and on
+  every palette change — so the numbers can never drift from the code.
+- Menu tidied: the desktop nav, the mobile “เพิ่มเติม” page and the itinerary header no longer offer
+  ชวนไปที่นี่ / การจอง / เตรียมตัว / ปฏิทินทริป (the pages and routes still exist and are reachable from
+  where they are used). **Settings is reachable in exactly one way: tapping the profile avatar.**
+
+Colour themes (the v17 “no themes” decision is reversed — the muted single palette read as dull):
+
+- `src/js/utils/themes.js` — 13 presets (Sky light, LINE, Facebook, Instagram, WhatsApp, Kakao, Zapier orange,
+  sakura, matcha, ocean, sunset, lavender, mono) + a `custom` theme with its own primary/accent/ink colours and a
+  **vividness slider**; stored per device under `fuji_color_theme`. Themes emit **raw hex values**
+  (`--primary-raw`, `--grad-1/2`, `--brand-*-raw`, `--page-bg`) instead of driving `color-mix()` percentages from
+  custom properties, because Safari does not invalidate those declarations.
+- The picker lives in Settings → Appearance (swatch grid + preview + reset) and in the avatar sheet; the map
+  tiles, day hues, member avatars, category swatches and confetti all follow it via `src/js/utils/brand.js`.
+
+เคลียร์บิล:
+
+- **Per-person receipts are a Tinder-style deck** now: one card per person (headline balance, THB equivalent,
+  who paid what, top items, flag count). Drag or use ← → to switch people, **tap a card for that person’s full
+  receipt** in a sheet, and the person strip above the deck jumps straight to anybody. The long list is still one
+  tap away (“แบบรายการยาว”), printing/export still render every receipt (`ensureExportTarget()` covers big groups).
+  The pure deck maths is in `src/js/utils/deck.js` and unit-tested.
+
+Itinerary:
+
+- Tapping a place card always moves the map to that pin (and dims the others); a place **without** coordinates
+  now frames that day instead of doing nothing (`focusItineraryItem()` + `setItemFocus()` in `src/js/maps/index.js`).
+- **Travel legs** between consecutive places show the drive from the previous item’s `travelToNextMinutes`,
+  the haversine distance, the expected arrival and a warning when the next start time does not fit.
+- **One merged category list** for place categories and expense groups (`categoryChoices()` in
+  `src/js/utils/categories.js`): picking a place category decides which expense group its estimate bills into,
+  with a lock button to break the link when a place really belongs to another group.
+- Optional **“รายละเอียดสถานที่เพิ่มเติม”** on cards, in the item menu and inside map popups: key-less
+  OpenStreetMap (Overpass) + Wikipedia REST lookup (`src/js/utils/placeDetails.js`) for opening hours, phone,
+  website, address, a short blurb and the maps links. Cached per session, 6.5 s timeout, silently skipped offline.
+
+Dashboard + misc:
+
+- An animated **Mt-Fuji buddy** (`src/js/components/mascot.js`) lives next to the countdown: fluffy, blinking,
+  bobbing, with six moods read from the trip (over budget → worried, unsettled bills → wallet-watch, trip about
+  to start → cheering, late night → sleepy) and a wiggle + encouragement when tapped.
+- ค่าใช้จ่าย: the flat “เรียงรายการ” list now also shows the trip total, like the “แยกตามวัน” view does.
+- **ไอเดียสถานที่ saving was denied by the rules** (“Missing or insufficient permissions”): `ideas`,
+  `checklists` and `reservations` no longer require `isTripMember()` for writes (same contract as
+  notes/documents/cards, delete stays author-or-admin), `createdBy` is always resolved from the live auth session,
+  and a denied write opens the rules-help sheet instead of a bare toast.
+
 ### v17 changes — “Sky light” repaint + the last Wanderlog gaps
 
 Design system (mobile **and** desktop share it):
 
-- **No colour themes at all.** `src/css/tokens.css` is now the single palette: sky blue `#2f6fe4` →
+- **No colour themes at all** (reversed in v18 — see above). `src/css/tokens.css` was the single palette: sky blue `#2f6fe4` →
   `#64a1da`, amber `#f0ae52`, sage mist `#abc1bf`, steel `#639cb5`, slate ink `#374656` on airy
   `#f5f8fc` surfaces; dark mode is ink `#0d0f14`. `initTheme()` keeps clearing `data-color` and
   `fuji_color_theme`, and the Appearance sheet only offers Light / Dark / Auto.

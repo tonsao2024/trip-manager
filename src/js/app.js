@@ -6937,7 +6937,10 @@ async function renderSettlement(params) {
       }
       const visible = receiptFilter === 'all' ? state.statements : state.statements.filter(m => m.memberId === receiptFilter);
       // ใบเสร็จแบบยาวถูกซ่อนไว้บนจอ แต่ใช้ตอนสั่งพิมพ์ (ทุกใบเสร็จในหน้าเดียว)
-      content.innerHTML = `${deckHtml()}${pendingHtml()}${transactionsHtml()}<div class="print-only receipt-grid mt-3">${visible.map(receiptHtml).join('')}</div>`;
+      // For a big group that copy is expensive, so beyond 8 people it is built only
+      // for whoever is on top of the deck — PNG/PDF export creates the rest on demand.
+      const printable = visible.length > 8 && receiptFilter === 'all' ? [visible[deckIndex]].filter(Boolean) : visible;
+      content.innerHTML = `${deckHtml()}${pendingHtml()}${transactionsHtml()}<div class="print-only receipt-grid mt-3">${printable.map(receiptHtml).join('')}</div>`;
       queueIcons();
       bindReceiptActions();
       mountDeck();
