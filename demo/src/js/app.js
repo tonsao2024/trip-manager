@@ -41,8 +41,8 @@ import {
   readStoredTheme, saveTheme, themeVars, buildCustomPalette, mix as mixThemeColor, lighten as lightenThemeColor
 } from './utils/themes.js';
 import { renderFujiBuddy, fujiBuddyMood, fujiBuddyLine } from './components/mascot.js';
-import { deckOrder, deckStep, deckSummary, swipeIntent, swipeTilt, deckPositionLabel } from './utils/deck.js';
-import { fetchPlaceDetails, placeDetailsSupported, placeDetailsHtml } from './utils/placeDetails.js';
+import { deckOrder, deckStep, deckSummary, swipeIntent, swipeTilt, swipePeek, swipeHint, deckPositionLabel } from './utils/deck.js';
+import { fetchPlaceDetails, placeDetailsHtml } from './utils/placeDetails.js';
 import { showBottomSheet, showModal } from './components/modal.js';
 import { confirmAction, promptAction } from './components/confirm.js';
 import { mountCountdown, computeCountdown, countdownHeadline } from './components/countdown.js';
@@ -3487,7 +3487,8 @@ async function renderItinerary(params) {
     const located = (items || []).filter(i => i.coordinates && !i.virtualStay);
     try {
       mapStatus('loading');
-      const { renderItineraryMap, refreshMapSize } = await import('./maps/index.js');
+      const { renderItineraryMap, refreshMapSize, setMapLang } = await import('./maps/index.js');
+      setMapLang('map', lang);   // for the optional place-details labels
       const res = await renderItineraryMap('map', located, {
         dayColors,
         fitBounds: true,
@@ -6689,7 +6690,7 @@ async function renderSettlement(params) {
   }
 
   function deckCardHtml(m, idx, total) {
-    const sum = deckSummary(m, { money, lang });
+    const sum = deckSummary(m, { money, lang, flagged: flaggedCount(m) });
     const th2 = thbOf(Math.abs(m.netMinor));
     const tone = sum.positive ? 'is-positive' : 'is-negative';
     const chips = ['cash', 'card', 'transfer'].filter(k => m.paidByMethod[k] > 0)
@@ -6760,8 +6761,8 @@ async function renderSettlement(params) {
         <div class="rcpt-deck-stage" id="deck-stage">
           ${deckCardHtml(current, deckIndex, list.length)}
           ${next && list.length > 1 ? `<div class="rcpt-deck-peek" aria-hidden="true">${deckCardHtml(next, deckStep(deckIndex, 1, list.length), list.length)}</div>` : ''}
-          <div class="rcpt-deck-badge rcpt-deck-badge--prev" data-deck-badge="prev">${icon('chevron-left', 'w-4 h-4')} ${th('คนก่อนหน้า', 'previous')}</div>
-          <div class="rcpt-deck-badge rcpt-deck-badge--next" data-deck-badge="next">${th('คนถัดไป', 'next')} ${icon('chevron-right', 'w-4 h-4')}</div>
+          <div class="rcpt-deck-badge rcpt-deck-badge--prev" data-deck-badge="prev">${icon('chevron-left', 'w-4 h-4')} <span data-hint-label>${th('คนก่อนหน้า', 'previous')}</span></div>
+          <div class="rcpt-deck-badge rcpt-deck-badge--next" data-deck-badge="next"><span data-hint-label>${th('คนถัดไป', 'next')}</span> ${icon('chevron-right', 'w-4 h-4')}</div>
         </div>
         <div class="rcpt-deck-nav no-export">
           <button type="button" class="btn btn-secondary btn-sm" data-deck-step="-1" aria-label="${th('คนก่อนหน้า', 'previous')}">${icon('chevron-left', 'w-4 h-4')}</button>
@@ -6840,10 +6841,19 @@ async function renderSettlement(params) {
       if (peek) {
         const p = Math.min(1, Math.abs(dx) / Math.max(160, (stage.clientWidth || 360) * 0.6));
         peek.style.transform = `translateY(${10 - p * 10}px) scale(${0.965 + p * 0.035})`;
-        peek.style.opacity = String(0.6 + p * 0.4);
+        // swipePeek() fades the next card IN as the current one leaves
+        peek.style.opacity = String(swipePeek(1 - p));
       }
-      stage.querySelector('[data-deck-badge="next"]')?.classList.toggle('is-on', dx < -60);
-      stage.querySelector('[data-deck-badge="prev"]')?.classList.toggle('is-on', dx > 60);
+      const hint = swipeHint(dx, { next: th('คนถัดไป', 'next'), prev: th('คนก่อนหน้า', 'previous') });
+      ['next', 'prev'].forEach((tone) => {
+        const badge = stage.querySelector(`[data-deck-badge="${tone}"]`);
+        if (!badge) return;
+        badge.classList.toggle('is-on', hint?.tone === tone);
+        if (hint?.tone === tone) {
+          const label = badge.querySelector('[data-hint-label]');
+          if (label) label.textContent = hint.label;
+        }
+      });
     };
     const resetTransform = () => {
       card.style.transition = 'transform .28s cubic-bezier(.2,.9,.3,1)';
@@ -8294,7 +8304,6 @@ async function renderSettings(params) {
   await loadTrip(tripId);
   if (isStale(token)) return;
   const trip = currentTrip;
-  const mode = getStoredMode();
 
   let perms = { isAdmin: false, role: 'member' };
   let settingMembers = [];

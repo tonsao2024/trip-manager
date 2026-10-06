@@ -22,4 +22,4 @@ the demo - they need the real browser libraries.
 
 Updated: 6 ต.ค. 2569 (2026-10-06) • v18 Sky light
 
-Build: 2026-10-06 03:23 • 24bafff
+Build: 2026-10-06 03:44 • da252e5
