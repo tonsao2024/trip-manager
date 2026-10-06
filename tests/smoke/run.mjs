@@ -381,7 +381,9 @@ window.document.getElementById('it-has-estimate').checked = true;
 window.document.getElementById('it-has-estimate').dispatchEvent(new window.Event('change', { bubbles: true }));
 window.document.getElementById('it-estimate-amount').value = '1200';
 window.document.getElementById('it-estimate-currency').value = 'JPY';
-window.document.getElementById('it-estimate-category').value = 'ticket';
+// v19: ONE category controls the place AND its expense group — “ท่องเที่ยว” bills
+// into “ค่าเข้า/ตั๋ว” (ticket) automatically, with no second field to fill in.
+window.document.getElementById('it-category').value = 'sightseeing';
 submit(q('#itinerary-form'));
 await waitFor(() => Object.values(Object.fromEntries(fsdb.__store)).some(v => v && v.title === 'ภูเขามิโตะ'), { label: 'place saved' }).catch(() => {});
 const place = [...fsdb.__store.entries()].find(([, v]) => v && v.title === 'ภูเขามิโตะ');
@@ -396,6 +398,54 @@ await click('#view-all-btn');
 await waitFor(() => text$().includes('ภูเขามิโตะ'), { label: 'reopened itinerary with map' });
 check(!!q('#map'), 'itinerary: map container alive after adding coordinates');
 check(!errors.some(e => /already initialized|container is initialized|Map failed/i.test(e)), 'itinerary: no "map container is initialized" error');
+
+console.log('\n▶ v19 plan → money: one expense form, two screens + teams per place');
+{
+  // The place was added with “มีค่าใช้จ่าย” and a category — one pick that also
+  // decided its expense group. Now edit the cost FROM THE PLAN: the sheet must be
+  // the same form the expenses page uses, and saving must update the same document
+  // plus the place's own estimate.
+  const placeKey = place?.[0];
+  const itemId = placeKey?.split('/').pop();
+  const beforeKey = [...fsdb.__store.keys()].find(k => k.includes('/expenses/') && fsdb.__dump(k)?.itineraryItemId === itemId && fsdb.__dump(k)?.status !== 'voided');
+  const beforeId = beforeKey?.split('/').pop();
+  await goto(`#/trip/t1/itinerary?date=${TRIP.startDate}`);
+  await waitFor(() => q('.itin-card'), { label: 'plan cards' });
+  const card = qa('.itin-card').find(c => /ภูเขามิโตะ/.test(c.textContent || ''));
+  check(!!card, 'v19: the place with a cost is on the plan');
+  check(!!(card && card.querySelector('[data-act="expense"]')), 'v19: the card offers “แก้ไขค่าใช้จ่าย”');
+  check(!(card && card.querySelector('[data-act="details"]')), 'v19: “รายละเอียดสถานที่” is gone from the plan (a request)');
+  await click(card.querySelector('[data-act="more"]'));
+  await click(card.querySelector('[data-act="expense"]'));
+  await waitFor(() => q('#sh-expense-form'), { timeout: 4000, label: 'expense sheet from the plan' });
+  check(qa('#sh-expense-form .form-section').length === 4, 'v19: the plan sheet shows the same four expense sections');
+  check(!!q('#sh-ex-subtotal') && !!q('#sh-ex-cat') && !!q('#sh-share-tiles') && !!q('#sh-split-area'), 'v19: same fields as the expenses page');
+  check(!!q('#sh-ex-itinerary'), 'v19: the sheet stays linked to the place');
+  const editing = (sel, value) => { const el = q(sel); el.value = value; el.dispatchEvent(new window.Event('input', { bubbles: true })); };
+  editing('#sh-ex-subtotal', '1500');
+  editing('#sh-ex-discount', '100');
+  submit(q('#sh-expense-form'));   // jsdom never runs a real form submission from a button
+  await sleep(300);
+  await waitFor(() => {
+    const doc = [...fsdb.__store.entries()].find(([k]) => k.endsWith(`/expenses/${beforeId}`));
+    return doc?.[1]?.netTotalMinor === 1400;
+  }, { timeout: 6000, label: 'expense updated from the plan' }).catch(() => {});
+  const item = fsdb.__dump(placeKey) || {};
+  const after = fsdb.__dump(`trips/t1/expenses/${item.expenseId}`) || {};
+  const linkedCount = [...fsdb.__store.values()].filter(e => e?.itineraryItemId === itemId && e?.status !== 'voided').length;
+  check(after?.netTotalMinor === 1400, `v19: the cost saved through the plan sheet (net ${after?.netTotalMinor})`);
+  check(after?.subtotalMinor === 1500 && after?.discountMinor === 100, 'v19: discount entered in the sheet is stored on the expense');
+  check(linkedCount === 1 && !!item.expenseId, `v19: one expense stays linked to the place (${linkedCount})`);
+  check(Number(item.estimateAmount) === 1400, `v19: the place estimate follows the expense (${item.estimateAmount})`);
+  check(item.expenseId === beforeId, `v19: the place remembers its linked expense (${item.expenseId} / ${beforeId})`);
+
+  // per-place teams feed the analysis
+  await click('#add-itinerary-btn');
+  await waitFor(() => q('#itinerary-form'), { label: 'add place form' });
+  check(!!q('#it-group-tiles') || !!q('#it-groups-wrap'), 'v19: the place form offers the team picker');
+  check(/ทีม/.test(q('#it-groups-wrap')?.textContent || ''), 'v19: the team picker explains what it is for');
+  q('#itinerary-form')?.closest('.bottom-sheet')?.remove();
+}
 
 console.log('\n▶ estimate auto-aggregates into expenses');
 await waitFor(() => [...fsdb.__store.values()].some(e => e && e.source === 'itinerary-estimate' && e.itineraryItemId === place?.[0]?.split('/').pop()), { timeout: 3000, label: 'linked estimate expense' }).catch(() => {});
@@ -752,13 +802,13 @@ console.log('\n▶ v9: expense groups can be added, edited and deleted');
   check(/นวด/.test(q('#category-stats')?.textContent || ''), 'groups: dashboard shows the trip group name (not the raw id)');
   check(!/custom-/.test(q('#category-stats')?.textContent || ''), 'groups: no raw id leaks into the dashboard');
 
-  // the itinerary estimate select is fed by the same registry
+  // the itinerary category picker is fed by the same registry (one list, one pick)
   await goto('#/trip/t1/itinerary');
   await waitFor(() => q('#add-itinerary-btn'), { label: 'itinerary page' });
   await click('#add-itinerary-btn');
-  await waitFor(() => q('#it-estimate-category'), { label: 'itinerary form' });
-  check(qa('#it-estimate-category option').some(o => o.value === savedCat[0].split('/').pop()), 'groups: new group appears in the itinerary estimate select');
-  q('.sheet-close')?.click() || q('#itinerary-form')?.closest('.sheet')?.remove();
+  await waitFor(() => q('#it-category'), { label: 'itinerary form' });
+  check(qa('#it-category option').some(o => o.value === savedCat[0].split('/').pop()), 'groups: new group appears in the place category picker');
+  check(!q('#it-estimate-category'), 'category: the place form asks for the category only once');
 
   // and the group manager is reachable from settings
   await goto('#/trip/t1/settings');
@@ -2199,6 +2249,72 @@ console.log('\n▶ v17/v18 offline strip + colour themes');
   const refresh = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
   check(/\.explore-hero/.test(refresh) && /\.cal-cell/.test(refresh) && /\.demo-banner/.test(refresh), 'styles: v17 component sheet covers the new pages');
   check(/\.theme-grid/.test(refresh) && /\.rcpt-deck-card/.test(refresh) && /\.app-footer/.test(refresh), 'styles: v18 theme / deck / footer styles shipped');
+}
+
+console.log('\n▶ v19 requests: drag only in edit mode, teams every, per-group averages');
+{
+  // ---- 1) ลากสลับตำแหน่งได้เฉพาะโหมดแก้ไข
+  const sortableStub = await import(stub('sortable.mjs'));
+  const live = sortableStub.__sortable;
+  live.live = 0; live.created = 0; live.instances.length = 0;
+  await goto('#/trip/t1/itinerary');
+  await waitFor(() => q('#view-all-btn'), { label: 'itinerary shell' });
+  await click('#view-all-btn');
+  await waitFor(() => q('.itin-card'), { label: 'plan cards' });
+  await sleep(200);
+  check(live.live === 0, `drag & drop: locked while the plan is read-only (${live.live} handles)`);
+  await click('#edit-mode-btn');
+  await waitFor(() => live.live > 0, { timeout: 4000, label: 'sortable handles in edit mode' }).catch(() => {});
+  check(live.live > 0, `drag & drop: handles appear in edit mode (${live.live})`);
+  await click('#edit-mode-btn');
+  await waitFor(() => live.live === 0, { timeout: 4000, label: 'sortable handles destroyed' }).catch(() => {});
+  check(live.live === 0, `drag & drop: leaving edit mode tears the handles down (${live.live})`);
+
+  // ---- 2) การ์ด 5 ใบแนวนอนเดียวกันทุกขนาดจอ (ตรวจจริงจาก CSS)
+  const css = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8');
+  const kpiRules = css.match(/\.kpi-strip\s*\{[^}]*\}/g) || [];
+  check(kpiRules.length > 0 && kpiRules.every(r => !/grid-template-columns/.test(r)),
+    'kpi: no width-based grid template can make the strip wrap');
+  check(/grid-auto-flow:\s*column/.test(kpiRules[0] || '') && /grid-auto-columns:\s*minmax\(0,\s*1fr\)/.test(kpiRules[0] || ''),
+    'kpi: all five summary cards share ONE row (auto-flow column, equal tracks)');
+  check(/\.kpi-mini\s*\{[^}]*min-width:\s*0/.test(css) || /\.kpi-tile, \.kpi-mini \{ min-width: 0; \}/.test(css),
+    'kpi: cards compress (min-width:0) instead of wrapping');
+
+  // ---- 3) ทีมบนแดชบอร์ด + เฉลี่ยต่อกลุ่มในหน้าค่าใช้จ่าย
+  // Create it through the UI so the app's own write invalidates the group cache.
+  await goto('#/trip/t1/members');
+  await waitFor(() => q('#add-group-btn'), { label: 'members groups card' });
+  await click('#add-group-btn');
+  await waitFor(() => q('#group-name'), { label: 'group form' });
+  q('#group-name').value = 'ทีมทดสอบ';
+  const teamTiles = qa('#group-tiles [data-member]');
+  await click(teamTiles[0]);
+  await click('#group-save');
+  await waitFor(() => q('.group-card[data-group]'), { timeout: 8000, label: 'team saved' }).catch(() => {});
+  check(!!q('.group-card[data-group]'), 'teams: the team is saved before the analysis is read');
+  await goto('#/trip/t1/dashboard');
+  await waitFor(() => q('#team-board'), { label: 'dashboard team board' });
+  await click('#refresh-btn').catch(() => {});
+  await waitFor(() => q('#team-board .team-card'), { timeout: 6000, label: 'dashboard team card' }).catch(() => {});
+  const team = q('#team-board .team-card');
+  check(!!team, 'dashboard teams: a team card is rendered');
+  check(/เฉลี่ย \/ คน/.test(team?.textContent || '') && /รวมทีม/.test(team?.textContent || ''),
+    'dashboard teams: each team shows cost per person AND the team total');
+  check(/ทีมทดสอบ/.test(team?.textContent || ''), 'dashboard teams: the team name is shown');
+
+  await goto('#/trip/t1/expenses');
+  await waitFor(() => q('#exp-sum-avg-label'), { label: 'expense KPI strip' });
+  await click('#refresh-btn');     // the team was seeded behind the app's back
+  await waitFor(() => /กลุ่ม/.test(q('#exp-sum-avg-label')?.textContent || ''), { timeout: 5000, label: 'per-group average' }).catch(() => {});
+  check(/กลุ่ม/.test(q('#exp-sum-avg-label')?.textContent || ''), 'expenses: the KPI headline is “average per group”');
+  check(/คน/.test(q('#exp-sum-avg-sub')?.textContent || ''),
+    'expenses: the same card still shows the per-person figure underneath');
+  const groupCards = qa('#exp-group-avg .group-avg-card');
+  check(groupCards.length >= 2, `expenses: one card per team + the whole trip (${groupCards.length})`);
+  check(groupCards.some(c => /\/คน/.test(c.textContent || '')), 'expenses: each team card shows its own per-person cost');
+
+  // ---- 4) the plan → team link: the place count per team is real
+  check(/สถานที่|ที่/.test(q('#exp-group-avg')?.textContent || ''), 'expenses: team cards carry the number of places that team visits');
 }
 
 console.log('\n▶ delete the whole trip (UI)');

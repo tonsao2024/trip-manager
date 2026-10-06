@@ -413,7 +413,11 @@ export function addItineraryMarkers(map, L, items, dayColors, opts = {}) {
   bindPopupDetails(el);
 
   const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary-raw').trim() || '#1f6bfb';
-  const thawLabel = opts.moreLabel || (opts.lang === 'en' ? 'More about this place' : 'รายละเอียดสถานที่เพิ่มเติม');
+  // v19: “รายละเอียดสถานที่” was taken out of the plan (a request) — the popup
+  // button only appears where a caller asks for it explicitly.
+  const thawLabel = opts.placeDetails === true
+    ? (opts.moreLabel || (opts.lang === 'en' ? 'More about this place' : 'รายละเอียดสถานที่เพิ่มเติม'))
+    : '';
   const dirLabel = opts.directionsLabel || (opts.lang === 'en' ? 'Directions' : 'ไปที่นี่');
   const latlngs = [];
   const markers = [];
@@ -451,9 +455,9 @@ export function addItineraryMarkers(map, L, items, dayColors, opts = {}) {
         ${money}
         <div class="map-popup-links">
           ${mapsHref ? `<a href="${escapePopupText(mapsHref)}" target="_blank" rel="noopener">${escapePopupText(dirLabel || 'Google Maps')}</a>` : ''}
-          <button type="button" class="map-popup-more-btn" data-place-more="${escapePopupText(item.id)}">${escapePopupText(thawLabel || 'รายละเอียดสถานที่เพิ่มเติม')}</button>
+          ${thawLabel ? `<button type="button" class="map-popup-more-btn" data-place-more="${escapePopupText(item.id)}">${escapePopupText(thawLabel)}</button>` : ''}
         </div>
-        <div class="map-popup-more" data-more-for="${escapePopupText(item.id)}"></div>
+        ${thawLabel ? `<div class="map-popup-more" data-more-for="${escapePopupText(item.id)}"></div>` : ''}
       </div>`);
     markers.push(marker);
   });

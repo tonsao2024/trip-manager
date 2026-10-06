@@ -10,11 +10,14 @@
 import { db, serverTimestamp } from '../firebase.js';
 import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { cachedRead, cacheForget } from '../utils/datacache.js';
-import { normalizeGroup, sortGroups, GROUP_COLORS, GROUP_ICONS } from '../utils/groups.js';
+import { normalizeGroup, sortGroups, GROUP_COLORS, GROUP_ICONS, itemGroupIds, groupAttendsItem } from '../utils/groups.js';
 
 export {
   GROUP_COLORS, GROUP_ICONS, normalizeGroup, sortGroups, nextGroupName, groupMembers,
-  groupIdsOfMember, groupsOfMember, memberGroupBadges, groupBudget, groupBudgetReport
+  groupIdsOfMember, groupsOfMember, memberGroupBadges, groupBudget, groupBudgetReport,
+  // Per-place team pick (“แต่ละสถานที่มีกลุ่มไหนไปบ้าง”): read by the plan cards and
+  // by the per-team analysis on the dashboard + expenses pages.
+  itemGroupIds, groupAttendsItem, placesForGroup
 } from '../utils/groups.js';
 
 const cacheKey = (tripId) => `groups:${tripId}`;

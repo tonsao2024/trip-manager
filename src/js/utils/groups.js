@@ -157,6 +157,28 @@ export function groupBudgetReport(groups = [], expenses = [], members = []) {
 }
 
 /** Small “you are in these groups” list used by member cards. */
+/**
+ * The teams picked for ONE plan item (“แต่ละสถานที่มีกลุ่มไหนไปบ้าง”).
+ * An empty pick means “everyone goes” — that is the state of every place that was
+ * created before the picker existed, and it is what the plan card shows as “ทุกทีม”.
+ */
+export function itemGroupIds(item = {}) {
+  return Array.isArray(item.groupIds) ? item.groupIds.filter(Boolean).map(String) : [];
+}
+
+/** Does this team go to that plan item? No pick at all = the whole trip goes. */
+export function groupAttendsItem(groupId, item = {}) {
+  const ids = itemGroupIds(item);
+  if (!groupId) return false;
+  return !ids.length || ids.includes(String(groupId));
+}
+
+/** The plan items a team goes to (used for the per-team place counts). */
+export function placesForGroup(groupId, items = []) {
+  if (!groupId) return [];
+  return (items || []).filter(it => groupAttendsItem(groupId, it));
+}
+
 export function memberGroupBadges(groups = [], memberId = '') {
   return groupsOfMember(groups, memberId).map(g => ({ id: g.id, name: g.name, color: g.color, icon: g.icon }));
 }

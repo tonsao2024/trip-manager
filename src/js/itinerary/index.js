@@ -96,6 +96,75 @@ export function buildEstimateExpensePayload(item, { trip = null, payerId = null,
 }
 
 /**
+ * Fields the expense book owns that the plan knows nothing about. When the plan
+ * rewrites its linked expense, these are copied over and the money is recomputed,
+ * so “แก้ไขสถานที่” can never erase a discount, a VAT line, a second payer or a
+ * receipt that was entered through the (shared) expense form.
+ */
+const EXPENSE_EXTRAS = [
+  'discountMinor', 'serviceMinor', 'taxMinor', 'cardFeeMinor', 'cardFeePercent',
+  'payments', 'splitMethod', 'splitIncludesVatSc', 'splitInputs',
+  'paymentMethod', 'cardId', 'cardName',
+  'receiptUrl', 'receiptImage', 'receiptStorage', 'notes'
+];
+
+function carryOverExpenseExtras(payload, existing = {}) {
+  for (const key of EXPENSE_EXTRAS) {
+    if (existing[key] !== undefined) payload[key] = existing[key];
+  }
+  // The plan's estimate is a single amount: it takes over the SUBTOTAL and the
+  // extras stay, so the net total (and every share) still adds up.
+  const net = calculateNetTotal({
+    subtotalMinor: payload.subtotalMinor,
+    discountMinor: payload.discountMinor,
+    serviceMinor: payload.serviceMinor,
+    taxMinor: payload.taxMinor,
+    cardFeeMinor: payload.cardFeeMinor,
+    cardFeePercent: payload.cardFeePercent
+  });
+  payload.netTotalMinor = net;
+  const rate = Number(payload.thbRate) > 0 ? Number(payload.thbRate) : 1;
+  payload.thbRate = rate;
+  payload.thbMinor = toThbMinor(net, payload.currency, rate);
+  payload.convertedMinor = payload.thbMinor;
+  payload.estimatedMinor = net;
+
+  // Shares: keep the split SHAPE that the expense book had (equal or a custom
+  // one) whenever the same people are involved — only the amounts are re-fitted.
+  const existingAlloc = Array.isArray(existing.allocations) ? existing.allocations : [];
+  const nextIds = (payload.allocations || []).map(a => a.memberId);
+  const samePeople = existingAlloc.length === nextIds.length
+    && existingAlloc.every(a => nextIds.includes(a.memberId));
+  payload.allocations = refitAmounts(samePeople ? existingAlloc : payload.allocations, net);
+  if (!payload.allocations.length && nextIds.length) payload.allocations = splitEqual(net, nextIds);
+
+  // Payers: likewise, several people can have fronted the bill — keep them all.
+  if (Array.isArray(payload.payments) && payload.payments.length) {
+    payload.payments = refitAmounts(payload.payments, net);
+    payload.payerId = payload.payments[0].memberId;
+  }
+  return payload;
+}
+
+/** Re-fit a list of {memberId, amountMinor} to a new total, keeping proportions. */
+function refitAmounts(list = [], totalMinor = 0) {
+  const source = (list || []).filter(a => a && a.memberId);
+  if (!source.length) return [];
+  const oldTotal = source.reduce((n, a) => n + (Number(a.amountMinor) || 0), 0);
+  if (!oldTotal || oldTotal === totalMinor) {
+    return source.map((a, i) => ({ ...a, amountMinor: i === source.length - 1 ? totalMinor : Math.round((Number(a.amountMinor) || 0) * (totalMinor / (oldTotal || 1))) }));
+  }
+  let allocated = 0;
+  return source.map((a, i, arr) => {
+    const share = i === arr.length - 1
+      ? Math.max(0, totalMinor - allocated)
+      : Math.max(0, Math.round(((Number(a.amountMinor) || 0) * totalMinor) / oldTotal));
+    allocated += share;
+    return { ...a, amountMinor: share };
+  });
+}
+
+/**
  * Create / update / remove the estimated expense linked to an itinerary item.
  * This is what makes itinerary costs show up automatically in the expense book.
  */
@@ -120,6 +189,11 @@ async function syncItineraryExpenseInner(tripId, item, options = {}) {
 
   const payload = buildEstimateExpensePayload({ ...item }, { trip, payerId: item.estimatePayerId, members });
   if (existing) {
+    // The expense book may know MORE than the plan does: a discount, VAT/Service,
+    // several payers, a card, a receipt, a hand-made split. Editing the place must
+    // not silently wipe any of it — so those fields are carried over and the net
+    // total is recomputed on top of the (possibly edited) subtotal.
+    carryOverExpenseExtras(payload, existing);
     await updateDoc(doc(db, `trips/${tripId}/expenses`, existing.id), {
       ...payload,
       createdBy: existing.createdBy || userId,
@@ -222,6 +296,9 @@ async function addItineraryItemInner(tripId, data, userId) {
     imageUrls: data.imageUrls || [],
     notes: data.notes || '',
     status: data.status || 'planned',
+    // Sub-groups (ทีม) that go to this place — “แต่ละสถานที่มีกลุ่มไหนไปบ้าง”.
+    // Optional on every write, so older documents stay valid as an empty list.
+    groupIds: (Array.isArray(data.groupIds) ? data.groupIds : []).filter(Boolean).map(String),
     expenseId: data.expenseId || null,
     estimateAmount: data.estimateAmount || 0,
     estimateCurrency: data.estimateCurrency || '',
@@ -250,6 +327,7 @@ async function updateItineraryItemInner(tripId, itemId, updates, userId) {
   }
   const clean = { ...updates };
   delete clean.id;
+  if (clean.groupIds != null) clean.groupIds = (Array.isArray(clean.groupIds) ? clean.groupIds : []).filter(Boolean).map(String);
   if (clean.coordinates != null) clean.coordinates = normalizeCoordString(clean.coordinates);
   if (clean.startAt && clean.durationMinutes != null) {
     clean.endAt = dayjs(clean.startAt).add(Number(clean.durationMinutes) || 0, 'minute').toDate();
