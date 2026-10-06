@@ -3033,3 +3033,107 @@ html, body { max-width: 100%; overflow-x: clip; }
 .debt-map-node:hover { transform: scale(1.08); }
 .debt-map-label rect { transition: fill .15s ease; }
 
+/* ==================================================================
+   v22 — Dashboard redesign per user request
+   - Countdown + Weather side-by-side on desktop
+   - KPI 4 cards compact
+   - Category expandable
+   - Sticky desktop nav already in index.html
+   - Settings compact
+   - Ideas image lightbox + map layers
+   ================================================================== */
+
+/* Dashboard top row: countdown + weather */
+.dash-top-row {
+  display: grid;
+  gap: 16px;
+}
+@media (min-width: 1024px) {
+  .dash-top-row {
+    grid-template-columns: 1.6fr 1fr;
+    align-items: start;
+  }
+}
+.dash-top-row .card { height: 100%; }
+
+/* Compact KPI tiles */
+.kpi-tile.kpi-compact {
+  padding: 10px 12px;
+  border-radius: 16px;
+}
+.kpi-tile.kpi-compact .kpi-icon {
+  width: 28px; height: 28px;
+  border-radius: 9px;
+  margin-bottom: 4px;
+}
+.kpi-tile.kpi-compact .kpi-icon svg { width: 14px; height: 14px; }
+.kpi-tile.kpi-compact .kpi-label { font-size: 9.5px; letter-spacing: .04em; }
+.kpi-tile.kpi-compact .kpi-value { font-size: 17px; margin-top: 2px; }
+.kpi-tile.kpi-compact .kpi-sub { margin-top: 3px; font-size: 10px; gap: 1px; }
+.kpi-tile.kpi-compact .kpi-mood { top: 8px; right: 8px; }
+@media (max-width: 640px) {
+  .kpi-tile.kpi-compact .kpi-value { font-size: 15px; }
+}
+.kpi-grid-compact {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+@media (min-width: 1024px) {
+  .kpi-grid-compact {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+}
+
+/* Category stats compact with expand */
+.cat-stats-compact .cat-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 6px 8px; border-radius: 10px;
+  transition: background .15s ease;
+}
+.cat-stats-compact .cat-row:hover { background: var(--bg-secondary); }
+.cat-stats-compact .cat-row-main { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cat-stats-compact .cat-bar-wrap { height: 4px; margin-top: 4px; }
+
+/* Settings compact redesign */
+.settings-compact .card { padding: 16px; }
+.settings-compact .input { min-height: 38px; padding: 8px 12px; font-size: 13px; }
+.settings-compact .input-label { font-size: 11px; gap: 4px; }
+.settings-compact .grid { gap: 10px; }
+.settings-compact h3 { font-size: 14px; }
+.settings-compact .settings-section {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px;
+  background: var(--surface);
+}
+.settings-compact .settings-section + .settings-section { margin-top: 12px; }
+.settings-compact .settings-section-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 10px;
+}
+.settings-compact .settings-section-head h4 {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-secondary);
+}
+.settings-compact .settings-grid {
+  display: grid; gap: 10px;
+}
+@media (min-width: 640px) {
+  .settings-compact .settings-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+  .settings-compact .settings-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* Ideas image lightbox larger */
+.idea-lightbox-main img { max-height: 72vh; }
+
+/* Profile sheet account */
+.account-sheet .avatar { width: 56px; height: 56px; font-size: 18px; }
+.account-sheet .account-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 12px;
+  background: var(--bg-secondary); border: 1px solid var(--border);
+}
+
