@@ -79,20 +79,20 @@
   --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary-raw) 28%, transparent);
 
   /* ---- Companion accents (member colours, day markers, category chips).
-     Vivid enough to read on both a white card and the tinted canvas. ---- */
-  --accent-blue: #1f6bfb;
-  --accent-sky: #57a6ff;
-  --accent-steel: #4a90d9;
-  --accent-teal: #12a37f;
-  --accent-sage: #63b79a;
-  --accent-green: #1eb06b;
-  --accent-lime: #8fd14b;
-  --accent-amber: #ffb02e;
-  --accent-orange: #ff8a3d;
-  --accent-coral: #ff6b5a;
-  --accent-rose: #f5487c;
-  --accent-violet: #8a5cf6;
-  --accent-slate: #6d8299;
+     v18.1: pushed saturation and brightness up for a more vivid, lively look. ---- */
+  --accent-blue: #0f5ef5;
+  --accent-sky: #3d96ff;
+  --accent-steel: #3a82d4;
+  --accent-teal: #00b88a;
+  --accent-sage: #4cb88a;
+  --accent-green: #10a85e;
+  --accent-lime: #7dcc30;
+  --accent-amber: #ffa020;
+  --accent-orange: #ff7a2e;
+  --accent-coral: #ff5544;
+  --accent-rose: #f03570;
+  --accent-violet: #7c3ff0;
+  --accent-slate: #5a7590;
 
   /* ---- Gradients ----
      `--gradient-primary` is set INLINE by a theme (see themes.js) — e.g. the
@@ -112,19 +112,19 @@
     radial-gradient(at 52% 84%, color-mix(in srgb, var(--brand-mist-raw) 24%, transparent) 0%, transparent 52%);
   --gradient-glass: linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.66) 100%);
 
-  /* ---- Status colours (brighter, still readable on a white card) ---- */
-  --success: #14a86e;
-  --success-light: color-mix(in srgb, #14a86e 16%, #fff);
-  --success-bg: color-mix(in srgb, #14a86e 11%, #fff);
-  --warning: #f09819;
-  --warning-light: color-mix(in srgb, #f09819 20%, #fff);
-  --warning-bg: color-mix(in srgb, #f09819 12%, #fff);
-  --danger: #ef4b4b;
-  --danger-light: color-mix(in srgb, #ef4b4b 16%, #fff);
-  --danger-bg: color-mix(in srgb, #ef4b4b 10%, #fff);
-  --info: #2f9ee0;
-  --info-light: color-mix(in srgb, #2f9ee0 16%, #fff);
-  --info-bg: color-mix(in srgb, #2f9ee0 10%, #fff);
+  /* ---- Status colours (v18.1: vivid and punchy) ---- */
+  --success: #059669;
+  --success-light: color-mix(in srgb, #059669 18%, #fff);
+  --success-bg: color-mix(in srgb, #059669 12%, #fff);
+  --warning: #ea7317;
+  --warning-light: color-mix(in srgb, #ea7317 22%, #fff);
+  --warning-bg: color-mix(in srgb, #ea7317 14%, #fff);
+  --danger: #e63232;
+  --danger-light: color-mix(in srgb, #e63232 18%, #fff);
+  --danger-bg: color-mix(in srgb, #e63232 12%, #fff);
+  --info: #1a8dd6;
+  --info-light: color-mix(in srgb, #1a8dd6 18%, #fff);
+  --info-bg: color-mix(in srgb, #1a8dd6 12%, #fff);
 
   /* ---- Space / radius / type ---- */
   --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;

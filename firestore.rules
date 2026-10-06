@@ -230,10 +230,10 @@ service cloud.firestore {
       }
 
       match /ideas/{ideaId} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated();
-        allow update: if isAuthenticated();
-        allow delete: if isAuthenticated() && (isTripAdmin(tripId) || !('createdBy' in resource.data) || resource.data.createdBy == request.auth.uid);
+        allow read: if isTripMember(tripId) || isAuthenticated();
+        allow create: if isTripMember(tripId) || isAuthenticated();
+        allow update: if isTripMember(tripId) || isAuthenticated();
+        allow delete: if (isTripMember(tripId) || isAuthenticated()) && (isTripAdmin(tripId) || !('createdBy' in resource.data) || resource.data.createdBy == request.auth.uid);
       }
 
       match /reservations/{reservationId} {

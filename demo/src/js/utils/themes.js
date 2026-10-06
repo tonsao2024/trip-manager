@@ -107,10 +107,11 @@ export function intensify(hex, intensity = 60) {
   if (!clean) return hex;
   const { h, s, l } = toHsl(clean);
   const k = clamp(Number(intensity) / 100, 0, 1);
-  const target = 0.52 + 0.42 * k;             // saturation ceiling
-  const boost = s + (target - s) * (0.25 + 0.75 * k);
-  const light = l + (0.52 - l) * (0.18 * k);   // nudge towards the most vivid lightness
-  return fromHsl({ h, s: clamp(boost, 0.12, 1), l: clamp(light, 0.16, 0.82) });
+  // v18.1: push saturation and lightness much higher for a vivid, lively look
+  const target = 0.62 + 0.36 * k;             // saturation ceiling (higher = more vivid)
+  const boost = s + (target - s) * (0.42 + 0.58 * k);
+  const light = l + (0.50 - l) * (0.28 * k);   // nudge towards the most vivid lightness
+  return fromHsl({ h, s: clamp(boost, 0.22, 1), l: clamp(light, 0.20, 0.78) });
 }
 
 /** Rotate a hue by `deg` (used to build a coherent companion palette). */
@@ -176,10 +177,10 @@ export const THEMES = [
   theme({
     id: 'sky', th: 'ฟ้าใส (ค่าเริ่มต้น)', en: 'Sky light (default)',
     hint: 'ฟ้า–เหลืองอบอุ่น แบบแอปเดินทางยุคใหม่',
-    primary: '#1f6bfb', grad2: '#57a6ff', accent: '#ffb02e',
-    mist: '#a9ccf0', steel: '#4a90d9', sand: '#fdf3e2', ink: '#28374d',
-    bg: '#f4f9ff', bgDark: '#0b1018',
-    gradient: 'linear-gradient(135deg, #1f6bfb 0%, #57a6ff 55%, #8fd0ff 100%)'
+    primary: '#0f5ef5', grad2: '#3d96ff', accent: '#ffa020',
+    mist: '#8ec0f0', steel: '#3a82d4', sand: '#fdf3e2', ink: '#28374d',
+    bg: '#f2f8ff', bgDark: '#0b1018',
+    gradient: 'linear-gradient(135deg, #0f5ef5 0%, #3d96ff 55%, #7ec4ff 100%)'
   }),
   theme({
     id: 'line', th: 'ธีมไลน์ (LINE)', en: 'LINE green',
