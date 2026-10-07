@@ -2468,7 +2468,9 @@ html, body { max-width: 100%; overflow-x: clip; }
 .money-primary { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); overflow-wrap: anywhere; }
 .money-secondary { display: block; font-size: 11px; font-weight: 500; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
 .kpi-mini .money-secondary { font-size: 11px; font-weight: 500; }
-#expense-form, .expense-form { padding: 0; background: transparent; border: 0; box-shadow: none; counter-reset: expense-step; }
+/* `overflow: visible` — `.card` clips its content, and a clipping ancestor turns
+   position:sticky inside the form into a no-op (the floating save bar below). */
+#expense-form, .expense-form { padding: 0; background: transparent; border: 0; box-shadow: none; counter-reset: expense-step; overflow: visible; }
 #expense-form .form-section, .expense-form .form-section { padding: 22px; margin: 0 0 16px; border: 1px solid var(--border); border-radius: 18px; background: var(--bg-card, var(--bg)); box-shadow: 0 3px 14px #00000004; }
 #expense-form .form-section-head, .expense-form .form-section-head { padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 #expense-form .form-section-head h3::before, .expense-form .form-section-head h3::before { counter-increment: expense-step; content: counter(expense-step) '. '; color: var(--primary-strong); }
@@ -3312,7 +3314,13 @@ html, body { max-width: 100%; overflow-x: clip; }
 .itin-card .itin-expand-btn:hover { background: var(--primary-light); }
 @media (max-width: 1023px) {
   /* The map is the first itinerary panel on phones, before sticky notes and days. */
-  #itin-layout.itin-layout { display: flex; flex-direction: column; gap: 12px; }
+  #itin-layout.itin-layout { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+  /* “รายการแต่ละสถานที่ตกขอบด้านขวา บนไอโฟน 16 โปร”: as a flex column this layout
+     kept the desktop grid's `align-items: start`, which sizes every item to its
+     MAX-content width — so the day bar, the sticky notes and each place card grew
+     to ~2× the screen (the page could be dragged sideways and the right half of
+     every row was off-screen). Items must stretch to the screen instead. */
+  #itin-layout.itin-layout > * { width: 100%; max-width: 100%; min-width: 0; }
   #itin-layout .itin-col-map { order: -1; width: 100%; }
   #itin-layout .itin-col-map #map-card { margin-bottom: 0; }
 }
@@ -3324,3 +3332,113 @@ html, body { max-width: 100%; overflow-x: clip; }
   .itin-title-tags { max-width: 38%; }
   .itin-title-tags .badge { padding: 2px 5px; font-size: 8px; }
 }
+
+/* ============================================================
+   v22 — ค่าใช้จ่าย: “ปุ่มบันทึกลอยไปด้วย”
+   ------------------------------------------------------------------
+   The expense form is long (details → amount → payer/split → receipt),
+   so on a phone the save button used to sit far below the fold. The
+   action row now floats: it sticks to the bottom of the screen while the
+   form scrolls, and to the bottom of the sheet when the form is opened as
+   a popup. On phones it parks just above the bottom navigation bar; on
+   desktop it rests near the bottom edge.
+   ============================================================ */
+.expense-form .form-submit-row {
+  position: sticky;
+  bottom: calc(var(--bottom-nav-h) + 10px);
+  z-index: 30;
+  margin: 20px 0 2px;
+  padding: 8px;
+  gap: 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+  backdrop-filter: blur(16px) saturate(170%);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.expense-form .form-submit-row .btn { min-height: 44px; }
+@media (min-width: 768px) {
+  .expense-form .form-submit-row { bottom: 14px; }
+}
+/* Inside a bottom sheet the bar hugs the sheet's own bottom edge. */
+.bottom-sheet-content .expense-form .form-submit-row {
+  bottom: 0;
+  margin-bottom: 0;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.12);
+}
+/* iOS scrolls a focused field into view; reserve the bar's height so the field is
+   never parked underneath it (the same trick as scroll-padding on the scroller). */
+.expense-form .input, .expense-form .tile { scroll-margin-bottom: 118px; }
+.bottom-sheet-content { scroll-padding-bottom: 96px; }
+
+/* ============================================================
+   v23 — แผนการเดินทาง: มุมมองกระทัดรัด (“Compact view”)
+   ------------------------------------------------------------------
+   “ปรับมุมมองให้สามารถเลือกแบบกระทัดรัด โดยแบบกระทัดรัดให้แสดงเฉพาะ
+   ข้อมูลที่สำคัญเท่านั้น” — the toolbar toggle adds .itin-compact to the
+   layout and keeps only what you need to move through the day:
+
+     ลำดับ • เวลา • ชื่อสถานที่ • หมวด (ไอคอน) • สถานะ • ค่าใช้จ่าย • ปุ่มนำทาง
+
+   Everything else folds away on EVERY screen size (photo, address, the
+   duration line, teams, check-in/out, the expense-link button, the
+   “ดูเพิ่มเติม” toggle and the travel legs — except a real schedule
+   warning). Phones fit about twice as many places per screen, and the
+   photo thumbnail becomes a small “…” button so the item menu (แก้ไข /
+   สถานะ / ลบ) stays reachable.
+   ============================================================ */
+.itin-compact #itinerary-list [data-day-group] > * + * { margin-top: 8px !important; }
+.itin-compact #itinerary-list > .mb-6 { margin-bottom: 12px; }
+.itin-compact #itinerary-list h3 { margin-bottom: 8px; }
+.itin-compact .itin-card { padding: 8px 10px; gap: 8px; border-radius: 14px; }
+.itin-compact .itin-card:hover { transform: none; }
+.itin-compact .itin-body { gap: 4px; padding-top: 1px; }
+.itin-compact .step-num { width: 24px; height: 24px; font-size: 11px; box-shadow: none; }
+.itin-compact .step-num svg { width: 12px; height: 12px; }
+.itin-compact .itin-title { font-size: 13px; line-height: 1.3; }
+.itin-compact .itin-title-row { gap: 6px; }
+.itin-compact .itin-title-tags .badge { font-size: 8px; padding: 2px 5px; }
+.itin-compact .itin-card .meta-line { font-size: 10.5px; gap: 3px; margin-top: 0 !important; }
+.itin-compact .itin-card .meta-line svg { width: 11px; height: 11px; }
+.itin-compact .estimate-line { margin-top: 4px; padding: 3px 8px; font-size: 11px; border-radius: 9px; }
+.itin-compact .estimate-line svg { width: 12px; height: 12px; }
+.itin-compact .estimate-line .money-primary { font-size: 11.5px; }
+
+/* The photo folds into a small “…” action — the item menu must stay tappable. */
+.itin-compact .itin-thumb {
+  width: 32px; height: 32px; aspect-ratio: auto; border-radius: 10px;
+  align-self: center; background: var(--bg-secondary); border-color: transparent;
+}
+.itin-compact .itin-thumb img, .itin-compact .itin-thumb-ph { display: none; }
+.itin-compact .itin-more-wrap { position: static; }
+.itin-compact .itin-thumb-more {
+  width: 32px; height: 32px; background: transparent; color: var(--text-secondary);
+  border-color: transparent; backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.itin-compact .itin-thumb-more:hover { background: var(--primary-light); color: var(--primary-strong); }
+
+/* Essentials only: this wins at every width, so compact is compact on desktop too. */
+.itin-compact .itin-card .itin-detail,
+.itin-compact .itin-quiet,
+.itin-compact .itin-expand-btn,
+.itin-compact .itin-cat-label,
+.itin-compact .itin-nav-label { display: none !important; }
+
+/* The category keeps its icon, the navigation link keeps its arrow. */
+.itin-compact .itin-cat-badge { padding: 2px 5px; }
+.itin-compact .itin-card .nav-link-btn {
+  display: inline-grid; place-items: center; width: 26px; height: 26px;
+  margin: 0; border-radius: 50%; text-decoration: none;
+  background: var(--primary-light); color: var(--primary-strong);
+}
+.itin-compact .itin-card .nav-link-btn svg { width: 14px; height: 14px; }
+/* A dense day reads as one continuous list: the leg only survives a real warning
+   (“ไม่พอเวลา”) — an ordinary 1.7 กม. hop is implied by the order. */
+.itin-compact .itin-leg { display: none; }
+.itin-compact .itin-leg--warn {
+  display: flex; padding: 0 8px 0 10px; margin: 2px 0;
+}
+.itin-compact .itin-leg--warn .itin-leg-line { border-left-style: solid; }

@@ -83,6 +83,66 @@
 </header>
 
 <main class="wrap">
+  <h2><span class="num">v23</span> แผนการเดินทาง: มุมมองกระทัดรัด (7 ต.ค. 2026)</h2>
+  <p class="lead">
+    “ปรับมุมมองให้สามารถเลือกแบบกระทัดรัด โดยแบบกระทัดรัดให้แสดงเฉพาะข้อมูลที่สำคัญเท่านั้น เพื่อให้การแสดงผลบนหน้าจอมือถือมีประสิทธิภาพมากขึ้น”
+    — ภาพคู่ล่างคือวันเดียวกันของทริปเดียวกัน บน iPhone 16 Pro (402×874) จากแอปจริง: กดปุ่ม <b>มุมมองกระทัดรัด</b> บนแถบเครื่องมือ
+  </p>
+  <div class="pair">
+    <div class="card">
+      <span class="tag old">มุมมองปกติ</span>
+      <figure class="shot"><img src="after/v23-itinerary-comfortable.png" alt="comfortable plan view"><figcaption>การ์ดเต็ม<span>รูปสถานที่ • ที่อยู่ • เวลาเดินทาง • ปุ่มค่าใช้จ่าย • ดูเพิ่มเติม — การ์ดละ 283px</span></figcaption></figure>
+    </div>
+    <div class="card">
+      <span class="tag">มุมมองกระทัดรัด</span>
+      <figure class="shot"><img src="after/v23-itinerary-compact.png" alt="compact plan view"><figcaption>เฉพาะข้อมูลที่สำคัญ<span>ลำดับ • เวลา • ชื่อ • ไอคอนหมวด • สถานะ • ค่าใช้จ่าย • ปุ่มนำทาง — การ์ดละ 131px (2.2×)</span></figcaption></figure>
+    </div>
+  </div>
+  <div class="card" style="margin-top:18px">
+    <span class="tag">รายละเอียด</span>
+    <ul class="features">
+      <li><b>ข้อมูลที่คงอยู่:</b> ลำดับ, ช่วงเวลา, ชื่อสถานที่, หมวด (เหลือไอคอน), สถานะ, ประมาณการ/ค่าใช้จ่าย และปุ่มนำทาง Google Maps (ย่อเป็นไอคอนกลม)</li>
+      <li><b>ข้อมูลที่พับเก็บ:</b> รูปสถานที่, ที่อยู่, บรรทัดระยะเวลา, ชิปทีม, เช็คอิน–เช็คเอาท์, ปุ่มผูกค่าใช้จ่าย, ปุ่ม “ดูเพิ่มเติม” และเส้นทางเดินทางระหว่างจุด — <b>ยกเว้น</b>คำเตือนเวลาไม่พอ ซึ่งยังโชว์เสมอ</li>
+      <li><b>ยังเข้าถึงเมนูรายการได้:</b> รูปย่อเปลี่ยนเป็นปุ่ม <code>⋯</code> เล็ก ๆ (แก้ไข / เปลี่ยนสถานะ / เพิ่ม-แก้ค่าใช้จ่าย / ลบ)</li>
+      <li><b>จำค่าไว้ในเครื่องนี้:</b> ปุ่มสลับอยู่บนแถบเครื่องมือข้าง “ดูทั้งหมด” จำสถานะผ่าน localStorage ใช้กับทุกวัน/ทุกทริป</li>
+      <li><b>ทดสอบอัตโนมัติ:</b> <code>mobile-check</code> เพิ่มรอบ “itinerary-compact” วัดจริงว่าการ์ดเล็กลง ≥20% และข้อมูลที่ต้องพับถูกพับจริง พร้อมยืนยันว่าข้อมูลสำคัญยังกดได้</li>
+    </ul>
+  </div>
+
+  <h2><span class="num">v22</span> รอบก่อนหน้า: แผนตกขอบจอ • แก้ไขค่าใช้จ่ายเป็นป๊อปอัป • ปุ่มบันทึกลอย (7 ต.ค. 2026)</h2>
+  <p class="lead">
+    สามข้อที่แจ้งมา — รายการในแผนตกขอบขวาบนมือถือ, แก้ไขค่าใช้จ่ายอยากได้เป็นป๊อปอัป, และปุ่มบันทึกของหน้าเพิ่มค่าใช้จ่ายอยากให้ลอยตาม —
+    ภาพด้านล่างคือการรันแอปจริงในเบราว์เซอร์จริงที่ขนาดจอ iPhone 16 Pro (402×874) ก่อนแก้ → หลังแก้
+  </p>
+  <div class="pair">
+    <div class="card">
+      <span class="tag old">ก่อน (v21)</span>
+      <figure class="shot"><img src="before/v22-itinerary-overflow.png" alt="itinerary overflow on a phone"><figcaption>1. แผนการเดินทาง — การ์ดตกขอบขวา<span>ลากหน้าจอไปด้านข้างได้ • ครึ่งขวาของทุกแถวหลุดจอ อ่านไม่ครบ</span></figcaption></figure>
+    </div>
+    <div class="card">
+      <span class="tag">หลัง (v22)</span>
+      <figure class="shot"><img src="after/v22-itinerary-phone.png" alt="itinerary fits the phone"><figcaption>1. แผนการเดินทาง — พอดีจอ<span>คอลัมน์วัน/แผนที่/โน้ต ยืดเต็มความกว้างจอ (แผงกว้าง 811px → 354px บนจอ 402px)</span></figcaption></figure>
+    </div>
+  </div>
+
+  <div class="pair" style="margin-top:18px">
+    <div class="card">
+      <span class="tag">ใหม่ (v22)</span>
+      <figure class="shot"><img src="after/v22-expense-popup.png" alt="expense edit popup"><figcaption>2. ค่าใช้จ่าย — แก้ไขในป๊อปอัป<span>กดการ์ดหรือไอคอนดินสอ ฟอร์มเปิดทับหน้ารายการ ไม่เด้งเปลี่ยนหน้า • บันทึกแล้วลิสต์/ยอดรวมอัปเดตทันที</span></figcaption></figure>
+      <figure class="shot" style="margin-top:14px"><img src="after/v22-expense-sticky-save.png" alt="sticky save button"><figcaption>3. เพิ่มค่าใช้จ่าย — ปุ่มบันทึกลอยไปด้วย<span>แถบ “ยกเลิก / บันทึก” เกาะขอบล่างจอ ลอยเหนือแถบเมนูเสมอ เลื่อนฟอร์มยาวแค่ไหนก็กดบันทึกได้</span></figcaption></figure>
+    </div>
+    <div class="card">
+      <span class="tag">รายละเอียดที่แก้</span>
+      <ul class="features">
+        <li><b>ต้นเหตุของการตกขอบ:</b> บนจอ ≤1023px เลย์เอาต์แผนเปลี่ยนจาก grid เป็น flex column แต่ค่ายังเป็น <code>align-items: start</code> ของ grid เดิม ทำให้แต่ละบล็อกถูกวัดความกว้างจาก “ความกว้างเต็มที่ไม่ต้องตัดบรรทัด” (max-content) → การ์ดกว้าง ~811px บนจอ 402px แก้เป็น <code>align-items: stretch</code> + ลูกทุกตัว <code>width: 100% / min-width: 0</code></li>
+        <li><b>ป๊อปอัปแก้ไข:</b> ใช้ฟอร์มตัวเดียวกับหน้าค่าใช้จ่าย (ฟิลด์/การหาร/VAT/บัตร/ใบเสร็จเหมือนกันทุกช่อง) มีปุ่มลบในป๊อปอัปด้วย และยังมีลิงก์ “เปิดหน้าเต็ม” สำหรับงานยาว ๆ</li>
+        <li><b>ปุ่มบันทึกลอย:</b> แถบปุ่มของฟอร์มเป็น <code>position: sticky</code> เกาะขอบล่าง (มือถือเว้นระยะเหนือแถบเมนูล่าง, ในป๊อปอัปเกาะขอบชีต) พร้อม <code>scroll-padding-bottom</code> กันไม่ให้ช่องที่กำลังพิมพ์ถูกบังตอนคีย์บอร์ดเปิด</li>
+        <li><b>ปุ่ม + มุมขวาล่าง:</b> ซ่อนในหน้าเพิ่ม/แก้ไขค่าใช้จ่าย เพราะทับปุ่มบันทึกที่ลอยอยู่แล้ว</li>
+        <li><b>กันกลับมาเป็นอีก:</b> <code>tests/browser/mobile-check.mjs</code> เพิ่มขนาดจอ iPhone 16 Pro / iPhone 16 เข้าไปในชุดตรวจทุกครั้ง และ “ของที่ล้นจอ” กลายเป็นข้อผิดพลาดที่ทำให้เทสต์ไม่ผ่าน (v23 ต่อยอด: ตรวจมุมมองกระทัดรัดด้วย)</li>
+      </ul>
+    </div>
+  </div>
+
   <h2><span class="num">1</span> ฟีเจอร์ใหม่ใน v17</h2>
   <p class="lead">ครบตามรายการของ Wanderlog ที่ยังขาด — และไม่กระทบของเดิมแม้แต่หน้าเดียว</p>
   <ul class="features">
@@ -133,7 +193,7 @@
 </main>
 
 <footer class="wrap">
-  Fuji Trip Planner v17 “Sky light” • อัปเดตล่าสุด 5 ต.ค. 2026 • หน้าแอป: <a href="../../index.html">/index.html</a>
+  Fuji Trip Planner v23 “Vivid & Deep” • อัปเดตล่าสุด 7 ต.ค. 2026 • หน้าแอป: <a href="../../index.html">/index.html</a>
 </footer>
 </body>
 </html>

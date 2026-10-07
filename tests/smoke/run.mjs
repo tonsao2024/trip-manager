@@ -488,6 +488,102 @@ if (delBtn) {
   check(false, 'expenses: delete button found');
 }
 
+console.log('\n▶ expenses: แก้ไขในป๊อปอัป + ปุ่มบันทึกลอย (v22)');
+{
+  const cssRaw = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8');
+  const cssFlat = cssRaw.replace(/\s+/g, ' ');
+
+  // 1) แผนการเดินทางบนมือถือ: single-column flex ต้องยืดเต็มความกว้างจอ
+  //    (align-items:start ของ grid เดิมทำให้การ์ดกว้างเกินจอ → ตกขอบขวา)
+  const phoneBlock = (cssRaw.match(/@media \(max-width: 1023px\) \{[^@]*?#itin-layout\.itin-layout[^}]*\}/) || [])[0] || '';
+  check(/align-items:\s*stretch/.test(phoneBlock), 'itinerary (phone): the flex column stretches its children');
+  check(/#itin-layout\.itin-layout > \*\s*\{[^}]*width:\s*100%/.test(cssFlat), 'itinerary (phone): the day column can never be wider than the screen');
+
+  // 2) กดแก้ไขรายการค่าใช้จ่าย = ป๊อปอัป ไม่ใช่เปลี่ยนหน้า
+  await goto('#/trip/t1/expenses');
+  await waitFor(() => q('.expense-card'), { label: 'expense cards' });
+  const hashBefore = window.location.hash;
+  const firstCard = q('.expense-card');
+  const cardId = firstCard?.dataset.expense;
+  await click(firstCard);
+  await waitFor(() => q('#sh-expense-form'), { label: 'expense popup' });
+  check(!!q('.bottom-sheet #sh-expense-form'), 'popup: tapping a row opens the expense form in a sheet');
+  check(window.location.hash === hashBefore, 'popup: the route does not change (no page jump)');
+  check(!!q('#sh-expense-form .form-submit-row #sh-save'), 'popup: the save button sits in the floating action row');
+  check(!!q('#sh-delete'), 'popup: editing from the list can also delete the expense');
+
+  const popupTitle = 'แก้ไขชื่อจากป๊อปอัป';
+  const titleField = q('#sh-ex-title');
+  check(!!titleField && titleField.value.length > 0, 'popup: the form is prefilled with the expense');
+  titleField.value = popupTitle;
+  submit(q('#sh-expense-form'));
+  await waitFor(() => [...fsdb.__store.values()].some(e => e?.title === popupTitle), { label: 'popup save' }).catch(() => {});
+  check([...fsdb.__store.values()].some(e => e?.title === popupTitle), 'popup: saving updates the expense');
+  check(fsdb.__dump(`trips/t1/expenses/${cardId}`)?.title === popupTitle, 'popup: the same document is updated (no duplicate)');
+  await waitFor(() => !q('.bottom-sheet'), { label: 'sheet closed' }).catch(() => {});
+  check(!q('.bottom-sheet'), 'popup: closes after saving');
+  await waitFor(() => text$().includes(popupTitle), { label: 'list refreshed' }).catch(() => {});
+  check(text$().includes(popupTitle), 'popup: the list shows the change without leaving the page');
+
+  // 3) ปุ่มบันทึกของหน้าเพิ่มค่าใช้จ่ายต้องลอยไปด้วย
+  await goto('#/trip/t1/expenses/add');
+  await waitFor(() => q('#expense-form'), { label: 'expense add form' });
+  check(!!q('#expense-form .form-submit-row #submit-expense'), 'add page: the save button lives in the floating action row');
+  check(/\.expense-form \.form-submit-row \{[^}]*position:\s*sticky/.test(cssFlat), 'add page: the action row is sticky (it follows the scroll)');
+  check(/#expense-form, \.expense-form \{[^}]*overflow:\s*visible/.test(cssFlat), 'add page: the form does not clip the sticky row');
+  check(/@media \(min-width: 768px\) \{ \.expense-form \.form-submit-row \{ bottom: 14px; \} \}/.test(cssFlat)
+    || /\.expense-form \.form-submit-row \{ bottom: 14px; \}/.test(cssFlat), 'add page: the bar parks above the bottom edge on desktop too');
+}
+
+console.log('\n▶ itinerary: มุมมองกระทัดรัด (v23)');
+{
+  const cssFlat = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8').replace(/\s+/g, ' ');
+  await goto('#/trip/t1/itinerary');
+  await waitFor(() => q('#itin-density-btn'), { label: 'plan toolbar' });
+  // A device preference — start from a known state.
+  window.localStorage.removeItem('fuji_itin_density');
+
+  await goto('#/trip/t1/itinerary');
+  await waitFor(() => q('#itin-density-btn'), { label: 'plan toolbar (fresh)' });
+  check(!!q('#itin-density-btn'), 'compact: the plan toolbar offers a compact view');
+  check(!q('#itin-layout').classList.contains('itin-compact'), 'compact: the plan starts in the comfortable view');
+  check(q('#itin-density-btn [data-density-label]')?.textContent.includes('กระทัดรัด'), 'compact: the button offers to switch TO compact');
+
+  await click('#itin-density-btn');
+  check(q('#itin-layout').classList.contains('itin-compact'), 'compact: the toggle folds the plan');
+  check(q('#itinerary-view')?.classList.contains('view-compact'), 'compact: the page carries the state too');
+  check(q('#itin-density-btn').getAttribute('aria-pressed') === 'true', 'compact: the toggle reports its state');
+  check(q('#itin-density-btn').classList.contains('btn-primary'), 'compact: the active view is highlighted');
+  check(window.localStorage.getItem('fuji_itin_density') === 'compact', 'compact: the choice is remembered on this device');
+
+  // The essentials stay in the markup, the rest is folded by CSS at every width.
+  await click('#view-all-btn');            // the plan opens on today, which is outside the trip
+  await waitFor(() => q('.itin-card'), { label: 'plan cards' });
+  const card = q('.itin-card');
+  check(/ทะเลสาบคาวากุจิ|ภูเขามิโตะ|ราเมง/.test(card.textContent || ''), 'compact: the place name stays');
+  check(!!card.querySelector('.itin-cat-badge'), 'compact: the category chip stays (icon only)');
+  check(!!card.querySelector('.nav-link-btn'), 'compact: the navigate button stays');
+  check(!!card.querySelector('.itin-thumb-more'), 'compact: the item menu stays reachable');
+  check(!!card.querySelector('.meta-line'), 'compact: the time line stays');
+  check(/\.itin-compact \.itin-card \.itin-detail, \.itin-compact \.itin-quiet/.test(cssFlat), 'compact: details are folded at every width');
+  check(/\.itin-compact \.itin-thumb img/.test(cssFlat), 'compact: the photo thumbnail folds into a small action');
+  check(/\.itin-compact \.itin-leg \{ display: none/.test(cssFlat) && /\.itin-compact \.itin-leg--warn/.test(cssFlat),
+    'compact: travel legs fold away except a real schedule warning');
+  check(/\.itin-compact \.itin-cat-label/.test(cssFlat) && /\.itin-compact \.itin-nav-label/.test(cssFlat),
+    'compact: the category/navigation labels collapse to icons');
+
+  // Remembered after leaving and re-opening the page.
+  await goto('#/trip/t1/dashboard');
+  await goto('#/trip/t1/itinerary');
+  await waitFor(() => q('#itin-density-btn'), { label: 'plan toolbar (again)' });
+  check(q('#itin-layout').classList.contains('itin-compact'), 'compact: remembered when the plan is re-opened');
+
+  await click('#itin-density-btn');
+  check(!q('#itin-layout').classList.contains('itin-compact'), 'compact: toggling back restores the full cards');
+  check(window.localStorage.getItem('fuji_itin_density') === 'comfortable', 'compact: the comfortable view is remembered too');
+  check(q('#itin-density-btn [data-density-label]')?.textContent.includes('กระทัดรัด'), 'compact: the label flips back to offering compact');
+}
+
 console.log('\n▶ member edit + delete');
 await goto('#/trip/t1/members');
 await waitFor(() => text$().includes('เคน'), { label: 'member list' });
