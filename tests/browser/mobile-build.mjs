@@ -114,9 +114,12 @@ fs.writeFileSync(twIn, "@tailwind base;\n@tailwind components;\n@tailwind utilit
 const twConfig = path.join(outRoot, 'tailwind.config.cjs');
 fs.writeFileSync(twConfig, `module.exports = {
   darkMode: ['class', '[data-theme="dark"]'],
-  content: [${JSON.stringify(path.join(root, 'index.html'))}, ${JSON.stringify(path.join(srcDir, '**/*.js'))}],
-  corePlugins: { preflight: false }
+  content: [${JSON.stringify(path.join(root, 'index.html'))}, ${JSON.stringify(path.join(srcDir, '**/*.js'))}]
 };\n`);
+// NOTE: preflight stays ON — the live site loads the Tailwind CDN, whose
+// injected <style> (including the border-box reset) lands at the END of
+// <head>, i.e. after the app stylesheets, exactly like the link below.
+// Disabling it made the check diverge from what real phones render.
 try {
   execFileSync(path.join(root, 'node_modules', '.bin', 'tailwindcss'), [
     '-c', twConfig, '-i', twIn, '-o', twOut, '--minify'

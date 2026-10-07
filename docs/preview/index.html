@@ -83,6 +83,34 @@
 </header>
 
 <main class="wrap">
+  <h2><span class="num">v24</span> จอมือถือแสดงผลครบทุกช่อง (7 ต.ค. 2026)</h2>
+  <p class="lead">
+    “แก้ไขการแสดงผลหน้าจอมือถือแสดงผลได้ถูกต้องและเหมาะสม” — จากภาพที่เจ้าของทริปส่งมา: ฟอร์มเพิ่มสถานที่ถูกตัดขอบขวา
+    (ช่องเวลาเริ่มล้นจอ, ช่องนาที/ชั่วโมงหดยังกับจุดกลม) และยอด ฿ บนหน้าค่าใช้จ่ายขึ้นบรรทัดใหม่กลางตัวเลข
+    ภาพล่างคือแอปจริงหลังแก้ บนจอ 393×852
+  </p>
+  <div class="pair">
+    <div class="card">
+      <span class="tag">เพิ่มสถานที่</span>
+      <figure class="shot"><img src="after/v24-add-place-phone.png" alt="add-place sheet fits the phone"><figcaption>ฟอร์มเต็มจอ ไม่ตกขอบ<span>วันที่/เวลาเริ่ม และ ระยะเวลา/เดินทางต่อ/สถานะ เรียงคนละแถวบนมือถือ • ช่องนาที/ชั่วโมงกว้างพอพิมพ์ • ปุ่ม “ทุกทีม” อยู่ครบ</span></figcaption></figure>
+    </div>
+    <div class="card">
+      <span class="tag">ค่าใช้จ่าย</span>
+      <figure class="shot"><img src="after/v24-expenses-phone.png" alt="expenses KPIs on one line"><figcaption>ยอดเงินอยู่บรรทัดเดียว<span>ซ่อนทศนิยมบนจอแคบ (เดสก์ท็อปยังแสดง) • ไม่ตัดกลางตัวเลข • แถบปุ่มบนขึ้นบรรทัดใหม่ ปุ่ม “เพิ่มค่าใช้จ่าย” ไม่ถูกตัด</span></figcaption></figure>
+    </div>
+  </div>
+  <div class="card" style="margin-top:18px">
+    <span class="tag">รายละเอียด</span>
+    <ul class="features">
+      <li><b>ฟอร์มเพิ่ม/แก้ไขสถานที่:</b> บนจอ ≤640px ตาราง <code>grid-cols-2/3</code> ใน <code>#itinerary-form</code> กลายเป็นแถวเต็มความกว้าง — input แบบ time ของ iOS กว้างตายตัว ~207px จึงไม่มีทางลงในคอลัมน์ครึ่งจอได้ การเรียงคนละแถวทำให้ทุกช่องแสดงผลครบ</li>
+      <li><b>ช่องตัวเลขระยะเวลา/เดินทางต่อ:</b> กำหนด <code>min-width: 56px</code> ให้ input ใน <code>.unit-input-row</code> (เดิม <code>flex:1 1 auto; min-width:0</code> ทำให้หดยิบจนเป็นวงกลมเล็ก)</li>
+      <li><b>ยอดเงิน KPI:</b> <code>formatCurrencyHtml()</code> ใหม่ห่อส่วนทศนิยมใน <code>&lt;span class="money-dec"&gt;</code> — บนจอ ≤640px ส่วนนี้ถูกซ่อนและยอดอยู่บรรทัดเดียว (<code>white-space:nowrap</code>) เดสก์ท็อปแสดงผลเหมือนเดิมทุกประการ และ <code>mobile-check</code> จะ fail ทันทีถ้ายอดเงินขึ้น 2 บรรทัดหรือถูกตัดเป็น “…”</li>
+      <li><b>แถบปุ่มหัวหน้าค่าใช้จ่าย:</b> <code>.exp-top-actions</code> ขึ้นบรรทัดใหม่บนมือถือแทนการเลื่อนขวาง — ปุ่ม “+ เพิ่มค่าใช้จ่าย” เห็นเต็มปุ่มเสมอ</li>
+      <li><b>box-sizing:</b> เพิ่ม <code>*,*::before,*::after{box-sizing:border-box}</code> ใน CSS ของแอปเอง ไม่พึ่ง Tailwind preflight อย่างเดียว และเปิด preflight ใน harness ให้เหมือนเว็บจริง</li>
+      <li><b>ตรวจสอบอัตโนมัติ:</b> <code>mobile-check</code> เพิ่มรอบ “add-place” วัดทุก field ในชีตว่าไม่ถูกขอบชีตตัด และกว้างพอกดด้วยนิ้ว ทั้ง 5 ขนาดจอ (375–440px) ผ่านทั้งหมด</li>
+    </ul>
+  </div>
+
   <h2><span class="num">v23</span> แผนการเดินทาง: มุมมองกระทัดรัด (7 ต.ค. 2026)</h2>
   <p class="lead">
     “ปรับมุมมองให้สามารถเลือกแบบกระทัดรัด โดยแบบกระทัดรัดให้แสดงเฉพาะข้อมูลที่สำคัญเท่านั้น เพื่อให้การแสดงผลบนหน้าจอมือถือมีประสิทธิภาพมากขึ้น”
@@ -193,7 +221,7 @@
 </main>
 
 <footer class="wrap">
-  Fuji Trip Planner v23 “Vivid & Deep” • อัปเดตล่าสุด 7 ต.ค. 2026 • หน้าแอป: <a href="../../index.html">/index.html</a>
+  Fuji Trip Planner v24 • อัปเดตล่าสุด 7 ต.ค. 2026 • หน้าแอป: <a href="../../index.html">/index.html</a>
 </footer>
 </body>
 </html>

@@ -3500,3 +3500,45 @@ html, body { max-width: 100%; overflow-x: clip; }
   display: flex; padding: 0 8px 0 10px; margin: 2px 0;
 }
 .itin-compact .itin-leg--warn .itin-leg-line { border-left-style: solid; }
+
+/* ------------------------------------------------------------------
+   v24.1 — phone display fixes (owner screenshots, 7 Oct 2026)
+   ------------------------------------------------------------------ */
+
+/* The app must not depend on Tailwind's preflight for basic box sizing:
+   without border-box, every .input adds padding+border ON TOP of width:100%
+   and the add-place sheet's fields spill past the sheet edge. */
+*, *::before, *::after { box-sizing: border-box; }
+.input { max-width: 100%; }
+
+@media (max-width: 640px) {
+  /* iOS's native time control is ~207px wide and will not shrink into a
+     half-width column — stack the date/time and duration/travel/status rows
+     so every field keeps a full-width row on a phone. */
+  #itinerary-form .grid.grid-cols-2,
+  #itinerary-form .grid.grid-cols-3 { grid-template-columns: minmax(0, 1fr); }
+  /* the duration/travel number input once collapsed to a ~10px circle */
+  #itinerary-form .unit-input-row .input { min-width: 56px; }
+
+  /* The primary CTA row wraps instead of scrolling sideways so
+     “+ เพิ่มค่าใช้จ่าย” is never half-cut at the right edge. */
+  .btn-row.exp-top-actions { flex-wrap: wrap; justify-content: flex-end; overflow-x: visible; }
+
+  /* KPI amounts must never break mid-number (“฿167,7 / 23.09”): drop the
+     decimals on a phone (desktop keeps them) and hold each amount on ONE line.
+     The tiles lend the amount a little horizontal room so “฿167,723” fits at
+     375–440px without ellipsis (the check fails on either wrap or ellipsis). */
+  .kpi-strip .kpi-mini { padding: 8px 5px; }
+  .kpi-strip .kpi-mini b { overflow-wrap: normal; }
+  .kpi-strip .kpi-mini .money-primary {
+    font-size: clamp(9.5px, 2.75vw, 15px);
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .kpi-strip .money-dec, .kpi-mini-sub .money-dec { display: none; }
+  .kpi-mini-sub { overflow-wrap: normal; }
+}

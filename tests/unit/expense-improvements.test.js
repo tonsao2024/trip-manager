@@ -50,7 +50,8 @@ export function testMoneyDisplayAndAggregation() {
   eq(parseCurrencyInput('12,345.67'), 12345.67, 'grouped input');
   eq(formatAmount(12345.67), '12,345.67', 'grouped display');
   const html = moneyHtml(10000, 'JPY', .24);
-  assert(html.indexOf('2,400.00') < html.indexOf('10,000'), 'THB precedes original amount');
+  assert(html.indexOf('2,400') < html.indexOf('10,000'), 'THB precedes original amount');
+  assert(html.includes('money-dec">.00</span>'), 'the fraction is hide-able so phones never break mid-number');
   assert(!moneyHtml(1000, 'JPY', 0).includes('≈ ฿0'), 'missing rate never displays false zero');
   const rows = expensesInThb([{ currency: 'JPY', netTotalMinor: 1000, thbRate: .24 }, { currency: 'THB', netTotalMinor: 10000 }], { baseCurrency: 'JPY', exchangeRateToTHB: .24 });
   eq(rows.reduce((n, e) => n + e.netTotalMinor, 0), 34000, 'mixed-currency sum is 340 baht');

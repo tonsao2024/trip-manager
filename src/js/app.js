@@ -30,7 +30,7 @@ import { fetchSettlementData, recalculateAndSaveSettlement } from './settlement/
 
 import { listMembers, createMember, updateMember, deleteMember, countMemberReferences, mapFunctionError, MEMBER_ROLES } from './members/index.js';
 import { dayjs, getCurrentTimes, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay, parseDurationInput } from './utils/date.js';
-import { expensesInThb, convertCurrency, formatCurrency, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually, tripCurrencyList } from './utils/currency.js';
+import { expensesInThb, convertCurrency, formatCurrency, formatCurrencyHtml, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually, tripCurrencyList } from './utils/currency.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses } from './utils/settlement.js';
 import { splitCustom, splitEqual, participantsOf, averagePerPerson } from './utils/split.js';
 import { escapeHtml, sanitizeUrl } from './utils/sanitize.js';
@@ -5614,13 +5614,15 @@ async function renderExpenses(params) {
       <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
         ${renderPageScene('expenses', { lang, title: `${icon('wallet', 'w-5 h-5')} ${t('expenses')}`,
           subtitle: th('บันทึกค่าใช้จ่าย • หารเท่ากัน/ไม่เท่ากัน • ประมาณการจากแผน','Log expenses • split equally or custom • estimates from the plan') })}
-        <div class="btn-row">
+        <div class="btn-row exp-top-actions">
           ${isAdmin ? `
           <button id="exp-excel-btn" class="btn btn-secondary btn-sm">${icon('file-spreadsheet', 'w-4 h-4')} Excel</button>
           <button id="exp-import-btn" class="btn btn-secondary btn-sm">${icon('upload', 'w-4 h-4')} Import</button>` : ''}
           <button id="export-expenses" class="btn btn-secondary btn-sm">${icon('file-json', 'w-4 h-4')} JSON</button>
           <button id="add-expense-btn" class="btn btn-primary btn-sm">${icon('plus', 'w-4 h-4')} ${t('addExpense')}</button>
         </div>
+        <!-- exp-top-actions: on a phone the row wraps instead of scrolling so the
+             primary “เพิ่มค่าใช้จ่าย” CTA is never half-cut at the screen edge -->
       </div>
 
       <div class="kpi-strip mb-3">
@@ -5773,7 +5775,7 @@ async function renderExpenses(params) {
     if (groupCount) {
       setText('exp-sum-avg-label', th(`เฉลี่ย / กลุ่ม (${groupCount} กลุ่ม)`, `Avg / group (${groupCount})`));
       setHtml('exp-sum-avg', withThb(Math.round(shareTotal / groupCount)));
-      setHtml('exp-sum-avg-sub', paxCount ? th(`ต่อคน ≈ ${formatCurrency(perPerson, 'THB')} • ${paxCount} คน`, `≈ ${formatCurrency(perPerson, 'THB')} / person • ${paxCount} pax`) : '');
+      setHtml('exp-sum-avg-sub', paxCount ? th(`ต่อคน ≈ ${formatCurrencyHtml(perPerson, 'THB')} • ${paxCount} คน`, `≈ ${formatCurrencyHtml(perPerson, 'THB')} / person • ${paxCount} pax`) : '');
     } else {
       setText('exp-sum-avg-label', paxCount ? th(`เฉลี่ย / คน (${paxCount} คน)`, `Avg / person (${paxCount})`) : th('เฉลี่ย / คน', 'Avg / person'));
       setHtml('exp-sum-avg', withThb(perPerson));

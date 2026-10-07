@@ -24,6 +24,28 @@ export function formatCurrency(minor, currency = 'THB', locale = 'th-TH') {
   }
 }
 
+/**
+ * Same as formatCurrency, but the fraction sits in a `.money-dec` span so narrow
+ * phone layouts can hide “.09” instead of breaking the amount mid-number
+ * (“฿167,7 / 23.09” in the owner's 7 Oct 2026 screenshots). Desktop shows the
+ * span inline — the string reads exactly like formatCurrency's output.
+ */
+export function formatCurrencyHtml(minor, currency = 'THB', locale = 'th-TH') {
+  const decimals = getCurrencyDecimals(currency);
+  const major = fromMinor(minor, decimals);
+  try {
+    const parts = new Intl.NumberFormat(locale, { style: 'currency', currency, useGrouping: true }).formatToParts(major);
+    let head = '', dec = '';
+    for (const p of parts) {
+      if (p.type === 'decimal' || p.type === 'fraction') dec += p.value;
+      else head += p.value;
+    }
+    return escapeHtml(head) + (dec ? `<span class="money-dec">${escapeHtml(dec)}</span>` : '');
+  } catch {
+    return escapeHtml(formatCurrency(minor, currency, locale));
+  }
+}
+
 export function getCurrencyDecimals(currency) {
   const zero = ['JPY', 'KRW', 'VND'];
   if (zero.includes(currency)) return 0;
@@ -176,13 +198,13 @@ export function origTextChipHtml(text) {
  * original currency rides BESIDE it as a chip — never stacked on top of it.
  */
 export function moneyHtml(minor, currency = 'THB', rate = 0) {
-  if (currency === 'THB') return `<span class="money-primary">${escapeHtml(formatCurrency(minor, 'THB'))}</span>`;
+  if (currency === 'THB') return `<span class="money-primary">${formatCurrencyHtml(minor, 'THB')}</span>`;
   const baht = toThbMinor(minor, currency, rate);
   const orig = origChipHtml(minor, currency);
   if (baht == null) {
     return `<span class="money-dual">${orig}<span class="money-norate">${escapeHtml('ยังไม่มีเรท THB')}</span></span>`;
   }
-  return `<span class="money-dual"><span class="money-primary">${escapeHtml(formatCurrency(baht, 'THB'))}</span><span class="money-eq">≈</span>${orig}</span>`;
+  return `<span class="money-dual"><span class="money-primary">${formatCurrencyHtml(baht, 'THB')}</span><span class="money-eq">≈</span>${orig}</span>`;
 }
 
 /**
@@ -190,7 +212,7 @@ export function moneyHtml(minor, currency = 'THB', rate = 0) {
  * secondary label (used where totals were normalized to baht first).
  */
 export function thbPlusLabelHtml(thbMinor, secondaryLabel) {
-  const primary = `<span class="money-primary">${escapeHtml(formatCurrency(thbMinor || 0, 'THB'))}</span>`;
+  const primary = `<span class="money-primary">${formatCurrencyHtml(thbMinor || 0, 'THB')}</span>`;
   if (!secondaryLabel) return primary;
   return `<span class="money-dual">${primary}<span class="money-eq">≈</span>${origTextChipHtml(secondaryLabel)}</span>`;
 }
