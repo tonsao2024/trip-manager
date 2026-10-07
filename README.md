@@ -2,6 +2,19 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
+> **v24 — 7 Oct 2026, จอมือถือแสดงผลครบทุกช่อง.** Owner screenshots showed the **add-place
+> sheet cut off at the right edge** on an iPhone (the native time control is ~207 px wide and can
+> never fit a half-width column) and **KPI amounts breaking mid-number** (“฿167,7 / 23.09”). On
+> phones ≤640 px the `#itinerary-form` grids now stack to full-width rows, the duration/travel
+> number inputs keep `min-width: 56px` (they had collapsed to ~10 px circles), and a new
+> `formatCurrencyHtml()` wraps the decimals in a hide-able `.money-dec` span so every KPI amount
+> stays on **one unbroken line** on a phone (desktop is unchanged). The expenses header toolbar
+> (`.exp-top-actions`) wraps instead of scrolling so “+ เพิ่มค่าใช้จ่าย” is never half-cut, and the
+> app no longer depends on Tailwind's preflight for `box-sizing: border-box`. `mobile-check`
+> gained an `add-place` route that fails when any sheet field is cut by the sheet edge or too
+> narrow to tap, plus a KPI detector that fails on a wrapped **or ellipsised** amount — all five
+> device sizes pass. Screenshots: [`docs/preview/`](docs/preview/index.html).
+>
 > **v23 — 7 Oct 2026, มุมมองกระทัดรัดในแผนการเดินทาง.** The plan toolbar now has a
 > **มุมมองกระทัดรัด / Compact view** toggle next to “ดูทั้งหมด” (remembered per device in
 > `localStorage`). Compact keeps only what you need to move through the day — ลำดับ, ช่วงเวลา,

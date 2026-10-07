@@ -37,6 +37,9 @@ const DEVICES = [
 const ROUTES = [
   ['dashboard', '#/trip/t1/dashboard'],
   ['itinerary', '#/trip/t1/itinerary'],
+  // The add-place bottom sheet: its date/time + duration grids used to spill
+  // past the right edge of a phone (owner screenshot, 7 Oct 2026).
+  ['add-place', '#/trip/t1/itinerary?action=add'],
   // v23: the same day in “มุมมองกระทัดรัด” — the card must shrink and keep its essentials.
   ['itinerary-compact', '#/trip/t1/itinerary', ['#date-chips [data-date]', '#itin-density-btn']],
   ['expenses', '#/trip/t1/expenses'],
@@ -177,6 +180,42 @@ async function main() {
         }));
         if (overlaps) problems.push(`${device.id}: custom input, lock or final amount overlap`);
       }
+      if (name === 'add-place') {
+        // The sheet clips horizontally (overflow-x hidden), so the document-level
+        // overflow scan cannot see fields cut off inside it. Audit the sheet box
+        // itself: nothing may be cut by its edges, and every field a thumb must
+        // hit keeps a usable width (the duration input once collapsed to ~10px).
+        const sheet = await page.evaluate(() => {
+          const box = document.querySelector('.bottom-sheet-content');
+          if (!box) return { missing: true };
+          const br = box.getBoundingClientRect();
+          const cut = [];
+          for (const el of box.querySelectorAll('input, select, button, .input-group')) {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) continue;
+            const right = Math.round(r.right - br.right);
+            const left = Math.round(br.left - r.left);
+            if (right > 1) cut.push({ sel: `#${el.id || el.className}`, over: right });
+            else if (left > 1) cut.push({ sel: `#${el.id || el.className}`, over: -left });
+          }
+          const w = (id) => Math.round(document.getElementById(id)?.getBoundingClientRect().width || 0);
+          return {
+            cut: cut.slice(0, 6),
+            time: w('it-time'), date: w('it-date'),
+            duration: w('it-duration'), travel: w('it-travel'),
+            status: w('it-status'), allTeams: w('it-groups-all')
+          };
+        });
+        if (sheet.missing) problems.push(`${device.id}/add-place: the sheet did not open`);
+        else {
+          const okFields = sheet.duration >= 44 && sheet.travel >= 44 && sheet.time >= 90 && sheet.time <= sheet.date + 4;
+          console.log(`   ${sheet.cut.length || !okFields ? '✗' : '✓'} add-place sheet — date:${sheet.date} time:${sheet.time} `
+            + `duration:${sheet.duration} travel:${sheet.travel} status:${sheet.status} allTeams:${sheet.allTeams}`
+            + (sheet.cut.length ? ` • cut: ${sheet.cut.map(c => `${c.sel}(${c.over > 0 ? '+' : ''}${c.over})`).join(', ')}` : ''));
+          if (sheet.cut.length) problems.push(`${device.id}/add-place: fields cut by the sheet edge — ${sheet.cut.map(c => `${c.sel}(${c.over}px)`).join(', ')}`);
+          if (!okFields) problems.push(`${device.id}/add-place: a field is unusable (time:${sheet.time} duration:${sheet.duration} travel:${sheet.travel})`);
+        }
+      }
       if (name === 'itinerary') {
         // The compact preference is per device and outlives a page load — start
         // from the comfortable view so this pass (and the 16:9 thumb check) means
@@ -276,6 +315,21 @@ async function main() {
       }
       const info = await page.evaluate(() => window.__mobile.overflow({ limit: 4 }));
       const audit = await page.evaluate(() => window.__mobile.audit());
+      // A baht amount that renders on two lines breaks mid-number on a phone
+      // (“฿167,7 / 23.09” in the owner's screenshot) — every amount in the KPI
+      // strip must stay on ONE line at every width.
+      const wrapped = await page.evaluate(() => {
+        const out = [];
+        for (const el of document.querySelectorAll('.kpi-strip .money-primary, .kpi-value')) {
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) continue;
+          const lines = Math.round(r.height / parseFloat(getComputedStyle(el).lineHeight || 16));
+          if (lines > 1) out.push(`${(el.textContent || '').trim().slice(0, 16)}→${lines} lines`);
+          else if (el.scrollWidth > el.clientWidth + 1) out.push(`${(el.textContent || '').trim().slice(0, 16)}→ellipsis`);
+        }
+        return out.slice(0, 4);
+      });
+      wrapped.forEach(w => problems.push(`${device.id}/${name}: a KPI amount wraps onto ${w}`));
       // On a phone the layout viewport must equal the visible width, otherwise the
       // browser zooms the page out and the right edge of every screen is cut off.
       const zoomed = info.layoutWidth > device.width + 1;
