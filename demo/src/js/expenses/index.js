@@ -70,12 +70,12 @@ function applyFilters(items, filters = {}) {
   return out;
 }
 
-/** Every expense of the trip (used by exports / dashboard summaries). */
+/** Every expense of the trip (used by exports / dashboard summaries). v22: 5 min cache for faster menus. */
 export async function fetchAllExpenses(tripId, { max = 500, fresh = false } = {}) {
   if (!db) throw new Error('DB not ready');
   const key = `exps:${tripId}`;
   if (fresh) cacheForget(key);
-  return cachedRead(key, () => loadAllExpensesUncached(tripId), { maxAgeMs: 60 * 1000 }).then(list => (
+  return cachedRead(key, () => loadAllExpensesUncached(tripId), { maxAgeMs: 5 * 60 * 1000 }).then(list => (
     max && list.length > max ? list.slice(0, max) : list
   ));
 }

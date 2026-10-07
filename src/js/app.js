@@ -3562,7 +3562,7 @@ async function renderItinerary(params) {
               </div></div>
             </div>
             <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
-              <p class="text-[10px] text-[var(--text-tertiary)] flex items-center gap-1">${icon('info', 'w-3 h-3')} ${th('กดการ์ดสถานที่ → แผนที่มุ่งไปที่หมุด • เส้นประ = ลำดับที่ไป • กดปุ่มนำทางบนการ์ดเพื่อเปิด Google Maps','Tap a place card → the map focuses its pin • dashed line = visit order • tap 🧭 on a card to open Google Maps')}</p>
+              <p class="map-helper text-[10px] text-[var(--text-tertiary)] flex items-center gap-1">${icon('info', 'w-3 h-3')} ${th('กดการ์ดสถานที่ → แผนที่มุ่งไปที่หมุด • เส้นประ = ลำดับที่ไป • กดปุ่มนำทางบนการ์ดเพื่อเปิด Google Maps','Tap a place card → the map focuses its pin • dashed line = visit order • tap 🧭 on a card to open Google Maps')}</p>
               <div class="flex items-center gap-2">
                 <span id="map-count" class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:var(--bg-secondary);">0 ${th('หมุด','pins')}</span>
                 <button id="map-fit-btn" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:2px 8px;">${icon('maximize', 'w-3 h-3')} ${th('พอดีจอ','Fit')}</button>
@@ -3584,6 +3584,9 @@ async function renderItinerary(params) {
   let mapVisible = true;
   let mapReady = false;
   let visibleItems = [];
+  // Cards whose details the user unfolded on a phone (“ดูเพิ่มเติม”). Kept in a
+  // Set so a re-render (status change, day switch) remembers them.
+  const expandedItems = new Set();
   // Live Sortable instances of this page (edit mode only) — see loadItems().
   let sortables = [];
   const destroySortables = () => {
@@ -3611,6 +3614,18 @@ async function renderItinerary(params) {
 
   const chipsEl = document.getElementById('date-chips');
   const tripDayStrs = tripDays.map(d => dayjs(d).format('YYYY-MM-DD'));
+  /** Scroll the (horizontal) day-chip strip so the active chip is centred —
+   *  WITHOUT scrolling the page itself. The old scrollIntoView dragged the
+   *  whole phone viewport down past the title and toolbar on load, which made
+   *  the page open “incomplete” on iPhones. */
+  function centerChipInStrip(chip, { smooth = true } = {}) {
+    try {
+      const strip = document.getElementById('date-chips');
+      if (!strip || !chip) return;
+      const left = chip.offsetLeft - (strip.clientWidth - chip.clientWidth) / 2;
+      strip.scrollTo({ left: Math.max(0, left), behavior: smooth ? 'smooth' : 'auto' });
+    } catch { /* cosmetic */ }
+  }
   /** Single place that keeps the day chips + view-all toggle + position label
    *  in sync, and keeps the active day scrolled into view (long trips). */
   function syncDayUi() {
@@ -3623,7 +3638,7 @@ async function renderItinerary(params) {
       ? chips?.querySelector('[data-date="__all"]')
       : chips?.querySelector(`[data-date="${selectedDate}"]`);
     active?.classList.add('chip-active');
-    try { active?.scrollIntoView?.({ block: 'nearest', inline: 'center', behavior: 'smooth' }); } catch { /* cosmetic */ }
+    centerChipInStrip(active);
     const pos = document.getElementById('date-pos-label');
     if (pos) {
       const idx = tripDayStrs.indexOf(selectedDate);
@@ -3656,10 +3671,9 @@ async function renderItinerary(params) {
       syncDayUi();
       loadItems();
     }));
-    // Long trips open mid-list — bring the active day into view right away.
-    setTimeout(() => {
-      try { chipsEl.querySelector('.chip-active')?.scrollIntoView?.({ block: 'nearest', inline: 'center' }); } catch { /* cosmetic */ }
-    }, 60);
+    // Long trips open mid-list — bring the active day into view right away
+    // (strip scroll only — the page itself must stay at the top on phones).
+    setTimeout(() => centerChipInStrip(chipsEl.querySelector('.chip-active'), { smooth: false }), 60);
   }
   syncDayUi();
 
@@ -3784,7 +3798,7 @@ async function renderItinerary(params) {
     const top = Math.max(col.getBoundingClientRect().top, 8);
     const isMobile = window.matchMedia('(max-width: 1023px)').matches;
     const h = isMobile
-      ? Math.round(Math.min(Math.max(window.innerHeight * 0.44, 240), 420))
+      ? Math.round(Math.min(Math.max(window.innerHeight * 0.38, 220), 360))
       : Math.round(Math.min(Math.max(window.innerHeight - top - 20, 300), 900));
     mapEl.style.setProperty('--itin-map-h', `${h}px`);
     import('./maps/index.js').then(({ refreshMapSize }) => refreshMapSize('map')).catch(() => {});
@@ -3907,7 +3921,7 @@ async function renderItinerary(params) {
         refreshMapSize('map');
       }, 120);
     }
-    // On phones the map column sits above the list — bring it into view FIRST so
+    // On phones the map column sits BELOW the list — bring it into view FIRST so
     // the focus that follows is measured against the final layout (this is what
     // keeps the pin truly centred after a scroll).
     if (window.matchMedia?.('(max-width: 1023px)')?.matches) {
@@ -3970,7 +3984,9 @@ async function renderItinerary(params) {
 
   const archivedIds = () => new Set(localArchivedIds(tripId));
   const isArchivedNote = (n) => Boolean(n.archived) || archivedIds().has(n.id);
-  let notesFolded = false;      // user collapsed the board
+  // Phones start with the board folded — the plan list should win the first
+  // screen. The header (count + “เพิ่มโน้ต”) stays visible and one tap unfolds.
+  let notesFolded = window.matchMedia?.('(max-width: 639px)')?.matches ?? false;
   let doneOpen = false;         // "เก็บแล้ว" list expanded
 
   function noteCardHtml(n, idx, { archived = false } = {}) {
@@ -4483,9 +4499,25 @@ async function renderItinerary(params) {
     const title = isDeparture
       ? `${th('เดินทางออกจากที่พัก', 'Leave the hotel')} — ${it.title}`
       : (isReturn ? `${th('กลับเข้าพัก', 'Back to hotel')} — ${it.title}` : it.title);
+    // Phone-first decluttering: bits tagged .itin-detail are hidden on small
+    // screens behind the card's own “ดูเพิ่มเติม” toggle (CSS reveals them when
+    // the card carries .is-expanded). Desktop (≥640px) shows everything, as
+    // before — nothing is removed, only collapsed. The essentials that stay on
+    // every screen: no., title, status, time, category, navigation and cost.
+    const groupBadges = groupBadgesHtml(it);
+    const hasDetails = Boolean(
+      (!isVirtual && Number(it.travelToNextMinutes) > 0) ||
+      groupBadges ||
+      (isCheckin && it.stayCheckIn && it.stayCheckOut) ||
+      (it.address && !isVirtual) ||
+      (dayMinor && !isVirtual) ||
+      (dayMinor && isCheckin && perNightMinor && nights > 1) ||
+      (dayMinor && pendingPayer)
+    );
+    const expanded = expandedItems.has(it.id);
 
     return `
-      <div class="itin-card card card-hover ${draggable ? 'cursor-move' : ''} ${isReturn ? 'itin-card--stay-return' : ''} ${isDeparture ? 'itin-card--departure' : ''} ${isCheckin ? 'itin-card--stay' : ''}" data-id="${it.id}" draggable="${draggable && !isVirtual}">
+      <div class="itin-card card card-hover ${draggable ? 'cursor-move' : ''} ${isReturn ? 'itin-card--stay-return' : ''} ${isDeparture ? 'itin-card--departure' : ''} ${isCheckin ? 'itin-card--stay' : ''} ${expanded ? 'is-expanded' : ''}" data-id="${it.id}" draggable="${draggable && !isVirtual}">
         <div class="itin-body">
           <div class="flex items-start gap-3">
             <div class="step-num ${isVirtual ? 'step-num--stay' : ''}">${isDeparture ? icon('log-out', 'w-3.5 h-3.5') : (isReturn ? icon('bed-double', 'w-3.5 h-3.5') : idx + 1)}</div>
@@ -4500,22 +4532,23 @@ async function renderItinerary(params) {
               <div class="flex items-center gap-2 flex-wrap mt-1.5">
                 <span class="meta-line">${icon('clock', 'w-3 h-3')} ${formatTime(it.startAt, trip?.timezone)} – ${formatTime(it.endAt, trip?.timezone)}</span>
                 ${isVirtual ? '' : `<span class="meta-line">${icon('timer', 'w-3 h-3')} ${formatDuration(it.durationMinutes)}</span>`}
-                ${(!isVirtual && it.travelToNextMinutes > 0) ? `<span class="meta-line">${icon('footprints', 'w-3 h-3')} ${formatDuration(it.travelToNextMinutes)}</span>` : ''}
+                ${(!isVirtual && it.travelToNextMinutes > 0) ? `<span class="meta-line itin-detail">${icon('footprints', 'w-3 h-3')} ${formatDuration(it.travelToNextMinutes)}</span>` : ''}
                 <span class="badge badge-planned text-[10px]">${icon(categoryIcon(it.category), 'w-2.5 h-2.5')} ${escapeHtml(categoryLabel(it.category || 'general', lang))}</span>
-                ${groupBadgesHtml(it)}
+                ${groupBadges}
               </div>
-              ${isCheckin && it.stayCheckIn && it.stayCheckOut ? `<p class="meta-line mt-1">${icon('calendar-range', 'w-3 h-3')} <span class="truncate">${th('เช็คอิน','Check-in')} ${escapeHtml(it.stayCheckIn)} → ${th('เช็คเอาท์','Check-out')} ${escapeHtml(it.stayCheckOut)}</span></p>` : ''}
-              ${it.address && !isVirtual ? `<p class="meta-line mt-1">${icon('map-pin', 'w-3 h-3')} <span class="truncate">${escapeHtml(it.address)}</span></p>` : ''}
+              ${isCheckin && it.stayCheckIn && it.stayCheckOut ? `<p class="meta-line itin-detail mt-1">${icon('calendar-range', 'w-3 h-3')} <span class="truncate">${th('เช็คอิน','Check-in')} ${escapeHtml(it.stayCheckIn)} → ${th('เช็คเอาท์','Check-out')} ${escapeHtml(it.stayCheckOut)}</span></p>` : ''}
+              ${it.address && !isVirtual ? `<p class="meta-line itin-detail mt-1">${icon('map-pin', 'w-3 h-3')} <span class="truncate">${escapeHtml(it.address)}</span></p>` : ''}
               ${(it.coordinates || it.address || it.googleMapsUrl) ? `<a class="nav-link-btn mt-1.5" href="${escapeHtml(googleMapsPlaceUrl(it))}" target="_blank" rel="noopener">${icon('navigation', 'w-3 h-3')} ${th('นำทาง Google Maps','Navigate')}</a>` : ''}
               ${dayMinor ? `
                 <div class="estimate-line ${it.isStay ? 'estimate-line--stay' : ''}">
                   ${icon(it.isStay ? 'bed-double' : 'hourglass', 'w-3.5 h-3.5')}
                   <span>${isVirtual ? th('ส่วนของคืนนี้','This night’s share') : th('ประมาณการ','Est.')} <b>${moneyHtml(dayMinor, cur, rate)}</b></span>
-                  ${isCheckin && perNightMinor && nights > 1 ? `<span class="text-[10px]">${th('เฉลี่ย','avg')} ${moneyHtml(perNightMinor, cur, rate)} / ${th('คืน','night')}</span>` : ''}
-                  ${!it.isStay ? `<span class="text-[10px]">${escapeHtml(categoryLabel(it.estimateCategory || 'general', lang))}${payerName ? ` • ${th('จ่าย','paid by')} ${escapeHtml(payerName)}` : ''}${sharedNames.length ? ` • ${th('หาร','split')} ${sharedNames.length} ${th('คน','pax')}` : ''}</span>` : ''}
-                  ${pendingPayer ? `<span class="badge badge-pending text-[9px]">${icon('help-circle', 'w-2.5 h-2.5')} ${th('ยังไม่ระบุเจ้าภาพ','payer TBD')}</span>` : ''}
-                  ${isVirtual ? '' : `<button type="button" class="badge badge-skipped text-[9px] itin-expense-btn" data-act="expense" data-id="${it.id}">${icon(it.expenseId ? 'pencil' : 'plus', 'w-2.5 h-2.5')} ${it.expenseId ? th('แก้ไขค่าใช้จ่าย','Edit expense') : th('ผูกค่าใช้จ่าย','Link a cost')}</button>`}
+                  ${isCheckin && perNightMinor && nights > 1 ? `<span class="text-[10px] itin-detail">${th('เฉลี่ย','avg')} ${moneyHtml(perNightMinor, cur, rate)} / ${th('คืน','night')}</span>` : ''}
+                  ${!it.isStay ? `<span class="text-[10px] itin-detail">${escapeHtml(categoryLabel(it.estimateCategory || 'general', lang))}${payerName ? ` • ${th('จ่าย','paid by')} ${escapeHtml(payerName)}` : ''}${sharedNames.length ? ` • ${th('หาร','split')} ${sharedNames.length} ${th('คน','pax')}` : ''}</span>` : ''}
+                  ${pendingPayer ? `<span class="badge badge-pending text-[9px] itin-detail">${icon('help-circle', 'w-2.5 h-2.5')} ${th('ยังไม่ระบุเจ้าภาพ','payer TBD')}</span>` : ''}
+                  ${isVirtual ? '' : `<button type="button" class="badge badge-skipped text-[9px] itin-expense-btn itin-detail" data-act="expense" data-id="${it.id}">${icon(it.expenseId ? 'pencil' : 'plus', 'w-2.5 h-2.5')} ${it.expenseId ? th('แก้ไขค่าใช้จ่าย','Edit expense') : th('ผูกค่าใช้จ่าย','Link a cost')}</button>`}
                 </div>` : ''}
+              ${hasDetails ? `<button type="button" class="itin-expand-btn" data-act="expand" data-id="${it.id}" aria-expanded="${expanded}">${icon(expanded ? 'chevron-up' : 'chevron-down', 'w-3.5 h-3.5')} <span>${expanded ? th('ซ่อนรายละเอียด','Hide details') : th('ดูเพิ่มเติม','More details')}</span></button>` : ''}
             </div>
           </div>
         </div>
@@ -4549,10 +4582,11 @@ async function renderItinerary(params) {
     // created before the picker existed) — shown as one “ทุกทีม” chip.
     const badges = ids.length ? tripGroups.filter(g => ids.includes(g.id)) : tripGroups;
     if (!badges.length) return '';
+    // .itin-detail → phones hide team chips behind the card's “ดูเพิ่มเติม” toggle
     if (badges.length === tripGroups.length) {
-      return `<span class="badge badge-completed text-[10px]" title="${th('ทุกทีมไปที่นี่','Every team goes here')}">${icon('users-round', 'w-2.5 h-2.5')} ${th('ทุกทีม','all teams')}</span>`;
+      return `<span class="badge badge-completed text-[10px] itin-detail" title="${th('ทุกทีมไปที่นี่','Every team goes here')}">${icon('users-round', 'w-2.5 h-2.5')} ${th('ทุกทีม','all teams')}</span>`;
     }
-    return badges.map(g => `<span class="badge text-[10px]" style="background:color-mix(in srgb, ${escapeHtml(g.color)} 18%, var(--surface)); border:1px solid color-mix(in srgb, ${escapeHtml(g.color)} 45%, transparent); color:color-mix(in srgb, ${escapeHtml(g.color)} 72%, var(--text-strong));" title="${th('ทีมที่ไปสถานที่นี้','Teams going here')}">${icon(g.icon || 'users', 'w-2.5 h-2.5')} ${escapeHtml(g.name)}</span>`).join('');
+    return badges.map(g => `<span class="badge text-[10px] itin-detail" style="background:color-mix(in srgb, ${escapeHtml(g.color)} 18%, var(--surface)); border:1px solid color-mix(in srgb, ${escapeHtml(g.color)} 45%, transparent); color:color-mix(in srgb, ${escapeHtml(g.color)} 72%, var(--text-strong));" title="${th('ทีมที่ไปสถานที่นี้','Teams going here')}">${icon(g.icon || 'users', 'w-2.5 h-2.5')} ${escapeHtml(g.name)}</span>`).join('');
   }
 
   async function loadItems() {
@@ -4615,6 +4649,18 @@ async function renderItinerary(params) {
 
       listEl.querySelectorAll('[data-act]').forEach(btn => btn.addEventListener('click', async (e) => {
         e.stopPropagation();
+        // Phone-only “ดูเพิ่มเติม” toggle — handled before the item lookup so it
+        // also works on virtual stay cards, and it never touches the data.
+        if (btn.dataset.act === 'expand') {
+          const cardEl = btn.closest('.itin-card');
+          if (!cardEl) return;
+          const open = cardEl.classList.toggle('is-expanded');
+          if (open) expandedItems.add(btn.dataset.id); else expandedItems.delete(btn.dataset.id);
+          btn.setAttribute('aria-expanded', String(open));
+          btn.innerHTML = `${icon(open ? 'chevron-up' : 'chevron-down', 'w-3.5 h-3.5')} <span>${open ? th('ซ่อนรายละเอียด','Hide details') : th('ดูเพิ่มเติม','More details')}</span>`;
+          queueIcons();
+          return;
+        }
         let item = visibleItems.find(i => i.id === btn.dataset.id);
         if (!item) return;
         // A virtual "back to hotel" night edits/deletes the MASTER stay item.

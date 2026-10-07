@@ -2,6 +2,14 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
+> **7 Oct 2026 — mobile plan rework.** Phones no longer open the plan page mid-scroll (the day-chip strip
+> never scrolls the page anymore), and the single-column layout puts the **plan first, map underneath**
+> instead of the map swallowing the first screen. Plan cards are **compact on phones** — number, title,
+> status, time, category, navigate and cost — with every other detail (teams, travel time, check-in range,
+> address, payer/split breakdown, link-expense) one tap away behind each card's **“ดูเพิ่มเติม”** toggle;
+> desktop still shows everything. Sticky notes start folded on small screens, and status pills can no
+> longer wrap mid-word. Verified on iPhone 16 Pro / 16 Pro Max / SE and small Android widths.
+
 > **v19 “Vivid & Clear” — updated 6 Oct 2026.** Five planner requests landed: **drag-to-reorder only in edit
 > mode**, a **ทีม (team) panel on the dashboard** with cost-per-person + team total, the expenses KPI reading
 > **เฉลี่ยต่อกลุ่ม → ต่อคน** with the **5 summary cards in one row at every width**, and four plan-page changes —

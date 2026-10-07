@@ -18,7 +18,7 @@ export const APP_VERSION = '21';
 export const APP_VERSION_LABEL = 'v21';
 /** Name of the DEFAULT palette — a theme is chosen on top of it (utils/themes.js). */
 export const APP_PALETTE = 'Sky light';
-export const APP_UPDATED_ISO = '2026-10-06';
+export const APP_UPDATED_ISO = '2026-10-07';
 
 /** Copyright owner + the licence note asked for by the app owner. */
 export const APP_COPYRIGHT_HOLDER = 'TonSkywalker';

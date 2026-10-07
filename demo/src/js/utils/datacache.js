@@ -16,7 +16,7 @@
 const store = new Map();     // key -> { value, ts }
 const inflight = new Map();  // key -> Promise (dedupe concurrent reads)
 
-const DEFAULT_MAX_AGE = 60 * 1000;   // served without asking the server again
+const DEFAULT_MAX_AGE = 5 * 60 * 1000;   // v22: 5 min — faster menu switching, less Firestore churn
 
 export function cachePeek(key) {
   const hit = store.get(key);
@@ -145,11 +145,25 @@ export async function cachedRead(key, loader, { maxAgeMs = DEFAULT_MAX_AGE, back
     const age = Date.now() - hit.ts;
     if (age <= maxAgeMs) return hit.value;
     if (background) {
-      run(key, loader).catch((e) => console.warn(`[cache] refresh failed for ${key}`, e?.message || e));
+      run(key, loader).then(v => { try { persistSet(key, v); } catch {} }).catch((e) => console.warn(`[cache] refresh failed for ${key}`, e?.message || e));
       return hit.value;
     }
   }
-  return run(key, loader);
+  // v22: if no memory hit but persisted mirror exists, serve it instantly and refresh in background
+  if (!hit) {
+    const persisted = persistGet(key);
+    if (persisted !== null) {
+      cacheSet(key, persisted);
+      cacheStale(key);
+      if (background) {
+        run(key, loader).then(v => { try { persistSet(key, v); } catch {} }).catch(()=>{});
+      }
+      return persisted;
+    }
+  }
+  const val = await run(key, loader);
+  try { persistSet(key, val); } catch {}
+  return val;
 }
 
 /** Force the next read of `key` to hit the server (keeps serving the old value). */

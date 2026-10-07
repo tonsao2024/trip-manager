@@ -45,7 +45,7 @@ export async function listMembers(tripId, { fresh = false } = {}) {
   const key = `members:${tripId}`;
   if (fresh) { cacheForget(key); persistDelete(key); }
   else seedFromPersist(key);
-  const members = await cachedRead(key, () => loadMembersUncached(tripId), { maxAgeMs: 60 * 1000 });
+  const members = await cachedRead(key, () => loadMembersUncached(tripId), { maxAgeMs: 5 * 60 * 1000 });
   persistSet(key, members);
   return members;
 }

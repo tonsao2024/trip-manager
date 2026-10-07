@@ -28,23 +28,23 @@ export class Router {
     }
   }
 
-  handle() {
+  async handle() {
     let hash = location.hash || this.defaultRoute;
     if (!hash.startsWith('#')) hash = '#' + hash;
-    let path = hash.slice(1); // remove #
-    // Strip query string for matching but keep full path for handler
+    let path = hash.slice(1);
     const queryIndex = path.indexOf('?');
     const pathWithoutQuery = queryIndex >= 0 ? path.slice(0, queryIndex) : path;
-    
+
     const matched = this.match(pathWithoutQuery);
     if (!matched) {
-      // Try to match without query, if still no match go to default
       if (pathWithoutQuery !== path) {
         const fallback = this.match(pathWithoutQuery);
         if (fallback) {
           if (this.beforeEach) {
-            const res = this.beforeEach(fallback);
-            if (res === false) return;
+            try {
+              const res = await this.beforeEach(fallback);
+              if (res === false) return;
+            } catch (e) { console.warn('beforeEach failed', e?.message); }
           }
           this.current = fallback;
           this.run(fallback.handler, fallback.params);
@@ -55,8 +55,19 @@ export class Router {
       return;
     }
     if (this.beforeEach) {
-      const res = this.beforeEach(matched);
-      if (res === false) return;
+      try {
+        const res = await this.beforeEach(matched);
+        if (res === false) return;
+      } catch (e) { console.warn('beforeEach failed', e?.message); }
+    }
+    // Avoid re-running same route with same params unless forced
+    const sameRoute = this.current && this.current.path === matched.path && JSON.stringify(this.current.params) === JSON.stringify(matched.params);
+    if (sameRoute && document.getElementById('app')?.dataset.route === matched.path) {
+      // still dispatch start/end to keep progress consistent but skip heavy re-render
+      // For now allow re-render but ensure quick return if already on same page and no query change
+      const currentQuery = location.hash.includes('?') ? location.hash.split('?')[1] : '';
+      const prevQuery = this.current?.fullPath?.includes('?') ? this.current.fullPath.split('?')[1] : '';
+      if (currentQuery === prevQuery) return;
     }
     this.current = matched;
     this.run(matched.handler, matched.params);
