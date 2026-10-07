@@ -141,7 +141,7 @@
 /* ---------- Responsive sizing ---------- */
 @media (max-width: 640px) {
   .card-bento { padding: 16px; }
-  .btn-lg { min-height: 48px; padding: 12px 20px; }
+  .btn-lg { min-height: 44px; padding: 9px 18px; }
 }
 
 /* ---------- Dark mode component touch-ups ---------- */
