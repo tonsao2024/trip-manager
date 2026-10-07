@@ -6594,9 +6594,9 @@ function mountExpenseForm({
     if (splitMethod === 'equal') {
       const equal = splitEqual(v.netMinor, ids.map(m => m.id));
       area.innerHTML = ids.map(m => `
-        <div class="flex justify-between items-center text-sm p-2.5 rounded-xl gap-2" style="background: var(--bg-secondary);">
+        <div class="split-equal-row flex justify-between items-center text-sm p-2.5 rounded-xl gap-2" style="background: var(--bg-secondary);">
           <span class="flex items-center gap-2 min-w-0">
-            <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${escapeHtml(getInitials(m.displayName))}</span>
+            <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
             <span class="truncate">${escapeHtml(m.displayName)}</span>
           </span>
           <span class="font-bold flex-shrink-0">${moneyHtml(equal.find(a => a.memberId === m.id).amountMinor, v.cur, v.rate)}</span>
@@ -6625,7 +6625,7 @@ function mountExpenseForm({
               <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;flex-shrink:0;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
               <span class="truncate text-xs font-medium" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
             </div>
-            <input data-alloc="${m.id}" aria-label="${escapeHtml(m.displayName)} ${tx('ยอดที่กรอก','Entered amount')}" class="input split-input money-input" type="text" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${escapeHtml(displayValue)}" style="min-height:36px;padding:6px 10px;font-size:13px;">
+            <input data-alloc="${m.id}" aria-label="${escapeHtml(m.displayName)} ${tx('ยอดที่กรอก','Entered amount')}" class="input split-input money-input" type="text" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${escapeHtml(displayValue)}">
             <button type="button" class="split-lock-btn ${isLocked ? 'is-locked' : ''}" data-lock="${m.id}" title="${isLocked ? tx('ปลดล็อก — จะถูกระบบกระจายยอดอัตโนมัติ','Unlock — will be auto-distributed') : tx('ล็อกยอดนี้ไว้ ไม่ให้ระบบแก้','Lock this amount')}">${icon(isLocked ? 'lock' : 'unlock', 'w-3 h-3')}</button>
             <span class="split-final ${isLocked ? '' : 'split-computed'}" data-alloc-final title="${isLocked ? '' : tx('กระจายอัตโนมัติ','Auto-distributed')}">—</span>
           </div>`;

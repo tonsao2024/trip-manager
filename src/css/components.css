@@ -1446,7 +1446,7 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
     display: flex;
     flex-wrap: nowrap;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     overflow-x: auto;
     overflow-y: hidden;
     padding-bottom: 6px;
@@ -1455,13 +1455,44 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
     scrollbar-width: none;
   }
   .btn-row::-webkit-scrollbar, .chip-row::-webkit-scrollbar { display: none; }
-  .btn-row .btn, .chip-row .chip { flex: 0 0 auto; scroll-snap-align: start; min-height: 42px; }
+  .btn-row .btn, .chip-row .chip { flex: 0 0 auto; scroll-snap-align: start; min-height: 34px; padding: 5px 12px; font-size: 12px; }
   .btn-row .btn { justify-content: center; }
-  .btn-row .btn-sm { min-height: 40px; }
-  .ps-actions .btn { min-height: 40px; }
-  .chip-row .chip { min-height: 40px; }
+  .btn-row .btn-sm { min-height: 30px; padding: 3px 8px; font-size: 11.5px; }
+  .ps-actions .btn { min-height: 32px; padding: 4px 10px; font-size: 12px; }
+  .chip-row .chip { min-height: 32px; padding: 4px 10px; font-size: 12px; }
   .chip-row-scroll { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
-  .chip-row-scroll .chip { flex: 0 0 auto; min-height: 38px; scroll-snap-align: start; }
+  .chip-row-scroll .chip { flex: 0 0 auto; min-height: 32px; padding: 4px 10px; font-size: 12px; scroll-snap-align: start; }
+
+  /* Compact button styling on phones so actions are reachable without endless scrolling */
+  .btn {
+    min-height: 38px;
+    padding: 7px 14px;
+    font-size: 13px;
+    gap: 6px;
+  }
+  .btn-sm {
+    min-height: 32px;
+    padding: 4px 10px;
+    font-size: 12px;
+    gap: 4px;
+  }
+  .btn-lg {
+    min-height: 44px;
+    padding: 9px 18px;
+    font-size: 13.5px;
+  }
+  .btn-icon {
+    width: 38px;
+    height: 38px;
+  }
+  .btn-icon-sm {
+    width: 32px;
+    height: 32px;
+  }
+  .btn svg {
+    width: 14px;
+    height: 14px;
+  }
 
   .bottom-nav-item { flex: 1 1 0; min-width: 0; padding: 6px 2px; font-size: 9.5px; letter-spacing: 0; }
   .bottom-nav-item i, .bottom-nav-item svg { width: 21px; height: 21px; }
@@ -2210,38 +2241,27 @@ html, body { max-width: 100%; overflow-x: clip; }
   #user-menu { margin-left: 0 !important; }
   #user-avatar-btn { width: 36px !important; height: 36px !important; font-size: 12px !important; }
 
-  /* Comfortable tap targets on a phone (the icon buttons were 32px) */
-  .icon-btn { width: 38px; height: 38px; border-radius: 12px; }
-  .icon-btn svg { width: 17px; height: 17px; }
-  .comment-del { width: 26px; height: 26px; }
+  /* Compact tap targets on a phone */
+  .icon-btn { width: 34px; height: 34px; border-radius: 10px; }
+  .icon-btn svg { width: 15px; height: 15px; }
+  .comment-del { width: 24px; height: 24px; }
 
-  /* Tiles (payer/share): full-width rows on phones — hiding the names left
-     "คนจ่าย / ใครหารด้วย" showing avatar only, so users couldn't see who is who. */
-  .tile-grid { grid-template-columns: 1fr; gap: 8px; }
-  .tile-grid .tile { justify-content: flex-start; padding: 9px 12px; }
-  .tile-grid .tile .avatar { flex-shrink: 0; }
+  /* Tiles (payer/share): compact 2-column grid on phones — keeps names and avatars readable without endless vertical scrolling */
+  .tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .tile-grid .tile { justify-content: flex-start; padding: 6px 8px; min-height: 38px; border-radius: 10px; display: flex; align-items: center; }
+  .tile-grid .tile .avatar { width: 24px !important; height: 24px !important; font-size: 10px !important; flex-shrink: 0; }
   .tile-grid .tile .text-sm,
-  .tile-grid .tile .text-xs { white-space: normal; overflow-wrap: anywhere; }
+  .tile-grid .tile .text-xs { font-size: 12px !important; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* Split area: hide long names, keep avatar + amount */
   #split-area .flex.justify-between span.truncate { max-width: 60px; }
 }
 
-/* iPhone Pro Max (430px) and similar large phones */
-@media (min-width: 390px) and (max-width: 520px) {
+/* iPhone and small phones form padding */
+@media (max-width: 520px) {
   /* Ensure forms don't overflow */
-  .card { padding-left: 14px; padding-right: 14px; }
-  .card.card-accent { padding-left: 16px; padding-right: 16px; }
-  /* Grid layouts: stack to single column on narrow phones */
-  .grid.grid-cols-3 { grid-template-columns: repeat(2, 1fr); }
-  .grid.grid-cols-3 > .col-span-2 { grid-column: span 2; }
-}
-
-/* Very small phones (iPhone SE, 375px) */
-@media (max-width: 389px) {
-  .grid.grid-cols-2, .grid.grid-cols-3 { grid-template-columns: 1fr; }
-  .grid.grid-cols-3 > .col-span-2 { grid-column: span 1; }
-  /* .tile-grid stays single-column (names must stay readable) */
+  .card { padding-left: 12px; padding-right: 12px; }
+  .card.card-accent { padding-left: 12px; padding-right: 12px; }
 }
 
 /* Long unbreakable text (a member's email, a username, a long place name) used
@@ -2491,14 +2511,40 @@ html, body { max-width: 100%; overflow-x: clip; }
 .itin-thumb { box-sizing: border-box; height: auto; min-height: 0; aspect-ratio: 16 / 9; }
 .itin-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .itin-card:hover .itin-thumb img { transform: none; }
-@media (max-width: 540px) {
-  #expense-form .form-section, .expense-form .form-section { padding: 14px; }
-  .split-columns { display: none; }
-  .split-row { grid-template-columns: minmax(0, 1fr) 30px minmax(0, 1fr); gap: 8px; padding: 10px; }
-  .split-row .split-name { grid-column: 1 / -1; max-width: none; }
-  .split-row .split-name span.truncate { max-width: none; }
-  .split-row .split-final::before { content: 'ยอดสุทธิ / Final'; display: block; font-size: 10px; font-weight: 400; color: var(--text-tertiary); }
-  .split-vat-toggle { flex-direction: column; align-items: stretch; }
+@media (max-width: 640px) {
+  #expense-form .form-section, .expense-form .form-section { padding: 12px 14px; margin: 0 0 10px; border-radius: 14px; }
+  #expense-form .form-section + .form-section, .expense-form .form-section + .form-section { margin-top: 10px; padding-top: 12px; }
+  #expense-form .form-section-head, .expense-form .form-section-head { padding-bottom: 8px; margin-bottom: 10px; gap: 7px; }
+  #expense-form .form-section-head h3, .expense-form .form-section-head h3 { font-size: 13px; }
+  .form-section-icon { width: 26px; height: 26px; border-radius: 8px; }
+  .form-section-icon svg { width: 13px; height: 13px; }
+  #expense-form .input-group, .expense-form .input-group { gap: 4px; }
+  #expense-form .input-label, .expense-form .input-label { font-size: 11.5px; gap: 5px; }
+  #expense-form .input, .expense-form .input { min-height: 36px; height: 36px; padding: 5px 9px; font-size: 13px; border-radius: 10px; }
+  #expense-form select.input, .expense-form select.input { padding: 4px 8px; min-height: 36px; height: 36px; font-size: 13px; }
+  #net-preview { padding: 8px 12px; font-size: 13px; border-radius: 10px; }
+  #net-preview .money-primary { font-size: 16px; }
+  #thb-preview { padding: 6px 10px; font-size: 12px; border-radius: 8px; }
+  .payer-amount-row { grid-template-columns: minmax(0, 1.2fr) minmax(80px, 1.2fr) 30px; gap: 6px; padding: 3px 0; font-size: 12px; }
+  .payer-amount-row input { min-height: 32px; height: 32px; padding: 4px 6px; font-size: 12px; }
+  .split-equal-row { padding: 5px 8px !important; font-size: 12px !important; border-radius: 8px !important; margin-bottom: 4px !important; }
+  .split-equal-row .avatar { width: 22px !important; height: 22px !important; font-size: 9px !important; }
+  .split-vat-toggle { padding: 4px 8px; gap: 6px; margin-bottom: 6px; border-radius: 8px; font-size: 11px; }
+  .split-vat-toggle .segmented { min-height: 26px !important; }
+  .split-vat-toggle .segmented-item { font-size: 10.5px !important; padding: 3px 6px !important; min-height: 22px; }
+  .split-columns { display: grid; grid-template-columns: minmax(70px, 1.2fr) minmax(60px, 1fr) 26px minmax(60px, 1fr); gap: 5px; padding: 2px 6px; font-size: 10px; }
+  .split-row { display: grid; grid-template-columns: minmax(70px, 1.2fr) minmax(60px, 1fr) 26px minmax(60px, 1fr); gap: 5px; padding: 4px 6px; border-radius: 8px; align-items: center; }
+  .split-row .split-name { grid-column: auto; max-width: none; gap: 4px; }
+  .split-row .split-name .avatar { width: 22px !important; height: 22px !important; font-size: 9px !important; }
+  .split-row .split-name span.truncate { max-width: 60px; font-size: 11.5px; }
+  .split-row .split-input { min-height: 32px !important; height: 32px !important; padding: 3px 6px !important; font-size: 12px !important; width: 100%; }
+  .split-row .split-lock-btn { width: 26px; height: 26px; border-radius: 7px; }
+  .split-row .split-lock-btn svg { width: 11px; height: 11px; }
+  .split-row .split-final { font-size: 11.5px; width: auto; min-width: 0; text-align: right; }
+  .split-row .split-final::before { display: none !important; }
+  .split-auto-hint { padding: 4px 8px; font-size: 10.5px; margin-top: 5px; border-radius: 8px; }
+  .split-warning { padding: 5px 8px; font-size: 11px; margin-top: 5px; border-radius: 8px; }
+  .split-adjustments { font-size: 10px; line-height: 1.4; }
 }
 .split-vat-toggle .segmented { width: 100%; min-width: 0; }
 .split-vat-toggle .segmented-item { white-space: normal; min-width: 0; flex: 1; }
@@ -3359,6 +3405,18 @@ html, body { max-width: 100%; overflow-x: clip; }
   transition: box-shadow 0.25s ease, border-color 0.25s ease;
 }
 .expense-form .form-submit-row .btn { min-height: 44px; }
+@media (max-width: 640px) {
+  .expense-form .form-submit-row {
+    margin: 12px 0 2px;
+    padding: 6px 8px;
+    gap: 6px;
+  }
+  .expense-form .form-submit-row .btn {
+    min-height: 38px;
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+}
 @media (min-width: 768px) {
   .expense-form .form-submit-row { bottom: 14px; }
 }
