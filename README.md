@@ -2,6 +2,22 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
+> **v22 — 7 Oct 2026, three reported fixes.** **(1) แผนการเดินทาง on a phone:** every place
+> card (and the day bar, the sticky notes and the map) was sized to its *max-content* width, so on
+> an iPhone 16 Pro the plan grew to ~854 px on a 402 px screen — the page could be dragged
+> sideways and the right half of every row was off-screen (“แสดงไม่สมบูรณ์เลยอ่านไม่ได้”). The
+> ≤1023 px itinerary layout is a flex column that inherited the grid's `align-items: start`; it now
+> stretches (`items stretch` + `width:100% / min-width:0` on every child), so the plan fits the
+> screen exactly. **(2) ค่าใช้จ่าย:** tapping a row or its pencil opens the expense form in a
+> **popup over the list** instead of jumping to the editor page (`#/trip/:id/expenses/add?id=…` is
+> still there — “เปิดหน้าเต็ม” links to it); saving or deleting refreshes the list, the day groups
+> and the KPIs in place. **(3) เพิ่มค่าใช้จ่าย:** the **save bar floats** — the form's action row is
+> sticky, parked above the bottom navigation on phones (and at the sheet's edge inside the popup),
+> with `scroll-padding-bottom` so a focused field is never hidden behind it. The corner “+” FAB
+> hides on the editor page (it sat on top of the bar). `tests/browser/mobile-check.mjs` now checks
+> iPhone 16 Pro / iPhone 16 too and **fails on any element that sticks out of the screen**.
+> Screenshots: [`docs/preview/`](docs/preview/index.html).
+
 > **7 Oct 2026 — mobile plan rework.** Phones no longer open the plan page mid-scroll (the day-chip strip
 > never scrolls the page anymore), and the single-column layout puts the **map above sticky notes and the
 > day plan**. Plan cards are **compact on phones** — the place title gets the available width, status stays
@@ -572,7 +588,7 @@ node tests/smoke/run.mjs
 # Real Chromium checks (PNG export + phone layout)
 npm install --no-save puppeteer-core @sparticuz/chromium tailwindcss@3 html2canvas jspdf dayjs
 node tests/browser/export-check.mjs     # export pipeline renders the real PNGs
-node tests/browser/mobile-check.mjs     # iPhone 16/14 Pro Max + SE + desktop layout
+node tests/browser/mobile-check.mjs     # iPhone 16 Pro Max / 16 Pro / 16 / 14 Pro Max / SE + desktop
 MOBILE_MODE=dark node tests/browser/mobile-check.mjs   # same screens in dark mode (own screenshot folder)
 ```
 
@@ -582,9 +598,16 @@ minimal image, unpack `node_modules/@sparticuz/chromium/bin/al2023.tar.br` and e
 
 `tests/browser/mobile-check.mjs` renders every route (and a few overlays) at phone sizes and
 fails when a screen is wider than the phone — on mobile that makes the browser zoom the whole
-page out, which is what "หน้าจอแสดงผลไม่สมบูรณ์" looks like — when a toolbar grows into several
-rows, or when a long name/email spills out of its card. Screenshots land in
+page out, which is what "หน้าจอแสดงผลไม่สมบูรณ์" looks like — **when any element sticks out of the
+viewport** (the “ตกขอบด้านขวา” report), when a toolbar grows into several rows, or when a long
+name/email spills out of its card. It also walks the expense form top → middle → bottom to prove
+the sticky save bar stays on screen (page **and** popup). Screenshots land in
 `tests/browser/out/mobile/` so the result can be eyeballed.
+
+`tools/preview/v22-shots.mjs` regenerates the before/after pictures used by
+`docs/preview/index.html` (it renders the real app at iPhone 16 Pro size; the “before” shot is the
+same page with the phone-layout fix disabled through injected CSS):
+`node tools/preview/v22-shots.mjs`.
 
 `tests/smoke/` copies `src/js` into `tests/smoke/.build/` and rewrites only the CDN import
 specifiers (Firebase → in-memory stub, dayjs/xlsx → npm packages, Leaflet/Sortable → stubs),

@@ -738,6 +738,9 @@ function updateBottomNav() {
 function renderFAB(route) {
   if (!currentTripId) { fabEl.classList.add('hidden'); return; }
   const cleanRoute = route.split('?')[0];
+  // The expense editor has its own floating save bar (v22) — an “add” FAB would sit
+  // right on top of it (and there is nothing left to add while you are editing).
+  if (/\/expenses\/add\/?$/.test(cleanRoute)) { fabEl.classList.add('hidden'); return; }
   if (cleanRoute.includes('/itinerary') || cleanRoute.includes('/expenses') || cleanRoute.includes('/documents')) {
     fabEl.classList.remove('hidden');
     fabEl.onclick = () => {
@@ -5939,15 +5942,41 @@ async function renderExpenses(params) {
     listEl.querySelectorAll('[data-act]').forEach(btn => btn.addEventListener('click', async (ev) => {
       ev.stopPropagation();
       const id = btn.dataset.id;
-      if (btn.dataset.act === 'edit') location.hash = `#/trip/${tripId}/expenses/add?id=${id}`;
+      if (btn.dataset.act === 'edit') openExpenseFromList(id);
       else await removeExpense(id);
     }));
     listEl.querySelectorAll('[data-expense]').forEach(card => card.addEventListener('click', (ev) => {
       if (ev.target.closest('[data-act]') || ev.target.closest('[data-comment]')) return;
-      location.hash = `#/trip/${tripId}/expenses/add?id=${card.dataset.expense}`;
+      openExpenseFromList(card.dataset.expense);
     }));
     queueIcons();
     initReveal(listEl);
+  }
+
+  /**
+   * v22 (requested): editing a row happens in place. Tapping an expense card — or
+   * its pencil — opens the very same form the full page uses, in a popup over the
+   * list, instead of jumping to another page (“อยากให้เป็น Popup แทนการเด้งเปลี่ยน
+   * หน้า”). Saving/deleting refreshes the list, the day groups and the KPIs here.
+   */
+  function openExpenseFromList(id) {
+    const expense = allLoaded.find(e => e.id === id);
+    if (!expense) return;
+    openExpenseSheet({
+      tripId, trip, members, items: planItems || [], lang,
+      expense, expenseRates: allLoaded, allowDelete: true,
+      onSaved: (savedId, payload) => {
+        // Paint the new numbers immediately, then re-read the page from the source.
+        const idx = allLoaded.findIndex(e => e.id === savedId);
+        if (idx >= 0) allLoaded[idx] = { ...allLoaded[idx], ...payload };
+        applyFilterRender();
+        loadMore(true);
+      },
+      onDeleted: (removedId) => {
+        allLoaded = allLoaded.filter(e => e.id !== removedId);
+        applyFilterRender();
+      }
+    });
   }
 
   async function removeExpense(id) {
@@ -7018,11 +7047,162 @@ async function renderExpenseAdd(params) {
 }
 
 /**
- * One expense, edited from the plan (a request): “แก้ไขค่าใช้จ่าย” on an itinerary
- * card opens the very same form the expenses page uses — inside a bottom sheet —
- * so the fields, the sections, the payers/split widgets and the validation are
- * identical wherever the cost is opened. Saving writes the expense book AND keeps
- * the place's estimate fields in step; a link jumps to the full page editor.
+ * ONE expense popup shared by every screen a cost can be written from — the plan
+ * card (“แก้ไขค่าใช้จ่าย”) and, since v22, the expenses list itself (tapping a row
+ * or its pencil; a request: “อยากให้การกดเพื่อแก้ไขรายการค่าใช้จ่ายเป็น Popup แทน
+ * การเด้งเปลี่ยนหน้า จะสะดวกกว่า”). It renders the very same sections, fields,
+ * pickers and validation as the full-page editor, so a cost is written the same
+ * way no matter where it is opened from.
+ *
+ * @param {object}      o
+ * @param {string}      o.tripId
+ * @param {object}      [o.trip]
+ * @param {object[]}    [o.members]
+ * @param {object[]}    [o.items]          Places of the plan (for the link picker)
+ * @param {string}      [o.lang]
+ * @param {object|null} [o.expense]        Document being edited (null = create)
+ * @param {object|null} [o.defaults]       Prefill for a brand-new expense
+ * @param {object|null} [o.item]           Plan item to lock the link to
+ * @param {object[]}    [o.expenseRates]   Trip list, used to resolve THB rates
+ * @param {boolean}     [o.lockItinerary]  Hide the picker, show the linked place
+ * @param {boolean}     [o.allowDelete]    Offer delete in the footer
+ * @param {Function}    [o.onSaved]        (savedId, payload) after a save
+ * @param {Function}    [o.onDeleted]      (expenseId) after a delete
+ */
+async function openExpenseSheet({
+  tripId, trip = null, members = [], items = [], lang = 'th',
+  expense = null, defaults = null, item = null, expenseRates = null,
+  lockItinerary = false, allowDelete = false, onSaved = null, onDeleted = null
+} = {}) {
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const baseCurrency = trip?.baseCurrency || 'THB';
+  // Rates come from the caller's list when it has one (the expenses page already
+  // holds every expense) — otherwise read them once, like the plan sheet always did.
+  const rates = Array.isArray(expenseRates) ? expenseRates : await fetchAllExpenses(tripId).catch(() => []);
+  const e = expense || defaults || {};
+  const editing = Boolean(expense?.id);
+
+  const sheet = showBottomSheet(`
+    <div class="space-y-4">
+      <div class="flex items-start gap-3">
+        <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('receipt', 'w-5 h-5')}</div>
+        <div class="min-w-0 flex-1">
+          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${editing ? th('แก้ไขค่าใช้จ่าย','Edit expense') : (item ? th('เพิ่มค่าใช้จ่ายให้สถานที่นี้','Add a cost to this place') : th('เพิ่มค่าใช้จ่าย','Add expense'))}</h3>
+          <p class="text-[11px] text-[var(--text-secondary)] flex items-center gap-1 flex-wrap">
+            ${item ? `${icon('map-pinned', 'w-3 h-3')} <span class="truncate">${escapeHtml(item.title || '')}</span>` : ''}
+            <span class="badge badge-planned text-[10px]">${th('เมนูเดียวกับหน้าค่าใช้จ่าย','same form as the expenses page')}</span>
+          </p>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="sh-close">${icon('x', 'w-4 h-4')}</button>
+      </div>
+      <form id="sh-expense-form" class="expense-form">
+        ${expenseFormSectionsHtml({ prefix: 'sh-', e, members, items, trip, lang, currency: e.currency || baseCurrency, expenseRates: rates, lockItinerary, planLabel: item?.title || '' })}
+        <div class="btn-row form-submit-row">
+          ${editing && item ? `<button type="button" id="sh-open-page" class="btn btn-ghost btn-sm">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดหน้าเต็ม','Open full page')}</button>` : ''}
+          ${editing && allowDelete ? `<button type="button" id="sh-delete" class="btn" title="${t('delete')}" style="background:var(--danger-bg);color:var(--danger);border:1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
+          <button type="button" id="sh-cancel" class="btn btn-secondary flex-1">${t('cancel')}</button>
+          <button type="submit" id="sh-save" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${t('save')}</button>
+        </div>
+      </form>
+    </div>
+  `);
+  queueIcons();
+  bind('sh-close', 'click', () => sheet.close());
+  bind('sh-cancel', 'click', () => sheet.close());
+  if (editing && item) {
+    bind('sh-open-page', 'click', () => {
+      sheet.close();
+      location.hash = `#/trip/${tripId}/expenses/add?id=${expense.id}`;
+    });
+  }
+
+  const form = mountExpenseForm({
+    root: sheet.sheet, prefix: 'sh-', e, members, items, trip, tripId, lang,
+    currency: e.currency || baseCurrency, baseCurrency, expenseRates: rates
+  });
+
+  if (editing && allowDelete) {
+    bind('sh-delete', 'click', async () => {
+      const ok = await confirmAction({
+        title: th(`ลบ "${e.title || ''}" ?`, `Delete "${e.title || ''}"?`),
+        message: th('ลบรายการค่าใช้จ่ายนี้ออกจากทริป', 'Remove this expense from the trip'),
+        detail: `${formatCurrency(e.netTotalMinor || 0, e.currency || baseCurrency)} • ${escapeHtml(e.date || '')}`,
+        confirmText: t('delete'), danger: true, icon: 'trash-2'
+      });
+      if (!ok) return;
+      const tLoad = toast.loading(th('กำลังลบ...', 'Deleting...'));
+      try {
+        const result = await deleteExpense(tripId, expense.id, currentUser.uid);
+        await logActivity(tripId, {
+          type: 'expense.delete', targetId: expense.id, title: e.title || '',
+          detail: `${formatCurrency(e.netTotalMinor || 0, e.currency || baseCurrency)} • ${result === 'voided' ? th('ซ่อนไว้ (ลบถาวรไม่ได้)','voided') : th('ลบแล้ว','deleted')}`,
+          user: actor()
+        });
+        tLoad.close();
+        sheet.close();
+        toast.success(result === 'voided' ? th('ซ่อนรายการนี้แล้ว (rules ยังไม่อนุญาตให้ลบถาวร)','Hidden — hard delete is still blocked by the rules') : th('ลบแล้ว','Deleted'));
+        onDeleted?.(expense.id);
+      } catch (err) { tLoad.close(); toast.error(err.message); }
+    });
+  }
+
+  document.getElementById('sh-expense-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const btn = document.getElementById('sh-save');
+    btn.disabled = true;
+    const tLoad = toast.loading(th('กำลังบันทึก...', 'Saving...'));
+    try {
+      const payload = form.collectPayload();
+      if (item) {
+        // Opened from a place: the cost always stays attached to it.
+        payload.itineraryItemId = item.id;
+        payload.source = expense?.source || 'itinerary-estimate';
+      }
+      const me = actor();
+      payload.createdByName = me.displayName;
+      payload.updatedByName = me.displayName;
+      let savedId = expense?.id;
+      if (savedId) await updateExpense(tripId, savedId, payload, currentUser.uid, me);
+      else savedId = await addExpense(tripId, payload, currentUser.uid, me);
+      if (payload.cardName) rememberCard(tripId, payload.cardName);
+      // The linked place keeps the same numbers as the money book.
+      await syncPlanEstimateFromExpense(tripId, payload, savedId);
+      await logActivity(tripId, {
+        type: editing ? 'expense.update' : 'expense.create',
+        targetId: savedId,
+        title: payload.title,
+        detail: `${formatCurrency(payload.netTotalMinor || 0, payload.currency || baseCurrency)} • ${payload.date || ''}`,
+        user: me
+      });
+
+      const { file: pendingReceiptFile, cleared: receiptCleared } = form.takePendingReceipt();
+      if (pendingReceiptFile && savedId) {
+        try {
+          const res = await uploadReceiptImage(tripId, savedId, pendingReceiptFile);
+          if (res.url) await updateExpense(tripId, savedId, { receiptImage: res.url, receiptStorage: res.storage }, currentUser.uid, me);
+        } catch (photoErr) { console.warn('receipt save failed', photoErr); }
+      } else if (editing && receiptCleared) {
+        try { await updateExpense(tripId, savedId, { receiptImage: '', receiptStorage: 'none' }, currentUser.uid, me); }
+        catch (err) { console.warn('clear receipt failed', err?.message); }
+      }
+      form.clearPendingReceipt();
+      tLoad.close();
+      sheet.close();
+      toast.success(editing ? th('บันทึกการแก้ไขแล้ว','Saved') : (item ? th('บันทึกค่าใช้จ่ายแล้ว — แผนอัปเดตตาม','Expense saved — the plan follows') : th('บันทึกค่าใช้จ่ายแล้ว','Expense saved')));
+      if (!editing) confetti({ y: 150 });
+      onSaved?.(savedId, payload);
+    } catch (err) {
+      tLoad.close();
+      toast.error(err.message);
+      btn.disabled = false;
+    }
+  });
+  return sheet;
+}
+
+/**
+ * “แก้ไขค่าใช้จ่าย” on an itinerary card: find the cost linked to that place and
+ * open it in the shared popup with the place pinned.
  */
 async function openItemExpenseSheet({ tripId, item, trip = null, members = [], items = [], expense: initial = null, lang = 'th', onSaved = null }) {
   const th = (a, b) => (lang === 'th' ? a : b);
@@ -7034,100 +7214,21 @@ async function openItemExpenseSheet({ tripId, item, trip = null, members = [], i
       expense = (linkedId ? await getExpense(tripId, linkedId) : null) || await findLinkedExpense(tripId, item.id);
     } catch (err) { console.warn('[Plan] linked expense lookup failed', err?.message); }
   }
-  const expenseRates = await fetchAllExpenses(tripId).catch(() => []);
-  const e = expense || {
-    title: item.title || '',
-    date: item.date || dayjs().format('YYYY-MM-DD'),
-    category: item.estimateCategory || expenseGroupForChoice(item.category || 'general'),
-    currency: item.estimateCurrency || baseCurrency,
-    subtotalMinor: toMinor(Number(item.estimateAmount) || 0, getCurrencyDecimals(item.estimateCurrency || baseCurrency)),
-    isEstimated: true,
-    source: 'itinerary-estimate',
-    itineraryItemId: item.id,
-    paymentMethod: 'cash'
-  };
-
-  const sheet = showBottomSheet(`
-    <div class="space-y-4">
-      <div class="flex items-start gap-3">
-        <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('receipt', 'w-5 h-5')}</div>
-        <div class="min-w-0 flex-1">
-          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${expense ? th('แก้ไขค่าใช้จ่าย','Edit expense') : th('เพิ่มค่าใช้จ่ายให้สถานที่นี้','Add a cost to this place')}</h3>
-          <p class="text-[11px] text-[var(--text-secondary)] flex items-center gap-1 flex-wrap">
-            ${icon('map-pinned', 'w-3 h-3')} <span class="truncate">${escapeHtml(item.title || '')}</span>
-            <span class="badge badge-planned text-[10px]">${th('เมนูเดียวกับหน้าค่าใช้จ่าย','same form as the expenses page')}</span>
-          </p>
-        </div>
-        <button class="btn btn-ghost btn-sm" id="sh-close">${icon('x', 'w-4 h-4')}</button>
-      </div>
-      <form id="sh-expense-form" class="expense-form">
-        ${expenseFormSectionsHtml({ prefix: 'sh-', e, members, items, trip, lang, currency: e.currency || baseCurrency, expenseRates, lockItinerary: true, planLabel: item.title || '' })}
-        <div class="btn-row form-submit-row">
-          ${expense ? `<button type="button" id="sh-open-page" class="btn btn-ghost btn-sm">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดหน้าเต็ม','Open full page')}</button>` : ''}
-          <button type="button" id="sh-cancel" class="btn btn-secondary flex-1">${t('cancel')}</button>
-          <button type="submit" id="sh-save" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${t('save')}</button>
-        </div>
-      </form>
-    </div>
-  `);
-  queueIcons();
-  bind('sh-close', 'click', () => sheet.close());
-  bind('sh-cancel', 'click', () => sheet.close());
-  if (expense) {
-    bind('sh-open-page', 'click', () => {
-      sheet.close();
-      location.hash = `#/trip/${tripId}/expenses/add?id=${expense.id}`;
-    });
-  }
-
-  const form = mountExpenseForm({
-    root: sheet.sheet, prefix: 'sh-', e, members, items, trip, tripId, lang,
-    currency: e.currency || baseCurrency, baseCurrency, expenseRates
-  });
-
-  document.getElementById('sh-expense-form').addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    const btn = document.getElementById('sh-save');
-    btn.disabled = true;
-    const tLoad = toast.loading(th('กำลังบันทึก...', 'Saving...'));
-    try {
-      const payload = form.collectPayload();
-      payload.itineraryItemId = item.id;
-      payload.source = expense?.source || 'itinerary-estimate';
-      const me = actor();
-      payload.createdByName = me.displayName;
-      payload.updatedByName = me.displayName;
-      let savedId = expense?.id;
-      if (savedId) await updateExpense(tripId, savedId, payload, currentUser.uid, me);
-      else savedId = await addExpense(tripId, payload, currentUser.uid, me);
-      await syncPlanEstimateFromExpense(tripId, payload, savedId);
-      await logActivity(tripId, {
-        type: expense ? 'expense.update' : 'expense.create',
-        targetId: savedId,
-        title: payload.title,
-        detail: `${formatCurrency(payload.netTotalMinor || 0, payload.currency || baseCurrency)} • ${payload.date || ''}`,
-        user: me
-      });
-
-      const { file: pendingReceiptFile } = form.takePendingReceipt();
-      if (pendingReceiptFile && savedId) {
-        try {
-          const res = await uploadReceiptImage(tripId, savedId, pendingReceiptFile);
-          if (res.url) await updateExpense(tripId, savedId, { receiptImage: res.url, receiptStorage: res.storage }, currentUser.uid, me);
-        } catch (photoErr) { console.warn('receipt save failed', photoErr); }
-      }
-      form.clearPendingReceipt();
-      tLoad.close();
-      sheet.close();
-      toast.success(th('บันทึกค่าใช้จ่ายแล้ว — แผนอัปเดตตาม','Expense saved — the plan follows'));
-      onSaved?.();
-    } catch (err) {
-      tLoad.close();
-      toast.error(err.message);
-      btn.disabled = false;
+  return openExpenseSheet({
+    tripId, trip, members, items, lang, expense, lockItinerary: true, item,
+    onSaved,
+    defaults: {
+      title: item.title || '',
+      date: item.date || dayjs().format('YYYY-MM-DD'),
+      category: item.estimateCategory || expenseGroupForChoice(item.category || 'general'),
+      currency: item.estimateCurrency || baseCurrency,
+      subtotalMinor: toMinor(Number(item.estimateAmount) || 0, getCurrencyDecimals(item.estimateCurrency || baseCurrency)),
+      isEstimated: true,
+      source: 'itinerary-estimate',
+      itineraryItemId: item.id,
+      paymentMethod: 'cash'
     }
-  });
-  return sheet;
+  }).catch((e) => { console.warn(th('[Plan] expense sheet failed', '[Plan] expense sheet failed'), e?.message); });
 }
 
 /**

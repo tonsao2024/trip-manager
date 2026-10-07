@@ -23,10 +23,13 @@ const FORCE_MODE = ['light', 'dark', 'auto'].includes(process.env.MOBILE_MODE) ?
 const shotDir = path.join(outRoot, FORCE_MODE ? `mobile-${FORCE_MODE}` : 'mobile');
 const PORT = Number(process.env.MOBILE_PORT || 8098);
 
-// iPhone 16 Pro Max is 440×956, 14 Pro Max 430×932, SE 375×667 — the small end
-// of the range is where a layout usually breaks.
+// iPhone 16 Pro Max is 440×956, 16 Pro 402×874, 16 393×852, 14 Pro Max 430×932,
+// SE 375×667 — “หน้าจอไอโฟน 16 โปร” is the size the owner reported, so it must be
+// in the default sweep; the small end of the range is where a layout usually breaks.
 const DEVICES = [
   { id: 'iphone-16-pro-max', width: 440, height: 956, dsf: 3 },
+  { id: 'iphone-16-pro', width: 402, height: 874, dsf: 3 },
+  { id: 'iphone-16', width: 393, height: 852, dsf: 3 },
   { id: 'iphone-14-pro-max', width: 430, height: 932, dsf: 3 },
   { id: 'iphone-se', width: 375, height: 667, dsf: 2 }
 ];
@@ -36,6 +39,7 @@ const ROUTES = [
   ['itinerary', '#/trip/t1/itinerary'],
   ['expenses', '#/trip/t1/expenses'],
   ['expenses-day', '#/trip/t1/expenses', '#expense-group-toggle [data-group="day"]'],
+  ['expense-popup', '#/trip/t1/expenses', '.expense-card'],
   ['expense-add', '#/trip/t1/expenses/add'],
   ['expense-custom', '#/trip/t1/expenses/add', '[data-split="unequal"]', '#split-area'],
   ['settlement', '#/trip/t1/settlement'],
@@ -182,6 +186,39 @@ async function main() {
         });
         if (ratio == null || Math.abs(ratio - 16 / 9) > .02) problems.push(`${device.id}: portrait source broke 16:9 (${ratio})`);
       }
+      if (name === 'expense-add' || name === 'expense-popup') {
+        // v22 “ปุ่มบันทึกลอยไปด้วย”: the action row must stay on screen while the
+        // form scrolls — in the page and inside the popup alike.
+        const floating = await page.evaluate(async () => {
+          const bar = document.querySelector('.expense-form .form-submit-row');
+          if (!bar) return { ok: false, why: 'no action row', atTop: false, midway: false, atBottom: false };
+          const scroller = bar.closest('.bottom-sheet-content');
+          const visible = () => {
+            const r = bar.getBoundingClientRect();
+            const top = scroller ? Math.max(0, scroller.getBoundingClientRect().top) : 0;
+            const bottom = Math.min(window.innerHeight, scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight);
+            return r.top >= top - 1 && r.bottom <= bottom + 1 && r.height > 20;
+          };
+          const scrollTo = (y) => { if (scroller) scroller.scrollTop = y; else window.scrollTo(0, y); };
+          const maxScroll = () => Math.max(0, scroller
+            ? scroller.scrollHeight - scroller.clientHeight
+            : document.documentElement.scrollHeight - window.innerHeight);
+          const atTop = visible();
+          scrollTo(Math.round(maxScroll() * 0.5));
+          await new Promise(r => setTimeout(r, 250));
+          const midway = visible();
+          scrollTo(maxScroll());
+          await new Promise(r => setTimeout(r, 250));
+          const atBottom = visible();
+          scrollTo(0);
+          await new Promise(r => setTimeout(r, 100));
+          return { ok: atTop && midway && atBottom, atTop, midway, atBottom, max: Math.round(maxScroll()) };
+        });
+        console.log(`   ${floating.ok ? '✓' : '✗'} ${name === 'expense-add' ? 'save bar floats (page)' : 'save bar floats (popup)'} — on screen: top:${floating.atTop} mid:${floating.midway} bottom:${floating.atBottom}${floating.why ? ' (' + floating.why + ')' : ''}`);
+        if (!floating.ok) {
+          problems.push(`${device.id}/${name}: the save bar does not follow the scroll (top:${floating.atTop} mid:${floating.midway} bottom:${floating.atBottom}, scrollable ${floating.max}px)`);
+        }
+      }
       if (scrollTo) {
         await page.evaluate((sel) => document.querySelector(sel)?.scrollIntoView({ block: 'start' }), scrollTo);
         await new Promise(r => setTimeout(r, 300));
@@ -195,6 +232,12 @@ async function main() {
       const detail = [...info.bad.map(b => `${b.sel}(+${b.over})`), ...audit].join(', ');
       console.log(`  ${flag} ${name.padEnd(12)} viewport=${info.layoutWidth}/${device.width}${detail ? ' ← ' + detail : ''}`);
       if (zoomed) problems.push(`${device.id}/${name}: the page is zoomed out (${info.layoutWidth} > ${device.width}) — content wider than the screen`);
+      // An element that sticks out of the phone is exactly what the owner reports
+      // as “แสดงไม่สมบูรณ์ / ตกขอบด้านขวา”: the page can be dragged sideways and the
+      // right half of the row is unreadable. It used to be printed but ignored.
+      if (info.bad.length) {
+        problems.push(`${device.id}/${name}: ${info.bad.length} element(s) stick out of the screen — ${info.bad.map(b => `${b.sel}(+${b.over}px)`).join(', ')}`);
+      }
       audit.forEach(a => problems.push(`${device.id}/${name}: ${a}`));
       const file = path.join(shotDir, `${device.id}-${name}.png`);
       if (name === 'expense-custom') {

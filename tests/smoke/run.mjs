@@ -488,6 +488,53 @@ if (delBtn) {
   check(false, 'expenses: delete button found');
 }
 
+console.log('\n▶ expenses: แก้ไขในป๊อปอัป + ปุ่มบันทึกลอย (v22)');
+{
+  const cssRaw = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8');
+  const cssFlat = cssRaw.replace(/\s+/g, ' ');
+
+  // 1) แผนการเดินทางบนมือถือ: single-column flex ต้องยืดเต็มความกว้างจอ
+  //    (align-items:start ของ grid เดิมทำให้การ์ดกว้างเกินจอ → ตกขอบขวา)
+  const phoneBlock = (cssRaw.match(/@media \(max-width: 1023px\) \{[^@]*?#itin-layout\.itin-layout[^}]*\}/) || [])[0] || '';
+  check(/align-items:\s*stretch/.test(phoneBlock), 'itinerary (phone): the flex column stretches its children');
+  check(/#itin-layout\.itin-layout > \*\s*\{[^}]*width:\s*100%/.test(cssFlat), 'itinerary (phone): the day column can never be wider than the screen');
+
+  // 2) กดแก้ไขรายการค่าใช้จ่าย = ป๊อปอัป ไม่ใช่เปลี่ยนหน้า
+  await goto('#/trip/t1/expenses');
+  await waitFor(() => q('.expense-card'), { label: 'expense cards' });
+  const hashBefore = window.location.hash;
+  const firstCard = q('.expense-card');
+  const cardId = firstCard?.dataset.expense;
+  await click(firstCard);
+  await waitFor(() => q('#sh-expense-form'), { label: 'expense popup' });
+  check(!!q('.bottom-sheet #sh-expense-form'), 'popup: tapping a row opens the expense form in a sheet');
+  check(window.location.hash === hashBefore, 'popup: the route does not change (no page jump)');
+  check(!!q('#sh-expense-form .form-submit-row #sh-save'), 'popup: the save button sits in the floating action row');
+  check(!!q('#sh-delete'), 'popup: editing from the list can also delete the expense');
+
+  const popupTitle = 'แก้ไขชื่อจากป๊อปอัป';
+  const titleField = q('#sh-ex-title');
+  check(!!titleField && titleField.value.length > 0, 'popup: the form is prefilled with the expense');
+  titleField.value = popupTitle;
+  submit(q('#sh-expense-form'));
+  await waitFor(() => [...fsdb.__store.values()].some(e => e?.title === popupTitle), { label: 'popup save' }).catch(() => {});
+  check([...fsdb.__store.values()].some(e => e?.title === popupTitle), 'popup: saving updates the expense');
+  check(fsdb.__dump(`trips/t1/expenses/${cardId}`)?.title === popupTitle, 'popup: the same document is updated (no duplicate)');
+  await waitFor(() => !q('.bottom-sheet'), { label: 'sheet closed' }).catch(() => {});
+  check(!q('.bottom-sheet'), 'popup: closes after saving');
+  await waitFor(() => text$().includes(popupTitle), { label: 'list refreshed' }).catch(() => {});
+  check(text$().includes(popupTitle), 'popup: the list shows the change without leaving the page');
+
+  // 3) ปุ่มบันทึกของหน้าเพิ่มค่าใช้จ่ายต้องลอยไปด้วย
+  await goto('#/trip/t1/expenses/add');
+  await waitFor(() => q('#expense-form'), { label: 'expense add form' });
+  check(!!q('#expense-form .form-submit-row #submit-expense'), 'add page: the save button lives in the floating action row');
+  check(/\.expense-form \.form-submit-row \{[^}]*position:\s*sticky/.test(cssFlat), 'add page: the action row is sticky (it follows the scroll)');
+  check(/#expense-form, \.expense-form \{[^}]*overflow:\s*visible/.test(cssFlat), 'add page: the form does not clip the sticky row');
+  check(/@media \(min-width: 768px\) \{ \.expense-form \.form-submit-row \{ bottom: 14px; \} \}/.test(cssFlat)
+    || /\.expense-form \.form-submit-row \{ bottom: 14px; \}/.test(cssFlat), 'add page: the bar parks above the bottom edge on desktop too');
+}
+
 console.log('\n▶ member edit + delete');
 await goto('#/trip/t1/members');
 await waitFor(() => text$().includes('เคน'), { label: 'member list' });
