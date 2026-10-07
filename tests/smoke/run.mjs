@@ -1156,7 +1156,10 @@ console.log('\n▶ v10: itinerary page (days left, map right) + full-plan PNG');
     check(!!q('.itin-col-map #map') && !!q('.itin-col-map #map-card'), 'layout: the map sits in the right column');
     const css = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8');
     check(/\.itin-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(/.test(css), 'layout: two columns on desktop');
-    check(/@media \(max-width: 1023px\)[\s\S]{0,220}\.itin-col-map\s*\{[^}]*order:\s*-1/.test(css), 'layout: phones collapse to one column with the map on top');
+    // Phones: one column, PLAN FIRST — the map moves below the list (the user's
+    // "iPhone แสดงผลไม่สมบูรณ์" report: the map used to swallow the first screen).
+    const phoneBlock = css.match(/@media \(max-width: 1023px\)\s*\{[\s\S]{0,400}?\.itin-col-map\s*\{[^}]*\}/);
+    check(!!phoneBlock && !/order:\s*-1/.test(phoneBlock[0]), 'layout: phones collapse to one column with the plan first (map below the list)');
     check(/\.itin-col-map\s*\{[^}]*position:\s*sticky/.test(css), 'layout: the map stays visible while scrolling the days');
 
     // --- export: one PNG with the map + every day + details ---

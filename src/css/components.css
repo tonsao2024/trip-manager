@@ -943,6 +943,35 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 @media (min-width: 640px) { .itin-thumb { width: 164px; } }
 @media (max-width: 380px) { .itin-thumb { width: 104px; } }
 
+/* ------------------------------------------------------------------ *
+ * Itinerary cards on phones: compact by default, details on demand.
+ * Essentials (no., title, status, time, category, navigate, cost) always
+ * show; everything tagged .itin-detail folds away under 640px until the
+ * card's “ดูเพิ่มเติม” toggle adds .is-expanded. Desktop is unchanged.
+ * ------------------------------------------------------------------ */
+.itin-card .badge { white-space: nowrap; } /* never wrap a pill mid-word */
+.itin-expand-btn {
+  display: none; /* ≥640px shows every detail — no toggle needed */
+  align-items: center; justify-content: center; gap: 6px;
+  width: 100%; margin-top: 8px; padding: 7px 10px;
+  border-radius: 12px; border: 1px dashed var(--border);
+  background: var(--bg-secondary); color: var(--text-secondary);
+  font-size: 11.5px; font-weight: 700; cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.itin-expand-btn:hover { background: var(--primary-light); color: var(--primary-strong); border-color: color-mix(in srgb, var(--primary) 40%, var(--border)); }
+.itin-expand-btn svg { width: 14px; height: 14px; }
+.itin-card.is-expanded .itin-detail { animation: fadeIn 0.18s ease; }
+@media (max-width: 639px) {
+  .itin-expand-btn { display: inline-flex; }
+  /* :not(.is-expanded) keeps each detail element's own display when shown */
+  .itin-card:not(.is-expanded) .itin-detail { display: none !important; }
+  /* The map how-to line is long; phones get the essentials only. */
+  .map-helper { display: none; }
+  /* The leg-stay trim lives in refresh.css (loaded after this file, whose own
+     .itin-leg-stay display rule would otherwise win). */
+}
+
 .estimate-line {
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   margin-top: 8px; padding: 6px 10px; border-radius: 12px;
@@ -1358,7 +1387,7 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 .note-title { font-weight: 800; font-size: 13.5px; line-height: 1.35; font-family: var(--font-display); }
 .note-body { font-size: 12.5px; line-height: 1.5; margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .note-meta { position: absolute; bottom: 8px; left: 14px; right: 12px; display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 10px; opacity: 0.72; }
-.note-tag { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; }
+.note-tag { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; white-space: nowrap; } /* never split “7 Oct” mid-date on narrow phones */
 .note-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s ease; }
 .note-card:hover .note-actions, .note-card:focus-within .note-actions { opacity: 1; }
 .note-actions button { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; background: rgba(255, 255, 255, 0.65); border: 0; color: #4b4232; cursor: pointer; }
@@ -1714,7 +1743,9 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 
 /* ------------------------------------------------------------------ *
  * Itinerary layout (v10): days on the left, map pinned on the right so
- * both are visible at once. Phones get a single column with the map on top.
+ * both are visible at once. Phones get a single column with the PLAN FIRST
+ * and the map underneath — the list is why the page exists, and the map
+ * used to swallow the whole first screen (“แสดงผลไม่สมบูรณ์” on iPhones).
  * ------------------------------------------------------------------ */
 .itin-layout {
   display: grid;
@@ -1764,8 +1795,8 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 }
 @media (max-width: 1023px) {
   .itin-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
-  .itin-col-map { order: -1; position: static; max-height: none; }
-  .itin-col-map #map { height: var(--itin-map-h, min(44vh, 340px)) !important; }
+  .itin-col-map { position: static; max-height: none; }
+  .itin-col-map #map { height: var(--itin-map-h, min(38vh, 320px)) !important; }
 }
 
 /* ------------------------------------------------------------------ *

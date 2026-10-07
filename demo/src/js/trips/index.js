@@ -115,52 +115,59 @@ export async function listTrips(userId, isSuperAdmin = false, { maxAgeMs = 2 * 6
 
 async function fetchTripsFromServer(userId, isSuperAdmin = false) {
   const cached = getCachedTrips(userId);
-  const tryQuery = async (q, label) => {
+  const tryQuery = async (q, label, timeoutMs = 5000) => {
     try {
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`Timeout ${label} - check Firestore rules & indexes`)), 10000)
+        setTimeout(() => reject(new Error(`Timeout ${label}`)), timeoutMs)
       );
       const snap = await Promise.race([getDocs(q), timeoutPromise]);
       const trips = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       if (trips.length) setCachedTrips(trips, userId);
       return trips;
     } catch (e) {
+      // Permission errors are common on fresh joins — don't log as warning, just fallback
+      if (e.code === 'permission-denied' || /permission/i.test(e.message || '')) throw e;
       console.warn(`listTrips ${label} failed:`, e.message, e.code);
       throw e;
     }
   };
 
-  // Try 1: array-contains
-  try {
-    const q = query(collection(db, 'trips'), where('memberUids', 'array-contains', userId), limit(30));
-    const trips = await tryQuery(q, 'memberUids');
-    return trips;
-  } catch (e) {
-    if (e.code === 'permission-denied' && cached?.length) return cached;
-  }
-  
-  // Try 2: createdBy
-  try {
-    const q = query(collection(db, 'trips'), where('createdBy', '==', userId), limit(30));
-    const trips = await tryQuery(q, 'createdBy');
-    return trips;
-  } catch (e) {
-    if (e.code === 'permission-denied' && cached?.length) return cached;
-  }
-  
-  // Try 3: all trips permissive (new rules allow list for auth)
+  // v22 performance: try fastest path first, with short timeout, and fallback immediately on permission errors
+  // Try 1: all trips permissive (new rules allow list for auth) — fastest when rules are permissive
   try {
     const q = query(collection(db, 'trips'), limit(50));
-    const allTrips = await tryQuery(q, 'all');
-    const filtered = allTrips.filter(t => t.memberUids?.includes(userId) || t.createdBy === userId);
+    const allTrips = await tryQuery(q, 'all', 4000);
+    const filtered = allTrips.filter(t => t.memberUids?.includes(userId) || t.createdBy === userId || isSuperAdmin);
     if (filtered.length) return filtered;
-    if (allTrips.length) return allTrips; // permissive mode
+    if (allTrips.length && allTrips.length < 50) {
+      // If we got less than limit and no filter matched, maybe user has no trips yet — return filtered or empty
+      return filtered;
+    }
+    // If permissive returned many, still try specific queries to reduce data
   } catch (e) {
-    console.warn('listTrips all failed', e.message);
+    if (e.code === 'permission-denied' && cached?.length) return cached;
   }
-  
+
+  // Try 2: array-contains (indexed)
+  try {
+    const q = query(collection(db, 'trips'), where('memberUids', 'array-contains', userId), limit(30));
+    const trips = await tryQuery(q, 'memberUids', 5000);
+    if (trips.length) return trips;
+  } catch (e) {
+    if (e.code === 'permission-denied' && cached?.length) return cached;
+  }
+
+  // Try 3: createdBy
+  try {
+    const q = query(collection(db, 'trips'), where('createdBy', '==', userId), limit(30));
+    const trips = await tryQuery(q, 'createdBy', 5000);
+    return trips;
+  } catch (e) {
+    if (e.code === 'permission-denied' && cached?.length) return cached;
+  }
+
   if (cached?.length) return cached;
-  
+
   throw new Error('ไม่มีสิทธิ์เข้าถึง - ต้อง deploy Firestore Rules ใหม่ที่ Firebase Console > Firestore > Rules > วาง firestore.rules > Publish');
 }
 

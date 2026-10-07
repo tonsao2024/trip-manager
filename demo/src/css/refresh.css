@@ -664,6 +664,9 @@ select.input { border-radius: var(--radius); }
 .itin-leg--warn .itin-leg-dot { background: #fb5600; }
 /* The tapped card stays marked while the map is looking at it. */
 .itin-card.is-focused { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-raw) 26%, transparent), var(--shadow-md); }
+/* Phones: the leg connector already says the travel time — the trailing stay
+   duration (“ระยะเวลาเดินทาง 1 ชม. 30 นาที”) is desktop-grade detail. */
+@media (max-width: 639px) { .itin-leg-stay { display: none; } }
 
 /* --- ใบเสร็จแบบปัดการ์ด --- */
 .rcpt-deck { display: flex; flex-direction: column; gap: 10px; }
