@@ -3631,7 +3631,7 @@ async function renderItinerary(params) {
   const action = urlParams.get('action');
 
   appEl.innerHTML = `
-    <div class="page-enter">
+    <div class="page-enter" id="itinerary-view">
       <div class="mb-5">
         ${renderPageScene('itinerary', {
           lang,
@@ -3640,6 +3640,7 @@ async function renderItinerary(params) {
         })}
         <div class="btn-row">
           <button id="view-all-btn" class="btn btn-secondary btn-sm">${icon('calendar-days', 'w-4 h-4')} <span id="view-all-label">${th('ดูทั้งหมด','View all')}</span></button>
+          <button id="itin-density-btn" class="btn btn-secondary btn-sm" type="button" aria-pressed="false" title="${th('สลับมุมมองกระทัดรัด / ปกติ','Switch compact / comfortable view')}">${icon('rows-3', 'w-4 h-4')} <span data-density-label>${th('มุมมองกระทัดรัด','Compact view')}</span></button>
           <button id="toggle-map-btn" class="btn btn-primary btn-sm">${icon('map', 'w-4 h-4')} ${th('แผนที่','Map')}</button>
           <button id="export-png-btn" class="btn btn-secondary btn-sm" title="${th('PNG ทั้งแผน','Whole-plan PNG')}">${icon('image', 'w-4 h-4')} PNG</button>
           <button id="export-day-png-btn" class="btn btn-secondary btn-sm" title="${th('PNG เฉพาะวันนี้','PNG for one day')}">${icon('calendar-down', 'w-4 h-4')} PNG ${th('รายวัน','per day')}</button>
@@ -3827,6 +3828,38 @@ async function renderItinerary(params) {
     syncDayUi();
     loadItems();
   });
+
+  /**
+   * v23 (requested): “ปรับมุมมองให้สามารถเลือกแบบกระทัดรัด โดยแบบกระทัดรัดให้แสดง
+   * เฉพาะข้อมูลที่สำคัญเท่านั้น” — the plan toolbar can fold every place card down
+   * to its essentials (ลำดับ, เวลา, ชื่อ, หมวด, สถานะ, ค่าใช้จ่าย, ปุ่มนำทาง) so a
+   * phone screen shows roughly twice as many places. The choice is a device
+   * preference (localStorage) and it survives switching days, trips and pages.
+   */
+  const ITIN_DENSITY_KEY = 'fuji_itin_density';
+  let itinCompact = false;
+  try { itinCompact = localStorage.getItem(ITIN_DENSITY_KEY) === 'compact'; } catch { /* private mode */ }
+  function applyItinDensity() {
+    document.getElementById('itin-layout')?.classList.toggle('itin-compact', itinCompact);
+    document.getElementById('itinerary-view')?.classList.toggle('view-compact', itinCompact);
+    const btn = document.getElementById('itin-density-btn');
+    if (!btn) return;
+    btn.classList.toggle('is-active', itinCompact);
+    btn.setAttribute('aria-pressed', String(itinCompact));
+    btn.classList.toggle('btn-primary', itinCompact);
+    btn.classList.toggle('btn-secondary', !itinCompact);
+    const label = btn.querySelector('[data-density-label]');
+    if (label) label.textContent = itinCompact ? th('มุมมองปกติ','Comfortable view') : th('มุมมองกระทัดรัด','Compact view');
+  }
+  bind('itin-density-btn', 'click', () => {
+    itinCompact = !itinCompact;
+    try { localStorage.setItem(ITIN_DENSITY_KEY, itinCompact ? 'compact' : 'comfortable'); } catch { /* ignore */ }
+    applyItinDensity();
+    // The legs are drawn per pair of cards, so a switch may change the map focus
+    // target — keep the map sized correctly after the list re-flows.
+    setTimeout(() => fitMapToViewport(), 60);
+  });
+  applyItinDensity();
   bind('date-prev-btn', 'click', () => stepDay(-1));
   bind('date-next-btn', 'click', () => stepDay(1));
   bind('date-today-btn', 'click', () => {
@@ -4692,16 +4725,18 @@ async function renderItinerary(params) {
                 </span>
               </div>
               <div class="flex items-center gap-2 flex-wrap mt-1.5">
-                ${it.isStay ? `<span class="badge badge-stay text-[9px]">${icon(isDeparture ? 'sunrise' : (isVirtual ? 'moon' : 'bed-double'), 'w-2.5 h-2.5')} ${isDeparture ? th(`ออกจากที่พัก • หลังคืนที่ ${it.stayNight}/${nights}`, `check-out • after night ${it.stayNight}/${nights}`) : (isVirtual ? th(`คืนที่ ${it.stayNight}/${nights}`, `night ${it.stayNight}/${nights}`) : th(`พัก ${nights} คืน`, `${nights} nights`))}</span>` : ''}
+                ${it.isStay ? `<span class="badge badge-stay text-[9px] itin-quiet">${icon(isDeparture ? 'sunrise' : (isVirtual ? 'moon' : 'bed-double'), 'w-2.5 h-2.5')} ${isDeparture ? th(`ออกจากที่พัก • หลังคืนที่ ${it.stayNight}/${nights}`, `check-out • after night ${it.stayNight}/${nights}`) : (isVirtual ? th(`คืนที่ ${it.stayNight}/${nights}`, `night ${it.stayNight}/${nights}`) : th(`พัก ${nights} คืน`, `${nights} nights`))}</span>` : ''}
                 <span class="meta-line">${icon('clock', 'w-3 h-3')} ${formatTime(it.startAt, trip?.timezone)} – ${formatTime(it.endAt, trip?.timezone)}</span>
-                ${isVirtual ? '' : `<span class="meta-line">${icon('timer', 'w-3 h-3')} ${formatDuration(it.durationMinutes)}</span>`}
+                ${isVirtual ? '' : `<span class="meta-line itin-quiet">${icon('timer', 'w-3 h-3')} ${formatDuration(it.durationMinutes)}</span>`}
                 ${(!isVirtual && it.travelToNextMinutes > 0) ? `<span class="meta-line itin-detail">${icon('footprints', 'w-3 h-3')} ${formatDuration(it.travelToNextMinutes)}</span>` : ''}
-                <span class="badge badge-planned text-[10px]">${icon(categoryIcon(it.category), 'w-2.5 h-2.5')} ${escapeHtml(categoryLabel(it.category || 'general', lang))}</span>
+                <span class="badge badge-planned text-[10px] itin-cat-badge" title="${escapeHtml(categoryLabel(it.category || 'general', lang))}">${icon(categoryIcon(it.category), 'w-2.5 h-2.5')} <span class="itin-cat-label">${escapeHtml(categoryLabel(it.category || 'general', lang))}</span></span>
+                <!-- v23: the navigate link sits INSIDE the meta row, so the compact view
+                     keeps it on the same line as the time/chips instead of a row of its own. -->
+                ${(it.coordinates || it.address || it.googleMapsUrl) ? `<a class="nav-link-btn" href="${escapeHtml(googleMapsPlaceUrl(it))}" target="_blank" rel="noopener" title="${th('นำทาง Google Maps','Navigate with Google Maps')}">${icon('navigation', 'w-3 h-3')} <span class="itin-nav-label">${th('นำทาง Google Maps','Navigate')}</span></a>` : ''}
                 ${groupBadges}
               </div>
               ${isCheckin && it.stayCheckIn && it.stayCheckOut ? `<p class="meta-line itin-detail mt-1">${icon('calendar-range', 'w-3 h-3')} <span class="truncate">${th('เช็คอิน','Check-in')} ${escapeHtml(it.stayCheckIn)} → ${th('เช็คเอาท์','Check-out')} ${escapeHtml(it.stayCheckOut)}</span></p>` : ''}
               ${it.address && !isVirtual ? `<p class="meta-line itin-detail mt-1">${icon('map-pin', 'w-3 h-3')} <span class="truncate">${escapeHtml(it.address)}</span></p>` : ''}
-              ${(it.coordinates || it.address || it.googleMapsUrl) ? `<a class="nav-link-btn mt-1.5" href="${escapeHtml(googleMapsPlaceUrl(it))}" target="_blank" rel="noopener">${icon('navigation', 'w-3 h-3')} ${th('นำทาง Google Maps','Navigate')}</a>` : ''}
               ${dayMinor ? `
                 <div class="estimate-line ${it.isStay ? 'estimate-line--stay' : ''}">
                   ${icon(it.isStay ? 'bed-double' : 'hourglass', 'w-3.5 h-3.5')}

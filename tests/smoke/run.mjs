@@ -535,6 +535,55 @@ console.log('\n▶ expenses: แก้ไขในป๊อปอัป + ปุ
     || /\.expense-form \.form-submit-row \{ bottom: 14px; \}/.test(cssFlat), 'add page: the bar parks above the bottom edge on desktop too');
 }
 
+console.log('\n▶ itinerary: มุมมองกระทัดรัด (v23)');
+{
+  const cssFlat = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8').replace(/\s+/g, ' ');
+  await goto('#/trip/t1/itinerary');
+  await waitFor(() => q('#itin-density-btn'), { label: 'plan toolbar' });
+  // A device preference — start from a known state.
+  window.localStorage.removeItem('fuji_itin_density');
+
+  await goto('#/trip/t1/itinerary');
+  await waitFor(() => q('#itin-density-btn'), { label: 'plan toolbar (fresh)' });
+  check(!!q('#itin-density-btn'), 'compact: the plan toolbar offers a compact view');
+  check(!q('#itin-layout').classList.contains('itin-compact'), 'compact: the plan starts in the comfortable view');
+  check(q('#itin-density-btn [data-density-label]')?.textContent.includes('กระทัดรัด'), 'compact: the button offers to switch TO compact');
+
+  await click('#itin-density-btn');
+  check(q('#itin-layout').classList.contains('itin-compact'), 'compact: the toggle folds the plan');
+  check(q('#itinerary-view')?.classList.contains('view-compact'), 'compact: the page carries the state too');
+  check(q('#itin-density-btn').getAttribute('aria-pressed') === 'true', 'compact: the toggle reports its state');
+  check(q('#itin-density-btn').classList.contains('btn-primary'), 'compact: the active view is highlighted');
+  check(window.localStorage.getItem('fuji_itin_density') === 'compact', 'compact: the choice is remembered on this device');
+
+  // The essentials stay in the markup, the rest is folded by CSS at every width.
+  await click('#view-all-btn');            // the plan opens on today, which is outside the trip
+  await waitFor(() => q('.itin-card'), { label: 'plan cards' });
+  const card = q('.itin-card');
+  check(/ทะเลสาบคาวากุจิ|ภูเขามิโตะ|ราเมง/.test(card.textContent || ''), 'compact: the place name stays');
+  check(!!card.querySelector('.itin-cat-badge'), 'compact: the category chip stays (icon only)');
+  check(!!card.querySelector('.nav-link-btn'), 'compact: the navigate button stays');
+  check(!!card.querySelector('.itin-thumb-more'), 'compact: the item menu stays reachable');
+  check(!!card.querySelector('.meta-line'), 'compact: the time line stays');
+  check(/\.itin-compact \.itin-card \.itin-detail, \.itin-compact \.itin-quiet/.test(cssFlat), 'compact: details are folded at every width');
+  check(/\.itin-compact \.itin-thumb img/.test(cssFlat), 'compact: the photo thumbnail folds into a small action');
+  check(/\.itin-compact \.itin-leg \{ display: none/.test(cssFlat) && /\.itin-compact \.itin-leg--warn/.test(cssFlat),
+    'compact: travel legs fold away except a real schedule warning');
+  check(/\.itin-compact \.itin-cat-label/.test(cssFlat) && /\.itin-compact \.itin-nav-label/.test(cssFlat),
+    'compact: the category/navigation labels collapse to icons');
+
+  // Remembered after leaving and re-opening the page.
+  await goto('#/trip/t1/dashboard');
+  await goto('#/trip/t1/itinerary');
+  await waitFor(() => q('#itin-density-btn'), { label: 'plan toolbar (again)' });
+  check(q('#itin-layout').classList.contains('itin-compact'), 'compact: remembered when the plan is re-opened');
+
+  await click('#itin-density-btn');
+  check(!q('#itin-layout').classList.contains('itin-compact'), 'compact: toggling back restores the full cards');
+  check(window.localStorage.getItem('fuji_itin_density') === 'comfortable', 'compact: the comfortable view is remembered too');
+  check(q('#itin-density-btn [data-density-label]')?.textContent.includes('กระทัดรัด'), 'compact: the label flips back to offering compact');
+}
+
 console.log('\n▶ member edit + delete');
 await goto('#/trip/t1/members');
 await waitFor(() => text$().includes('เคน'), { label: 'member list' });

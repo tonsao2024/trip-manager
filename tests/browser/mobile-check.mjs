@@ -37,6 +37,8 @@ const DEVICES = [
 const ROUTES = [
   ['dashboard', '#/trip/t1/dashboard'],
   ['itinerary', '#/trip/t1/itinerary'],
+  // v23: the same day in “มุมมองกระทัดรัด” — the card must shrink and keep its essentials.
+  ['itinerary-compact', '#/trip/t1/itinerary', ['#date-chips [data-date]', '#itin-density-btn']],
   ['expenses', '#/trip/t1/expenses'],
   ['expenses-day', '#/trip/t1/expenses', '#expense-group-toggle [data-group="day"]'],
   ['expense-popup', '#/trip/t1/expenses', '.expense-card'],
@@ -124,6 +126,9 @@ async function main() {
   fs.mkdirSync(shotDir, { recursive: true });
   const server = await serve();
   const problems = [];
+  // Card height in the comfortable view, so the compact pass can prove the
+  // plan really got denser (and not just a different colour).
+  let itinCardHeight = 0;
 
   for (const device of devices) {
     const page = await browser.newPage();
@@ -173,6 +178,14 @@ async function main() {
         if (overlaps) problems.push(`${device.id}: custom input, lock or final amount overlap`);
       }
       if (name === 'itinerary') {
+        // The compact preference is per device and outlives a page load — start
+        // from the comfortable view so this pass (and the 16:9 thumb check) means
+        // what it says.
+        await page.evaluate(() => {
+          if (document.getElementById('itin-layout')?.classList.contains('itin-compact')) {
+            document.getElementById('itin-density-btn')?.click();
+          }
+        });
         await page.evaluate(() => window.__mobile.tap('#date-chips [data-date]'));
         await page.waitForSelector('.itin-thumb');
         const ratio = await page.evaluate(async () => {
@@ -185,6 +198,44 @@ async function main() {
           return r.width / r.height;
         });
         if (ratio == null || Math.abs(ratio - 16 / 9) > .02) problems.push(`${device.id}: portrait source broke 16:9 (${ratio})`);
+        itinCardHeight = await page.evaluate(() => Math.round(document.querySelector('.itin-card')?.getBoundingClientRect().height || 0));
+      }
+      if (name === 'itinerary-compact') {
+        // v23 “มุมมองกระทัดรัด”: essentials only — the card shrinks, the photo,
+        // labels and travel legs fold away, but the title/time/menu stay usable.
+        const compact = await page.evaluate(() => {
+          const shown = (el) => !!el && getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().height > 0;
+          const card = document.querySelector('.itin-card');
+          const leg = document.querySelector('#itinerary-list .itin-leg');
+          return {
+            on: document.getElementById('itin-layout')?.classList.contains('itin-compact') || false,
+            pressed: document.getElementById('itin-density-btn')?.getAttribute('aria-pressed') === 'true',
+            height: Math.round(card?.getBoundingClientRect().height || 0),
+            title: shown(document.querySelector('.itin-card .itin-title')),
+            time: shown(document.querySelector('.itin-card .meta-line')),
+            nav: shown(document.querySelector('.itin-card .nav-link-btn')),
+            menu: shown(document.querySelector('.itin-card .itin-thumb-more')),
+            photoHidden: !document.querySelector('.itin-thumb img') || getComputedStyle(document.querySelector('.itin-thumb img')).display === 'none',
+            catLabelHidden: !document.querySelector('.itin-cat-label') || getComputedStyle(document.querySelector('.itin-cat-label')).display === 'none',
+            navLabelHidden: !document.querySelector('.itin-nav-label') || getComputedStyle(document.querySelector('.itin-nav-label')).display === 'none',
+            legsHidden: !leg || getComputedStyle(leg).display === 'none'
+          };
+        });
+        const denser = itinCardHeight && compact.height < itinCardHeight * 0.8;
+        const ok = compact.on && compact.pressed && compact.title && compact.time && compact.nav && compact.menu
+          && compact.photoHidden && compact.catLabelHidden && compact.navLabelHidden && compact.legsHidden && denser;
+        console.log(`   ${ok ? '✓' : '✗'} compact plan — card ${itinCardHeight}px → ${compact.height}px • `
+          + `title:${compact.title} time:${compact.time} nav:${compact.nav} menu:${compact.menu} `
+          + `photo:${compact.photoHidden ? 'folded' : 'shown'} catLabel:${compact.catLabelHidden ? 'folded' : 'shown'} `
+          + `navLabel:${compact.navLabelHidden ? 'folded' : 'shown'} legs:${compact.legsHidden ? 'folded' : 'shown'}`);
+        if (!compact.on) problems.push(`${device.id}/itinerary-compact: the toggle did not switch the plan to the compact view`);
+        if (!compact.title || !compact.time || !compact.nav || !compact.menu) {
+          problems.push(`${device.id}/itinerary-compact: the compact card lost an essential (title:${compact.title} time:${compact.time} nav:${compact.nav} menu:${compact.menu})`);
+        }
+        if (!compact.photoHidden || !compact.catLabelHidden || !compact.navLabelHidden || !compact.legsHidden) {
+          problems.push(`${device.id}/itinerary-compact: something that should fold is still shown (photo:${compact.photoHidden} catLabel:${compact.catLabelHidden} navLabel:${compact.navLabelHidden} legs:${compact.legsHidden})`);
+        }
+        if (!denser) problems.push(`${device.id}/itinerary-compact: the compact card is not denser (${itinCardHeight}px → ${compact.height}px)`);
       }
       if (name === 'expense-add' || name === 'expense-popup') {
         // v22 “ปุ่มบันทึกลอยไปด้วย”: the action row must stay on screen while the

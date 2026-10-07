@@ -13,8 +13,8 @@ export const APP_NAME_BY = 'Trip Manager by TonSkywalker';
 /** Full <title> of the page. */
 export const APP_TITLE = 'Trip Manager by TonSkywalker — วางแผนทริป • แบ่งจ่าย • เคลียร์บิล';
 
-export const APP_VERSION = '22';
-export const APP_VERSION_LABEL = 'v22';
+export const APP_VERSION = '23';
+export const APP_VERSION_LABEL = 'v23';
 /** Name of the DEFAULT palette — a theme is chosen on top of it (utils/themes.js). */
 export const APP_PALETTE = 'Sky light';
 export const APP_UPDATED_ISO = '2026-10-07';

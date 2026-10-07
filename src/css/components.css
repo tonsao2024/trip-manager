@@ -3373,3 +3373,72 @@ html, body { max-width: 100%; overflow-x: clip; }
    never parked underneath it (the same trick as scroll-padding on the scroller). */
 .expense-form .input, .expense-form .tile { scroll-margin-bottom: 118px; }
 .bottom-sheet-content { scroll-padding-bottom: 96px; }
+
+/* ============================================================
+   v23 — แผนการเดินทาง: มุมมองกระทัดรัด (“Compact view”)
+   ------------------------------------------------------------------
+   “ปรับมุมมองให้สามารถเลือกแบบกระทัดรัด โดยแบบกระทัดรัดให้แสดงเฉพาะ
+   ข้อมูลที่สำคัญเท่านั้น” — the toolbar toggle adds .itin-compact to the
+   layout and keeps only what you need to move through the day:
+
+     ลำดับ • เวลา • ชื่อสถานที่ • หมวด (ไอคอน) • สถานะ • ค่าใช้จ่าย • ปุ่มนำทาง
+
+   Everything else folds away on EVERY screen size (photo, address, the
+   duration line, teams, check-in/out, the expense-link button, the
+   “ดูเพิ่มเติม” toggle and the travel legs — except a real schedule
+   warning). Phones fit about twice as many places per screen, and the
+   photo thumbnail becomes a small “…” button so the item menu (แก้ไข /
+   สถานะ / ลบ) stays reachable.
+   ============================================================ */
+.itin-compact #itinerary-list [data-day-group] > * + * { margin-top: 8px !important; }
+.itin-compact #itinerary-list > .mb-6 { margin-bottom: 12px; }
+.itin-compact #itinerary-list h3 { margin-bottom: 8px; }
+.itin-compact .itin-card { padding: 8px 10px; gap: 8px; border-radius: 14px; }
+.itin-compact .itin-card:hover { transform: none; }
+.itin-compact .itin-body { gap: 4px; padding-top: 1px; }
+.itin-compact .step-num { width: 24px; height: 24px; font-size: 11px; box-shadow: none; }
+.itin-compact .step-num svg { width: 12px; height: 12px; }
+.itin-compact .itin-title { font-size: 13px; line-height: 1.3; }
+.itin-compact .itin-title-row { gap: 6px; }
+.itin-compact .itin-title-tags .badge { font-size: 8px; padding: 2px 5px; }
+.itin-compact .itin-card .meta-line { font-size: 10.5px; gap: 3px; margin-top: 0 !important; }
+.itin-compact .itin-card .meta-line svg { width: 11px; height: 11px; }
+.itin-compact .estimate-line { margin-top: 4px; padding: 3px 8px; font-size: 11px; border-radius: 9px; }
+.itin-compact .estimate-line svg { width: 12px; height: 12px; }
+.itin-compact .estimate-line .money-primary { font-size: 11.5px; }
+
+/* The photo folds into a small “…” action — the item menu must stay tappable. */
+.itin-compact .itin-thumb {
+  width: 32px; height: 32px; aspect-ratio: auto; border-radius: 10px;
+  align-self: center; background: var(--bg-secondary); border-color: transparent;
+}
+.itin-compact .itin-thumb img, .itin-compact .itin-thumb-ph { display: none; }
+.itin-compact .itin-more-wrap { position: static; }
+.itin-compact .itin-thumb-more {
+  width: 32px; height: 32px; background: transparent; color: var(--text-secondary);
+  border-color: transparent; backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.itin-compact .itin-thumb-more:hover { background: var(--primary-light); color: var(--primary-strong); }
+
+/* Essentials only: this wins at every width, so compact is compact on desktop too. */
+.itin-compact .itin-card .itin-detail,
+.itin-compact .itin-quiet,
+.itin-compact .itin-expand-btn,
+.itin-compact .itin-cat-label,
+.itin-compact .itin-nav-label { display: none !important; }
+
+/* The category keeps its icon, the navigation link keeps its arrow. */
+.itin-compact .itin-cat-badge { padding: 2px 5px; }
+.itin-compact .itin-card .nav-link-btn {
+  display: inline-grid; place-items: center; width: 26px; height: 26px;
+  margin: 0; border-radius: 50%; text-decoration: none;
+  background: var(--primary-light); color: var(--primary-strong);
+}
+.itin-compact .itin-card .nav-link-btn svg { width: 14px; height: 14px; }
+/* A dense day reads as one continuous list: the leg only survives a real warning
+   (“ไม่พอเวลา”) — an ordinary 1.7 กม. hop is implied by the order. */
+.itin-compact .itin-leg { display: none; }
+.itin-compact .itin-leg--warn {
+  display: flex; padding: 0 8px 0 10px; margin: 2px 0;
+}
+.itin-compact .itin-leg--warn .itin-leg-line { border-left-style: solid; }

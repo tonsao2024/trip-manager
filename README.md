@@ -2,9 +2,21 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
+> **v23 — 7 Oct 2026, มุมมองกระทัดรัดในแผนการเดินทาง.** The plan toolbar now has a
+> **มุมมองกระทัดรัด / Compact view** toggle next to “ดูทั้งหมด” (remembered per device in
+> `localStorage`). Compact keeps only what you need to move through the day — ลำดับ, ช่วงเวลา,
+> ชื่อสถานที่, หมวด (icon), สถานะ, ประมาณการ/ค่าใช้จ่าย, ปุ่มนำทาง — and folds the photo, the
+> address, the duration line, team chips, check-in/out, the expense-link button, the “ดูเพิ่มเติม”
+> toggle and the travel legs (a real “ไม่พอเวลา” warning still shows). The photo thumbnail becomes a
+> small **⋯** action so แก้ไข / สถานะ / ลบ stay reachable, and the category/navigation labels
+> collapse to icons. One place card goes from **283 px to 131 px** on an iPhone 16 Pro (≈2.2× more
+> places per screen); the navigate link moved into the meta row on the card so compact stays one
+> line. `mobile-check` measures the denser card and that everything else really folded, on every
+> device size. Screenshots: [`docs/preview/`](docs/preview/index.html).
+>
 > **v22 — 7 Oct 2026, three reported fixes.** **(1) แผนการเดินทาง on a phone:** every place
 > card (and the day bar, the sticky notes and the map) was sized to its *max-content* width, so on
-> an iPhone 16 Pro the plan grew to ~854 px on a 402 px screen — the page could be dragged
+> an iPhone 16 Pro the plan grew to ~811 px on a 402 px screen — the page could be dragged
 > sideways and the right half of every row was off-screen (“แสดงไม่สมบูรณ์เลยอ่านไม่ได้”). The
 > ≤1023 px itinerary layout is a flex column that inherited the grid's `align-items: start`; it now
 > stretches (`items stretch` + `width:100% / min-width:0` on every child), so the plan fits the
@@ -604,10 +616,10 @@ name/email spills out of its card. It also walks the expense form top → middle
 the sticky save bar stays on screen (page **and** popup). Screenshots land in
 `tests/browser/out/mobile/` so the result can be eyeballed.
 
-`tools/preview/v22-shots.mjs` regenerates the before/after pictures used by
-`docs/preview/index.html` (it renders the real app at iPhone 16 Pro size; the “before” shot is the
-same page with the phone-layout fix disabled through injected CSS):
-`node tools/preview/v22-shots.mjs`.
+`tools/preview/ux-shots.mjs` regenerates the pictures used by `docs/preview/index.html`
+(v22 before/after + the v23 comfortable-vs-compact pair). It renders the real app at iPhone 16 Pro
+size; the “before” shot is the same page with the phone-layout fix disabled through injected CSS:
+`node tools/preview/ux-shots.mjs`.
 
 `tests/smoke/` copies `src/js` into `tests/smoke/.build/` and rewrites only the CDN import
 specifiers (Firebase → in-memory stub, dayjs/xlsx → npm packages, Leaflet/Sortable → stubs),

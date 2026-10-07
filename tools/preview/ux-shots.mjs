@@ -1,16 +1,22 @@
 /**
- * Dev-only: “ก่อน → หลัง” screenshots for the three v22 fixes (7 Oct 2026).
+ * Dev-only: “ก่อน → หลัง” screenshots for the mobile UX rounds.
  *
+ *   v22 (7 Oct 2026)
  *   1. แผนการเดินทางบนมือถือ — การ์ดแต่ละสถานที่เคยตกขอบจอด้านขวา
  *      (before is reproduced by disabling the fix through an injected override).
  *   2. หน้า ค่าใช้จ่าย — กดแก้ไขแล้วเป็นป๊อปอัป ไม่เด้งเปลี่ยนหน้า
  *   3. หน้า เพิ่มค่าใช้จ่าย — ปุ่มบันทึกลอยตามการเลื่อนหน้าจอ
  *
+ *   v23 (7 Oct 2026)
+ *   4. แผนการเดินทาง — มุมมองกระทัดรัด: การ์ดเหลือเฉพาะข้อมูลที่สำคัญ
+ *      (ลำดับ เวลา ชื่อ หมวด สถานะ ค่าใช้จ่าย ปุ่มนำทาง) → จอเดียวเห็นสถานที่
+ *      มากขึ้นกว่าสองเท่า
+ *
  * It renders the REAL app in the REAL browser (same stubs/build as
  * tests/browser/mobile-check.mjs) at iPhone 16 Pro size, so the pictures show the
  * shipped CSS and the shipped code, not a mock.
  *
- *   node tools/preview/v22-shots.mjs        # writes docs/preview/{before,after}/v22-*.png
+ *   node tools/preview/ux-shots.mjs         # writes docs/preview/{before,after}/*.png
  *
  * Output is committed (docs/), the build itself lands in the gitignored
  * tests/browser/out/.
@@ -130,7 +136,7 @@ const OLD_PHONE_LAYOUT = `
   #itin-layout.itin-layout > * { width: max-content !important; max-width: none !important; }
 }`;
 
-console.log('\n— v22 “ก่อน → หลัง” screenshots (iPhone 16 Pro 402×874) —');
+console.log('\n— ก่อน → หลัง / เปรียบเทียบมุมมอง (iPhone 16 Pro 402×874) —');
 
 // 1) แผนการเดินทาง — before (the fix turned off) vs after.
 const planPrepare = () => window.__mobile.tap('#date-chips [data-date]');
@@ -157,7 +163,67 @@ await shot({
   caret: '#ex-payer-tiles'
 });
 
+// 4) แผนการเดินทาง — มุมมองกระทัดรัด เทียบกับมุมมองปกติ.
+//    Both shots come from the real app; the density preference is per device and
+//    survives a page load, so each shot sets it explicitly (and the pair always
+//    shows a real comparison).
+const openPlan = async () => {
+  const page = await browser.newPage();
+  await page.setViewport({ ...DEVICE, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'load' });
+  if (thaiCss) await page.addStyleTag({ content: `${thaiCss}*, *::before, *::after { font-family: 'Noto Sans Thai Check', system-ui, sans-serif !important; }` });
+  await page.waitForFunction(() => window.__mobile?.ready, { timeout: 30000 });
+  await page.evaluate(() => window.__mobile.goto('#/trip/t1/itinerary'));
+  await page.evaluate(() => window.__mobile.tap('#date-chips [data-date]'));
+  await sleep(600);
+  return page;
+};
+/** One place card's height with the plan in the requested density. */
+const cardHeight = async (compact) => {
+  const page = await openPlan();
+  const h = await page.evaluate((wantCompact) => {
+    if (document.getElementById('itin-layout')?.classList.contains('itin-compact') !== wantCompact) {
+      document.getElementById('itin-density-btn')?.click();
+    }
+    const card = document.querySelector('.itin-card');
+    return Math.round(card?.getBoundingClientRect().height || 0);
+  }, compact);
+  await page.close();
+  return h;
+};
+
+{
+  // Comfortable view (whatever this browser profile remembered is reset first).
+  const page = await openPlan();
+  await page.evaluate(() => {
+    if (document.getElementById('itin-layout')?.classList.contains('itin-compact')) document.getElementById('itin-density-btn')?.click();
+  });
+  await page.evaluate(() => document.querySelector('#itinerary-list')?.scrollIntoView({ block: 'start' }));
+  await sleep(500);
+  await page.screenshot({ path: path.join(afterDir, 'v23-itinerary-comfortable.png') });
+  console.log('  docs/preview/after/v23-itinerary-comfortable.png');
+  await page.close();
+}
+const comfortableCard = await cardHeight(false);
+const compactCard = await cardHeight(true);
+{
+  const page = await openPlan();
+  await page.evaluate(() => {
+    if (!document.getElementById('itin-layout')?.classList.contains('itin-compact')) document.getElementById('itin-density-btn')?.click();
+  });
+  await page.evaluate(() => document.querySelector('#itinerary-list')?.scrollIntoView({ block: 'start' }));
+  await sleep(500);
+  await page.screenshot({ path: path.join(afterDir, 'v23-itinerary-compact.png') });
+  console.log('  docs/preview/after/v23-itinerary-compact.png');
+  await page.close();
+}
+if (compactCard && comfortableCard && compactCard < comfortableCard) {
+  console.log(`  ✓ มุมมองกระทัดรัด: การ์ดหนึ่งสถานที่ ${comfortableCard}px → ${compactCard}px (จอเดียวเห็นได้มากขึ้น ${(comfortableCard / compactCard).toFixed(1)}×)`);
+} else {
+  console.log(`  ⚠ unexpected card heights: comfortable=${comfortableCard}px compact=${compactCard}px`);
+}
+
 await browser.close();
 server.close();
-console.log('\n✅ screenshots written — docs/preview/{before,after}/v22-*.png\n');
+console.log('\n✅ screenshots written — docs/preview/{before,after}/\n');
 void execFileSync; void appDir;
