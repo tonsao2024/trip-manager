@@ -4,6 +4,7 @@ import { expensePayments } from './payments.js';
 import { toThbMinor, expensesInThb, getCurrencyDecimals, toMinor, fromMinor } from './currency.js';
 import { splitEqual } from './split.js';
 import { EXPENSE_CATEGORIES as EXPENSE_CATEGORY_DEFS, ITINERARY_CATEGORIES as ITINERARY_CATEGORY_DEFS, normalizeCategory, categoryLabel } from './categories.js';
+import { sanitizeFormulaCell } from './sanitize.js';
 
 export { EXPENSE_CATEGORY_DEFS, ITINERARY_CATEGORY_DEFS, normalizeCategory, categoryLabel };
 
@@ -252,22 +253,22 @@ export function itineraryItemToRow(item, members = [], lang = 'th') {
   return {
     date: fmtISODate(item.date),
     startTime: timeFromDate(item.startAt),
-    title: item.title || '',
+    title: sanitizeFormulaCell(item.title || ''),
     durationMinutes: item.durationMinutes ?? 60,
     travelToNextMinutes: item.travelToNextMinutes ?? 0,
-    category: item.category || 'general',
-    status: item.status || 'planned',
-    address: item.address || '',
-    coordinates: item.coordinates || '',
-    googleMapsUrl: item.googleMapsUrl || '',
-    imageUrl: item.imageUrl || '',
-    description: item.description || '',
-    notes: item.notes || '',
+    category: sanitizeFormulaCell(item.category || 'general'),
+    status: sanitizeFormulaCell(item.status || 'planned'),
+    address: sanitizeFormulaCell(item.address || ''),
+    coordinates: sanitizeFormulaCell(item.coordinates || ''),
+    googleMapsUrl: sanitizeFormulaCell(item.googleMapsUrl || ''),
+    imageUrl: sanitizeFormulaCell(item.imageUrl || ''),
+    description: sanitizeFormulaCell(item.description || ''),
+    notes: sanitizeFormulaCell(item.notes || ''),
     estimateAmount: item.estimateAmount ?? (item.estimateMinor ? fromMinor(item.estimateMinor, getCurrencyDecimals(item.estimateCurrency || 'THB')) : ''),
-    estimateCurrency: item.estimateCurrency || '',
-    expenseCategory: item.estimateCategory ? categoryLabel(item.estimateCategory, lang) : '',
-    paidBy: item.estimatePayerId ? memberName(item.estimatePayerId) : '',
-    sharedWith: sharedIds.map(memberName).filter(Boolean).join(', '),
+    estimateCurrency: sanitizeFormulaCell(item.estimateCurrency || ''),
+    expenseCategory: sanitizeFormulaCell(item.estimateCategory ? categoryLabel(item.estimateCategory, lang) : ''),
+    paidBy: sanitizeFormulaCell(item.estimatePayerId ? memberName(item.estimatePayerId) : ''),
+    sharedWith: sanitizeFormulaCell(sharedIds.map(memberName).filter(Boolean).join(', ')),
     autoAddExpense: item.estimateAutoAdd === false ? 'no' : (item.estimateAmount ? 'yes' : '')
   };
 }
@@ -278,23 +279,23 @@ export function expenseToRow(expense, members = [], items = [], lang = 'th') {
   const linked = items.find(i => i.id === expense.itineraryItemId);
   return {
     date: fmtISODate(expense.date),
-    title: expense.title || '',
-    category: categoryLabel(expense.category || 'general', lang),
+    title: sanitizeFormulaCell(expense.title || ''),
+    category: sanitizeFormulaCell(categoryLabel(expense.category || 'general', lang)),
     kind: expense.isEstimated ? (lang === 'th' ? 'ประมาณการ' : 'estimated') : (lang === 'th' ? 'จ่ายจริง' : 'actual'),
-    currency: expense.currency || 'THB',
+    currency: sanitizeFormulaCell(expense.currency || 'THB'),
     subtotal: fromMinor(expense.subtotalMinor || 0, getCurrencyDecimals(expense.currency || 'THB')),
     discount: fromMinor(expense.discountMinor || 0, getCurrencyDecimals(expense.currency || 'THB')),
     service: fromMinor(expense.serviceMinor || 0, getCurrencyDecimals(expense.currency || 'THB')),
     tax: fromMinor(expense.taxMinor || 0, getCurrencyDecimals(expense.currency || 'THB')),
     netTotal: fromMinor(expense.netTotalMinor || 0, getCurrencyDecimals(expense.currency || 'THB')),
     rate: expense.thbRate ?? 1,
-    payer: expensePayments(expense).map(p => memberName(p.memberId)).join(', '),
-    sharedWith: participantIds.map(memberName).filter(Boolean).join(', '),
-    amounts: (expense.allocations || []).filter(a => a.amountMinor > 0)
-      .map(a => `${memberName(a.memberId)}=${fromMinor(a.amountMinor, getCurrencyDecimals(expense.currency || 'THB'))}`).join(', '),
-    description: expense.description || '',
-    paymentMethod: expense.paymentMethod || 'cash',
-    itineraryTitle: linked?.title || ''
+    payer: sanitizeFormulaCell(expensePayments(expense).map(p => memberName(p.memberId)).join(', ')),
+    sharedWith: sanitizeFormulaCell(participantIds.map(memberName).filter(Boolean).join(', ')),
+    amounts: sanitizeFormulaCell((expense.allocations || []).filter(a => a.amountMinor > 0)
+      .map(a => `${memberName(a.memberId)}=${fromMinor(a.amountMinor, getCurrencyDecimals(expense.currency || 'THB'))}`).join(', ')),
+    description: sanitizeFormulaCell(expense.description || ''),
+    paymentMethod: sanitizeFormulaCell(expense.paymentMethod || 'cash'),
+    itineraryTitle: sanitizeFormulaCell(linked?.title || '')
   };
 }
 

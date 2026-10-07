@@ -42,12 +42,28 @@ async function isSuperAdmin(uid) {
 }
 
 async function isTripAdmin(tripId, uid) {
+  if (!tripId || !uid) return false;
   if (await isSuperAdmin(uid)) return true;
+  const tripSnap = await db.doc(`trips/${tripId}`).get();
+  if (tripSnap.exists && tripSnap.data().createdBy === uid) return true;
   const snap = await db.doc(`trips/${tripId}/members/${uid}`).get();
   if (!snap.exists) return false;
   const role = snap.data().role;
   return ['trip_admin', 'super_admin'].includes(role);
 }
+
+async function isTripMember(tripId, uid) {
+  if (!tripId || !uid) return false;
+  if (await isTripAdmin(tripId, uid)) return true;
+  const snap = await db.doc(`trips/${tripId}/members/${uid}`).get();
+  if (snap.exists && snap.data().status !== 'inactive') return true;
+  const tripSnap = await db.doc(`trips/${tripId}`).get();
+  if (!tripSnap.exists) return false;
+  const data = tripSnap.data();
+  return data.createdBy === uid || (Array.isArray(data.memberUids) && data.memberUids.includes(uid));
+}
+
+const ALLOWED_MEMBER_ROLES = ['member', 'trip_admin', 'viewer'];
 
 function normalizeUsername(u) {
   return String(u).trim().toLowerCase();
@@ -84,7 +100,11 @@ export const healthCheck = onCall(async (request) => {
   const started = Date.now();
   let firestore = 'ok';
   try {
-    await db.doc('systemHealth/ping').set({ lastCheck: FieldValue.serverTimestamp() }, { merge: true });
+    if (request.auth?.uid) {
+      await db.doc('systemHealth/ping').set({ lastCheck: FieldValue.serverTimestamp(), uid: request.auth.uid }, { merge: true });
+    } else {
+      await db.doc('systemHealth/ping').get();
+    }
   } catch (e) {
     firestore = `error: ${e.message}`;
   }
@@ -110,6 +130,8 @@ export const createMemberAccount = onCall(async (request) => {
 
   const isAdmin = await isTripAdmin(tripId, callerUid);
   if (!isAdmin) throw new HttpsError('permission-denied', 'Admin only');
+
+  const safeRole = ALLOWED_MEMBER_ROLES.includes(role) ? role : 'member';
 
   if (pin.length < 4 || pin.length > 12) throw new HttpsError('invalid-argument', 'PIN must be 4-12 chars');
 
@@ -155,7 +177,7 @@ export const createMemberAccount = onCall(async (request) => {
     uid: memberUid,
     displayName: displayName || username,
     username: norm,
-    role,
+    role: safeRole,
     status: 'active',
     color: '#6366f1',
     permissions,
@@ -174,7 +196,7 @@ export const createMemberAccount = onCall(async (request) => {
     target: memberUid,
     by: callerUid,
     timestamp: FieldValue.serverTimestamp(),
-    details: { username: norm, role }
+    details: { username: norm, role: safeRole }
   });
 
   return { memberUid };
@@ -357,6 +379,7 @@ export const validateExpenseAllocations = onCall(async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Auth required');
   if (!tripId || totalMinor == null || !allocations) throw new HttpsError('invalid-argument', 'Missing data');
+  if (!await isTripMember(tripId, uid)) throw new HttpsError('permission-denied', 'Trip membership required');
   // Validate sum
   const sum = allocations.reduce((s,a) => s + (a.amountMinor||0), 0);
   if (sum !== totalMinor) throw new HttpsError('invalid-argument', `Sum ${sum} != total ${totalMinor}`);
@@ -380,6 +403,8 @@ export const recalculateSettlement = onCall(async (request) => {
   const { tripId } = request.data;
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Auth required');
+  if (!tripId) throw new HttpsError('invalid-argument', 'Missing tripId');
+  if (!await isTripMember(tripId, uid)) throw new HttpsError('permission-denied', 'Trip membership required');
   // Fetch expenses and members
   const expSnap = await db.collection(`trips/${tripId}/expenses`).where('status', '!=', 'voided').get();
   const memSnap = await db.collection(`trips/${tripId}/members`).get();
@@ -451,6 +476,8 @@ export const writeAuditLog = onCall(async (request) => {
   const { tripId, action, target, before, after } = request.data;
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Auth required');
+  if (!tripId || !action) throw new HttpsError('invalid-argument', 'Missing tripId/action');
+  if (!await isTripMember(tripId, uid)) throw new HttpsError('permission-denied', 'Trip membership required');
   await db.collection(`trips/${tripId}/activityLogs`).add({
     action, target, by: uid, before: before||null, after: after||null,
     timestamp: FieldValue.serverTimestamp()

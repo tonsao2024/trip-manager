@@ -468,7 +468,7 @@ export function addItineraryMarkers(map, L, items, dayColors, opts = {}) {
     if (!pos) return;
     const { lat, lng } = pos;
     latlngs.push([lat, lng]);
-    const color = dayColors?.[item.date] || primary;
+    const color = escapePopupText(dayColors?.[item.date] || primary);
     const icon = L.divIcon({
       className: 'custom-marker',
       html: `<div class="map-pin-marker" style="background:${color};"><span>${idx + 1}</span></div>`,

@@ -306,10 +306,12 @@ function googleMapsUrlFor(pos, title, saved) {
 export function placeDetailsHtml(details = {}, { lang = 'th', compact = false } = {}) {
   const th = (a, b) => (lang === 'th' ? a : b);
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const safeHref = (u) => /^https?:\/\//i.test(String(u ?? '').trim()) ? esc(String(u).trim()) : '';
   if (!details || details.ok === false) {
+    const safeMapsUrl = safeHref(details?.mapsUrl);
     return `<div class="place-details place-details--empty">
       <span class="place-details-note">${iconSvg('wifi-off')} ${esc(th('ดึงข้อมูลเพิ่มเติมไม่ได้ (อาจออฟไลน์)', 'Could not load extra details (offline?)'))}</span>
-      ${details?.mapsUrl ? `<a class="place-details-link" href="${esc(details.mapsUrl)}" target="_blank" rel="noopener">${iconSvg('external-link')} Google Maps</a>` : ''}
+      ${safeMapsUrl ? `<a class="place-details-link" href="${safeMapsUrl}" target="_blank" rel="noopener noreferrer">${iconSvg('external-link')} Google Maps</a>` : ''}
     </div>`;
   }
   const osm = details.osm || {};
@@ -318,7 +320,7 @@ export function placeDetailsHtml(details = {}, { lang = 'th', compact = false } 
   if (osm.kind) rows.push(['tag', `${esc(osm.kind)}${osm.subKind ? ` • ${esc(osm.subKind)}` : ''}`]);
   if (osm.openingHours) rows.push(['clock', esc(prettyOpeningHours(osm.openingHours, lang))]);
   if (osm.phone) rows.push(['phone', `<a href="tel:${esc(osm.phone.replace(/[^\d+]/g, ''))}">${esc(osm.phone)}</a>`]);
-  if (osm.website) rows.push(['globe', `<a href="${esc(osm.website)}" target="_blank" rel="noopener nofollow">${esc(shortUrl(osm.website))}</a>`]);
+  if (safeHref(osm.website)) rows.push(['globe', `<a href="${safeHref(osm.website)}" target="_blank" rel="noopener noreferrer nofollow">${esc(shortUrl(osm.website))}</a>`]);
   if (osm.addr) rows.push(['map-pin', esc(osm.addr)]);
   if (osm.fee && /^(yes|true)$/i.test(String(osm.fee))) rows.push(['ticket', esc(th('มีค่าเข้า', 'charges an entrance fee'))]);
   if (osm.duration) rows.push(['timer', `${esc(th('ใช้เวลา', 'takes about'))} ${esc(osm.duration)}`]);
@@ -327,15 +329,15 @@ export function placeDetailsHtml(details = {}, { lang = 'th', compact = false } 
   }
 
   const chips = [];
-  if (osm.osmUrl) chips.push(`<a class="place-details-link" href="${esc(osm.osmUrl)}" target="_blank" rel="noopener nofollow">${iconSvg('database')} OpenStreetMap</a>`);
-  if (wiki?.url) chips.push(`<a class="place-details-link" href="${esc(wiki.url)}" target="_blank" rel="noopener nofollow">${iconSvg('book-open')} Wikipedia${wiki.lang === 'th' ? '' : ' (en)'}</a>`);
-  if (details.mapsUrl) chips.push(`<a class="place-details-link" href="${esc(details.mapsUrl)}" target="_blank" rel="noopener">${iconSvg('external-link')} Google Maps</a>`);
+  if (safeHref(osm.osmUrl)) chips.push(`<a class="place-details-link" href="${safeHref(osm.osmUrl)}" target="_blank" rel="noopener noreferrer nofollow">${iconSvg('database')} OpenStreetMap</a>`);
+  if (safeHref(wiki?.url)) chips.push(`<a class="place-details-link" href="${safeHref(wiki.url)}" target="_blank" rel="noopener noreferrer nofollow">${iconSvg('book-open')} Wikipedia${wiki.lang === 'th' ? '' : ' (en)'}</a>`);
+  if (safeHref(details.mapsUrl)) chips.push(`<a class="place-details-link" href="${safeHref(details.mapsUrl)}" target="_blank" rel="noopener noreferrer">${iconSvg('external-link')} Google Maps</a>`);
 
   const body = rows.length
     ? `<ul class="place-details-rows">${rows.map(([ic, text]) => `<li>${iconSvg(ic)}<span>${text}</span></li>`).join('')}</ul>`
     : '';
   const blurb = wiki?.extract
-    ? `<p class="place-details-blurb${compact ? ' is-compact' : ''}">${wiki.thumbnail && !compact ? `<img src="${esc(wiki.thumbnail)}" alt="" loading="lazy">` : ''}${esc(compact ? truncate(wiki.extract, 150) : truncate(wiki.extract, 420))}</p>`
+    ? `<p class="place-details-blurb${compact ? ' is-compact' : ''}">${safeHref(wiki.thumbnail) && !compact ? `<img src="${safeHref(wiki.thumbnail)}" alt="" loading="lazy">` : ''}${esc(compact ? truncate(wiki.extract, 150) : truncate(wiki.extract, 420))}</p>`
     : '';
   return `<div class="place-details">
     ${body}${blurb}

@@ -6,6 +6,15 @@ service firebase.storage {
       return request.auth != null;
     }
 
+    // Explicitly allow safe raster image formats and exclude image/svg+xml to prevent Stored XSS
+    function isSafeImage() {
+      return request.resource.contentType.matches('image/(jpeg|jpg|png|webp|gif|heic|heif)');
+    }
+
+    function isSafeDocument() {
+      return isSafeImage() || request.resource.contentType == 'application/pdf';
+    }
+
     function isTripMember(tripId) {
       return isAuthenticated() && (
         firestore.exists(/databases/(default)/documents/trips/$(tripId)/members/$(request.auth.uid)) ||
@@ -27,15 +36,15 @@ service firebase.storage {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated() && request.auth.uid == userId
         && request.resource.size < 2 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+        && isSafeImage();
     }
 
-    // Trip covers - FIXED: allow member or creator to upload
+    // Trip covers - allow member or creator to upload
     match /trips/{tripId}/covers/{fileName} {
       allow read: if isTripMember(tripId) || isTripAdmin(tripId);
       allow write: if (isTripMember(tripId) || isTripAdmin(tripId))
         && request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+        && isSafeImage();
     }
 
     // Place images
@@ -43,15 +52,23 @@ service firebase.storage {
       allow read: if isTripMember(tripId);
       allow write: if isTripMember(tripId)
         && request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+        && isSafeImage();
     }
 
-    // Expense receipts
+    // Expense receipts (both direct trip receipts path used by cards.js and nested expense path)
+    match /trips/{tripId}/receipts/{fileId} {
+      allow read: if isTripMember(tripId);
+      allow write: if isTripMember(tripId)
+        && request.resource.size < 5 * 1024 * 1024
+        && isSafeDocument();
+      allow delete: if isTripAdmin(tripId);
+    }
+
     match /trips/{tripId}/expenses/{expenseId}/receipts/{fileId} {
       allow read: if isTripMember(tripId);
       allow write: if isTripMember(tripId)
         && request.resource.size < 5 * 1024 * 1024
-        && (request.resource.contentType.matches('image/.*') || request.resource.contentType == 'application/pdf');
+        && isSafeDocument();
       allow delete: if isTripAdmin(tripId);
     }
 
@@ -59,7 +76,8 @@ service firebase.storage {
     match /trips/{tripId}/settlements/{settlementId}/proofs/{fileId} {
       allow read: if isTripMember(tripId);
       allow write: if isTripMember(tripId)
-        && request.resource.size < 5 * 1024 * 1024;
+        && request.resource.size < 5 * 1024 * 1024
+        && isSafeDocument();
       allow delete: if isTripAdmin(tripId);
     }
 
