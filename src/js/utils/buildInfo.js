@@ -2,8 +2,7 @@
 // date that is shown on the website (login screen, More page, Settings → About,
 // the global footer and every exported PNG/PDF stamp).
 //
-// 👉 Update APP_UPDATED_ISO whenever the site changes, then re-run
-//    `node tools/preview/standalone.mjs` so the offline demo picks it up too.
+// 👉 Update APP_UPDATED_ISO whenever the site changes.
 //    `tests/unit/buildInfo.test.js` checks that index.html carries the same values.
 
 /** Product name shown in the header / browser tab / exports. */
@@ -60,7 +59,7 @@ export function appFooterLabel(lang = 'th', paletteName = APP_PALETTE) {
   return `${APP_NAME_BY} ${APP_VERSION_LABEL} • ${appUpdatedLabel(lang)} • ${paletteName ? `${lang === 'th' ? 'ชุดสี' : 'palette'} ${paletteName} • ` : ''}© ${APP_COPYRIGHT_HOLDER} — ${legal}`;
 }
 
-/** One short legal sentence (used in Settings → About and the demo banner). */
+/** One short legal sentence used in Settings → About. */
 export function copyrightNote(lang = 'th') {
   return lang === 'th' ? COPYRIGHT_NOTE_TH : COPYRIGHT_NOTE_EN;
 }

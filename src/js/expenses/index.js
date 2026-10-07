@@ -1,4 +1,4 @@
-import { expensePayments, validatePayments } from '../utils/payments.js';
+import { expensePayments, validateExpensePayerState } from '../utils/payments.js';
 import { db, serverTimestamp } from '../firebase.js';
 import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, startAfter, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { toThbMinor, calculateNetTotal, getCurrencyDecimals, toMinor } from '../utils/currency.js';
@@ -98,8 +98,9 @@ function buildPayload(data) {
     description: data.description || '',
     date: data.date,
     category: normalizeCategory(data.category),
-    payerId: data.payerId,
-    payments: expensePayments(data),
+    payerId: data.payerPending ? '' : (data.payerId || ''),
+    payments: data.payerPending ? [] : expensePayments(data),
+    payerPending: Boolean(data.payerPending),
     splitMethod: data.splitMethod || 'unequal',
     splitIncludesVatSc: data.splitIncludesVatSc !== false,
     splitInputs: data.splitInputs || null,
@@ -159,7 +160,11 @@ export async function addExpense(tripId, data, userId, by = null) {
   const valid = validateAllocations(net, data.allocations);
   if (!valid.valid) throw new Error(valid.error);
 
-  if (!validatePayments(net, expensePayments({ ...data, netTotalMinor: net }))) throw new Error('ยอดผู้จ่ายรวมต้องเท่ากับยอดสุทธิ');
+  if (!validateExpensePayerState(net, expensePayments({ ...data, netTotalMinor: net }), data)) {
+    throw new Error(data.payerPending && !data.isEstimated
+      ? 'รายการที่ยังไม่ระบุเจ้าภาพต้องเป็นรายการประมาณการ'
+      : 'ยอดผู้จ่ายรวมต้องเท่ากับยอดสุทธิ');
+  }
   const payload = buildPayload({ ...data, netTotalMinor: net });
   delete payload._decimals; delete payload._currency;
   const authorName = by?.displayName || by?.email || '';
@@ -203,10 +208,16 @@ export async function updateExpense(tripId, expenseId, updates, userId, by = nul
     const v = validateAllocations(merged.netTotalMinor, merged.allocations);
     if (!v.valid) throw new Error(v.error);
   }
-  if (!validatePayments(merged.netTotalMinor, expensePayments(merged))) throw new Error('ยอดผู้จ่ายรวมต้องเท่ากับยอดสุทธิ');
+  if (!validateExpensePayerState(merged.netTotalMinor, expensePayments(merged), merged)) {
+    throw new Error(merged.payerPending && !merged.isEstimated
+      ? 'รายการที่ยังไม่ระบุเจ้าภาพต้องเป็นรายการประมาณการ'
+      : 'ยอดผู้จ่ายรวมต้องเท่ากับยอดสุทธิ');
+  }
   const rate = Number(merged.thbRate) > 0 ? Number(merged.thbRate) : 1;
   const payload = {
     ...updates,
+    payerPending: Boolean(merged.payerPending),
+    ...(merged.payerPending ? { payerId: '', payments: [] } : {}),
     netTotalMinor: merged.netTotalMinor,
     category: normalizeCategory(merged.category),
     thbRate: rate,

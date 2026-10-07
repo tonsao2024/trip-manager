@@ -327,6 +327,19 @@ check(!!q('#s-currency') && !!q('#s-tz'), 'settings: currency/timezone editable'
 check(!!q('#save-settings'), 'settings: save button');
 check(!!q('#del-trip'), 'settings: delete trip button');
 check(!!q('#dup-trip'), 'settings: duplicate trip button');
+check(!!q('#map-default-options [data-map-default="map"]'), 'settings: trip default basemap choices render');
+await click('#map-default-options [data-map-default="terrain"]');
+await click('#save-map-default');
+await waitFor(() => fsdb.__store.get('trips/t1')?.defaultMapLayer === 'terrain', { label: 'default basemap saved' });
+check(localStorage.getItem('fuji_map_layer') === 'terrain', 'settings: default basemap also updates the device fallback');
+await goto('#/trip/t1/itinerary');
+await waitFor(() => q('#map-layer-bar [data-layer="terrain"]'), { label: 'itinerary map layer buttons' });
+check(q('#map-layer-bar [data-layer="terrain"]')?.classList.contains('is-active'), 'itinerary: saved trip basemap is selected by default');
+await goto('#/trip/t1/settings');
+await waitFor(() => q('#map-default-options [data-map-default="terrain"]'), { label: 'settings basemap choice after reload' });
+await click('#map-default-options [data-map-default="map"]');
+await click('#save-map-default');
+await waitFor(() => fsdb.__store.get('trips/t1')?.defaultMapLayer === 'map', { label: 'default basemap reset' });
 window.document.getElementById('s-name').value = 'ทริปฟูจิ 2027 (แก้ไข)';
 await click('#save-settings');
 await sleep(200);
@@ -1156,10 +1169,11 @@ console.log('\n▶ v10: itinerary page (days left, map right) + full-plan PNG');
     check(!!q('.itin-col-map #map') && !!q('.itin-col-map #map-card'), 'layout: the map sits in the right column');
     const css = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8');
     check(/\.itin-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(/.test(css), 'layout: two columns on desktop');
-    // Phones: one column, PLAN FIRST — the map moves below the list (the user's
-    // "iPhone แสดงผลไม่สมบูรณ์" report: the map used to swallow the first screen).
-    const phoneBlock = css.match(/@media \(max-width: 1023px\)\s*\{[\s\S]{0,400}?\.itin-col-map\s*\{[^}]*\}/);
-    check(!!phoneBlock && !/order:\s*-1/.test(phoneBlock[0]), 'layout: phones collapse to one column with the plan first (map below the list)');
+    // Phones: CSS moves the whole map column ahead of sticky notes and the day plan.
+    check(/#itin-layout\.itin-layout\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column/.test(css)
+      && /#itin-layout \.itin-col-map\s*\{[^}]*order:\s*-1/.test(css), 'layout: the map appears above sticky notes on phones');
+    check(/\.itin-title\s*\{[^}]*overflow-wrap:\s*anywhere/.test(css), 'layout: place titles can use the full card width without vertical word breaks');
+    check(/\.itin-card \.itin-expand-btn\s*\{[^}]*width:\s*auto/.test(css), 'layout: mobile “see more” is a compact button');
     check(/\.itin-col-map\s*\{[^}]*position:\s*sticky/.test(css), 'layout: the map stays visible while scrolling the days');
 
     // --- export: one PNG with the map + every day + details ---
@@ -1716,7 +1730,7 @@ console.log('\n▶ grouped expense form, exact custom split, multiple payers');
   submit(q('#expense-form')); await sleep(160);
   check(![...fsdb.__store.values()].some(e => e?.title === 'ทดสอบหลายผู้จ่าย VAT ส่วนลด'), 'custom split: mismatch is not saved or silently assigned to first member');
   input('[data-alloc="' + allocs[0].dataset.alloc + '"]', '600');
-  const otherPayer = qa('[data-payer]').find(el => !el.classList.contains('tile-selected'));
+  const otherPayer = qa('[data-payer]').find(el => el.dataset.payer !== '__pending' && !el.classList.contains('tile-selected'));
   await click(otherPayer);
   const payers = qa('[data-payment]');
   input('[data-payment="' + payers[0].dataset.payment + '"]', '600');
@@ -1735,6 +1749,44 @@ console.log('\n▶ grouped expense form, exact custom split, multiple payers');
   check(q('[data-vatsc="exclude"]').classList.contains('active'), 'edit: adjustment mode restored');
   check(parseFloat(q('[data-alloc]').value.replace(/,/g,'')) === 600, 'edit: original before-adjustment amount restored');
   check(q('[data-payment]').value === '600.00', 'edit: actual payment amount restored');
+}
+
+console.log('\n▶ estimates without an assigned payer');
+{
+  await goto('#/trip/t1/expenses/add');
+  await waitFor(() => q('#expense-form'), { label: 'payer-pending estimate form' });
+  q('#ex-type').value = 'estimated';
+  q('#ex-type').dispatchEvent(new window.Event('change', { bubbles: true }));
+  const inputP = (selector, value) => {
+    const el = q(selector); el.value = value;
+    el.dispatchEvent(new window.Event('input', { bubbles: true }));
+  };
+  inputP('#ex-title', 'ประมาณการยังไม่รู้เจ้าภาพ');
+  inputP('#ex-subtotal', '1250');
+  await click('[data-payer="__pending"]');
+  check(q('[data-payer="__pending"]')?.classList.contains('tile-selected'), 'payer-pending: the TBD tile is selectable for estimates');
+  check(/ยังไม่ถูกนับเป็นหนี้|stays out of everyone/.test(q('#payer-total-hint')?.textContent || ''), 'payer-pending: the form explains that it stays out of balances');
+  submit(q('#expense-form'));
+  await waitFor(() => [...fsdb.__store.values()].some(e => e?.title === 'ประมาณการยังไม่รู้เจ้าภาพ'), { label: 'pending estimate saved' });
+  const saved = [...fsdb.__store.values()].find(e => e?.title === 'ประมาณการยังไม่รู้เจ้าภาพ');
+  check(saved?.isEstimated === true && saved?.payerPending === true, 'payer-pending: saved as an estimate with an explicit pending flag');
+  check(saved?.payerId === '' && Array.isArray(saved?.payments) && saved.payments.length === 0, 'payer-pending: no payer/payment is fabricated');
+}
+
+console.log('\n▶ compact expenses density and mobile date headings');
+{
+  await goto('#/trip/t1/expenses');
+  await waitFor(() => q('#exp-density-btn'), { label: 'expenses density control' });
+  await click('#exp-density-btn');
+  check(q('#expenses-view')?.classList.contains('expenses-compact'), 'expenses: compact density toggles on');
+  check(localStorage.getItem('fuji_exp_density:t1') === 'compact', 'expenses: density is remembered per trip on this device');
+  await click('#expense-group-toggle [data-group="day"]');
+  await waitFor(() => q('.expense-day-head'), { label: 'grouped expense date headings' }).catch(() => {});
+  check(!!q('.expense-day-head'), 'expenses: day grouping renders date headings');
+  const refreshCss = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
+  check(/@media \(max-width: 540px\)[\s\S]*?\.expense-day-title[\s\S]*?text-overflow: ellipsis/.test(refreshCss), 'expenses: mobile date headings have a dedicated readable layout');
+  await click('#exp-density-btn');
+  check(!q('#expenses-view')?.classList.contains('expenses-compact'), 'expenses: compact density can be turned off');
 }
 
 console.log('\n▶ expense with a receipt photo — must save, and the upload toast must never stick');
@@ -1881,12 +1933,35 @@ console.log('\n▶ v16 trip tools — bookings + calendar export');
   check(qa('.toast').some(t => /ส่งออก|export/i.test(t.textContent || '')), 'bookings: .ics export reported success');
 }
 
-console.log('\n▶ v16 trip tools — dashboard widgets');
+console.log('\n▶ dashboard widgets — shared drag layout');
 {
+  const sortableStub = await import(stub('sortable.mjs'));
+  const live = sortableStub.__sortable;
+  live.live = 0; live.created = 0; live.instances.length = 0;
   await goto('#/trip/t1/dashboard');
-  await waitFor(() => q('#dash-tools .tool-tile'), { label: 'dashboard tool tiles' });
-  check(qa('#dash-tools .tool-tile').length === 3, 'dashboard: prep / ideas / bookings tiles');
-  check(!!q('#dash-tools a[href="#/trip/t1/prep"]'), 'dashboard: prep tile links to the page');
+  await waitFor(() => q('#dashboard-board [data-dashboard-widget]'), { label: 'dashboard widget board' });
+  const widgetNodes = qa('#dashboard-board > [data-dashboard-widget]');
+  check(widgetNodes.length >= 10, `dashboard: all cards are named sortable widgets (${widgetNodes.length})`);
+  check(!!q('#dash-layout-edit-btn') && !!q('#dash-layout-reset'), 'dashboard: arrangement controls are available');
+  check(live.live === 0, 'dashboard: drag handles stay locked outside edit mode');
+  await click('#dash-layout-edit-btn');
+  await waitFor(() => live.live === 1, { label: 'dashboard sortable instance' }).catch(() => {});
+  check(live.live === 1 && q('#dashboard-view')?.classList.contains('dashboard-layout-editing'), 'dashboard: edit mode enables dragging');
+  const originalOrder = qa('#dashboard-board > [data-dashboard-widget]').map(el => el.dataset.dashboardWidget);
+  const draggedOrder = [...originalOrder].reverse();
+  draggedOrder.forEach(key => {
+    const node = q(`#dashboard-board [data-dashboard-widget="${key}"]`);
+    if (node) q('#dashboard-board').appendChild(node);
+  });
+  const instance = live.instances[live.instances.length - 1];
+  await instance?.options?.onEnd?.();
+  await waitFor(() => JSON.stringify(fsdb.__store.get('trips/t1')?.dashboardLayout) === JSON.stringify(draggedOrder), { label: 'shared dashboard layout saved' }).catch(() => {});
+  check(JSON.stringify(fsdb.__store.get('trips/t1')?.dashboardLayout) === JSON.stringify(draggedOrder), 'dashboard: drag order persists on the shared trip document');
+  await click('#dash-layout-reset');
+  await waitFor(() => fsdb.__store.get('trips/t1')?.dashboardLayout?.[0] === 'countdown', { label: 'dashboard layout reset' }).catch(() => {});
+  check(fsdb.__store.get('trips/t1')?.dashboardLayout?.[0] === 'countdown', 'dashboard: reset restores the default card order');
+  await click('#dash-layout-edit-btn');
+  check(live.live === 0 && !q('#dashboard-view')?.classList.contains('dashboard-layout-editing'), 'dashboard: Done closes edit mode');
 }
 
 console.log('\n▶ v18.2 itinerary — clean toolbar + Excel import behind edit mode');
@@ -2112,7 +2187,10 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   await click('#settle-views [data-view="debt-map"]');
   await waitFor(() => q('.debt-map-container') || q('.debt-map-node'), { timeout: 8000, label: 'debt map' }).catch(() => {});
   const nodes = qa('.debt-map-node[data-debt-person]');
-  check(nodes.length >= 1, `debt map: one node per member (${nodes.length})`);
+  const receiverNodes = qa('.debt-map-node--receiver[data-debt-person]');
+  const payerNodes = qa('.debt-map-node--payer[data-debt-person]');
+  check(nodes.length >= 1, `debt map: person nodes render (${nodes.length})`);
+  check(receiverNodes.length >= 1 && payerNodes.length >= 1, 'debt map: receivers are centered and payers surround them');
   check(nodes.every(n => n.getAttribute('role') === 'button' && n.getAttribute('tabindex') === '0'), 'debt map: nodes are announced as buttons');
   check(/รับสุทธิ|จ่ายสุทธิ|เคลียร์/.test(q('#settlement-content')?.textContent || ''), 'debt map: labels spell out net receive / net pay');
   check(!!q('.debt-map-legend'), 'debt map: legend explains the colours');
@@ -2253,7 +2331,7 @@ console.log('\n▶ v17/v18 offline strip + colour themes');
   check(/Trip&nbsp;Manager|Trip Manager/.test(shell) && !/<title>Fuji Planner/.test(shell), 'shell: renamed to Trip Manager by TonSkywalker');
 
   const refresh = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
-  check(/\.explore-hero/.test(refresh) && /\.cal-cell/.test(refresh) && /\.demo-banner/.test(refresh), 'styles: v17 component sheet covers the new pages');
+  check(/\.explore-hero/.test(refresh) && /\.cal-cell/.test(refresh) && /\.offline-strip/.test(refresh), 'styles: v17 component sheet covers the new pages');
   check(/\.theme-grid/.test(refresh) && /\.rcpt-deck-card/.test(refresh) && /\.app-footer/.test(refresh), 'styles: v18 theme / deck / footer styles shipped');
 }
 

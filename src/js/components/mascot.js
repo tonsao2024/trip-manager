@@ -218,5 +218,5 @@ export function mountFujiBuddy(container, { lang = 'th', mood = 'happy', onToast
   };
 }
 
-/** Optional inline styles (the demo/dev preview can inject them; the app ships them in animations.css). */
+/** Optional inline styles for environments that do not load the app stylesheet. */
 export default renderFujiBuddy;

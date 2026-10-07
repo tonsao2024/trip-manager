@@ -3,12 +3,10 @@
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
 > **7 Oct 2026 — mobile plan rework.** Phones no longer open the plan page mid-scroll (the day-chip strip
-> never scrolls the page anymore), and the single-column layout puts the **plan first, map underneath**
-> instead of the map swallowing the first screen. Plan cards are **compact on phones** — number, title,
-> status, time, category, navigate and cost — with every other detail (teams, travel time, check-in range,
-> address, payer/split breakdown, link-expense) one tap away behind each card's **“ดูเพิ่มเติม”** toggle;
-> desktop still shows everything. Sticky notes start folded on small screens, and status pills can no
-> longer wrap mid-word. Verified on iPhone 16 Pro / 16 Pro Max / SE and small Android widths.
+> never scrolls the page anymore), and the single-column layout puts the **map above sticky notes and the
+> day plan**. Plan cards are **compact on phones** — the place title gets the available width, status stays
+> in a small top-right tag, and extra details sit behind a compact **“ดูเพิ่มเติม”** button; desktop still
+> shows everything. Sticky notes start folded on small screens, and status pills no longer wrap mid-word.
 
 > **v19 “Vivid & Clear” — updated 6 Oct 2026.** Five planner requests landed: **drag-to-reorder only in edit
 > mode**, a **ทีม (team) panel on the dashboard** with cost-per-person + team total, the expenses KPI reading
@@ -19,7 +17,6 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > The v18 work (rename, colour themes back, swipeable receipts, Mt-Fuji buddy, travel legs, footer) and the
 > v17 work (guides, month **calendar**, **share/invite**, **booking import**, **offline strip**) all stay.
 > Live: <https://tonsao2024.github.io/trip-manager/> •
-> full-feature offline demo: <https://tonsao2024.github.io/trip-manager/demo/> •
 > screenshots: [`docs/preview/`](docs/preview/index.html).
 > The app shows the same build date (from `src/js/utils/buildInfo.js`) on the sign-in screen, the More
 > page and Settings → About.
@@ -534,8 +531,7 @@ Design system (mobile **and** desktop share it):
   (header, nav, FAB, cards, sheets, toasts) and defines the new page components.
 - **`src/js/utils/brand.js`** is the only place brand colour exists in JS; every module imports from it
   (member colours, category swatches, day hues, confetti, canvas/export fallbacks).
-- A generated offline demo of the whole app lives in **`demo/`** (see below), and
-  `docs/preview/index.html` is the public before/after page with v17 screenshots.
+- `docs/preview/index.html` is the public before/after page with v17 screenshots.
 
 Feature parity with the Wanderlog list (2026 review):
 
@@ -546,24 +542,15 @@ Feature parity with the Wanderlog list (2026 review):
 | Invite & share | `openShareSheet()` — invite link + readable code (`ABC-123`), LINE/WhatsApp/Telegram, copy trip summary, copy day-by-day plan, native share, print |
 | Import reservations from e-mail | `openBookingImport()` on the Bookings page — `utils/bookingImport.js` parses Thai/English confirmations (dates incl. Buddhist years, times, flight numbers, PNR, airports, price) and shows a confidence score before saving a real reservation |
 | Offline access | `#offline-strip-wrap` strip with online/offline + Firestore-cache state and a retry button (Firestore persistence stays on) |
-| Unlimited attachments | documents + receipt uploads already existed; the demo disables uploads because it has no Storage |
+| Unlimited attachments | documents + receipt uploads already existed |
 
 Housekeeping:
 
-- Desktop nav now carries 13 entries (adds **ชวนไปที่นี่** and **ปฏิทิน**); the More page links to the
-  demo + the Settings “About” card shows the version, palette and **last-updated date**.
-- Tests: `tests/node-runner.mjs` now runs **94 checks** (adds explore, booking-import, calendar, share
-  and build-info suites) and `tests/smoke/run.mjs` gained a v17 block that drives the new pages end to
-  end (guide → idea → plan, calendar navigation, share fallback, e-mail import → reservation, palette lock).
-
-### Offline demo (`demo/`)
-
-`node tools/preview/standalone.mjs` generates a self-contained copy of the app with the CDNs swapped for
-local stand-ins (in-memory Firestore/Auth, pre-built Tailwind, local fonts, a stylised map) and a seeded
-sample trip (“ทริปฟูจิ 2027”: 7 stops, 4 expenses, a flight booking, checklists, ideas, notes).
-It needs no internet, no Firebase project and no login, and it deploys with the repo — GitHub Pages
-serves it at `/demo/`. PNG/PDF export and file uploads are intentionally disabled there; everything
-else is the real app code.
+- Desktop nav now carries 13 entries (adds **ชวนไปที่นี่** and **ปฏิทิน**); the Settings “About” card
+  shows the version, palette and **last-updated date**.
+- Tests: `tests/node-runner.mjs` runs **118 checks** (including unassigned-estimate payer validation) and
+  `tests/smoke/run.mjs` exercises the live UI flows, including dashboard layout sync, default basemaps,
+  compact expenses, payer-TBD estimates, and the existing guide/calendar/share/import features.
 
 ## Tests
 
@@ -603,8 +590,9 @@ rows, or when a long name/email spills out of its card. Screenshots land in
 specifiers (Firebase → in-memory stub, dayjs/xlsx → npm packages, Leaflet/Sortable → stubs),
 so the real application code runs end-to-end: dashboard, countdown, map refresh, estimate →
 expense sync, member/document/expense CRUD, Excel round-trip, permissions, trip deletion and the
-v16 blocks (prep checklists, ideas + add-to-plan, bookings + `.ics`, dashboard tool tiles and the
-route optimiser writing a new order through `reorderItinerary`).
+v16 blocks (prep checklists, ideas + add-to-plan, bookings + `.ics`, shared dashboard ordering, and
+route optimisation writing a new order through `reorderItinerary`), plus estimate payer-pending and
+compact-expenses flows.
 
 ## Performance
 
