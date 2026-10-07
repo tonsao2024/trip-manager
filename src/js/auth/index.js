@@ -57,10 +57,13 @@ export async function loginMember(username, pin, tripId, remember = true) {
   }
 }
 
+let stepUpVerifiedSession = null;
+
 export async function logout() {
   // Always clear local session state, even if signOut() fails for any reason,
   // so the user is never stuck logged-in in the UI.
   let signOutError = null;
+  stepUpVerifiedSession = null;
   try {
     if (auth) {
       await Promise.race([
@@ -86,14 +89,28 @@ export async function verifySensitiveAction(pin, action) {
   const fn = httpsCallable(functions, 'verifySensitiveActionPin');
   const res = await fn({ pin, action });
   const { sessionExpiry } = res.data;
-  localStorage.setItem('fuji_stepup_until', sessionExpiry);
+  const untilMs = new Date(sessionExpiry).getTime();
+  if (!Number.isFinite(untilMs) || untilMs <= Date.now()) {
+    throw new Error('Invalid step-up session expiry');
+  }
+  stepUpVerifiedSession = {
+    uid: auth?.currentUser?.uid || null,
+    untilMs
+  };
   return true;
 }
 
 export function hasStepUpSession() {
-  const until = localStorage.getItem('fuji_stepup_until');
-  if (!until) return false;
-  return new Date(until) > new Date();
+  if (!stepUpVerifiedSession) return false;
+  if (auth?.currentUser?.uid && stepUpVerifiedSession.uid !== auth.currentUser.uid) {
+    stepUpVerifiedSession = null;
+    return false;
+  }
+  if (stepUpVerifiedSession.untilMs <= Date.now()) {
+    stepUpVerifiedSession = null;
+    return false;
+  }
+  return true;
 }
 
 export function getCurrentUser() {

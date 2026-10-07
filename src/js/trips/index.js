@@ -132,23 +132,18 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false) {
     }
   };
 
-  // v22 performance: try fastest path first, with short timeout, and fallback immediately on permission errors
-  // Try 1: all trips permissive (new rules allow list for auth) — fastest when rules are permissive
-  try {
-    const q = query(collection(db, 'trips'), limit(50));
-    const allTrips = await tryQuery(q, 'all', 4000);
-    const filtered = allTrips.filter(t => t.memberUids?.includes(userId) || t.createdBy === userId || isSuperAdmin);
-    if (filtered.length) return filtered;
-    if (allTrips.length && allTrips.length < 50) {
-      // If we got less than limit and no filter matched, maybe user has no trips yet — return filtered or empty
-      return filtered;
+  // Super admin can list all trips; regular users query only their own/member trips
+  if (isSuperAdmin) {
+    try {
+      const q = query(collection(db, 'trips'), limit(50));
+      const allTrips = await tryQuery(q, 'all', 4000);
+      if (allTrips.length) return allTrips;
+    } catch (e) {
+      if (e.code === 'permission-denied' && cached?.length) return cached;
     }
-    // If permissive returned many, still try specific queries to reduce data
-  } catch (e) {
-    if (e.code === 'permission-denied' && cached?.length) return cached;
   }
 
-  // Try 2: array-contains (indexed)
+  // Try 1: array-contains on memberUids (indexed, scoped to the signed-in user)
   try {
     const q = query(collection(db, 'trips'), where('memberUids', 'array-contains', userId), limit(30));
     const trips = await tryQuery(q, 'memberUids', 5000);
@@ -157,7 +152,7 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false) {
     if (e.code === 'permission-denied' && cached?.length) return cached;
   }
 
-  // Try 3: createdBy
+  // Try 2: createdBy (scoped to the signed-in user)
   try {
     const q = query(collection(db, 'trips'), where('createdBy', '==', userId), limit(30));
     const trips = await tryQuery(q, 'createdBy', 5000);

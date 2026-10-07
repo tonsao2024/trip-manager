@@ -20,6 +20,12 @@ import { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where, limi
 const PBKDF2_ITERATIONS = 100000;
 const SESSION_KEY = 'fuji_member_session';
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days when "remember me"
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
+
+function memberSecretDocId(tripId, memberId) {
+  return `${tripId}_${memberId}`;
+}
 
 export function normalizeUsername(username) {
   return String(username || '').trim().toLowerCase().replace(/\s+/g, '');
@@ -53,7 +59,7 @@ function randomHex(bytes = 16) {
   return Array.from({ length: bytes * 2 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
 }
 
-/** Create/refresh the local PIN hash on the member document. */
+/** Create/refresh the PIN hash in the isolated memberSecrets collection (never on the readable member doc). */
 export async function setMemberPin(tripId, memberId, pin) {
   const c = getCrypto();
   if (!c?.subtle) {
@@ -61,11 +67,18 @@ export async function setMemberPin(tripId, memberId, pin) {
   }
   const salt = randomHex(16);
   const pinHash = await pbkdf2Hex(pin, salt);
-  await updateDoc(doc(db, `trips/${tripId}/members/${memberId}`), {
+  await setDoc(doc(db, 'memberSecrets', memberSecretDocId(tripId, memberId)), {
+    tripId,
+    memberId,
     pinHash,
     pinSalt: salt,
     pinIterations: PBKDF2_ITERATIONS,
     pinAlgo: 'pbkdf2-sha256',
+    updatedAt: Date.now()
+  }, { merge: true });
+  await updateDoc(doc(db, `trips/${tripId}/members/${memberId}`), {
+    pinHash: null,
+    pinSalt: null,
     loginReady: true,
     failedAttempts: 0
   });
@@ -73,6 +86,13 @@ export async function setMemberPin(tripId, memberId, pin) {
 }
 
 export async function clearMemberPin(tripId, memberId) {
+  try {
+    await setDoc(doc(db, 'memberSecrets', memberSecretDocId(tripId, memberId)), {
+      tripId, memberId, pinHash: null, pinSalt: null, updatedAt: Date.now()
+    }, { merge: true });
+  } catch (e) {
+    console.warn('[MemberAuth] clear secret failed', e?.message);
+  }
   try {
     await updateDoc(doc(db, `trips/${tripId}/members/${memberId}`), {
       pinHash: null, pinSalt: null, loginReady: false
@@ -208,16 +228,35 @@ export async function memberLogin(username, pin, tripIdHint = null, remember = t
 
   const { tripId, memberId, member } = found;
   if (member.status && member.status !== 'active') throw new Error('บัญชีนี้ถูกระงับการใช้งาน');
-  if (!member.pinHash || !member.pinSalt) {
+
+  const failedCount = Number(member.failedAttempts) || 0;
+  const lastFailedAt = Number(member.lastFailedAt) || 0;
+  if (failedCount >= MAX_FAILED_ATTEMPTS && Date.now() - lastFailedAt < LOCKOUT_WINDOW_MS) {
+    throw new Error('กรอก PIN ผิดเกินจำนวนครั้งที่กำหนด กรุณารอสักครู่แล้วลองใหม่');
+  }
+
+  let secret = null;
+  try {
+    const secretSnap = await getDoc(doc(db, 'memberSecrets', memberSecretDocId(tripId, memberId)));
+    if (secretSnap.exists()) secret = secretSnap.data();
+  } catch (e) {
+    console.warn('[MemberAuth] memberSecrets read failed', e?.code || e?.message);
+  }
+
+  const pinHash = secret?.pinHash || member.pinHash;
+  const pinSalt = secret?.pinSalt || member.pinSalt;
+  const pinIterations = secret?.pinIterations || member.pinIterations || PBKDF2_ITERATIONS;
+
+  if (!pinHash || !pinSalt) {
     throw new Error('สมาชิกนี้ยังไม่ได้ตั้ง PIN — ให้แอดมินแก้ไขสมาชิกแล้วตั้ง PIN ให้');
   }
 
-  const attempt = await pbkdf2Hex(pin, member.pinSalt, member.pinIterations || PBKDF2_ITERATIONS);
+  const attempt = await pbkdf2Hex(pin, pinSalt, pinIterations);
   if (!attempt) throw new Error('เบราว์เซอร์นี้ไม่รองรับการตรวจสอบ PIN — เปิดผ่าน https:// แล้วลองใหม่');
-  if (attempt !== member.pinHash) {
+  if (attempt !== pinHash) {
     try {
       await updateDoc(doc(db, `trips/${tripId}/members/${memberId}`), {
-        failedAttempts: (Number(member.failedAttempts) || 0) + 1,
+        failedAttempts: failedCount + 1,
         lastFailedAt: Date.now()
       });
     } catch {}

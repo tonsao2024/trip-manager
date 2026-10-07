@@ -33,7 +33,7 @@ import { dayjs, getCurrentTimes, formatDate, formatTime, formatDuration, getTrip
 import { expensesInThb, convertCurrency, formatCurrency, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually, tripCurrencyList } from './utils/currency.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses } from './utils/settlement.js';
 import { splitCustom, splitEqual, participantsOf, averagePerPerson } from './utils/split.js';
-import { escapeHtml } from './utils/sanitize.js';
+import { escapeHtml, sanitizeUrl } from './utils/sanitize.js';
 import { APP_VERSION, APP_VERSION_LABEL, APP_UPDATED_ISO, APP_NAME, APP_AUTHOR, APP_NAME_BY, appUpdatedLabel, appUpdatedShort, appBuildLabel, appFooterLabel, copyrightNote } from './utils/buildInfo.js';
 import { BRAND, BRAND_PRIMARY, brandPalette, brandPrimary, memberColors as themeMemberColors, dayHues as themeDayHues, memberColorAt, categoryColorChoices } from './utils/brand.js';
 import {
@@ -5653,7 +5653,7 @@ async function renderExpenses(params) {
       </div>
       <div class="chip-row mb-4" id="cat-filters">
         <button class="chip chip-active" data-cat="">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('ทุกหมวด','All categories')}</button>
-        ${getAllExpenseCategories().map(c => `<button class="chip" data-cat="${c.id}">${icon(c.icon, 'w-3.5 h-3.5')} ${lang==='th'?(c.th||c.en):(c.en||c.th)}</button>`).join('')}
+        ${getAllExpenseCategories().map(c => `<button class="chip" data-cat="${escapeHtml(c.id)}">${icon(escapeHtml(c.icon), 'w-3.5 h-3.5')} ${escapeHtml(lang==='th'?(c.th||c.en):(c.en||c.th))}</button>`).join('')}
       </div>
 
       <div id="expense-list" class="space-y-3 stagger"></div>
@@ -6199,7 +6199,7 @@ function expenseFormSectionsHtml({
                   <button type="button" id="${p}ex-manage-cats" class="link-btn text-[10px]">${icon('settings-2', 'w-3 h-3')} ${tx('จัดการ','Manage')}</button>
                 </label>
                 <select id="${p}ex-cat" class="input">
-                  ${getAllExpenseCategories().map(c => `<option value="${c.id}" ${normalizeCategory(e.category || 'general') === c.id ? 'selected' : ''}>${lang==='th'?(c.th||c.en):(c.en||c.th)}</option>`).join('')}
+                  ${getAllExpenseCategories().map(c => `<option value="${escapeHtml(c.id)}" ${normalizeCategory(e.category || 'general') === c.id ? 'selected' : ''}>${escapeHtml(lang==='th'?(c.th||c.en):(c.en||c.th))}</option>`).join('')}
                 </select>
               </div>
             </div>
@@ -8850,7 +8850,7 @@ function openCardManager(tripId, { members = [], onSaved = null } = {}) {
         <span class="row-icon" style="width:34px;height:34px;border-radius:11px;background:var(--primary-light);color:var(--primary-strong);flex-shrink:0;">${icon('credit-card', 'w-4 h-4')}</span>
         <div class="min-w-0 flex-1">
           <div class="text-sm font-bold truncate">${escapeHtml(tripCardLabel(c))}</div>
-          <div class="text-[10.5px] text-[var(--text-tertiary)] truncate">${[c.bank, holderName(c.id) ? th('เจ้าของ', 'holder') + ': ' + holderName(c.id) : ''].filter(Boolean).join(' • ') || th('ไม่ระบุเจ้าของ', 'no holder')}</div>
+          <div class="text-[10.5px] text-[var(--text-tertiary)] truncate">${escapeHtml([c.bank, holderName(c.holderId || c.id) ? th('เจ้าของ', 'holder') + ': ' + holderName(c.holderId || c.id) : ''].filter(Boolean).join(' • ') || th('ไม่ระบุเจ้าของ', 'no holder'))}</div>
         </div>
         <button type="button" class="icon-btn" data-card-edit="${escapeHtml(c.id)}" title="${th('แก้ไข', 'Edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
         <button type="button" class="icon-btn icon-btn-danger" data-card-del="${escapeHtml(c.id)}" title="${th('ลบ', 'Delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
@@ -9635,7 +9635,7 @@ async function renderDocuments(params) {
             </div>
             ${doc.date ? `<p class="meta-line mt-1">${icon('calendar', 'w-3 h-3')} ${escapeHtml(doc.date)}</p>` : ''}
             ${doc.description ? `<p class="text-xs mt-1 text-[var(--text-secondary)]">${escapeHtml(doc.description)}</p>` : ''}
-            ${doc.fileUrl ? `<a href="${escapeHtml(doc.fileUrl)}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-xs font-semibold mt-2" style="color: var(--primary-strong);">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดไฟล์','Open file')}</a>` : ''}
+            ${sanitizeUrl(doc.fileUrl) ? `<a href="${escapeHtml(sanitizeUrl(doc.fileUrl))}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-xs font-semibold mt-2" style="color: var(--primary-strong);">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดไฟล์','Open file')}</a>` : ''}
             ${doc.imageUrl ? `<div class="mt-2 rounded-xl overflow-hidden border" style="border-color: var(--border);"><img src="${escapeHtml(doc.imageUrl)}" class="w-full object-cover" style="aspect-ratio:16/9;" loading="lazy" onerror="this.parentElement.style.display='none'" alt=""></div>` : ''}
           </div>
         </div>
@@ -11871,7 +11871,7 @@ async function renderIdeas(params) {
               : (pinned && !planPinned ? `<p class="idea-near-line is-muted">${icon('route', 'w-3 h-3')} ${th('แผนยังไม่มีพิกัดให้เทียบระยะ','The plan has no pins to compare with yet')}</p>` : '')}
             ${voters.length ? `<p class="text-[10px] text-[var(--text-tertiary)] mt-1.5">${icon('users', 'w-3 h-3')} ${escapeHtml(voters.join(', '))}${info.count > voters.length ? ` +${info.count - voters.length}` : ''}</p>` : ''}
             <div class="flex items-center gap-1 flex-wrap mt-2">
-              ${idea.url ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(idea.url)}" target="_blank" rel="noopener">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
+              ${sanitizeUrl(idea.url) ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(sanitizeUrl(idea.url))}" target="_blank" rel="noopener noreferrer">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
               ${idea.address ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(googleMapsPlaceUrl(idea.address, idea.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
               ${pinned ? `<button class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" data-act="locate" data-id="${idea.id}">${icon('crosshair', 'w-3.5 h-3.5')} ${th('หมุด','Pin')}</button>` : ''}
               ${pinned && planPinned ? `<button class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" data-act="compare" data-id="${idea.id}">${icon('git-compare', 'w-3.5 h-3.5')} ${th('เทียบกับแผน','Compare')}</button>` : ''}
@@ -12452,9 +12452,9 @@ async function renderBookings(params) {
                   ${r.notes ? `<p class="text-[11px] text-[var(--text-secondary)] mt-1">${escapeHtml(r.notes)}</p>` : ''}
                   ${warnings.length ? `<p class="text-[10px] mt-1.5" style="color:var(--warning);">${icon('alert-triangle', 'w-3 h-3')} ${escapeHtml(warnings.map(w => lang === 'th' ? w.th : w.en).join(' • '))}</p>` : ''}
                   <div class="flex items-center gap-1 flex-wrap mt-2">
-                    ${r.url ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(r.url)}" target="_blank" rel="noopener">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
+                    ${sanitizeUrl(r.url) ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(sanitizeUrl(r.url))}" target="_blank" rel="noopener noreferrer">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
                     ${r.address ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(googleMapsPlaceUrl(r.address, r.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
-                    ${r.phone ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="tel:${escapeHtml(r.phone)}">${icon('phone', 'w-3.5 h-3.5')} ${escapeHtml(r.phone)}</a>` : ''}
+                    ${r.phone ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="tel:${escapeHtml(String(r.phone).replace(/[^\d+#*,;]/g, ''))}">${icon('phone', 'w-3.5 h-3.5')} ${escapeHtml(r.phone)}</a>` : ''}
                     ${!r.linkedItemId ? `<button class="btn btn-accent btn-sm text-[11px]" style="min-height:30px;padding:2px 10px;" data-act="plan" data-id="${r.id}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>` : ''}
                     <button class="icon-btn" data-act="edit" data-id="${r.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
                     <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${r.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>

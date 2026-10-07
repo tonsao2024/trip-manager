@@ -266,12 +266,15 @@
       }
       const urlParams = new URLSearchParams(location.search);
       const cfgParam = urlParams.get('cfg');
-      if (cfgParam) {
+      const isLocalDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+      if (cfgParam && isLocalDev) {
         try {
           const decoded = JSON.parse(atob(cfgParam));
-          window.__FIREBASE_CONFIG__ = decoded;
-          localStorage.setItem('fuji_firebase_config', JSON.stringify(decoded));
-          console.log('[Config] Loaded from URL param');
+          if (decoded && typeof decoded.apiKey === 'string' && typeof decoded.projectId === 'string') {
+            window.__FIREBASE_CONFIG__ = decoded;
+            localStorage.setItem('fuji_firebase_config', JSON.stringify(decoded));
+            console.log('[Config] Loaded from URL param (local dev)');
+          }
         } catch (e) { console.warn('Invalid cfg param', e); }
       }
     } catch (e) { console.warn('Config load failed', e); }
