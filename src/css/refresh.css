@@ -4,7 +4,7 @@
    Loaded after components.css. It re-shapes the shared components (cards, nav,
    chips, tiles, sheets) into the brighter, rounder product look and adds the
    styles for the v17 additions: Explore place guides, calendar view, booking
-   text import, trip sharing, the offline strip and the demo (preview) banner.
+   text import, trip sharing and the offline strip.
    Everything is derived from tokens.css, so light & dark stay in sync.
    ========================================================================== */
 
@@ -371,7 +371,7 @@ select.input { border-radius: var(--radius); }
 [data-theme="dark"] .share-code { color: var(--primary); }
 
 /* ---------------------------------------------------------------- *
- * 10. Offline / sync strip + demo banner
+ * 10. Offline / sync strip
  * ---------------------------------------------------------------- */
 .offline-strip {
   display: flex; align-items: center; gap: 8px;
@@ -383,26 +383,6 @@ select.input { border-radius: var(--radius); }
 }
 .offline-strip svg { width: 15px; height: 15px; color: var(--warning); }
 
-/* Demo strip (the offline “ตัวอย่างฟังก์ชันครบ” build) — calm slate bar with an
-   amber dot, so it is obviously not part of the real UI but stays on-palette. */
-.demo-banner {
-  position: sticky; top: 0; z-index: 60;
-  display: flex; align-items: center; justify-content: center; gap: 10px;
-  flex-wrap: wrap;
-  padding: 9px 16px;
-  background: #131c33;
-  color: #eef4ff;
-  font-size: 12px; font-weight: 600;
-  letter-spacing: 0.005em;
-  box-shadow: 0 6px 18px rgba(34,48,61,0.28);
-}
-.demo-banner .demo-dot {
-  width: 8px; height: 8px; border-radius: 9999px; flex: none;
-  background: var(--brand-yellow-raw);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand-yellow-raw) 26%, transparent);
-}
-.demo-banner b { font-weight: 800; color: #fff; }
-.demo-banner > span:not(.demo-dot) { color: rgba(242,247,253,0.82); }
 /* Version / “last updated” stamp shown on the login screen, the More page and
    the Settings “About” card (single source: src/js/utils/buildInfo.js). */
 .build-stamp {
@@ -414,19 +394,6 @@ select.input { border-radius: var(--radius); }
 .build-stamp svg { opacity: 0.75; }
 #about-card .build-stamp { justify-content: flex-start; margin-top: 6px; }
 
-.demo-banner .demo-stamp { font-size: 10.5px; font-variant-numeric: tabular-nums; color: rgba(242,247,253,0.55); }
-.demo-banner .demo-btn {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 4px 12px; border-radius: var(--radius-full);
-  background: rgba(255,255,255,0.12);
-  border: 1px solid rgba(255,255,255,0.28);
-  color: #fff; font-weight: 700; font-size: 11.5px;
-  cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease;
-}
-.demo-banner .demo-btn:hover { background: rgba(255,255,255,0.22); border-color: rgba(255,255,255,0.42); }
-.demo-banner svg { width: 14px; height: 14px; }
-
 /* ---------------------------------------------------------------- *
  * 11. Small screens — keep the new pieces readable
  * ---------------------------------------------------------------- */
@@ -437,12 +404,11 @@ select.input { border-radius: var(--radius); }
   .cal-cell { min-height: 62px; padding: 5px; }
   .cal-pill { font-size: 9px; }
   .share-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .demo-banner { font-size: 11px; padding: 7px 10px; }
 }
 
 /* Print: the itinerary / calendar should come out clean (Web version export) */
 @media print {
-  #app-header, .bottom-nav, .fab, .toast-container, #bg-decor, .demo-banner, .no-print, .app-footer { display: none !important; }
+  #app-header, .bottom-nav, .fab, .toast-container, #bg-decor, .no-print, .app-footer { display: none !important; }
   body { background: #fff; padding: 0 !important; }
   .card { box-shadow: none !important; border-color: #d8e0e8 !important; break-inside: avoid; }
   .page-scene { background: none !important; }
@@ -1133,3 +1099,119 @@ select.input { border-radius: var(--radius); }
 [data-theme="dark"] .settle-person-verdict.is-out,
 [data-theme="dark"] .debt-legend-item.is-out { color: #fda4af; }
 [data-theme="dark"] .expense-avg-chip { background: color-mix(in srgb, var(--primary-raw) 24%, transparent); color: #dbeafe; }
+
+/* Receiver-centred debt map: one clear hub with payers around it. */
+.debt-map-card { overflow: hidden; }
+.debt-recipient-groups { display: grid; gap: 18px; }
+.debt-recipient-group {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg-secondary) 42%, var(--surface));
+}
+.debt-recipient-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 9px;
+  padding: 0 2px;
+}
+.debt-recipient-avatar {
+  display: grid;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary-raw) 10%, transparent);
+}
+.debt-recipient-heading small { display: block; color: var(--success); font-size: 9px; font-weight: 900; letter-spacing: .08em; }
+.debt-recipient-heading b { display: block; overflow: hidden; color: var(--text-primary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.debt-recipient-count { flex: 0 0 auto; color: var(--text-secondary); font-size: 10px; font-weight: 750; }
+.debt-map-container { overflow-x: auto !important; overscroll-behavior-inline: contain; }
+.debt-recipient-svg {
+  display: block;
+  width: 100%;
+  min-width: 560px;
+  max-width: 760px;
+  margin: 0 auto;
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--primary-light));
+}
+.debt-map-orbit { fill: none; stroke: color-mix(in srgb, var(--primary-raw) 24%, var(--border)); stroke-width: 1.5; stroke-dasharray: 4 7; }
+.debt-map-caption { fill: var(--text-tertiary); font: 800 9px var(--font-sans); letter-spacing: .11em; }
+.debt-map-edge rect { filter: drop-shadow(0 2px 3px rgba(15, 35, 62, .1)); }
+.debt-map-edge text { paint-order: stroke; stroke: var(--surface); stroke-width: 2px; stroke-linejoin: round; }
+.debt-map-node:focus { outline: none; filter: drop-shadow(0 0 4px color-mix(in srgb, var(--primary-raw) 48%, transparent)); }
+.debt-map-node--receiver:hover { filter: drop-shadow(0 3px 7px color-mix(in srgb, var(--success) 30%, transparent)); }
+.debt-map-node--payer:hover { filter: drop-shadow(0 3px 7px color-mix(in srgb, var(--danger) 26%, transparent)); }
+.debt-payer-list { display: grid; gap: 6px; margin-top: 9px; }
+.debt-payer-list .debt-tx-row { min-width: 0; min-height: 42px; }
+.debt-row-pays { display: inline-flex; align-items: center; gap: 3px; color: var(--text-tertiary); font-size: 9px; white-space: nowrap; }
+@media (max-width: 600px) {
+  .debt-map-card { padding: 12px !important; }
+  .debt-recipient-group { padding: 9px; }
+  .debt-recipient-count { font-size: 9px; }
+  .debt-payer-list .debt-tx-row { gap: 5px; padding: 7px; font-size: 10px; }
+  .debt-row-pays { font-size: 0; }
+  .debt-row-pays svg { width: 14px; height: 14px; }
+}
+
+/* Compact expenses density and legible grouped-date headings on narrow screens. */
+.expenses-compact .expense-card { gap: 8px; padding: 9px 10px; border-radius: 13px; }
+.expenses-compact .expense-card > .row-icon { width: 36px !important; height: 36px !important; border-radius: 11px !important; }
+.expenses-compact .expense-card > .row-icon svg { width: 17px; height: 17px; }
+.expenses-compact .expense-card .badge,
+.expenses-compact .expense-card .rcpt-chip { padding: 2px 6px; font-size: 9px; }
+.expenses-compact .expense-card .meta-line { font-size: 9px; gap: 3px; }
+.expenses-compact .expense-card .meta-line svg { width: 11px; height: 11px; }
+.expenses-compact .expense-card .expense-actions { gap: 3px; }
+.expenses-compact .expense-card .expense-actions .icon-btn { width: 28px; height: 28px; border-radius: 8px; }
+.expenses-compact .expense-card .line-clamp-2,
+.expenses-compact .expense-card .expense-receipt-thumb,
+.expenses-compact .expense-card .expense-comment-preview { display: none; }
+.expenses-compact .expense-day { gap: 7px; margin-bottom: 9px; }
+.expenses-compact .expense-day-head { padding: 6px 9px; gap: 8px; }
+.expenses-compact .expense-day-num { width: 30px; height: 30px; border-radius: 10px; font-size: 13px; }
+.expenses-compact .expense-day-title { font-size: 11px; }
+.expenses-compact .expense-day-total .money-primary { font-size: 11px; }
+.expenses-compact .expense-day .expense-card { box-shadow: none; }
+#exp-density-btn.is-active { color: var(--primary-strong); background: var(--primary-light); }
+@media (max-width: 540px) {
+  .expense-day-head {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    align-items: center;
+    gap: 4px 9px;
+    padding: 8px 10px;
+  }
+  .expense-day-head > .min-w-0 { min-width: 0; }
+  .expense-day-title {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .expense-day-sub { font-size: 9px; }
+  .expense-day-total {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    min-width: 0;
+    margin: 0 0 0 43px;
+    text-align: left;
+  }
+  .expense-day-total .money-primary { font-size: 12px; }
+  .expense-day-total .expense-avg-chip { max-width: 100%; white-space: normal; }
+  .expenses-compact .expense-day-head { padding: 6px 8px; }
+}

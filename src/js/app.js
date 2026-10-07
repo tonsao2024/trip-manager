@@ -7,7 +7,7 @@ import { renderFujiMascot, renderEmptyState } from './components/fuji.js';
 import { logout, hasStepUpSession } from './auth/index.js';
 import { getMemberSession, clearMemberSession } from './auth/memberAuth.js';
 import { runSystemDiagnostics, formatDiagnosticsReport, DIAG } from './utils/diagnostics.js';
-import { listTrips, getTrip, createTrip, updateTrip, deleteTrip, duplicateTrip, uploadCoverImage, clearTripsCache, clearAllDataCache, regenerateInviteCode } from './trips/index.js';
+import { listTrips, getTrip, subscribeTrip, createTrip, updateTrip, deleteTrip, duplicateTrip, uploadCoverImage, clearTripsCache, clearAllDataCache, regenerateInviteCode } from './trips/index.js';
 import {
   signInWithGoogle, completeRedirectSignIn,
   ensureUserProfile, findProfileByEmail
@@ -49,7 +49,7 @@ import { initReveal, countUp, confetti, celebrateFrom, restagger } from './compo
 import { resolvePermissions, clearPermissionsCache } from './utils/permissions.js';
 import { renderPageScene } from './components/scenes.js';
 import { listNotes, createNote, updateNote, deleteNote, NOTE_COLORS, noteColorHex, setNoteArchived, localArchivedIds } from './notes/index.js';
-import { googleMapsPlaceUrl, googleMapsDirectionsUrl, BASE_LAYERS, setMapLayer, getStoredLayerId } from './maps/index.js';
+import { googleMapsPlaceUrl, googleMapsDirectionsUrl, BASE_LAYERS, setMapLayer, getStoredLayerId, setStoredLayerId } from './maps/index.js';
 import {
   EXPENSE_CATEGORIES, CATEGORY_ICONS, categoryLabel, categoryIcon, categoryColor,
   ITINERARY_CATEGORIES, ITINERARY_STATUSES, normalizeCategory,
@@ -2436,147 +2436,180 @@ async function renderDashboard(params) {
               <button id="dash-edit-trip" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;">${icon('pencil', 'w-4 h-4')} ${th('แก้ไขทริป','Edit trip')}</button>
               <button id="add-place-quick" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;">${icon('map-pin', 'w-4 h-4')} ${t('addPlace')}</button>
               <button id="add-expense-quick" class="btn btn-sm btn-primary">${icon('wallet', 'w-4 h-4')} ${t('addExpense')}</button>
+              <button id="dash-layout-edit-btn" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;" aria-pressed="false">${icon('layout-dashboard', 'w-4 h-4')} <span data-layout-label>${th('จัดเรียงการ์ด','Arrange cards')}</span></button>
               <button id="dash-density-btn" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;" title="สลับมุมมองกะทัดรัด/ปกติ">${icon('rows-3', 'w-4 h-4')} <span data-density-label>มุมมองกะทัดรัด</span></button>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- COUNTDOWN + WEATHER side-by-side on desktop (user request #1) -->
-      <div class="dash-top-row">
-        <div class="card p-4 md:p-5">
-          <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
-            <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('timer', 'w-4 h-4')}</span> ${t('countdown')}</h3>
-            <div id="live-since" class="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1.5">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="w-3 h-3" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-              <span data-live-label></span>
+      <div id="dash-layout-tools" class="dash-layout-tools hidden">
+        <span>${icon('move', 'w-3.5 h-3.5')} ${th('กดค้างที่แถบจับแล้วลากเพื่อจัดวาง การเปลี่ยนแปลงจะซิงก์ในทริปนี้ทุกอุปกรณ์','Drag a card by its handle. The layout syncs across this trip’s devices.')}</span>
+        <div class="flex items-center gap-2">
+          <span id="dash-layout-status" class="dash-layout-status" aria-live="polite"></span>
+          <button id="dash-layout-reset" type="button" class="btn btn-ghost btn-sm">${icon('rotate-ccw', 'w-3.5 h-3.5')} ${th('คืนค่าเริ่มต้น','Reset')}</button>
+        </div>
+      </div>
+
+      <div id="dashboard-board" class="dashboard-board">
+        <section class="dash-widget dash-widget--half" data-dashboard-widget="countdown">
+          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดนับถอยหลัง','Drag countdown card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          <div class="card p-4 md:p-5">
+            <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
+              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('timer', 'w-4 h-4')}</span> ${t('countdown')}</h3>
+              <div id="live-since" class="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1.5">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="w-3 h-3" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                <span data-live-label></span>
+              </div>
+            </div>
+            <div id="countdown-scene"></div>
+          </div>
+        </section>
+
+        <section class="dash-widget dash-widget--half" data-dashboard-widget="weather">
+          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดสภาพอากาศ','Drag weather card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          <div class="card p-4 md:p-5" id="dash-weather-card">
+            <div id="dash-weather-multi"><div class="skeleton h-24"></div></div>
+          </div>
+        </section>
+
+        <section class="dash-widget dash-widget--full" data-dashboard-widget="kpis">
+          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดสรุปยอด','Drag summary cards')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          <div class="kpi-grid-compact">
+            <div class="kpi-tile kpi-compact" data-kpi="total">
+              <span class="kpi-icon" style="background: var(--primary-light); color: var(--primary-strong);">${icon('wallet', 'w-4 h-4')}</span>
+              <p class="kpi-label">${t('totalExpense')}</p>
+              <h3 class="kpi-value" id="kpi-total">--</h3>
+              <p class="kpi-sub" id="kpi-total-sub"></p>
+            </div>
+            <div class="kpi-tile kpi-compact" data-kpi="budget">
+              <span class="kpi-mood" id="kpi-budget-mood"></span>
+              <span class="kpi-icon" style="background: var(--info-light); color: var(--info);">${icon('piggy-bank', 'w-4 h-4')}</span>
+              <p class="kpi-label">${th('งบคงเหลือ','Budget left')}</p>
+              <h3 class="kpi-value" id="kpi-budget">--</h3>
+              <div class="progress mt-1.5" style="height:5px;"><div class="progress-bar" id="kpi-budget-bar" style="width:0%;"></div></div>
+              <p class="kpi-sub" id="kpi-budget-sub"></p>
+            </div>
+            <div class="kpi-tile kpi-compact" data-kpi="balance">
+              <span class="kpi-mood" id="kpi-balance-mood"></span>
+              <span class="kpi-icon" style="background: var(--success-light); color: var(--success);">${icon('scale', 'w-4 h-4')}</span>
+              <p class="kpi-label">${t('myBalance')}</p>
+              <h3 class="kpi-value" id="kpi-balance">--</h3>
+              <p class="kpi-sub" id="kpi-balance-sub"></p>
+            </div>
+            <div class="kpi-tile kpi-compact" data-kpi="plan">
+              <span class="kpi-icon" style="background: var(--warning-light); color: var(--warning);">${icon('map-pinned', 'w-4 h-4')}</span>
+              <p class="kpi-label">${th('แผนการเดินทาง','Itinerary')}</p>
+              <h3 class="kpi-value" id="kpi-places">--</h3>
+              <p class="kpi-sub" id="kpi-places-sub"></p>
             </div>
           </div>
-          <div id="countdown-scene"></div>
-        </div>
-        <div class="card p-4 md:p-5" id="dash-weather-card">
-          <div id="dash-weather-multi"><div class="skeleton h-24"></div></div>
-        </div>
-      </div>
+        </section>
 
-      <!-- KPI TILES compact (user request #1) -->
-      <div class="kpi-grid-compact">
-        <div class="kpi-tile kpi-compact" data-kpi="total">
-          <span class="kpi-icon" style="background: var(--primary-light); color: var(--primary-strong);">${icon('wallet', 'w-4 h-4')}</span>
-          <p class="kpi-label">${t('totalExpense')}</p>
-          <h3 class="kpi-value" id="kpi-total">--</h3>
-          <p class="kpi-sub" id="kpi-total-sub"></p>
-        </div>
-        <div class="kpi-tile kpi-compact" data-kpi="budget">
-          <span class="kpi-mood" id="kpi-budget-mood"></span>
-          <span class="kpi-icon" style="background: var(--info-light); color: var(--info);">${icon('piggy-bank', 'w-4 h-4')}</span>
-          <p class="kpi-label">${th('งบคงเหลือ','Budget left')}</p>
-          <h3 class="kpi-value" id="kpi-budget">--</h3>
-          <div class="progress mt-1.5" style="height:5px;"><div class="progress-bar" id="kpi-budget-bar" style="width:0%;"></div></div>
-          <p class="kpi-sub" id="kpi-budget-sub"></p>
-        </div>
-        <div class="kpi-tile kpi-compact" data-kpi="balance">
-          <span class="kpi-mood" id="kpi-balance-mood"></span>
-          <span class="kpi-icon" style="background: var(--success-light); color: var(--success);">${icon('scale', 'w-4 h-4')}</span>
-          <p class="kpi-label">${t('myBalance')}</p>
-          <h3 class="kpi-value" id="kpi-balance">--</h3>
-          <p class="kpi-sub" id="kpi-balance-sub"></p>
-        </div>
-        <div class="kpi-tile kpi-compact" data-kpi="plan">
-          <span class="kpi-icon" style="background: var(--warning-light); color: var(--warning);">${icon('map-pinned', 'w-4 h-4')}</span>
-          <p class="kpi-label">${th('แผนการเดินทาง','Itinerary')}</p>
-          <h3 class="kpi-value" id="kpi-places">--</h3>
-          <p class="kpi-sub" id="kpi-places-sub"></p>
-        </div>
-      </div>
-
-      <!-- MY WALLET -->
-      <div class="card p-5" id="my-wallet-card">
-        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-          <h3 class="font-bold flex items-center gap-2">
-            <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('user-round', 'w-4 h-4')}</span>
-            ${th('กระเป๋าของฉัน','My wallet')}
-            <span class="text-[10px] font-normal text-[var(--text-tertiary)]">${th('ยอดทริปรวม vs ยอดของฉัน vs งบของฉัน','trip total vs my totals vs my budget')}</span>
-          </h3>
-          <span id="my-wallet-mood"></span>
-        </div>
-        <div id="my-wallet" class="my-wallet-grid"><div class="skeleton h-16"></div></div>
-        <div class="dash-subhead">
-          <h4>
-            <span class="row-icon" style="width:26px;height:26px;border-radius:9px;">${icon('users-round', 'w-3.5 h-3.5')}</span>
-            ${th('ทีม • ค่าใช้จ่ายต่อคน / รวมทีม','Teams • cost per person / per team')}
-          </h4>
-          <button id="dash-teams-link" class="btn btn-ghost btn-sm text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการทีม','Manage teams')}</button>
-        </div>
-        <div id="team-board" class="team-board"><div class="skeleton h-16"></div></div>
-      </div>
-
-      <!-- TODAY / CURRENT -->
-      <div class="grid md:grid-cols-2 gap-4">
-        <div class="card p-5">
-          <div class="flex items-center justify-between gap-2 mb-3">
-            <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('target', 'w-4 h-4')}</span> ${t('currentActivity')}</h3>
-            <button id="dash-today-link" class="btn btn-ghost btn-sm text-xs">${icon('calendar-days', 'w-3.5 h-3.5')} ${th('ดูวันนี้','Today')}</button>
-          </div>
-          <div id="current-activity"><div class="skeleton h-14"></div></div>
-          <div class="mt-4 pt-3 border-t" style="border-color:var(--border);">
-            <div class="flex items-center justify-between text-xs mb-1.5">
-              <span class="meta-line">${icon('plane', 'w-3.5 h-3.5')} ${th('ความคืบหน้าทริป','Trip progress')}</span>
-              <span class="font-bold" id="trip-progress-label">--</span>
+        <section class="dash-widget dash-widget--full" data-dashboard-widget="wallet">
+          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดกระเป๋าของฉัน','Drag wallet card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          <div class="card p-5" id="my-wallet-card">
+            <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+              <h3 class="font-bold flex items-center gap-2">
+                <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('user-round', 'w-4 h-4')}</span>
+                ${th('กระเป๋าของฉัน','My wallet')}
+                <span class="text-[10px] font-normal text-[var(--text-tertiary)]">${th('ยอดทริปรวม vs ยอดของฉัน vs งบของฉัน','trip total vs my totals vs my budget')}</span>
+              </h3>
+              <span id="my-wallet-mood"></span>
             </div>
-            <div class="progress"><div class="progress-bar" id="trip-progress-bar" style="width:0%;"></div></div>
+            <div id="my-wallet" class="my-wallet-grid"><div class="skeleton h-16"></div></div>
+            <div class="dash-subhead">
+              <h4>
+                <span class="row-icon" style="width:26px;height:26px;border-radius:9px;">${icon('users-round', 'w-3.5 h-3.5')}</span>
+                ${th('ทีม • ค่าใช้จ่ายต่อคน / รวมทีม','Teams • cost per person / per team')}
+              </h4>
+              <button id="dash-teams-link" class="btn btn-ghost btn-sm text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการทีม','Manage teams')}</button>
+            </div>
+            <div id="team-board" class="team-board"><div class="skeleton h-16"></div></div>
           </div>
-        </div>
-        <div class="card p-5">
-          <div class="flex items-center justify-between gap-2 mb-3">
-            <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('sparkles', 'w-4 h-4')}</span> ${t('upNext')}</h3>
-            <button id="dash-itinerary-link" class="btn btn-ghost btn-sm text-xs">${icon('map-pinned', 'w-3.5 h-3.5')} ${th('ดูแผนทั้งหมด','All plans')}</button>
-          </div>
-          <div id="upnext-list" class="stagger"><div class="skeleton h-14"></div></div>
-        </div>
-      </div>
+        </section>
 
-      <!-- SPEND BY CATEGORY (expandable) + ESTIMATED VS ACTUAL -->
-      <div class="grid md:grid-cols-2 gap-4">
-        <div class="card p-5">
-          <div class="flex items-center justify-between gap-2 mb-3">
-            <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('pie-chart', 'w-4 h-4')}</span> ${th('ค่าใช้จ่ายตามหมวด','Spend by category')}</h3>
-            <button id="cat-expand-btn" class="btn btn-ghost btn-sm text-[11px]" style="display:none;">${icon('chevron-down','w-3.5 h-3.5')} <span data-cat-label>${th('ดูทั้งหมด','Show all')}</span></button>
+        <section class="dash-widget dash-widget--half" data-dashboard-widget="current">
+          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดกิจกรรมตอนนี้','Drag current activity card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          <div class="card p-5">
+            <div class="flex items-center justify-between gap-2 mb-3">
+              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('target', 'w-4 h-4')}</span> ${t('currentActivity')}</h3>
+              <button id="dash-today-link" class="btn btn-ghost btn-sm text-xs">${icon('calendar-days', 'w-3.5 h-3.5')} ${th('ดูวันนี้','Today')}</button>
+            </div>
+            <div id="current-activity"><div class="skeleton h-14"></div></div>
+            <div class="mt-4 pt-3 border-t" style="border-color:var(--border);">
+              <div class="flex items-center justify-between text-xs mb-1.5">
+                <span class="meta-line">${icon('plane', 'w-3.5 h-3.5')} ${th('ความคืบหน้าทริป','Trip progress')}</span>
+                <span class="font-bold" id="trip-progress-label">--</span>
+              </div>
+              <div class="progress"><div class="progress-bar" id="trip-progress-bar" style="width:0%;"></div></div>
+            </div>
           </div>
-          <div id="category-stats"><div class="skeleton h-24"></div></div>
-        </div>
-        <div class="card p-5">
-          <h3 class="font-bold mb-3 flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('bar-chart-3', 'w-4 h-4')}</span> ${th('ประมาณการ vs จ่ายจริง','Estimated vs actual')}</h3>
-          <div id="estimate-compare"></div>
-          <div id="summary-stats" class="mt-4 pt-3 border-t text-sm space-y-1" style="border-color:var(--border);"></div>
-        </div>
-      </div>
+        </section>
 
-      <!-- IDEAS BOARD (wishlist) - placed appropriately, removed prep/bookings per request #7 -->
-      <div id="dash-ideas-board" class="card p-5">
-        <div class="flex items-center justify-between gap-2 mb-3">
-          <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);">${icon('lightbulb', 'w-4 h-4')}</span> ${th('สถานที่ที่อยากไป','Wishlist')}</h3>
-          <a id="dash-ideas-link" href="#/trip/${tripId}/ideas" class="btn btn-ghost btn-sm text-xs">${icon('arrow-right','w-3.5 h-3.5')} ${th('ดูทั้งหมด','View all')}</a>
-        </div>
-        <div id="dash-ideas-list"><div class="skeleton h-16"></div></div>
-      </div>
+        <section class="dash-widget dash-widget--half" data-dashboard-widget="up-next">
+          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดแผนถัดไป','Drag upcoming plans card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          <div class="card p-5">
+            <div class="flex items-center justify-between gap-2 mb-3">
+              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('sparkles', 'w-4 h-4')}</span> ${t('upNext')}</h3>
+              <button id="dash-itinerary-link" class="btn btn-ghost btn-sm text-xs">${icon('map-pinned', 'w-3.5 h-3.5')} ${th('ดูแผนทั้งหมด','All plans')}</button>
+            </div>
+            <div id="upnext-list" class="stagger"><div class="skeleton h-14"></div></div>
+          </div>
+        </section>
 
-      <!-- MEMBERS + RECENT -->
-      <div class="grid lg:grid-cols-2 gap-4 items-start">
-        <div class="card p-5">
-          <div class="flex items-center justify-between gap-2 mb-4">
-            <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('users', 'w-4 h-4')}</span> ${th('สมาชิก • จ่ายไป / ต้องรับผิดชอบ','Members • paid / share')}</h3>
-            <button id="dash-members-link" class="btn btn-ghost btn-sm text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการสมาชิก','Manage')}</button>
+        <section class="dash-widget dash-widget--half" data-dashboard-widget="category">
+          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดค่าใช้จ่ายตามหมวด','Drag spend by category card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          <div class="card p-5">
+            <div class="flex items-center justify-between gap-2 mb-3">
+              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('pie-chart', 'w-4 h-4')}</span> ${th('ค่าใช้จ่ายตามหมวด','Spend by category')}</h3>
+              <button id="cat-expand-btn" class="btn btn-ghost btn-sm text-[11px]" style="display:none;">${icon('chevron-down','w-3.5 h-3.5')} <span data-cat-label>${th('ดูทั้งหมด','Show all')}</span></button>
+            </div>
+            <div id="category-stats"><div class="skeleton h-24"></div></div>
           </div>
-          <div id="member-board-content" class="space-y-3 stagger"><div class="skeleton h-16"></div></div>
-        </div>
-        <div class="card p-5">
-          <div class="flex items-center justify-between gap-2 mb-3">
-            <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('receipt', 'w-4 h-4')}</span> ${th('รายการล่าสุด','Recent expenses')}</h3>
-            <button id="dash-expenses-link" class="btn btn-ghost btn-sm text-xs">${icon('wallet', 'w-3.5 h-3.5')} ${th('ดูทั้งหมด','View all')}</button>
+        </section>
+
+        <section class="dash-widget dash-widget--half" data-dashboard-widget="estimate">
+          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดประมาณการเทียบจ่ายจริง','Drag estimated vs actual card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          <div class="card p-5">
+            <h3 class="font-bold mb-3 flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('bar-chart-3', 'w-4 h-4')}</span> ${th('ประมาณการ vs จ่ายจริง','Estimated vs actual')}</h3>
+            <div id="estimate-compare"></div>
+            <div id="summary-stats" class="mt-4 pt-3 border-t text-sm space-y-1" style="border-color:var(--border);"></div>
           </div>
-          <div id="recent-expenses" class="space-y-2 stagger"><div class="skeleton h-12"></div></div>
-        </div>
+        </section>
+
+        <section class="dash-widget dash-widget--full" data-dashboard-widget="ideas">
+          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดสถานที่ที่อยากไป','Drag wishlist card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          <div id="dash-ideas-board" class="card p-5">
+            <div class="flex items-center justify-between gap-2 mb-3">
+              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);">${icon('lightbulb', 'w-4 h-4')}</span> ${th('สถานที่ที่อยากไป','Wishlist')}</h3>
+              <a id="dash-ideas-link" href="#/trip/${tripId}/ideas" class="btn btn-ghost btn-sm text-xs">${icon('arrow-right','w-3.5 h-3.5')} ${th('ดูทั้งหมด','View all')}</a>
+            </div>
+            <div id="dash-ideas-list"><div class="skeleton h-16"></div></div>
+          </div>
+        </section>
+
+        <section class="dash-widget dash-widget--half" data-dashboard-widget="members">
+          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดสมาชิก','Drag members card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          <div class="card p-5">
+            <div class="flex items-center justify-between gap-2 mb-4">
+              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('users', 'w-4 h-4')}</span> ${th('สมาชิก • จ่ายไป / ต้องรับผิดชอบ','Members • paid / share')}</h3>
+              <button id="dash-members-link" class="btn btn-ghost btn-sm text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการสมาชิก','Manage')}</button>
+            </div>
+            <div id="member-board-content" class="space-y-3 stagger"><div class="skeleton h-16"></div></div>
+          </div>
+        </section>
+
+        <section class="dash-widget dash-widget--half" data-dashboard-widget="recent-expenses">
+          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดค่าใช้จ่ายล่าสุด','Drag recent expenses card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          <div class="card p-5">
+            <div class="flex items-center justify-between gap-2 mb-3">
+              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('receipt', 'w-4 h-4')}</span> ${th('รายการล่าสุด','Recent expenses')}</h3>
+              <button id="dash-expenses-link" class="btn btn-ghost btn-sm text-xs">${icon('wallet', 'w-3.5 h-3.5')} ${th('ดูทั้งหมด','View all')}</button>
+            </div>
+            <div id="recent-expenses" class="space-y-2 stagger"><div class="skeleton h-12"></div></div>
+          </div>
+        </section>
       </div>
 
       <!-- legacy dash-tools hidden but kept for compatibility -->
@@ -2595,6 +2628,111 @@ async function renderDashboard(params) {
   bind('dash-members-link', 'click', () => { location.hash = `#/trip/${tripId}/members`; });
   bind('dash-expenses-link', 'click', () => { location.hash = `#/trip/${tripId}/expenses`; });
   bind('dash-teams-link', 'click', () => { location.hash = `#/trip/${tripId}/members`; });
+
+  // Dashboard layout is stored on the shared trip document so every device and
+  // trip member sees the same card order.
+  const dashboardWidgetKeys = ['countdown', 'weather', 'kpis', 'wallet', 'current', 'up-next', 'category', 'estimate', 'ideas', 'members', 'recent-expenses'];
+  const dashboardBoard = document.getElementById('dashboard-board');
+  const normalizeDashboardOrder = (raw) => {
+    const valid = new Set(dashboardWidgetKeys);
+    const kept = Array.isArray(raw) ? [...new Set(raw.map(String).filter(k => valid.has(k)))] : [];
+    return [...kept, ...dashboardWidgetKeys.filter(k => !kept.includes(k))];
+  };
+  let lastDashboardOrder = normalizeDashboardOrder(trip?.dashboardLayout);
+  let dashboardLayoutEditing = false;
+  let dashboardLayoutSaving = false;
+  let dashboardSortable = null;
+  const applyDashboardOrder = (raw) => {
+    if (!dashboardBoard) return;
+    const order = normalizeDashboardOrder(raw);
+    for (const key of order) {
+      const widget = dashboardBoard.querySelector(`[data-dashboard-widget="${key}"]`);
+      if (widget) dashboardBoard.appendChild(widget);
+    }
+  };
+  const paintDashboardLayoutControls = () => {
+    document.getElementById('dashboard-view')?.classList.toggle('dashboard-layout-editing', dashboardLayoutEditing);
+    document.getElementById('dash-layout-tools')?.classList.toggle('hidden', !dashboardLayoutEditing);
+    const btn = document.getElementById('dash-layout-edit-btn');
+    if (btn) {
+      btn.setAttribute('aria-pressed', String(dashboardLayoutEditing));
+      btn.classList.toggle('is-active', dashboardLayoutEditing);
+      const label = btn.querySelector('[data-layout-label]');
+      if (label) label.textContent = dashboardLayoutEditing ? th('เสร็จสิ้น','Done') : th('จัดเรียงการ์ด','Arrange cards');
+    }
+    queueIcons();
+  };
+  applyDashboardOrder(lastDashboardOrder);
+
+  async function saveDashboardOrder(order) {
+    const next = normalizeDashboardOrder(order);
+    dashboardLayoutSaving = true;
+    const status = document.getElementById('dash-layout-status');
+    if (status) status.textContent = th('กำลังซิงก์…','Syncing…');
+    try {
+      await updateTrip(tripId, { dashboardLayout: next });
+      lastDashboardOrder = next;
+      currentTrip = { ...(currentTrip || trip || {}), dashboardLayout: next };
+      if (status) status.textContent = th('ซิงก์แล้ว','Synced');
+    } catch (e) {
+      applyDashboardOrder(lastDashboardOrder);
+      if (status) status.textContent = th('ซิงก์ไม่สำเร็จ','Sync failed');
+      toast.error(th('บันทึกการจัดวางการ์ดไม่สำเร็จ: ','Could not save card layout: ') + (e?.message || String(e)));
+    } finally {
+      dashboardLayoutSaving = false;
+      try { dashboardSortable?.option?.('disabled', false); } catch {}
+    }
+  }
+
+  async function setDashboardLayoutEditing(enabled) {
+    dashboardLayoutEditing = Boolean(enabled);
+    paintDashboardLayoutControls();
+    if (!dashboardLayoutEditing) {
+      try { dashboardSortable?.destroy(); } catch {}
+      dashboardSortable = null;
+      return;
+    }
+    try {
+      const Sortable = (await import('https://esm.sh/sortablejs@1.15.3')).default;
+      if (!dashboardLayoutEditing || isStale(token) || !dashboardBoard) return;
+      dashboardSortable = Sortable.create(dashboardBoard, {
+        animation: 180,
+        draggable: '.dash-widget',
+        handle: '.dash-widget-handle',
+        filter: 'button, a, input, textarea, select',
+        preventOnFilter: false,
+        onEnd: async () => {
+          const order = [...dashboardBoard.querySelectorAll(':scope > [data-dashboard-widget]')].map(node => node.dataset.dashboardWidget);
+          try { dashboardSortable?.option?.('disabled', true); } catch {}
+          await saveDashboardOrder(order);
+        }
+      });
+    } catch (e) {
+      dashboardLayoutEditing = false;
+      paintDashboardLayoutControls();
+      toast.error(th('เปิดโหมดจัดวางการ์ดไม่ได้: ','Could not enable card layout editing: ') + (e?.message || String(e)));
+    }
+  }
+  bind('dash-layout-edit-btn', 'click', () => setDashboardLayoutEditing(!dashboardLayoutEditing));
+  bind('dash-layout-reset', 'click', () => {
+    applyDashboardOrder(dashboardWidgetKeys);
+    saveDashboardOrder(dashboardWidgetKeys);
+  });
+  paintDashboardLayoutControls();
+
+  const stopDashboardTripSync = subscribeTrip(tripId, (latestTrip) => {
+    if (!latestTrip || isStale(token)) return;
+    currentTrip = { ...(currentTrip || {}), ...latestTrip };
+    if (!dashboardLayoutEditing && !dashboardLayoutSaving) {
+      lastDashboardOrder = normalizeDashboardOrder(latestTrip.dashboardLayout);
+      applyDashboardOrder(lastDashboardOrder);
+    }
+  });
+  document.addEventListener('routechange', () => {
+    try { dashboardSortable?.destroy(); } catch {}
+    dashboardSortable = null;
+    try { stopDashboardTripSync?.(); } catch {}
+  }, { once: true });
 
   // Dashboard density: comfortable (default) vs compact — remembered per device.
   const DASH_DENSITY_KEY = 'fuji_dash_density';
@@ -3470,6 +3608,9 @@ async function renderItinerary(params) {
 
   const trip = currentTrip;
   const currency = trip?.baseCurrency || 'THB';
+  const tripMapLayer = BASE_LAYERS.some(layer => layer.id === trip?.defaultMapLayer)
+    ? trip.defaultMapLayer
+    : getStoredLayerId();
   // Trip groups feed the "estimated cost" select in the add/edit sheet, so load
   // them together with the permissions (one round trip, cached afterwards).
   const [perms, , itineraryExpenses, itineraryGroups] = await Promise.all([
@@ -3583,6 +3724,7 @@ async function renderItinerary(params) {
   let showAll = false;
   let mapVisible = true;
   let mapReady = false;
+  let activeMapLayer = tripMapLayer;
   let visibleItems = [];
   // Cards whose details the user unfolded on a phone (“ดูเพิ่มเติม”). Kept in a
   // Set so a re-render (status change, day switch) remembers them.
@@ -3852,6 +3994,7 @@ async function renderItinerary(params) {
         dayColors,
         fitBounds: true,
         forceRecreate,
+        layerId: activeMapLayer,
         lang,
         directionsLabel: th('ไปที่นี่', 'Directions')
       });
@@ -3876,6 +4019,21 @@ async function renderItinerary(params) {
       queueIcons();
     }
   }
+
+  const stopItineraryTripSync = subscribeTrip(tripId, (latestTrip) => {
+    if (!latestTrip || isStale(token)) return;
+    currentTrip = { ...(currentTrip || {}), ...latestTrip };
+    const nextLayer = BASE_LAYERS.some(layer => layer.id === latestTrip.defaultMapLayer)
+      ? latestTrip.defaultMapLayer
+      : null;
+    if (!nextLayer || nextLayer === activeMapLayer) return;
+    activeMapLayer = nextLayer;
+    paintLayerButtons();
+    if (mapReady && mapVisible) refreshMap(visibleItems).catch(() => {});
+  });
+  document.addEventListener('routechange', () => {
+    try { stopItineraryTripSync?.(); } catch {}
+  }, { once: true });
 
   if (mapVisible) setTimeout(() => refreshMap(visibleItems), 220);
 
@@ -3957,7 +4115,7 @@ async function renderItinerary(params) {
 
   /* ---------------------- base map switcher (map/satellite/terrain) ---------------------- */
   function paintLayerButtons() {
-    const active = getStoredLayerId();
+    const active = activeMapLayer;
     document.querySelectorAll('#map-layer-bar [data-layer]').forEach(btn => {
       btn.classList.toggle('is-active', btn.dataset.layer === active);
     });
@@ -3965,6 +4123,8 @@ async function renderItinerary(params) {
   document.querySelectorAll('#map-layer-bar [data-layer]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const layerId = btn.dataset.layer;
+      activeMapLayer = layerId;
+      setStoredLayerId(layerId);
       const { setMapLayer } = await import('./maps/index.js');
       const ok = setMapLayer('map', layerId);
       if (!ok) {
@@ -4522,14 +4682,14 @@ async function renderItinerary(params) {
           <div class="flex items-start gap-3">
             <div class="step-num ${isVirtual ? 'step-num--stay' : ''}">${isDeparture ? icon('log-out', 'w-3.5 h-3.5') : (isReturn ? icon('bed-double', 'w-3.5 h-3.5') : idx + 1)}</div>
             <div class="flex-1 min-w-0">
-              <div class="flex items-start justify-between gap-2">
-                <h3 class="font-semibold text-sm leading-snug">${escapeHtml(title)}</h3>
-                <span class="flex items-center gap-1 flex-shrink-0">
-                  ${it.isStay ? `<span class="badge badge-stay text-[10px]">${icon(isDeparture ? 'sunrise' : (isVirtual ? 'moon' : 'bed-double'), 'w-2.5 h-2.5')} ${isDeparture ? th(`ออกจากที่พัก • หลังคืนที่ ${it.stayNight}/${nights}`, `check-out • after night ${it.stayNight}/${nights}`) : (isVirtual ? th(`คืนที่ ${it.stayNight}/${nights}`, `night ${it.stayNight}/${nights}`) : th(`พัก ${nights} คืน`, `${nights} nights`))}</span>` : ''}
-                  <span class="badge badge-${it.status || 'planned'} text-[10px]">${escapeHtml(statusDef ? (lang==='th'?statusDef.th:statusDef.en) : (it.status || 'planned'))}</span>
+              <div class="itin-title-row">
+                <h3 class="itin-title font-semibold text-sm leading-snug">${escapeHtml(title)}</h3>
+                <span class="itin-title-tags">
+                  <span class="badge badge-${it.status || 'planned'} text-[9px] itin-status-badge">${escapeHtml(statusDef ? (lang==='th'?statusDef.th:statusDef.en) : (it.status || 'planned'))}</span>
                 </span>
               </div>
               <div class="flex items-center gap-2 flex-wrap mt-1.5">
+                ${it.isStay ? `<span class="badge badge-stay text-[9px]">${icon(isDeparture ? 'sunrise' : (isVirtual ? 'moon' : 'bed-double'), 'w-2.5 h-2.5')} ${isDeparture ? th(`ออกจากที่พัก • หลังคืนที่ ${it.stayNight}/${nights}`, `check-out • after night ${it.stayNight}/${nights}`) : (isVirtual ? th(`คืนที่ ${it.stayNight}/${nights}`, `night ${it.stayNight}/${nights}`) : th(`พัก ${nights} คืน`, `${nights} nights`))}</span>` : ''}
                 <span class="meta-line">${icon('clock', 'w-3 h-3')} ${formatTime(it.startAt, trip?.timezone)} – ${formatTime(it.endAt, trip?.timezone)}</span>
                 ${isVirtual ? '' : `<span class="meta-line">${icon('timer', 'w-3 h-3')} ${formatDuration(it.durationMinutes)}</span>`}
                 ${(!isVirtual && it.travelToNextMinutes > 0) ? `<span class="meta-line itin-detail">${icon('footprints', 'w-3 h-3')} ${formatDuration(it.travelToNextMinutes)}</span>` : ''}
@@ -5412,7 +5572,7 @@ async function renderExpenses(params) {
   const action = urlParams.get('action');
 
   appEl.innerHTML = `
-    <div class="page-enter">
+    <div class="page-enter" id="expenses-view">
       <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
         ${renderPageScene('expenses', { lang, title: `${icon('wallet', 'w-5 h-5')} ${t('expenses')}`,
           subtitle: th('บันทึกค่าใช้จ่าย • หารเท่ากัน/ไม่เท่ากัน • ประมาณการจากแผน','Log expenses • split equally or custom • estimates from the plan') })}
@@ -5448,6 +5608,7 @@ async function renderExpenses(params) {
           <button type="button" class="segmented-item" data-group="day">${icon('calendar-days', 'w-3.5 h-3.5')} ${th('แยกตามวัน','By day')}</button>
         </div>
         <div class="btn-row">
+          <button id="exp-density-btn" class="btn btn-ghost btn-sm text-[11px]" type="button" aria-pressed="false">${icon('rows-3', 'w-3.5 h-3.5')} <span data-density-label>${th('มุมมองกระทัดรัด','Compact view')}</span></button>
           <button id="activity-btn" class="link-btn text-[11px]">${icon('history', 'w-3.5 h-3.5')} ${th('ประวัติการแก้ไข','Activity log')}</button>
           <button id="manage-cats-btn" class="link-btn text-[11px]">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage expense groups')}</button>
         </div>
@@ -5474,6 +5635,25 @@ async function renderExpenses(params) {
   // How the list is presented: one flat list, or grouped per day (a request).
   let groupMode = localStorage.getItem('fuji_exp_group') === 'day' ? 'day' : 'list';
   applyGroupToggle();
+
+  const expenseDensityKey = `fuji_exp_density:${tripId}`;
+  let expenseCompact = false;
+  try { expenseCompact = localStorage.getItem(expenseDensityKey) === 'compact'; } catch {}
+  function applyExpenseDensity() {
+    document.getElementById('expenses-view')?.classList.toggle('expenses-compact', expenseCompact);
+    const btn = document.getElementById('exp-density-btn');
+    if (!btn) return;
+    btn.classList.toggle('is-active', expenseCompact);
+    btn.setAttribute('aria-pressed', String(expenseCompact));
+    const label = btn.querySelector('[data-density-label]');
+    if (label) label.textContent = expenseCompact ? th('มุมมองปกติ','Comfortable view') : th('มุมมองกระทัดรัด','Compact view');
+  }
+  bind('exp-density-btn', 'click', () => {
+    expenseCompact = !expenseCompact;
+    try { localStorage.setItem(expenseDensityKey, expenseCompact ? 'compact' : 'comfortable'); } catch {}
+    applyExpenseDensity();
+  });
+  applyExpenseDensity();
 
   function applyGroupToggle() {
     document.querySelectorAll('#expense-group-toggle [data-group]').forEach(btn => {
@@ -5933,7 +6113,9 @@ function expenseFormSectionsHtml({
   const decimals = getCurrencyDecimals(currency);
   const amount = (minor) => (minor ? formatAmount(fromMinor(minor, decimals), decimals) : '');
   const initialPayments = expensePayments(e);
-  const initialPayers = new Set(initialPayments.length ? initialPayments.map(x => x.memberId) : [members[0]?.id || currentUser.uid]);
+  const initialPayers = new Set(e.payerPending
+    ? []
+    : (initialPayments.length ? initialPayments.map(x => x.memberId) : [members[0]?.id || currentUser.uid]));
   const selectedShare = members.filter(m => (e.allocations ? e.allocations.some(a => a.memberId === m.id) : true));
 
   return `
@@ -6012,6 +6194,12 @@ function expenseFormSectionsHtml({
             <div class="input-group">
               <label class="input-label">${icon('user', 'w-3.5 h-3.5')} ${tx('คนจ่าย (เลือกได้หลายคน)','Paid by (select one or more)')} *</label>
               <div id="${p}payer-tiles" class="tile-grid">
+                <button type="button" class="tile tile-pending ${e.payerPending ? 'tile-selected' : ''} ${e.isEstimated ? '' : 'hidden'}" data-payer="__pending" title="${tx('ประมาณการที่ยังไม่ทราบผู้จ่าย','Estimated item with no payer assigned yet')}">
+                  <span class="flex items-center gap-2 min-w-0">
+                    <span class="avatar w-8 h-8 text-xs" style="background:var(--bg-secondary);color:var(--text-secondary);width:32px;height:32px;border:1.5px dashed var(--border);">${icon('help-circle', 'w-4 h-4')}</span>
+                    <span class="text-sm font-medium">${tx('ยังไม่ระบุเจ้าภาพ','Payer TBD')}</span>
+                  </span>
+                </button>
                 ${members.map(m => `
                   <button type="button" class="tile ${initialPayers.has(m.id) ? 'tile-selected' : ''}" data-payer="${m.id}" title="${escapeHtml(m.displayName)}">
                     <span class="flex items-center gap-2 min-w-0">
@@ -6126,7 +6314,9 @@ function mountExpenseForm({
 
   const decimalsFor = (cur) => getCurrencyDecimals(cur);
   const initialPayments = expensePayments(e);
-  const initialPayers = new Set(initialPayments.length ? initialPayments.map(p => p.memberId) : [members[0]?.id || currentUser.uid]);
+  const initialPayers = new Set(e.payerPending
+    ? []
+    : (initialPayments.length ? initialPayments.map(p => p.memberId) : [members[0]?.id || currentUser.uid]));
 
   /* ---- payment method → managed card dropdown ---- */
   const paymentSel = $('ex-payment');
@@ -6205,7 +6395,8 @@ function mountExpenseForm({
   });
 
   /* ---- state ---- */
-  const selectedPayers = new Set(initialPayers);
+  let payerPending = Boolean(e.payerPending && $('ex-type')?.value === 'estimated');
+  const selectedPayers = new Set(payerPending ? [] : initialPayers);
   const payerAmounts = Object.fromEntries(initialPayments.map(p => [p.memberId, formatAmount(fromMinor(p.amountMinor, decimalsFor(e.currency || currency)), decimalsFor(e.currency || currency))]));
   let selectedShare = new Set(members.filter(m => {
     if (!e.allocations) return true;
@@ -6227,14 +6418,51 @@ function mountExpenseForm({
 
   const shareTiles = () => root.querySelectorAll(`[id="${esc('share-tiles')}"] [data-share]`);
   const payerTiles = () => root.querySelectorAll(`[id="${esc('payer-tiles')}"] [data-payer]`);
+  const isEstimatedExpense = () => $('ex-type')?.value === 'estimated';
+  const syncPayerTiles = () => payerTiles().forEach(btn => {
+    const isPendingChoice = btn.dataset.payer === '__pending';
+    if (isPendingChoice) {
+      btn.classList.toggle('hidden', !isEstimatedExpense());
+      btn.classList.toggle('tile-selected', payerPending);
+    } else {
+      btn.classList.toggle('tile-selected', !payerPending && selectedPayers.has(btn.dataset.payer));
+    }
+  });
 
   payerTiles().forEach(btn => btn.addEventListener('click', () => {
     const id = btn.dataset.payer;
-    if (selectedPayers.has(id)) { selectedPayers.delete(id); delete payerAmounts[id]; }
-    else { selectedPayers.add(id); payerAmounts[id] = ''; }
-    btn.classList.toggle('tile-selected', selectedPayers.has(id));
+    if (id === '__pending') {
+      if (!isEstimatedExpense()) return;
+      if (payerPending) {
+        payerPending = false;
+        if (!selectedPayers.size) {
+          const fallback = members.find(m => m.id === currentUser.uid) || members[0];
+          if (fallback) { selectedPayers.add(fallback.id); payerAmounts[fallback.id] = ''; }
+        }
+      } else {
+        payerPending = true;
+        selectedPayers.clear();
+        Object.keys(payerAmounts).forEach(key => delete payerAmounts[key]);
+      }
+    } else {
+      payerPending = false;
+      if (selectedPayers.has(id)) { selectedPayers.delete(id); delete payerAmounts[id]; }
+      else { selectedPayers.add(id); payerAmounts[id] = ''; }
+    }
+    syncPayerTiles();
     renderPayers();
   }));
+
+  on('ex-type', 'change', () => {
+    if (!isEstimatedExpense() && payerPending) {
+      payerPending = false;
+      const fallback = members.find(m => m.id === currentUser.uid) || members[0];
+      if (fallback) { selectedPayers.add(fallback.id); payerAmounts[fallback.id] = ''; }
+    }
+    syncPayerTiles();
+    renderPayers();
+  });
+  syncPayerTiles();
 
   shareTiles().forEach(btn => btn.addEventListener('click', () => {
     const id = btn.dataset.share;
@@ -6485,6 +6713,7 @@ function mountExpenseForm({
   }
 
   function readPayments(v) {
+    if (payerPending) return [];
     const ids = [...selectedPayers];
     if (ids.length === 1) return [{ memberId: ids[0], amountMinor: v.netMinor }];
     return ids.map(memberId => ({ memberId, amountMinor: toMinor(parseCurrencyInput(payerAmounts[memberId]), decimalsFor(v.cur)) }));
@@ -6496,6 +6725,11 @@ function mountExpenseForm({
     const diff = v.netMinor - payments.reduce((n, p) => n + p.amountMinor, 0);
     const hint = $('payer-total-hint');
     if (!hint) return;
+    if (payerPending) {
+      hint.className = 'input-hint';
+      hint.textContent = tx('ยอดประมาณการนี้ยังไม่ถูกนับเป็นหนี้ของใคร จนกว่าจะระบุผู้จ่ายภายหลัง','This estimate stays out of everyone’s balance until a payer is assigned.');
+      return;
+    }
     hint.className = validatePayments(v.netMinor, payments) ? 'input-hint' : 'split-warning';
     hint.textContent = `${tx('ยอดผู้จ่ายรวม','Total paid')} ${formatCurrency(v.netMinor - diff, v.cur)} / ${formatCurrency(v.netMinor, v.cur)}` + (diff ? ` • ${tx('ยอดยังไม่ตรง ส่วนต่าง','Mismatch, difference')} ${formatCurrency(Math.abs(diff), v.cur)}` : ' ✓');
   }
@@ -6504,7 +6738,12 @@ function mountExpenseForm({
     const area = $('payer-amounts');
     if (!area) return;
     const v = readValues();
-    area.innerHTML = `<p class="input-hint">${tx('เลือกผู้จ่ายได้หลายคน แล้วระบุยอดที่แต่ละคนจ่ายจริงให้รวมเท่ายอดสุทธิ','Select payers and enter what each paid. Payments must match the net total.')}</p>` + (selectedPayers.size > 1 ? members.filter(m => selectedPayers.has(m.id)).map(m => `<label class="payer-amount-row"><span>${escapeHtml(m.displayName)}</span><input class="input money-input" type="text" inputmode="decimal" data-payment="${m.id}" value="${escapeHtml(payerAmounts[m.id] || '')}" placeholder="0.00"><span>${v.cur}</span></label>`).join('') : '') + '<div id="payer-total-hint" aria-live="polite"></div>';
+    const rows = !payerPending && selectedPayers.size > 1
+      ? members.filter(m => selectedPayers.has(m.id)).map(m => `<label class="payer-amount-row"><span>${escapeHtml(m.displayName)}</span><input class="input money-input" type="text" inputmode="decimal" data-payment="${m.id}" value="${escapeHtml(payerAmounts[m.id] || '')}" placeholder="0.00"><span>${v.cur}</span></label>`).join('')
+      : '';
+    area.innerHTML = `<p class="input-hint">${payerPending
+      ? tx('ยังไม่มีคนรับผิดชอบจ่าย — เลือกผู้จ่ายได้ภายหลัง','No one has volunteered to pay yet — assign a payer later.')
+      : tx('เลือกผู้จ่ายได้หลายคน แล้วระบุยอดที่แต่ละคนจ่ายจริงให้รวมเท่ายอดสุทธิ','Select payers and enter what each paid. Payments must match the net total.')}</p>${rows}<div id="payer-total-hint" aria-live="polite"></div>`;
     bindMoneyInputs(area);
     area.querySelectorAll('[data-payment]').forEach(inp => inp.addEventListener('input', () => { payerAmounts[inp.dataset.payment] = inp.value; refreshPayerTotal(); }));
     refreshPayerTotal();
@@ -6546,13 +6785,15 @@ function mountExpenseForm({
       if (!result.valid) throw new Error(tx('ยอดแบ่งไม่ตรง กรุณาแก้ไขยอดที่กรอกก่อนบันทึก','Split amounts do not match. Correct the amounts before saving.'));
       allocations = result.rows.map(({ memberId, amountMinor }) => ({ memberId, amountMinor }));
     }
+    const isEstimated = $('ex-type').value === 'estimated';
+    if (payerPending && !isEstimated) throw new Error(tx('รายการที่ยังไม่ระบุเจ้าภาพต้องเป็นรายการประมาณการ','An unassigned payer is only allowed for estimates.'));
     const payments = readPayments(v);
-    if (!validatePayments(v.netMinor, payments)) throw new Error(tx('ยอดผู้จ่ายรวมต้องเท่ากับยอดสุทธิ และต้องเลือกผู้จ่ายอย่างน้อย 1 คน','Payments must match the net total. Select at least one payer.'));
+    if (!payerPending && !validatePayments(v.netMinor, payments)) throw new Error(tx('ยอดผู้จ่ายรวมต้องเท่ากับยอดสุทธิ และต้องเลือกผู้จ่ายอย่างน้อย 1 คน','Payments must match the net total. Select at least one payer.'));
     if (v.cur !== 'THB' && (!Number.isFinite(v.rate) || !(v.rate > 0))) throw new Error(tx('กรุณาระบุเรทแลกเป็นเงินบาท','Enter the THB exchange rate'));
     if ([v.sub, v.disc, v.serv, v.tax].some(n => n < 0) || v.disc > v.sub) throw new Error(tx('ยอดเงินต้องไม่ติดลบ และส่วนลดต้องไม่เกินยอดก่อนปรับ','Amounts must be non-negative and discount cannot exceed subtotal'));
     const payMethod = $('ex-payment').value;
-    const pickedCard = payMethod === 'card' ? ($('ex-card')?.value || '').trim() : '';
-    if (payMethod === 'card' && (!pickedCard || pickedCard === '__manage')) {
+    const pickedCard = !payerPending && payMethod === 'card' ? ($('ex-card')?.value || '').trim() : '';
+    if (!payerPending && payMethod === 'card' && (!pickedCard || pickedCard === '__manage')) {
       throw new Error(tx('เลือกบัตรเครดิตจากรายการ หรือเพิ่มบัตรใหม่จากปุ่ม “จัดการบัตร”','Pick a card from the list, or add one via “Manage cards”'));
     }
     const title = $('ex-title').value.trim();
@@ -6572,9 +6813,10 @@ function mountExpenseForm({
       baseCurrency,
       thbRate: v.rate,
       thbMinor: toThbMinor(v.netMinor, v.cur, v.rate),
-      isEstimated: $('ex-type').value === 'estimated',
-      payerId: payments[0].memberId,
+      isEstimated,
+      payerId: payerPending ? '' : (payments[0]?.memberId || ''),
       payments,
+      payerPending,
       splitMethod,
       splitIncludesVatSc,
       splitInputs: customAllocations,
@@ -6584,8 +6826,6 @@ function mountExpenseForm({
       receiptUrl: $('ex-receipt').value.trim(),
       itineraryItemId: $('ex-itinerary')?.value || null,
       status: 'active',
-      // Saving through this form always has a payer → clears any "TBD host".
-      payerPending: false,
       source: e.source || 'manual'
     };
   }
@@ -7919,163 +8159,130 @@ async function renderSettlement(params) {
     });
   }
 
-  /** v18.1: Debt map — SVG graph showing who owes whom with amounts on edges */
+  /** Recipient-centred debt map: the receiver is the hub, payers surround them. */
   function debtMapHtml() {
     const txns = state.transactions || [];
-    // v19: take the node colours from the tokens so a re-tone (or a dark theme)
-    // never leaves the debt map on an old, muted hex.
+    const membersMap = state.membersMap || {};
+    if (!txns.length) {
+      return `<div class="card p-5">${renderEmptyState({ icon: 'party-popper', title: t('noDebt'), desc: t('allCleared') })}</div>`;
+    }
     const tokenColor = (name, fallback) => {
       try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback; }
       catch { return fallback; }
     };
     const POS = tokenColor('--success', '#00a86b');
     const NEG = tokenColor('--danger', '#ef2b3d');
-    if (!txns.length) {
-      return `<div class="card p-5">${renderEmptyState({ icon: 'party-popper', title: t('noDebt'), desc: t('allCleared') })}</div>`;
-    }
-    const members = state.statements || [];
-    const membersMap = state.membersMap || {};
-    // Arrange members in a circle
-    const n = members.length;
-    const cx = 300, cy = 250, radius = Math.min(200, 60 + n * 30);
-    const positions = {};
-    members.forEach((m, i) => {
-      const angle = (2 * Math.PI * i / n) - Math.PI / 2;
-      positions[m.memberId] = {
-        x: cx + radius * Math.cos(angle),
-        y: cy + radius * Math.sin(angle),
-        member: m
-      };
-    });
-    // Calculate edge offsets to prevent overlapping lines
-    // Group transactions between the same pair of members
-    const edgeGroups = {};
+    const byReceiver = new Map();
     txns.forEach(tx => {
-      const key = [tx.from, tx.to].sort().join('|');
-      if (!edgeGroups[key]) edgeGroups[key] = [];
-      edgeGroups[key].push(tx);
+      if (!tx?.to || !tx?.from) return;
+      if (!byReceiver.has(tx.to)) byReceiver.set(tx.to, []);
+      byReceiver.get(tx.to).push(tx);
     });
-    // Render edges with offset curves
-    let edgesHtml = '';
-    const edgeLabels = [];
-    Object.entries(edgeGroups).forEach(([key, txGroup]) => {
-      const [a, b] = key.split('|');
-      const posA = positions[a], posB = positions[b];
-      if (!posA || !posB) return;
-      const count = txGroup.length;
-      txGroup.forEach((tx, idx) => {
-        const fromPos = positions[tx.from];
-        const toPos = positions[tx.to];
-        if (!fromPos || !toPos) return;
-        // Offset perpendicular to the line to avoid overlapping
-        const dx = toPos.x - fromPos.x;
-        const dy = toPos.y - fromPos.y;
-        const len = Math.sqrt(dx * dx + dy * dy) || 1;
-        const nx = -dy / len;
-        const ny = dx / len;
-        const offset = (idx - (count - 1) / 2) * 18;
-        const midX = (fromPos.x + toPos.x) / 2 + nx * offset;
-        const midY = (fromPos.y + toPos.y) / 2 + ny * offset;
-        // Control point for the curve
-        const ctrlX = midX + nx * 20;
-        const ctrlY = midY + ny * 20;
-        const fromColor = membersMap[tx.from]?.color || 'var(--primary)';
-        edgesHtml += `<path d="M${fromPos.x},${fromPos.y} Q${ctrlX},${ctrlY} ${toPos.x},${toPos.y}" 
-          fill="none" stroke="${escapeHtml(fromColor)}" stroke-width="2.5" stroke-opacity="0.7"
-          marker-end="url(#arrow-${escapeHtml(tx.from?.slice(0,6) || 'x')})"/>`;
-        edgeLabels.push({ x: midX, y: midY, amount: tx.amountMinor, from: tx.from, to: tx.to });
+    const groups = [...byReceiver.entries()].sort((a, b) =>
+      (membersMap[a[0]]?.displayName || '').localeCompare(membersMap[b[0]]?.displayName || '')
+    );
+    const initial = (person) => escapeHtml((person?.displayName || '?').trim().charAt(0).toUpperCase() || '?');
+    const shortName = (person, max = 15) => {
+      const name = person?.displayName || '?';
+      return escapeHtml(name.length > max ? `${name.slice(0, max - 1)}…` : name);
+    };
+    const groupsHtml = groups.map(([receiverId, payments], groupIndex) => {
+      const receiver = membersMap[receiverId] || { displayName: th('ผู้รับเงิน','Receiver') };
+      const width = 720, height = 430, cx = 360, cy = 208;
+      const radius = Math.min(158, Math.max(126, 92 + payments.length * 8));
+      const receiverRadius = 48, payerRadius = 25;
+      const markerId = `debt-arrow-${groupIndex}`;
+      const coords = payments.map((tx, i) => {
+        const angle = (2 * Math.PI * i / payments.length) - Math.PI / 2;
+        return { tx, x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) };
       });
-    });
-    // Render nodes
-    let nodesHtml = '';
-    members.forEach((m, i) => {
-      const pos = positions[m.memberId];
-      if (!pos) return;
-      const color = m.color || 'var(--primary)';
-      const initial = (m.displayName || '?').charAt(0).toUpperCase();
-      const isMe = m.memberId === currentUser?.uid;
-      nodesHtml += `
-        <g class="debt-map-node" data-member="${escapeHtml(m.memberId)}" data-debt-person="${escapeHtml(m.memberId)}" role="button" tabindex="0" style="cursor:pointer;">
-          <title>${escapeHtml(m.displayName || '')} • ${m.netMinor >= 0 ? th('รับสุทธิ','net receive') : th('จ่ายสุทธิ','net pay')} ${money(Math.abs(m.netMinor))}</title>
-          <circle cx="${pos.x}" cy="${pos.y}" r="28" fill="${escapeHtml(color)}" opacity="0.15"/>
-          <circle cx="${pos.x}" cy="${pos.y}" r="22" fill="${escapeHtml(color)}"/>
-          <text x="${pos.x}" y="${pos.y + 1}" text-anchor="middle" dominant-baseline="central" 
-                fill="#fff" font-size="12" font-weight="900" font-family="var(--font-display)">${escapeHtml(initial)}</text>
-          <text x="${pos.x}" y="${pos.y + 38}" text-anchor="middle" fill="var(--text)" 
-                font-size="10" font-weight="700" font-family="var(--font-sans)">${escapeHtml(m.displayName || '')}</text>
-          ${isMe ? `<text x="${pos.x}" y="${pos.y + 50}" text-anchor="middle" fill="var(--text-tertiary)" font-size="8" font-weight="600">(${th('คุณ','you')})</text>` : ''}
-          <text x="${pos.x}" y="${pos.y - 36}" text-anchor="middle"
-                fill="${m.netMinor >= 0 ? POS : NEG}" font-size="8.5" font-weight="800"
-                font-family="var(--font-sans)">${m.netMinor >= 0 ? th('รับสุทธิ','gets back') : th('จ่ายสุทธิ','pays')}</text>
-          <text x="${pos.x}" y="${pos.y - 25}" text-anchor="middle"
-                fill="${m.netMinor >= 0 ? POS : NEG}" font-size="9.5" font-weight="800"
-                font-family="var(--font-mono)">${m.netMinor >= 0 ? '+' : '−'}${money(Math.abs(m.netMinor))}</text>
-        </g>`;
-    });
-    // Render labels on edges
-    let labelsHtml = '';
-    // Simple collision avoidance: if labels are too close, shift them
-    edgeLabels.forEach((label, idx) => {
-      const fromName = (membersMap[label.from]?.displayName || '?').slice(0, 6);
-      const toName = (membersMap[label.to]?.displayName || '?').slice(0, 6);
-      labelsHtml += `
-        <g class="debt-map-label">
-          <rect x="${label.x - 42}" y="${label.y - 10}" width="84" height="20" rx="6" 
-                fill="var(--surface)" stroke="var(--border)" stroke-width="1" opacity="0.92"/>
-          <text x="${label.x}" y="${label.y + 3}" text-anchor="middle" 
-                fill="var(--text-strong)" font-size="9" font-weight="800" font-family="var(--font-mono)">${money(label.amount)}</text>
-        </g>`;
-    });
-    // Arrow marker definitions
-    let markerDefs = '';
-    const uniqueFroms = [...new Set(txns.map(tx => tx.from))];
-    uniqueFroms.forEach(uid => {
-      const color = membersMap[uid]?.color || 'var(--primary)';
-      markerDefs += `<marker id="arrow-${escapeHtml(uid.slice(0,6))}" viewBox="0 0 10 10" refX="9" refY="5" 
-        markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-        <path d="M 0 0 L 10 5 L 0 10 z" fill="${escapeHtml(color)}" opacity="0.8"/>
-      </marker>`;
-    });
-    const svgWidth = 600;
-    const svgHeight = 500;
+      let linesHtml = '';
+      let payersHtml = '';
+      coords.forEach(({ tx, x, y }) => {
+        const payer = membersMap[tx.from] || { displayName: th('ผู้จ่ายเงิน','Payer') };
+        const dx = cx - x, dy = cy - y;
+        const len = Math.hypot(dx, dy) || 1;
+        const sx = x + dx / len * (payerRadius + 2);
+        const sy = y + dy / len * (payerRadius + 2);
+        const ex = cx - dx / len * (receiverRadius + 5);
+        const ey = cy - dy / len * (receiverRadius + 5);
+        const midX = (sx + ex) / 2;
+        const midY = (sy + ey) / 2;
+        const payerColor = payer.color || 'var(--primary)';
+        linesHtml += `
+          <g class="debt-map-edge">
+            <path d="M${sx.toFixed(1)},${sy.toFixed(1)} L${ex.toFixed(1)},${ey.toFixed(1)}" fill="none" stroke="${escapeHtml(payerColor)}" stroke-width="2.5" stroke-opacity=".78" marker-end="url(#${markerId})"/>
+            <rect x="${(midX - 43).toFixed(1)}" y="${(midY - 11).toFixed(1)}" width="86" height="22" rx="7" fill="var(--surface)" stroke="var(--border)" stroke-width="1" opacity=".97"/>
+            <text x="${midX.toFixed(1)}" y="${(midY + 3.5).toFixed(1)}" text-anchor="middle" fill="var(--text-strong)" font-size="10" font-weight="850" font-family="var(--font-mono)">${money(tx.amountMinor)}</text>
+          </g>`;
+        payersHtml += `
+          <g class="debt-map-node debt-map-node--payer" data-member="${escapeHtml(tx.from)}" data-debt-person="${escapeHtml(tx.from)}" role="button" tabindex="0" style="cursor:pointer;">
+            <title>${escapeHtml(payer.displayName || '')} ${th('จ่ายให้','pays')} ${escapeHtml(receiver.displayName || '')}: ${money(tx.amountMinor)}</title>
+            <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="31" fill="${escapeHtml(payerColor)}" opacity=".13"/>
+            <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${payerRadius}" fill="${escapeHtml(payerColor)}"/>
+            <text x="${x.toFixed(1)}" y="${(y + 1).toFixed(1)}" text-anchor="middle" dominant-baseline="central" fill="#fff" font-size="12" font-weight="900" font-family="var(--font-display)">${initial(payer)}</text>
+            <text x="${x.toFixed(1)}" y="${(y + 40).toFixed(1)}" text-anchor="middle" fill="var(--text-strong)" font-size="10" font-weight="750" font-family="var(--font-sans)">${shortName(payer, 16)}</text>
+            <text x="${x.toFixed(1)}" y="${(y + 54).toFixed(1)}" text-anchor="middle" fill="${NEG}" font-size="8" font-weight="800" font-family="var(--font-sans)">${th('จ่าย','PAYS')}</text>
+          </g>`;
+      });
+      const receiverColor = receiver.color || 'var(--primary)';
+      const receiverNet = (state.statements || []).find(m => m.memberId === receiverId)?.netMinor;
+      const receiverNetLabel = Number.isFinite(receiverNet) ? money(Math.abs(receiverNet)) : '';
+      return `
+        <section class="debt-recipient-group" aria-label="${escapeHtml(th('ผู้รับเงิน','Money recipient'))}: ${escapeHtml(receiver.displayName || '')}">
+          <div class="debt-recipient-heading">
+            <span class="debt-recipient-avatar" style="background:${escapeHtml(receiverColor)};">${initial(receiver)}</span>
+            <span class="min-w-0 flex-1"><small>${th('ผู้รับเงิน','RECEIVES')}</small><b>${escapeHtml(receiver.displayName || '')}</b></span>
+            <span class="debt-recipient-count">${payments.length} ${th('คนจ่าย','payers')}${receiverNetLabel ? ` · ${receiverNetLabel}` : ''}</span>
+          </div>
+          <div class="debt-map-container">
+            <svg class="debt-recipient-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(th('ผู้รับเงินอยู่ตรงกลาง ผู้จ่ายเงินอยู่รอบนอก','Receiver in the center, payers around them'))}">
+              <defs><marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--primary-strong)"/></marker></defs>
+              <circle cx="${cx}" cy="${cy}" r="${radius}" class="debt-map-orbit"/>
+              <text x="${cx}" y="25" text-anchor="middle" class="debt-map-caption">${th('ผู้จ่ายเงินอยู่รอบผู้รับ','PAYERS SURROUND THE RECEIVER')}</text>
+              ${linesHtml}
+              <g class="debt-map-node debt-map-node--receiver" data-member="${escapeHtml(receiverId)}" data-debt-person="${escapeHtml(receiverId)}" role="button" tabindex="0" style="cursor:pointer;">
+                <title>${escapeHtml(receiver.displayName || '')} ${th('รับเงินสุทธิ','receives money')}${receiverNetLabel ? `: ${receiverNetLabel}` : ''}</title>
+                <circle cx="${cx}" cy="${cy}" r="58" fill="${escapeHtml(receiverColor)}" opacity=".13"/>
+                <circle cx="${cx}" cy="${cy}" r="${receiverRadius}" fill="${escapeHtml(receiverColor)}"/>
+                <text x="${cx}" y="${cy + 1}" text-anchor="middle" dominant-baseline="central" fill="#fff" font-size="18" font-weight="900" font-family="var(--font-display)">${initial(receiver)}</text>
+                <text x="${cx}" y="${cy + 66}" text-anchor="middle" fill="var(--text-strong)" font-size="11" font-weight="850" font-family="var(--font-sans)">${shortName(receiver, 20)}</text>
+                <text x="${cx}" y="${cy + 81}" text-anchor="middle" fill="${POS}" font-size="8.5" font-weight="900" font-family="var(--font-sans)">${th('รับสุทธิ','RECEIVES')}</text>
+              </g>
+              ${payersHtml}
+            </svg>
+          </div>
+          <div class="debt-payer-list">
+            ${payments.map(tx => {
+              const payer = membersMap[tx.from] || { displayName: th('ผู้จ่ายเงิน','Payer') };
+              return `<button type="button" class="debt-tx-row" data-settle-person="${escapeHtml(receiverId)}">
+                <span class="avatar" style="width:24px;height:24px;font-size:9px;background:${escapeHtml(payer.color || 'var(--primary)')};">${initial(payer)}</span>
+                <span class="font-semibold truncate">${escapeHtml(payer.displayName || '')}</span>
+                <span class="debt-row-pays">${icon('arrow-right', 'w-3 h-3')} ${th('จ่ายให้','pays')}</span>
+                <span class="avatar" style="width:24px;height:24px;font-size:9px;background:${escapeHtml(receiverColor)};">${initial(receiver)}</span>
+                <span class="font-semibold truncate">${escapeHtml(receiver.displayName || '')}</span>
+                <span class="ml-auto font-bold font-mono">${money(tx.amountMinor)}</span>
+                ${icon('chevron-right', 'w-3.5 h-3.5')}
+              </button>`;
+            }).join('')}
+          </div>
+        </section>`;
+    }).join('');
     return `
-      <div class="card p-5">
-        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+      <div class="card p-5 debt-map-card">
+        <div class="flex items-start justify-between gap-2 mb-3 flex-wrap">
           <h3 class="font-bold flex items-center gap-2">
-            <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('map', 'w-4 h-4')}</span>
-            ${th('แผนที่หนี้ — ใครต้องจ่ายใคร','Debt map — who owes whom')}
-            <span class="badge badge-planned text-[10px]">${txns.length} ${th('รายการ','transactions')}</span>
+            <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('network', 'w-4 h-4')}</span>
+            ${th('แผนที่หนี้ — ผู้รับอยู่ตรงกลาง','Debt map — receivers at the center')}
+            <span class="badge badge-planned text-[10px]">${txns.length} ${th('รายการ','transfers')}</span>
           </h3>
-          <span class="text-[10px] text-[var(--text-tertiary)]">${th('เส้นและตัวเลขแสดงยอดที่ต้องโอน','Lines and numbers show transfer amounts')}</span>
+          <span class="text-[10px] text-[var(--text-tertiary)]">${th('ลูกศรชี้จากผู้จ่ายไปยังผู้รับ · กดชื่อเพื่อดูรายละเอียด','Arrows point from each payer to the receiver · tap a person for details')}</span>
         </div>
         <div class="debt-map-legend">
-          <span class="debt-legend-item is-in">${icon('arrow-down-left', 'w-3 h-3')} ${th('รับสุทธิ (ได้คืน)','Net receive')}</span>
-          <span class="debt-legend-item is-out">${icon('arrow-up-right', 'w-3 h-3')} ${th('จ่ายสุทธิ (ต้องโอน)','Net pay')}</span>
-          <span class="debt-legend-hint">${icon('pointer', 'w-3 h-3')} ${th('กดที่ชื่อหรือเส้น เพื่อดูรายละเอียด','Tap a name or a line for the details')}</span>
+          <span class="debt-legend-item is-in">${icon('circle-arrow-down', 'w-3 h-3')} ${th('ตรงกลาง: ผู้รับเงิน / รับสุทธิ','Center: receives money')}</span>
+          <span class="debt-legend-item is-out">${icon('circle-arrow-up', 'w-3 h-3')} ${th('รอบนอก: ผู้จ่าย / จ่ายสุทธิ','Around the receiver: payers')}</span>
         </div>
-        <div class="debt-map-container" style="overflow-x:auto;">
-          <svg viewBox="0 0 ${svgWidth} ${svgHeight}" width="100%" style="max-width:${svgWidth}px; min-height:320px; display:block; margin:0 auto;">
-            <defs>${markerDefs}</defs>
-            ${edgesHtml}
-            ${labelsHtml}
-            ${nodesHtml}
-          </svg>
-        </div>
-        <div class="mt-3 grid gap-1.5" style="max-width:480px; margin:0 auto;">
-          ${txns.map(tx => {
-            const fromM = membersMap[tx.from];
-            const toM = membersMap[tx.to];
-            return `<button type="button" class="debt-tx-row" data-settle-person="${escapeHtml(tx.to)}">
-              <span class="avatar" style="width:22px;height:22px;font-size:9px;background:${escapeHtml(fromM?.color || 'var(--primary)')};">${escapeHtml((fromM?.displayName || '?').charAt(0).toUpperCase())}</span>
-              <span class="font-semibold truncate">${escapeHtml(fromM?.displayName || '')}</span>
-              <span style="color:var(--text-tertiary);">${icon('arrow-right', 'w-3 h-3')}</span>
-              <span class="avatar" style="width:22px;height:22px;font-size:9px;background:${escapeHtml(toM?.color || 'var(--primary)')};">${escapeHtml((toM?.displayName || '?').charAt(0).toUpperCase())}</span>
-              <span class="font-semibold truncate">${escapeHtml(toM?.displayName || '')}</span>
-              <span class="ml-auto font-bold font-mono">${money(tx.amountMinor)}</span>
-              ${icon('chevron-right', 'w-3.5 h-3.5')}
-            </button>`;
-          }).join('')}
-        </div>
+        <div class="debt-recipient-groups">${groupsHtml}</div>
       </div>
       ${netSummaryHtml()}`;
   }
@@ -9738,6 +9945,9 @@ async function renderSettings(params) {
   await loadTrip(tripId);
   if (isStale(token)) return;
   const trip = currentTrip;
+  const defaultMapLayer = BASE_LAYERS.some(layer => layer.id === trip?.defaultMapLayer)
+    ? trip.defaultMapLayer
+    : getStoredLayerId();
 
   let perms = { isAdmin: false, role: 'member' };
   let settingMembers = [];
@@ -9873,6 +10083,20 @@ async function renderSettings(params) {
         ${themePickerHtml({ idPrefix: 'settings' })}
       </div>
 
+      <div class="card p-5 space-y-3" id="map-default-card" data-settings-section="appearance">
+        <h3 class="font-bold flex items-center gap-2">${icon('map', 'w-4 h-4')} ${th('แผนที่เริ่มต้น','Default basemap')}</h3>
+        <p class="text-xs text-[var(--text-secondary)]">${th('เลือกประเภทแผนที่ที่จะเปิดเป็นค่าเริ่มต้นในหน้าแผนการเดินทางและหน้าไอเดีย การตั้งค่านี้ซิงก์ให้สมาชิกทุกอุปกรณ์','Choose which basemap opens by default on the itinerary and ideas maps. This setting syncs to every trip device.')}</p>
+        <div class="map-default-options" id="map-default-options">
+          ${BASE_LAYERS.map(layer => `<button type="button" class="map-default-option ${defaultMapLayer === layer.id ? 'is-selected' : ''}" data-map-default="${layer.id}" aria-pressed="${defaultMapLayer === layer.id}">
+            <span class="map-default-option-icon">${icon(layer.icon, 'w-4 h-4')}</span>
+            <span class="min-w-0"><b>${escapeHtml(lang === 'th' ? layer.name : layer.en)}</b><small>${layer.id === 'map' ? th('ถนนและสถานที่','Roads and places') : layer.id === 'satellite' ? th('ภาพถ่ายดาวเทียม','Satellite imagery') : th('ระดับความสูงและภูมิประเทศ','Elevation and terrain')}</small></span>
+            <span class="map-default-check-wrap">${icon(defaultMapLayer === layer.id ? 'circle-check' : 'circle', 'w-4 h-4 map-default-check')}</span>
+          </button>`).join('')}
+        </div>
+        <button id="save-map-default" type="button" class="btn btn-secondary btn-sm w-full">${icon('save', 'w-4 h-4')} ${th('บันทึกแผนที่เริ่มต้น','Save default map')}</button>
+        <p class="text-[10px] text-[var(--text-tertiary)]">${th('การกดเปลี่ยนชั้นแผนที่บนแผนที่จริงจะมีผลเฉพาะการดูครั้งนั้น หากต้องการเปลี่ยนค่าเริ่มต้นให้บันทึกที่นี่','Switching layers on a live map is temporary; save your preferred default here.')}</p>
+      </div>
+
       <!-- v18: the profile picture lands here, so the account lives with it -->
       <div class="card p-5 space-y-3" id="settings-account-card" data-settings-section="appearance">
         <h3 class="font-bold flex items-center gap-2">${icon('user-cog', 'w-4 h-4')} ${th('บัญชีและอุปกรณ์','Account & device')}</h3>
@@ -9957,7 +10181,6 @@ async function renderSettings(params) {
         </div>
         <p class="copyright-line">${icon('copyright', 'w-3 h-3')} ${escapeHtml(copyrightNote(lang))}</p>
         <div class="btn-row">
-          <a class="btn btn-secondary btn-sm" href="${appBaseUrl()}demo/" target="_blank" rel="noopener">${icon('external-link', 'w-4 h-4')} ${th('ตัวอย่างฟังก์ชันครบ','Full-feature demo')}</a>
           <a class="btn btn-ghost btn-sm" href="${appBaseUrl()}docs/ARCHITECTURE.md" target="_blank" rel="noopener">${icon('file-text', 'w-4 h-4')} ${th('เอกสารระบบ','Docs')}</a>
         </div>
         <p class="text-[10px] text-[var(--text-tertiary)] font-mono">build ${escapeHtml(APP_UPDATED_ISO)} • ${escapeHtml(APP_VERSION)} • ${escapeHtml(APP_NAME_BY)}</p>
@@ -10003,6 +10226,37 @@ async function renderSettings(params) {
   });
 
   bindMoneyInputs(document);
+
+  let selectedDefaultMapLayer = defaultMapLayer;
+  const paintDefaultMapOptions = () => {
+    document.querySelectorAll('#map-default-options [data-map-default]').forEach(btn => {
+      const selected = btn.dataset.mapDefault === selectedDefaultMapLayer;
+      btn.classList.toggle('is-selected', selected);
+      btn.setAttribute('aria-pressed', String(selected));
+      const check = btn.querySelector('.map-default-check-wrap');
+      if (check) check.innerHTML = icon(selected ? 'circle-check' : 'circle', 'w-4 h-4 map-default-check');
+    });
+    queueIcons();
+  };
+  document.querySelectorAll('#map-default-options [data-map-default]').forEach(btn => btn.addEventListener('click', () => {
+    selectedDefaultMapLayer = BASE_LAYERS.some(layer => layer.id === btn.dataset.mapDefault) ? btn.dataset.mapDefault : 'map';
+    paintDefaultMapOptions();
+  }));
+  bind('save-map-default', 'click', async (ev) => {
+    const btn = ev.currentTarget;
+    if (!BASE_LAYERS.some(layer => layer.id === selectedDefaultMapLayer)) return;
+    btn.disabled = true;
+    try {
+      await updateTrip(tripId, { defaultMapLayer: selectedDefaultMapLayer });
+      setStoredLayerId(selectedDefaultMapLayer);
+      Object.assign(trip || {}, { defaultMapLayer: selectedDefaultMapLayer });
+      currentTrip = { ...(currentTrip || {}), defaultMapLayer: selectedDefaultMapLayer };
+      toast.success(th('บันทึกแผนที่เริ่มต้นและซิงก์แล้ว','Default map saved and synced'));
+    } catch (e) {
+      toast.error(th('บันทึกแผนที่เริ่มต้นไม่สำเร็จ: ','Could not save the default map: ') + (e?.message || String(e)));
+    } finally { btn.disabled = false; }
+  });
+  paintDefaultMapOptions();
 
   /* ---- Extra trip currencies (multi-currency trips) + their THB rates ---- */
   const tripCurHost = document.getElementById('trip-currency-rows');
@@ -11397,6 +11651,9 @@ async function renderIdeas(params) {
   /** Ideas currently on screen (filter + sort applied) — the map mirrors this. */
   let listedIdeas = [];
   let ideasMapReady = false;
+  let currentIdeasLayer = BASE_LAYERS.some(layer => layer.id === trip?.defaultMapLayer)
+    ? trip.defaultMapLayer
+    : getStoredLayerId();
 
   function ideaKmLabel(km) {
     if (!Number.isFinite(km)) return '';
@@ -11506,13 +11763,13 @@ async function renderIdeas(params) {
     try {
       statusEl?.classList.remove('hidden');
       emptyEl?.classList.add('hidden');
-      const { renderIdeasMap, refreshMapSize, setMapLang, getStoredLayerId, setMapLayer } = await import('./maps/index.js');
+      const { renderIdeasMap, refreshMapSize, setMapLang } = await import('./maps/index.js');
       setMapLang('ideas-map', lang);
-      const layerId = getStoredLayerId();
+      const layerId = currentIdeasLayer;
       const res = await renderIdeasMap('ideas-map', listedIdeas, {
         fitBounds: true,
-        lang,
         layerId,
+        lang,
         directionsLabel: th('ไปที่นี่', 'Directions'),
         votesLabel: th('โหวต', 'votes'),
         plannedLabel: th('อยู่ในแผน', 'in the plan')
@@ -11869,8 +12126,9 @@ async function renderIdeas(params) {
   document.getElementById('ideas-map-layers')?.querySelectorAll('[data-ideas-layer]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const layerId = btn.dataset.ideasLayer;
+      currentIdeasLayer = layerId;
       try {
-        const { setMapLayer, getStoredLayerId } = await import('./maps/index.js');
+        const { setMapLayer } = await import('./maps/index.js');
         const ok = setMapLayer('ideas-map', layerId);
         if (ok) {
           document.getElementById('ideas-map-layers')?.querySelectorAll('[data-ideas-layer]').forEach(b => b.classList.toggle('chip-active', b.dataset.ideasLayer === layerId));
@@ -11880,8 +12138,7 @@ async function renderIdeas(params) {
   });
   // Initialize active layer chip from stored preference
   try {
-    const stored = localStorage.getItem('fuji_map_layer') || 'map';
-    document.getElementById('ideas-map-layers')?.querySelectorAll('[data-ideas-layer]').forEach(b => b.classList.toggle('chip-active', b.dataset.ideasLayer === stored));
+    document.getElementById('ideas-map-layers')?.querySelectorAll('[data-ideas-layer]').forEach(b => b.classList.toggle('chip-active', b.dataset.ideasLayer === currentIdeasLayer));
   } catch {}
   // Map fit button
   document.getElementById('ideas-map-fit')?.addEventListener('click', async () => {
@@ -11900,6 +12157,23 @@ async function renderIdeas(params) {
   paintIdeas();
   paintPending();
   initReveal(appEl);
+
+  const stopIdeasTripSync = subscribeTrip(tripId, (latestTrip) => {
+    if (!latestTrip || isStale(token)) return;
+    currentTrip = { ...(currentTrip || {}), ...latestTrip };
+    Object.assign(trip || {}, latestTrip);
+    const nextLayer = BASE_LAYERS.some(layer => layer.id === latestTrip.defaultMapLayer)
+      ? latestTrip.defaultMapLayer
+      : null;
+    if (nextLayer && nextLayer !== currentIdeasLayer) {
+      currentIdeasLayer = nextLayer;
+      document.getElementById('ideas-map-layers')?.querySelectorAll('[data-ideas-layer]').forEach(btn => btn.classList.toggle('chip-active', btn.dataset.ideasLayer === nextLayer));
+      if (ideasMapReady) paintIdeasMap();
+    }
+  });
+  document.addEventListener('routechange', () => {
+    try { stopIdeasTripSync?.(); } catch {}
+  }, { once: true });
 }
 
 /* ================================================================== *
@@ -12967,16 +13241,6 @@ function renderMore(params) {
           </span>
           <span style="color: var(--primary-strong);">${icon('chevron-right', 'w-4 h-4')}</span>
         </button>
-        <a href="${appBaseUrl()}demo/" target="_blank" rel="noopener" class="card card-hover p-4 flex items-center justify-between gap-3" style="text-decoration:none; color:inherit; border-color: color-mix(in srgb, var(--brand-yellow-raw) 45%, var(--border));">
-          <span class="flex items-center gap-3 min-w-0">
-            <span class="row-icon" style="background:var(--brand-yellow-tint); color:var(--brand-yellow-ink);">${icon('sparkles', 'w-4 h-4')}</span>
-            <span class="min-w-0">
-              <span class="font-semibold text-sm block">${lang==='th' ? 'ตัวอย่างฟังก์ชันครบ (demo)' : 'Full-feature demo'}</span>
-              <span class="text-[10.5px] text-[var(--text-tertiary)] block">${lang==='th' ? 'เปิดทริปตัวอย่างพร้อมข้อมูลครบ ไม่ต้องล็อกอิน' : 'Sample trip with data — no sign-in needed'}</span>
-            </span>
-          </span>
-          <span class="text-[var(--text-tertiary)]">${icon('external-link', 'w-4 h-4')}</span>
-        </a>
         <button id="logout-more" class="card p-4 w-full flex items-center justify-between gap-3" style="text-decoration:none; border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); background: var(--danger-bg);">
           <span class="flex items-center gap-3" style="color: var(--danger);">
             <span class="row-icon" style="background: transparent; color: var(--danger);">${icon('log-out', 'w-4 h-4')}</span>

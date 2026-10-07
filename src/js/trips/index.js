@@ -1,10 +1,10 @@
 import { db, storage, serverTimestamp, isStorageAvailable } from '../firebase.js';
 import { brandPrimary } from '../utils/brand.js';
-import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, query, where, limit, arrayUnion, arrayRemove } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, query, where, limit, arrayUnion, arrayRemove, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { compressImage } from '../utils/helpers.js';
 import { generateInviteCode } from '../utils/invite.js';
-import { cachedRead, cacheInvalidate, cacheForget, cacheClear, seedFromPersist, persistSet, persistDelete } from '../utils/datacache.js';
+import { cachedRead, cacheInvalidate, cacheForget, cacheClear, cacheSet, seedFromPersist, persistSet, persistDelete } from '../utils/datacache.js';
 
 const TRIPS_CACHE_KEY = 'fuji_trips_cache';
 const CACHE_TTL = 10 * 60 * 1000;
@@ -228,6 +228,22 @@ export async function getTrip(tripId, { fresh = false } = {}) {
   const trip = await cachedRead(key, () => fetchTrip(tripId), { maxAgeMs: TRIP_TTL });
   persistSet(key, trip);
   return trip;
+}
+
+/** Live trip document updates (dashboard layout, default map, and trip details). */
+export function subscribeTrip(tripId, callback, onError = null) {
+  if (!db || !tripId || typeof callback !== 'function') return () => {};
+  const key = tripKey(tripId);
+  return onSnapshot(doc(db, 'trips', tripId), (snap) => {
+    if (!snap?.exists?.()) return;
+    const trip = { id: snap.id, ...snap.data() };
+    cacheSet(key, trip);
+    persistSet(key, trip);
+    callback(trip);
+  }, (err) => {
+    console.warn('subscribeTrip failed:', err?.message || err);
+    onError?.(err);
+  });
 }
 
 export async function uploadCoverImage(tripId, fileOrBlob, userId) {

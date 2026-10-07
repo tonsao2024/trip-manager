@@ -24,10 +24,8 @@ Fuji Trip Planner is a static SPA hosted on GitHub Pages, backed entirely by Fir
   collection + UI helpers; pure logic lives in `src/js/utils/` (`explore.js` place-guide library,
   `bookingImport.js` confirmation parser, `calendarView.js` month grid, `share.js` invite/summary
   builders, `scheduling.js`, `settlement.js`, `route.js`, `ics.js`, `weather.js`).
-- **Offline demo**: `demo/` is generated (`node tools/preview/standalone.mjs`) — the same app with the
-  CDNs swapped for local stand-ins (in-memory Firestore/Auth, pre-built Tailwind, local fonts, a map
-  stub) plus a seeded sample trip. `docs/preview/index.html` is the public before/after + screenshots
-  page linked from Settings.
+- **UI screenshots**: `docs/preview/index.html` contains the public before/after page and historical
+  screenshots; it is documentation only and is not an interactive app build.
 - **Offline**: Firestore IndexedDB persistence enabled, but no PWA manifest/SW.
 
 ## Firebase Services

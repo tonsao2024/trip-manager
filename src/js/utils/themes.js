@@ -425,7 +425,7 @@ export function applyTheme(id = null, custom = null, root = null) {
   return state;
 }
 
-/** Re-apply whatever is stored (boot, mode switch, demo start-up). */
+/** Re-apply the stored appearance preference (boot or mode switch). */
 export function applyStoredTheme(root = null) {
   const stored = readStoredTheme();
   return applyTheme(stored.id, stored.custom, root);

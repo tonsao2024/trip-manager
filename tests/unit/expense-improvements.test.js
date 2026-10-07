@@ -1,5 +1,5 @@
 import { splitCustom } from '../../src/js/utils/split.js';
-import { expensePayments, validatePayments } from '../../src/js/utils/payments.js';
+import { expensePayments, validatePayments, validateExpensePayerState } from '../../src/js/utils/payments.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources } from '../../src/js/utils/settlement.js';
 import { toThbMinor, expensesInThb, formatAmount, moneyHtml, parseCurrencyInput } from '../../src/js/utils/currency.js';
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
@@ -30,6 +30,20 @@ export function testMultiplePayers() {
   assert(transactionSources({ from: 'a', to: 'b' }, [expense]).length === 1, 'second payer appears in sources');
   eq(expensePayments({ payerId: 'a', netTotalMinor: 10000 }), [{ memberId: 'a', amountMinor: 10000 }], 'legacy single payer readable');
 }
+export function testPayerPendingEstimate() {
+  const pending = {
+    id: 'hotel-estimate', isEstimated: true, payerPending: true,
+    payerId: 'legacy-payer', paidBy: 'legacy-payer', netTotalMinor: 180000,
+    payments: [{ memberId: 'legacy-payer', amountMinor: 180000 }]
+  };
+  eq(expensePayments(pending), [], 'pending estimate ignores stale payer fields');
+  assert(validateExpensePayerState(180000, [], { payerPending: true, isEstimated: true }), 'positive estimate can remain unassigned');
+  assert(!validateExpensePayerState(0, [], { payerPending: true, isEstimated: true }), 'zero-value pending estimate rejected');
+  assert(!validateExpensePayerState(180000, [], { payerPending: true, isEstimated: false }), 'actual expense cannot have a pending payer');
+  assert(!validateExpensePayerState(180000, [{ memberId: 'a', amountMinor: 180000 }], { payerPending: true, isEstimated: true }), 'pending payer cannot carry payment rows');
+  assert(!validateExpensePayerState(180000, [], { payerPending: false, isEstimated: true }), 'unassigned payer must be explicitly marked pending');
+}
+
 export function testMoneyDisplayAndAggregation() {
   eq(toThbMinor(1000, 'JPY', .24), 24000, '1000 yen = 240 baht = 24000 satang');
   eq(toThbMinor(10000, 'USD', 35), 350000, '100 USD = 3500 baht');

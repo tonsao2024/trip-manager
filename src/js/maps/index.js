@@ -318,11 +318,20 @@ export async function initMap(containerId, options = {}) {
     if (options.forceRecreate) {
       destroyEntry(el, existing);
     } else {
-      // Reuse the live instance (tile theme + size refresh)
+      // Reuse the live instance (tile theme + size refresh), but honor a trip's
+      // synchronized default layer when the same map element is revisited.
       if (options.center) {
         try { existing.map.setView(options.center, options.zoom || existing.map.getZoom(), { animate: true }); } catch {}
       } else if (options.zoom && existing.map.getZoom() !== options.zoom) {
         try { existing.map.setZoom(options.zoom); } catch {}
+      }
+      if (options.layerId && BASE_LAYERS.some(layer => layer.id === options.layerId) && existing.layerId !== options.layerId) {
+        const def = getLayerDef(options.layerId);
+        try { if (existing.tile) existing.map.removeLayer(existing.tile); } catch {}
+        try { if (existing.labels) existing.map.removeLayer(existing.labels); } catch {}
+        existing.labels = null;
+        existing.tile = buildTileLayer(existing.map, L, def, existing, { withFallback: def.id === 'map' });
+        existing.layerId = def.id;
       }
       requestAnimationFrame(() => { try { existing.map.invalidateSize(); } catch {} });
       return { map: existing.map, L, reused: true };
@@ -573,6 +582,7 @@ export async function renderItineraryMap(containerId, items, options = {}) {
   const { map, L } = await initMap(containerId, {
     zoom: options.zoom || 10,
     center: options.center,
+    layerId: options.layerId,
     forceRecreate: options.forceRecreate === true
   });
   const result = addItineraryMarkers(map, L, items, options.dayColors, options);
@@ -657,6 +667,7 @@ export async function renderIdeasMap(containerId, ideas, options = {}) {
   const { map, L } = await initMap(containerId, {
     zoom: options.zoom || 10,
     center: options.center,
+    layerId: options.layerId,
     forceRecreate: options.forceRecreate === true
   });
   const result = addIdeaMarkers(map, L, ideas, options);
