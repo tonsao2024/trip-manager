@@ -1800,12 +1800,35 @@ console.log('\n▶ v12: จอเล็ก (iPhone) — header ไม่ดั�
 
 console.log('\n▶ grouped expense form, exact custom split, multiple payers');
 {
+  // Simulate the second trip member adding a bill. Their id is not first in the
+  // member list; the form must not silently attribute the payment to admin.
+  authStub.__emitAuth({ uid: 'u2', email: 'nun@test.com', displayName: 'นุ่น', photoURL: null });
+  await sleep(80);
   await goto('#/trip/t1/expenses/add');
   await waitFor(() => q('#expense-form'), { label: 'expense improvements form' });
   const input = (selector, value) => {
     const el = q(selector); el.value = value;
     el.dispatchEvent(new window.Event('input', { bubbles: true }));
   };
+  check(q('[data-payer="u2"]')?.classList.contains('tile-selected')
+    && !q('[data-payer="u1"]')?.classList.contains('tile-selected'),
+  'expense form: a non-admin member is the default payer instead of the first/admin member');
+  q('#ex-currency').value = 'THB';
+  q('#ex-currency').dispatchEvent(new window.Event('change', { bubbles: true }));
+  input('#ex-title', 'สมาชิกคนอื่นจ่ายเอง');
+  input('#ex-subtotal', '1000');
+  submit(q('#expense-form'));
+  await waitFor(() => [...fsdb.__store.entries()].some(([k, v]) => k.startsWith('trips/t1/expenses/') && v?.title === 'สมาชิกคนอื่นจ่ายเอง'),
+    { label: 'non-admin single-payer expense saved' });
+  const memberPayerRow = [...fsdb.__store.entries()].find(([k, v]) => k.startsWith('trips/t1/expenses/') && v?.title === 'สมาชิกคนอื่นจ่ายเอง');
+  check(memberPayerRow?.[1]?.payerId === 'u2'
+    && memberPayerRow?.[1]?.payments?.[0]?.memberId === 'u2'
+    && memberPayerRow?.[1]?.createdBy === 'u2',
+  'expense form: the saved single-payer bill credits the member who entered it');
+  authStub.__emitAuth({ uid: 'u1', email: 'admin@example.com', displayName: 'สมชาย', photoURL: null });
+  await sleep(80);
+  await goto('#/trip/t1/expenses/add');
+  await waitFor(() => q('#expense-form'), { label: 'expense improvements form for admin' });
   q('#ex-currency').value = 'THB';
   q('#ex-currency').dispatchEvent(new window.Event('change', { bubbles: true }));
   input('#ex-title', 'ทดสอบหลายผู้จ่าย VAT ส่วนลด');
@@ -2236,11 +2259,36 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   await goto('#/trip/t1/settlement');
   await waitFor(() => q('#settle-views'), { label: 'settlement page' });
   await waitFor(() => q('#settle-net .net-chip[data-settle-person]'), { timeout: 8000, label: 'net summary' }).catch(() => {});
+
+  // Simulate an expense written by another device after this page has already
+  // populated its general expense cache. Recalculate must force a current read.
+  const remoteExpenseId = 'remote-member-paid-expense';
+  const remoteExpense = {
+    title: 'บิลที่สมาชิกจ่ายจากอีกเครื่อง', date: '2027-02-04', category: 'general',
+    currency: 'THB', netTotalMinor: 10000000, thbRate: 1, thbMinor: 10000000,
+    payerId: 'u2', payments: [{ memberId: 'u2', amountMinor: 10000000, paymentMethod: 'cash' }],
+    allocations: [{ memberId: 'u1', amountMinor: 9000000 }, { memberId: 'u2', amountMinor: 1000000 }],
+    paymentMethod: 'cash', status: 'active', isEstimated: false, createdBy: 'u2'
+  };
+  fsdb.__seed(`trips/t1/expenses/${remoteExpenseId}`, remoteExpense);
+  await click('#recalc-settle');
+  await waitFor(() => q('#settle-net .net-chip.is-in[data-settle-person="u2"]'),
+    { timeout: 8000, label: 'non-admin payment credited after forced refresh' }).catch(() => {});
+  check(!!q('#settle-net .net-chip.is-in[data-settle-person="u2"]'), 'settlement: a remotely added non-admin payer appears as a creditor');
+  check(!!qa('#tx-list [data-settle-pay]').find(b => b.dataset.settleFrom === 'u1' && b.dataset.settleTo === 'u2'),
+    'settlement: the transfer list directs the debtor to reimburse that member');
+
   const chips = qa('#settle-net .net-chip[data-settle-person]');
   check(chips.length >= 1, `settlement: a net chip per member (${chips.length})`);
   check(!!q('#settle-net .net-chip.is-in') || !!q('#settle-net .net-chip.is-out'), 'settlement: net chips say who gets back / who pays');
   check(/รับสุทธิ|จ่ายสุทธิ|เคลียร์แล้ว/.test(q('#settle-net')?.textContent || ''), 'settlement: each chip carries its verdict text');
   check(!!q('#settle-overview [data-settle-person]'), 'settlement: the overview table rows are tappable too');
+  check(q('#settle-overview')?.tagName === 'DETAILS' && q('#settle-overview').open,
+    'settlement: the trip overview is expanded by default and uses an accessible disclosure');
+  await click('#settle-overview > summary');
+  check(!q('#settle-overview')?.open, 'settlement: the trip overview can be collapsed');
+  await click('#settle-overview > summary');
+  check(!!q('#settle-overview')?.open, 'settlement: the trip overview can be expanded again');
 
   // tap a chip → the person screen opens (avatar + verdict + transfer rows)
   const firstId = chips[0].dataset.settlePerson;
@@ -2287,6 +2335,11 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   const payerNodes = qa('.debt-map-node--payer[data-debt-person]');
   check(nodes.length >= 1, `debt map: person nodes render (${nodes.length})`);
   check(receiverNodes.length >= 1 && payerNodes.length >= 1, 'debt map: receivers are centered and payers surround them');
+  const memberReceiver = q('.debt-map-node--receiver[data-debt-person="u2"]');
+  const memberReceiverGroup = memberReceiver?.closest('.debt-recipient-group');
+  check(!!memberReceiverGroup?.querySelector('.debt-map-node--payer[data-debt-person="u1"]')
+    && !!memberReceiverGroup?.querySelector('.debt-map-edge path[marker-end]'),
+  'debt map: the owner’s arrow points to the non-admin member who paid');
   check(nodes.every(n => n.getAttribute('role') === 'button' && n.getAttribute('tabindex') === '0'), 'debt map: nodes are announced as buttons');
   check(/รับสุทธิ|จ่ายสุทธิ|เคลียร์/.test(q('#settlement-content')?.textContent || ''), 'debt map: labels spell out net receive / net pay');
   check(!!q('.debt-map-legend'), 'debt map: legend explains the colours');
@@ -2306,6 +2359,30 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   }
   const debtRows = qa('#settlement-content .debt-tx-row[data-settle-person]');
   check(debtRows.length >= 1, `debt map: transfer rows are tappable (${debtRows.length})`);
+
+  // Every receipt side and the transfer breakdown must retain an exact link to
+  // the expense that produced the debt, and that link must open the editor.
+  await click('#settle-views [data-view="receipts-list"]');
+  await waitFor(() => q('#receipt-u2') && q('#tx-list'), { timeout: 8000, label: 'receipts and transaction list' }).catch(() => {});
+  const expenseHref = `#/trip/t1/expenses/add?id=${remoteExpenseId}`;
+  check(!!q(`#receipt-u2 [data-receipt-section="received"] .rcpt-open[href="${expenseHref}"]`),
+    'settlement: the payer receipt links its paid item to the exact expense');
+  check(!!q(`#receipt-u1 [data-receipt-section="deduct"] .rcpt-open[href="${expenseHref}"]`),
+    'settlement: the debtor receipt links their share to the same expense');
+  const memberTransferRow = qa('#tx-list .tx-row').find(row => row.querySelector('[data-settle-to="u2"]'));
+  const sourceExpenseLink = memberTransferRow?.querySelector(`details.tx-details .rcpt-open[href="${expenseHref}"]`);
+  check(!!sourceExpenseLink, 'settlement: the transaction breakdown links the reimbursement back to its source expense');
+  if (sourceExpenseLink) {
+    sourceExpenseLink.closest('details').open = true;
+    check(sourceExpenseLink.getAttribute('href') === expenseHref, 'settlement: the source link routes to the exact expense id');
+    // goto() dispatches hashchange in jsdom exactly as a browser navigation does.
+    await goto(sourceExpenseLink.getAttribute('href'));
+    await waitFor(() => q('#expense-form'), { timeout: 8000, label: 'linked expense editor' }).catch(() => {});
+    check(q('#ex-title')?.value === remoteExpense.title, 'settlement: following a source link opens the matching expense editor');
+    await goto('#/trip/t1/settlement');
+    await waitFor(() => q('#settle-views'), { label: 'return to settlement' });
+    await waitFor(() => q('#settle-net .net-chip[data-settle-person="u2"]'), { timeout: 8000, label: 'settlement after linked expense' }).catch(() => {});
+  }
 
   // ---- 3) an average per person wherever a total is shown ----
   await goto('#/trip/t1/expenses');

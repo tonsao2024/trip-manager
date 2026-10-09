@@ -3,9 +3,8 @@ import { DASHBOARD_WIDGETS, DASHBOARD_WIDGET_KEYS, normalizeWidgetOrder, normali
 import { ideaCategoryId, placeCategoryLabel, placeCategoryColor, placeCategoryIcon } from './utils/categories.js';
 import { attachMapExpand } from './maps/index.js';
 import { expenseUpdateForCost } from './utils/reservations.js';
-import { paymentMethodOf } from './utils/payments.js';
+import { expensePayments, initialExpensePayerIds, paymentMethodOf, validatePayments } from './utils/payments.js';
 import { groupIdeasByCategory } from './utils/ideas.js';
-import { expensePayments, validatePayments } from './utils/payments.js';
 import { auth, db, isFirebaseConfigured, onAuthStateChanged, syncState } from './firebase.js';
 import { Router } from './router.js';
 import { toast } from './components/toast.js';
@@ -6343,10 +6342,7 @@ function expenseFormSectionsHtml({
   const p = prefix;
   const decimals = getCurrencyDecimals(currency);
   const amount = (minor) => (minor ? formatAmount(fromMinor(minor, decimals), decimals) : '');
-  const initialPayments = expensePayments(e);
-  const initialPayers = new Set(e.payerPending
-    ? []
-    : (initialPayments.length ? initialPayments.map(x => x.memberId) : [members[0]?.id || currentUser.uid]));
+  const initialPayers = new Set(initialExpensePayerIds(e, members, currentUser?.uid));
   const selectedShare = members.filter(m => (e.allocations ? e.allocations.some(a => a.memberId === m.id) : true));
 
   return `
@@ -6546,9 +6542,7 @@ function mountExpenseForm({
 
   const decimalsFor = (cur) => getCurrencyDecimals(cur);
   const initialPayments = expensePayments(e);
-  const initialPayers = new Set(e.payerPending
-    ? []
-    : (initialPayments.length ? initialPayments.map(p => p.memberId) : [members[0]?.id || currentUser.uid]));
+  const initialPayers = new Set(initialExpensePayerIds(e, members, currentUser?.uid));
 
   /* ---- payment method → managed card dropdown ---- */
   const paymentSel = $('ex-payment');
@@ -7758,6 +7752,7 @@ async function renderSettlement(params) {
 
   let state = { expenses: [], members: [], membersMap: {}, statements: [], balances: [], transactions: [], transfers: [] };
   let view = 'overview';   // ภาพรวมเป็นค่าเริ่มต้น (สลับเป็นใบเสร็จรายคนได้)
+  let overviewExpanded = true;
   let receiptFilter = 'all';  // 'all' = ใบเสร็จทุกคน, หรือ memberId ของคนที่เลือกดู
   // v18: ใบเสร็จรายคนแสดงเป็นการ์ดปัดได้ (Tinder-style) — สลับเป็นรายการยาวได้
   let receiptMode = 'deck';
@@ -8304,34 +8299,43 @@ async function renderSettlement(params) {
       return acc;
     }, { cash: 0, card: 0, transfer: 0 });
     return `
-      <div class="card p-5" id="settle-overview">
-        <h4 class="font-bold text-sm mb-4 flex items-center gap-2">${icon('scale', 'w-4 h-4')} ${th('ภาพรวมทั้งทริป','Trip overview')}</h4>
-        <div class="kpi-strip mb-4">
-          <div class="kpi-mini"><span class="kpi-mini-label">${th('จ่ายจริงรวม','Total paid')}</span><b>${moneyPair(totalPaid)}</b></div>
-          <div class="kpi-mini"><span class="kpi-mini-label">${th('เงินสด','Cash')}</span><b>${moneyPair(byMethod.cash)}</b></div>
-          <div class="kpi-mini"><span class="kpi-mini-label">${th('บัตร','Card')}</span><b>${moneyPair(byMethod.card)}</b></div>
-          <div class="kpi-mini"><span class="kpi-mini-label">${th('โอน','Transfer')}</span><b>${moneyPair(byMethod.transfer)}</b></div>
+      <details class="card" id="settle-overview" ${overviewExpanded ? 'open' : ''}>
+        <summary class="settle-overview-summary">
+          <span class="font-bold text-sm flex items-center gap-2">${icon('scale', 'w-4 h-4')} ${th('ภาพรวมทั้งทริป','Trip overview')}</span>
+          <span class="settle-overview-toggle no-export">
+            <span class="overview-hint-expanded">${th('กดเพื่อย่อ','Click to collapse')}</span>
+            <span class="overview-hint-collapsed">${th('กดเพื่อขยาย','Click to expand')}</span>
+            ${icon('chevron-down', 'w-3.5 h-3.5 settle-overview-chevron')}
+          </span>
+        </summary>
+        <div class="settle-overview-body">
+          <div class="kpi-strip mb-4">
+            <div class="kpi-mini"><span class="kpi-mini-label">${th('จ่ายจริงรวม','Total paid')}</span><b>${moneyPair(totalPaid)}</b></div>
+            <div class="kpi-mini"><span class="kpi-mini-label">${th('เงินสด','Cash')}</span><b>${moneyPair(byMethod.cash)}</b></div>
+            <div class="kpi-mini"><span class="kpi-mini-label">${th('บัตร','Card')}</span><b>${moneyPair(byMethod.card)}</b></div>
+            <div class="kpi-mini"><span class="kpi-mini-label">${th('โอน','Transfer')}</span><b>${moneyPair(byMethod.transfer)}</b></div>
+          </div>
+          <table class="receipt-table">
+            <thead><tr>
+              <th>${th('สมาชิก','Member')}</th>
+              <th class="num">${th('รับ (จ่าย)','Paid')}</th>
+              <th class="num">${th('หัก (ส่วนตัว)','Share')}</th>
+              <th class="num">${th('คงเหลือ','Balance')}</th>
+            </tr></thead>
+            <tbody>
+              ${state.statements.map(m => `
+                <tr class="receipt-table-row" data-settle-person="${escapeHtml(m.memberId)}" title="${th('กดเพื่อดูรายละเอียด','Tap for details')}">
+                  <td>${escapeHtml(m.displayName)}</td>
+                  <td class="num">${moneyPair(m.paidMinor)}</td>
+                  <td class="num">${moneyPair(m.owedMinor)}</td>
+                  <td class="num ${m.netMinor >= 0 ? 'receipt-positive' : 'receipt-negative'}"><span class="money-dual"><span class="money-primary" style="color:inherit;">${m.netMinor >= 0 ? '+' : '−'}${money(Math.abs(m.netMinor))}</span>${thbTag(Math.abs(m.netMinor))}</span></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+          <div class="receipt-line muted"><span>${th('ยอดรวมทุกคน','Everyone together')}</span><span>${money(state.statements.reduce((s, m) => s + m.netMinor, 0))}</span></div>
+          ${cardsSummaryHtml()}
         </div>
-        <table class="receipt-table">
-          <thead><tr>
-            <th>${th('สมาชิก','Member')}</th>
-            <th class="num">${th('รับ (จ่าย)','Paid')}</th>
-            <th class="num">${th('หัก (ส่วนตัว)','Share')}</th>
-            <th class="num">${th('คงเหลือ','Balance')}</th>
-          </tr></thead>
-          <tbody>
-            ${state.statements.map(m => `
-              <tr class="receipt-table-row" data-settle-person="${escapeHtml(m.memberId)}" title="${th('กดเพื่อดูรายละเอียด','Tap for details')}">
-                <td>${escapeHtml(m.displayName)}</td>
-                <td class="num">${moneyPair(m.paidMinor)}</td>
-                <td class="num">${moneyPair(m.owedMinor)}</td>
-                <td class="num ${m.netMinor >= 0 ? 'receipt-positive' : 'receipt-negative'}"><span class="money-dual"><span class="money-primary" style="color:inherit;">${m.netMinor >= 0 ? '+' : '−'}${money(Math.abs(m.netMinor))}</span>${thbTag(Math.abs(m.netMinor))}</span></td>
-              </tr>`).join('')}
-          </tbody>
-        </table>
-        <div class="receipt-line muted"><span>${th('ยอดรวมทุกคน','Everyone together')}</span><span>${money(state.statements.reduce((s, m) => s + m.netMinor, 0))}</span></div>
-        ${cardsSummaryHtml()}
-      </div>
+      </details>
       ${netSummaryHtml()}
       ${pendingHtml()}
       ${transactionsHtml()}`;
@@ -8977,6 +8981,10 @@ async function renderSettlement(params) {
     }
     if (view === 'overview') {
       content.innerHTML = overviewHtml();
+      const overview = document.getElementById('settle-overview');
+      overview?.addEventListener('toggle', () => {
+        if (overview.isConnected) overviewExpanded = overview.open;
+      });
       queueIcons();
       // The overview also shows the pending-payer panel + transactions strip.
       bindReceiptActions();
@@ -9018,7 +9026,10 @@ async function renderSettlement(params) {
     try { receiptMode = localStorage.getItem('fuji_receipt_mode') === 'list' ? 'list' : 'deck'; } catch { /* ignore */ }
     try { receiptDensity = localStorage.getItem('fuji_rcpt_density') === 'compact' ? 'compact' : 'full'; } catch { /* ignore */ }
     try {
-      const { expenses, members, transfers } = await fetchSettlementData(tripId);
+      // A balance is financial advice: always read the current expense book here.
+      // The general 5-minute dashboard cache can otherwise omit another member's
+      // recently-created expense on this device.
+      const { expenses, members, transfers } = await fetchSettlementData(tripId, { fresh: true });
       commentsAll = await listComments(tripId, { limitCount: 400 }).catch(() => []);
       commentMap = commentsByExpense(commentsAll);
       if (!document.getElementById('settlement-content')) return;
@@ -9073,14 +9084,26 @@ async function renderSettlement(params) {
     list.forEach(x => { x.style.visibility = 'hidden'; });
     return list;
   }
+  function expandOverviewForExport(target) {
+    const overview = target === 'settle-overview' ? document.getElementById('settle-overview') : null;
+    if (!overview) return () => {};
+    const wasOpen = overview.open;
+    overview.open = true;
+    return () => {
+      overview.open = wasOpen;
+      overviewExpanded = wasOpen;
+    };
+  }
 
   bind('export-overview-png', 'click', async () => {
     const tLoad = toast.loading(lang === 'th' ? 'กำลังสร้างรูป...' : 'Creating image...');
     let hidden = [];
+    let restoreOverview = () => {};
     try {
       const { exportToPng } = await import('./exports/index.js');
       const target = view === 'overview' ? 'settle-overview' : 'settlement-content';
       if (!ensureExportTarget(target)) throw new Error(th('ยังไม่มีข้อมูลให้ส่งออก — รอสักครู่แล้วลองใหม่', 'Nothing to export yet — wait a moment and retry'));
+      restoreOverview = expandOverviewForExport(target);
       hidden = hideNoExport();
       await exportToPng(target, `settlement-overview-${tripId}.png`);
       tLoad.close();
@@ -9090,16 +9113,19 @@ async function renderSettlement(params) {
       toast.error(e.message);
     } finally {
       hidden.forEach(x => { x.style.visibility = ''; });
+      restoreOverview();
     }
   });
 
   bind('print-settle', 'click', async () => {
     const tLoad = toast.loading(lang === 'th' ? 'กำลังสร้าง PDF...' : 'Creating PDF...');
     let hidden = [];
+    let restoreOverview = () => {};
     try {
       const { exportToPdf } = await import('./exports/index.js');
       const target = view === 'overview' ? 'settle-overview' : 'settlement-content';
       if (!ensureExportTarget(target)) throw new Error(th('ยังไม่มีข้อมูลให้พิมพ์ — รอสักครู่แล้วลองใหม่', 'Nothing to print yet — wait a moment and retry'));
+      restoreOverview = expandOverviewForExport(target);
       hidden = hideNoExport();
       await exportToPdf(target, `settlement-${tripId}.pdf`);
       tLoad.close();
@@ -9109,6 +9135,7 @@ async function renderSettlement(params) {
       toast.error(e.message);
     } finally {
       hidden.forEach(x => { x.style.visibility = ''; });
+      restoreOverview();
     }
   });
 
@@ -9132,7 +9159,6 @@ async function renderSettlement(params) {
       await load();
       tLoad.close();
       toast.success(lang === 'th' ? 'คำนวณยอดใหม่แล้ว' : 'Recalculated');
-      load();
     } catch (e) { tLoad.close(); toast.error(e.message); }
     finally {
       btn.disabled = false;

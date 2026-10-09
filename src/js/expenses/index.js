@@ -4,7 +4,7 @@ import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, 
 import { toThbMinor, calculateNetTotal, getCurrencyDecimals, toMinor } from '../utils/currency.js';
 import { validateAllocations } from '../utils/split.js';
 import { normalizeCategory } from '../utils/categories.js';
-import { cachedRead, cacheInvalidate, cacheForget } from '../utils/datacache.js';
+import { cachedRead, cacheInvalidate, cacheForget, cacheSet, persistSet } from '../utils/datacache.js';
 
 export function subscribeExpenses(tripId, cb) {
   if (!db) return () => {};
@@ -74,10 +74,18 @@ function applyFilters(items, filters = {}) {
 export async function fetchAllExpenses(tripId, { max = 500, fresh = false } = {}) {
   if (!db) throw new Error('DB not ready');
   const key = `exps:${tripId}`;
-  if (fresh) cacheForget(key);
-  return cachedRead(key, () => loadAllExpensesUncached(tripId), { maxAgeMs: 5 * 60 * 1000 }).then(list => (
-    max && list.length > max ? list.slice(0, max) : list
-  ));
+  let list;
+  if (fresh) {
+    // Do not join a stale in-flight cache refresh: another device may have
+    // written since it started, and settlement must use the read begun now.
+    cacheForget(key);
+    list = await loadAllExpensesUncached(tripId);
+    cacheSet(key, list);
+    persistSet(key, list);
+  } else {
+    list = await cachedRead(key, () => loadAllExpensesUncached(tripId), { maxAgeMs: 5 * 60 * 1000 });
+  }
+  return max && list.length > max ? list.slice(0, max) : list;
 }
 
 export async function getExpense(tripId, expenseId) {

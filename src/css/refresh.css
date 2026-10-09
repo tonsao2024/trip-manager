@@ -1215,3 +1215,44 @@ select.input { border-radius: var(--radius); }
   .expense-day-total .expense-avg-chip { max-width: 100%; white-space: normal; }
   .expenses-compact .expense-day-head { padding: 6px 8px; }
 }
+
+/* The trip-wide settlement overview folds independently of the debt summary. */
+#settle-overview {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+}
+#settle-overview > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 52px;
+  padding: 14px 18px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-strong);
+}
+#settle-overview > summary::-webkit-details-marker { display: none; }
+#settle-overview > summary::marker { content: ''; }
+#settle-overview > summary:hover { background: color-mix(in srgb, var(--primary-raw) 5%, transparent); }
+#settle-overview > summary:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary-raw) 45%, transparent); outline-offset: -3px; }
+.settle-overview-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+}
+.settle-overview-chevron { transition: transform .18s ease; }
+#settle-overview[open] .settle-overview-chevron { transform: rotate(180deg); }
+#settle-overview[open] .overview-hint-collapsed,
+#settle-overview:not([open]) .overview-hint-expanded { display: none; }
+.settle-overview-body { padding: 0 18px 18px; }
+@media (max-width: 540px) {
+  #settle-overview > summary { min-height: 48px; padding: 12px 13px; }
+  .settle-overview-body { padding: 0 13px 13px; }
+  .settle-overview-toggle { font-size: 9px; }
+}
