@@ -71,9 +71,73 @@ export function applyTransfers(balances, transfers = []) {
   return Array.from(net.entries()).map(([memberId, n]) => ({ memberId, net: n }));
 }
 
+/**
+ * Who pays whom, bill by bill ("คืนตามบิล").
+ *
+ * Each bill is settled inside itself first: the people who shared it pay back the
+ * people who fronted it, so a non-admin payer is repaid by the members who owe for
+ * that bill, not folded into one net figure owed to the admin. The resulting debts
+ * are then netted pair by pair (A owes B and B owes A becomes one transfer), and
+ * recorded transfers (จ่ายแล้ว) reduce the matching pair.
+ *
+ * Every member's net equals the sum of their pairs, so this agrees with `balances`.
+ */
+export function settleByBill(expenses, transfers = [], toleranceMinor = 0) {
+  // owed.get(from).get(to) = amount `from` still owes `to`; negative means the reverse.
+  const owed = new Map();
+  const addOwed = (from, to, amount) => {
+    if (!owed.has(from)) owed.set(from, new Map());
+    const row = owed.get(from);
+    row.set(to, (row.get(to) || 0) + amount);
+  };
+  const owedOf = (from, to) => owed.get(from)?.get(to) || 0;
+  const byAmount = (a, b) => b.n - a.n || String(a.id).localeCompare(String(b.id));
+
+  for (const exp of expenses || []) {
+    if (!exp || exp.status === 'voided' || exp.payerPending) continue;
+    const net = new Map();
+    for (const p of expensePayments(exp)) net.set(p.memberId, (net.get(p.memberId) || 0) + (Number(p.amountMinor) || 0));
+    for (const a of exp.allocations || []) net.set(a.memberId, (net.get(a.memberId) || 0) - (Number(a.amountMinor) || 0));
+    const creditors = [...net].filter(([, n]) => n > 0).map(([id, n]) => ({ id, n })).sort(byAmount);
+    const debtors = [...net].filter(([, n]) => n < 0).map(([id, n]) => ({ id, n: -n })).sort(byAmount);
+    let i = 0, j = 0;
+    while (i < debtors.length && j < creditors.length) {
+      const amount = Math.min(debtors[i].n, creditors[j].n);
+      addOwed(debtors[i].id, creditors[j].id, amount);
+      debtors[i].n -= amount;
+      creditors[j].n -= amount;
+      if (debtors[i].n <= toleranceMinor) i++;
+      if (creditors[j].n <= toleranceMinor) j++;
+    }
+  }
+
+  for (const t of transfers || []) {
+    const amount = Math.round(Number(t?.amountMinor) || 0);
+    if (!(amount > 0) || !t.fromId || !t.toId || t.fromId === t.toId) continue;
+    addOwed(t.fromId, t.toId, -amount);
+  }
+
+  // Net each unordered pair once, then emit a single transfer in the direction still owed.
+  const pairs = new Set();
+  const transactions = [];
+  for (const [from, row] of owed) {
+    for (const to of row.keys()) {
+      const [lo, hi] = from < to ? [from, to] : [to, from];
+      const pairKey = JSON.stringify([lo, hi]);
+      if (pairs.has(pairKey)) continue;
+      pairs.add(pairKey);
+      const net = owedOf(lo, hi) - owedOf(hi, lo);
+      if (net > toleranceMinor) transactions.push({ from: lo, to: hi, amountMinor: net });
+      else if (net < -toleranceMinor) transactions.push({ from: hi, to: lo, amountMinor: -net });
+    }
+  }
+  return transactions.sort((x, y) => y.amountMinor - x.amountMinor
+    || String(x.from).localeCompare(String(y.from)) || String(x.to).localeCompare(String(y.to)));
+}
+
 export function calculateSettlement(expenses, members, transfers = []) {
   const balances = applyTransfers(calculateNetBalances(expenses, members), transfers);
-  const transactions = minimizeTransactions(balances);
+  const transactions = settleByBill(expenses, transfers);
   return { balances, transactions };
 }
 

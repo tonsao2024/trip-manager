@@ -2,6 +2,12 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
+> **v27 — 9 Oct 2026, คืนเงินตามบิล.** The transfer list (`utils/settlement.js` → `settleByBill`) now settles each
+> bill inside itself: the people who shared a bill pay back the people who fronted it, then debts are netted per
+> pair. Before, all balances were netted together and the largest creditor (usually the admin) received everything,
+> so a non-admin payer was never repaid directly. Balances per person are unchanged. Covered by
+> `tests/unit/settle-by-bill.test.js` (including a 60-round property check that transfers match each balance).
+>
 > **v26 — 9 Oct 2026, เคลียร์บิลเมื่อคนจ่ายหลายคน.** Non-admin payers now count everywhere they should.
 > **Excel import** (`utils/excel.js` → `parsePayerCell`): every name in the payer cell is kept. A payer with no
 > amount takes the remainder (blank payers share what is left equally), and a cell with names only splits the bill
