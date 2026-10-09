@@ -1,5 +1,5 @@
 import { splitCustom } from '../../src/js/utils/split.js';
-import { expensePayments, validatePayments, validateExpensePayerState } from '../../src/js/utils/payments.js';
+import { expensePayments, initialExpensePayerIds, validatePayments, validateExpensePayerState } from '../../src/js/utils/payments.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources } from '../../src/js/utils/settlement.js';
 import { toThbMinor, expensesInThb, formatAmount, moneyHtml, parseCurrencyInput } from '../../src/js/utils/currency.js';
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
@@ -30,6 +30,50 @@ export function testMultiplePayers() {
   assert(transactionSources({ from: 'a', to: 'b' }, [expense]).length === 1, 'second payer appears in sources');
   eq(expensePayments({ payerId: 'a', netTotalMinor: 10000 }), [{ memberId: 'a', amountMinor: 10000 }], 'legacy single payer readable');
 }
+export function testNewExpenseDefaultsToTheSignedInPayer() {
+  const members = [
+    { id: 'owner', uid: 'owner', role: 'trip_admin' },
+    { id: 'member', uid: 'member', role: 'member' }
+  ];
+  eq(initialExpensePayerIds({}, members, 'member'), ['member'], 'a member-created expense defaults to the signed-in member, not the first/admin member');
+  eq(initialExpensePayerIds({}, members, 'owner'), ['owner'], 'the owner still defaults to themself');
+  eq(initialExpensePayerIds({}, members, 'unknown'), ['owner'], 'unmatched account falls back to the first available member');
+  eq(initialExpensePayerIds({ payerPending: true }, members, 'member'), [], 'pending estimates have no default payer');
+  eq(initialExpensePayerIds({ payerId: 'member', netTotalMinor: 100 }, members, 'owner'), ['member'], 'saved legacy payer is preserved while editing');
+  eq(initialExpensePayerIds({ payments: [{ memberId: 'member', amountMinor: 50 }, { memberId: 'owner', amountMinor: 50 }] }, members, 'owner'), ['member', 'owner'], 'saved multi-payer rows are preserved while editing');
+}
+
+export function testNonAdminPayerIsCreditedAndSettlementRowsLinkToTheExpense() {
+  const members = [
+    { id: 'owner', displayName: 'Owner' },
+    { id: 'member', displayName: 'Member' },
+    { id: 'friend', displayName: 'Friend' }
+  ];
+  const expense = {
+    id: 'member-paid-bill', title: 'Dinner paid by a member', date: '2027-02-03',
+    payerId: 'member', createdBy: 'member', netTotalMinor: 10000, currency: 'THB',
+    payments: [{ memberId: 'member', amountMinor: 10000 }],
+    allocations: [
+      { memberId: 'owner', amountMinor: 6000 },
+      { memberId: 'member', amountMinor: 2000 },
+      { memberId: 'friend', amountMinor: 2000 }
+    ]
+  };
+
+  const { balances, transactions } = calculateSettlement([expense], members);
+  eq(balances.map(b => [b.memberId, b.net]), [['owner', -6000], ['member', 8000], ['friend', -2000]], 'the actual non-admin payer gets credited in net balances');
+  eq(transactions.map(t => [t.from, t.to, t.amountMinor]), [['owner', 'member', 6000], ['friend', 'member', 2000]], 'both debtors are directed to reimburse the member who paid');
+
+  const statements = buildSettlementStatements([expense], members);
+  const payer = statements.find(s => s.memberId === 'member');
+  eq([payer.paidMinor, payer.owedMinor, payer.netMinor], [10000, 2000, 8000], 'the member receipt agrees with the balance calculation');
+  assert(payer.items.some(i => i.role === 'paid' && i.expenseId === expense.id), 'the paid receipt row links to its expense id');
+  assert(payer.items.some(i => i.role === 'share' && i.expenseId === expense.id), 'the payer’s own share links to the same expense id');
+
+  const source = transactionSources(transactions[0], [expense]);
+  eq(source.map(row => [row.expenseId, row.amountMinor]), [['member-paid-bill', 6000]], 'the transfer breakdown links to the exact shared expense and debtor share');
+}
+
 export function testPayerPendingEstimate() {
   const pending = {
     id: 'hotel-estimate', isEstimated: true, payerPending: true,

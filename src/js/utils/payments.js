@@ -8,6 +8,31 @@ export function expensePayments(expense = {}) {
   return memberId ? [{ memberId, amountMinor: Number(expense.netTotalMinor) || 0 }] : [];
 }
 
+/**
+ * Payers selected when opening the expense form.
+ *
+ * Saved payment data always wins (editing must not silently rewrite a bill).
+ * For a new expense, default to the signed-in trip member rather than the first
+ * member in the list — that first entry is commonly the trip owner/admin, which
+ * used to attribute every member-created expense to the admin by accident.
+ */
+export function initialExpensePayerIds(expense = {}, members = [], currentUserId = '') {
+  if (expense.payerPending) return [];
+
+  const savedPayments = expensePayments(expense);
+  if (savedPayments.length) {
+    return [...new Set(savedPayments.map(p => p?.memberId).filter(Boolean).map(String))];
+  }
+
+  const uid = String(currentUserId || '');
+  const currentMember = members.find(m =>
+    String(m?.id || '') === uid || String(m?.uid || '') === uid || String(m?.authUid || '') === uid
+  );
+  const fallback = currentMember || members[0];
+  const payerId = fallback?.id || fallback?.uid || uid;
+  return payerId ? [String(payerId)] : [];
+}
+
 export function validatePayments(totalMinor, payments) {
   return Number.isSafeInteger(totalMinor) && totalMinor > 0 && payments?.length > 0
     && new Set(payments.map(p => p.memberId)).size === payments.length
