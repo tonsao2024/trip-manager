@@ -1,4 +1,4 @@
-import { expensePayments } from './payments.js';
+import { expensePayments, paymentMethodOf } from './payments.js';
 /**
  * Settlement algorithm - minimize transactions
  * Net balance = Paid - Owed
@@ -53,8 +53,26 @@ export function minimizeTransactions(balances, toleranceMinor = 1) {
   return transactions;
 }
 
-export function calculateSettlement(expenses, members) {
-  const balances = calculateNetBalances(expenses, members);
+/**
+ * Money already sent between members (“จ่ายแล้ว”). A transfer from a debtor to a
+ * creditor moves both nets toward zero, so the transactions that are still
+ * suggested come from what is genuinely left to pay.
+ * @param {{memberId:string, net:number}[]} balances
+ * @param {{fromId:string, toId:string, amountMinor:number}[]} transfers
+ */
+export function applyTransfers(balances, transfers = []) {
+  const net = new Map(balances.map(b => [b.memberId, b.net]));
+  for (const t of transfers || []) {
+    const amount = Math.round(Number(t?.amountMinor) || 0);
+    if (!(amount > 0) || !t.fromId || !t.toId || t.fromId === t.toId) continue;
+    net.set(t.fromId, (net.get(t.fromId) || 0) + amount);
+    net.set(t.toId, (net.get(t.toId) || 0) - amount);
+  }
+  return Array.from(net.entries()).map(([memberId, n]) => ({ memberId, net: n }));
+}
+
+export function calculateSettlement(expenses, members, transfers = []) {
+  const balances = applyTransfers(calculateNetBalances(expenses, members), transfers);
   const transactions = minimizeTransactions(balances);
   return { balances, transactions };
 }
@@ -73,7 +91,7 @@ export function calculateSettlement(expenses, members) {
  *   "actual money only" receipt).
  * @returns {Array<{memberId, displayName, paidMinor, paidByMethod, owedMinor, netMinor, items, transactions}>}
  */
-export function buildSettlementStatements(expenses, members, { includeEstimated = true } = {}) {
+export function buildSettlementStatements(expenses, members, { includeEstimated = true, transfers = [] } = {}) {
   const rows = new Map();
   const ensure = (memberId) => {
     const id = memberId || 'unknown';
@@ -104,23 +122,32 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
     const total = Number(exp.netTotalMinor) || 0;
     const payerId = exp.payerId || exp.paidBy;
     const method = ['cash', 'card', 'transfer'].includes(exp.paymentMethod) ? exp.paymentMethod : 'other';
+    // Every payer with the amount they put in: a receipt must show the whole bill,
+    // not just the viewer's own part of it.
+    const payments = expensePayments(exp);
+    const payers = payments.map(p => ({ memberId: p.memberId, amountMinor: p.amountMinor }));
 
-    for (const payment of expensePayments(exp)) {
-      const total = payment.amountMinor;
+    for (const payment of payments) {
+      const paidMinor = payment.amountMinor;
       const payerRow = ensure(payment.memberId);
-      payerRow.paidMinor += total;
-      payerRow.paidByMethod[method] += total;
+      payerRow.paidMinor += paidMinor;
+      const pay = paymentMethodOf(exp, payment);
+      const payMethod = ['cash', 'card', 'transfer'].includes(pay.method) ? pay.method : 'other';
+      payerRow.paidByMethod[payMethod] += paidMinor;
       payerRow.paidCount += 1;
       payerRow.items.push({
         expenseId: exp.id,
         title: exp.title || '',
         date: exp.date || '',
         role: 'paid',
-        method,
-        cardName: exp.cardName || '',
+        method: payMethod,
+        cardName: pay.cardName,
         hasReceipt: Boolean(exp.receiptImage || exp.receiptUrl),
         estimated: Boolean(exp.isEstimated),
-        amountMinor: total,
+        amountMinor: paidMinor,
+        totalMinor: total,
+        payers,
+        payerCount: payers.length,
         currency: exp.currency || null
       });
     }
@@ -131,14 +158,17 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
       const row = ensure(alloc.memberId);
       row.owedMinor += share;
       row.shareCount += 1;
-      if (expensePayments(exp).length > 1 || alloc.memberId !== payerId || share !== total) {
+      if (payments.length > 1 || alloc.memberId !== payerId || share !== total) {
         row.items.push({
           expenseId: exp.id,
           title: exp.title || '',
           date: exp.date || '',
           role: 'share',
           paidBy: payerId,
-          payerIds: expensePayments(exp).map(p => p.memberId),
+          payerIds: payers.map(p => p.memberId),
+          payers,
+          payerCount: payers.length,
+          totalMinor: total,
           method,
           cardName: exp.cardName || '',
           hasReceipt: Boolean(exp.receiptImage || exp.receiptUrl),
@@ -150,9 +180,16 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
     }
   }
 
+  // Money already sent (จ่ายแล้ว): the sender's balance moves toward zero, the receiver's moves back toward zero.
+  for (const t of transfers || []) {
+    const amount = Math.round(Number(t?.amountMinor) || 0);
+    if (!(amount > 0) || t.fromId === t.toId) continue;
+    if (rows.has(t.fromId)) rows.get(t.fromId).settledMinor = (rows.get(t.fromId).settledMinor || 0) + amount;
+    if (rows.has(t.toId)) rows.get(t.toId).settledMinor = (rows.get(t.toId).settledMinor || 0) - amount;
+  }
   const statements = [...rows.values()].map(row => {
     row.items.sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.role.localeCompare(b.role));
-    row.netMinor = row.paidMinor - row.owedMinor;
+    row.netMinor = row.paidMinor - row.owedMinor + (row.settledMinor || 0);
     row.estimatedPaidMinor = row.items.filter(i => i.role === 'paid' && i.estimated).reduce((n, i) => n + i.amountMinor, 0);
     return row;
   });
@@ -170,22 +207,35 @@ export function cardSummary(expenses = [], membersMap = {}) {
   const rows = new Map();
   for (const e of expenses) {
     if (!e || (e.status || 'active') === 'voided') continue;
-    if (e.paymentMethod !== 'card' || !e.cardName) continue;
-    const key = String(e.cardName).trim();
-    if (!key) continue;
-    if (!rows.has(key)) rows.set(key, { card: key, totalMinor: 0, count: 0, holders: [], currency: e.currency || null, estimatedMinor: 0 });
-    const row = rows.get(key);
-    const amount = Number(e.netTotalMinor) || 0;
-    row.totalMinor += amount;
-    row.count += 1;
-    if (e.isEstimated) row.estimatedMinor += amount;
+    // Each payer's own card counts — a bill can be split across two cards.
+    const byCard = new Map();
     for (const p of expensePayments(e)) {
+      const pay = paymentMethodOf(e, p);
+      if (pay.method !== 'card' || !pay.cardName) continue;
+      if (!byCard.has(pay.cardName)) byCard.set(pay.cardName, { amountMinor: 0, holders: [] });
+      const bucket = byCard.get(pay.cardName);
+      bucket.amountMinor += Number(p.amountMinor) || 0;
       const holder = membersMap[p.memberId]?.displayName;
-      if (holder && !row.holders.includes(holder)) row.holders.push(holder);
+      if (holder && !bucket.holders.includes(holder)) bucket.holders.push(holder);
     }
-    if (!row.currency && e.currency) row.currency = e.currency;
+    for (const [key, bucket] of byCard) {
+      if (!rows.has(key)) rows.set(key, { card: key, totalMinor: 0, count: 0, holders: [], currency: e.currency || null, estimatedMinor: 0 });
+      const row = rows.get(key);
+      row.totalMinor += bucket.amountMinor;
+      row.count += 1;
+      if (e.isEstimated) row.estimatedMinor += bucket.amountMinor;
+      for (const h of bucket.holders) if (!row.holders.includes(h)) row.holders.push(h);
+      if (!row.currency && e.currency) row.currency = e.currency;
+    }
   }
   return [...rows.values()].sort((a, b) => b.totalMinor - a.totalMinor);
+}
+
+/** How the creditor paid for a bill (falls back to the bill's own method). */
+function sourceMethod(e, tx) {
+  const payments = expensePayments(e);
+  const payer = payments.find(p => p.memberId === tx?.to) || payments[0];
+  return payer ? paymentMethodOf(e, payer).method : (e.paymentMethod || 'cash');
 }
 
 /** Which expenses a settlement transaction settles (debtor's share of each). */
@@ -212,7 +262,7 @@ export function pendingPayerExpenses(expenses = []) {
  *
  * @param {{from:string,to:string,amountMinor:number}} tx
  * @param {Array} expenses
- * @returns {Array<{expenseId:string,title:string,date:string,amountMinor:number,currency:string|null,method:string}>}
+ * @returns {Array<{expenseId:string,title:string,date:string,amountMinor:number,totalMinor:number,payers:Array<{memberId:string,amountMinor:number}>,currency:string|null,method:string}>}
  */
 export function transactionSources(tx, expenses = []) {
   if (!tx) return [];
@@ -228,8 +278,11 @@ export function transactionSources(tx, expenses = []) {
       title: e.title || '',
       date: e.date || '',
       amountMinor: share.amountMinor || 0,
+      totalMinor: Number(e.netTotalMinor) || 0,
+      // All payers and what each one put in — a shared bill names everyone who paid.
+      payers: expensePayments(e).map(p => ({ memberId: p.memberId, amountMinor: p.amountMinor })),
       currency: e.currency || null,
-      method: e.paymentMethod || 'cash',
+      method: sourceMethod(e, tx),
       estimated: Boolean(e.isEstimated)
     });
   }

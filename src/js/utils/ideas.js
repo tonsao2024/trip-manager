@@ -1,3 +1,4 @@
+import { ITINERARY_CATEGORIES, ideaCategoryId } from './categories.js';
 // Ideas-board helpers — the pure half of “สถานที่ที่อยากไป” (statuses, votes,
 // sorting, “add to plan” payload). Kept Firestore-free for unit tests; the CRUD
 // lives in src/js/ideas/index.js and re-exports everything below.
@@ -180,3 +181,23 @@ export function pendingIdeaCount(pending = []) {
   return pending.filter(Boolean).length;
 }
 
+/**
+ * Ideas grouped by category for the board. Place categories come in their fixed
+ * order, then the trip's own groups in the order they first appear. Empty groups
+ * are dropped, and each group keeps the order of the list it came from.
+ * @returns {{id:string, ideas:Array}[]}
+ */
+export function groupIdeasByCategory(ideas = []) {
+  const buckets = new Map();
+  for (const idea of ideas || []) {
+    const id = ideaCategoryId(idea?.category);
+    if (!buckets.has(id)) buckets.set(id, []);
+    buckets.get(id).push(idea);
+  }
+  const placeOrder = ITINERARY_CATEGORIES.map(c => c.id);
+  const ids = [
+    ...placeOrder.filter(id => buckets.has(id)),
+    ...[...buckets.keys()].filter(id => !placeOrder.includes(id))
+  ];
+  return ids.map(id => ({ id, ideas: buckets.get(id) }));
+}

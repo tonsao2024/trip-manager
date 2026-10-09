@@ -58,3 +58,43 @@ export function testMoneyDisplayAndAggregation() {
   const rounded = expensesInThb([{ currency: 'JPY', netTotalMinor: 3, thbRate: .245, allocations: ['a','b','c'].map(memberId => ({ memberId, amountMinor: 1 })), payments: [{ memberId: 'a', amountMinor: 3 }] }], {});
   eq(calculateSettlement(rounded, []).balances.reduce((s, b) => s + b.net, 0), 0, 'converted ledger remains balanced');
 }
+
+export function testPayerRemainderMatchesUnequalSplit() {
+  // The first payer types 6,000 of 10,000 → the blank payer is worked out as 4,000
+  const remainder = splitCustom({ netTotalMinor: 10000, subtotalMinor: 10000, includesAdjustments: true, entries: [{ memberId: 'a', amountMinor: 6000 }, { memberId: 'b', amountMinor: null }] });
+  assert(remainder.valid, 'one typed payer + one blank is valid');
+  eq(remainder.rows.map(r => [r.memberId, r.amountMinor]), [['a', 6000], ['b', 4000]], 'blank payer takes the rest');
+  // Several blanks share what is left, exact to the minor unit
+  const three = splitCustom({ netTotalMinor: 10001, subtotalMinor: 10001, includesAdjustments: true, entries: [{ memberId: 'a', amountMinor: 1000 }, { memberId: 'b', amountMinor: null }, { memberId: 'c', amountMinor: null }] });
+  assert(three.valid, 'several blanks are valid');
+  eq(three.rows.map(r => r.amountMinor), [1000, 4501, 4500], 'remainder shared, extra unit to the first blank');
+  eq(three.rows.reduce((n, r) => n + r.amountMinor, 0), 10001, 'payments add up to the net total');
+  // Over-typed with a blank left is invalid; fully typed but short is invalid too
+  assert(!splitCustom({ netTotalMinor: 10000, subtotalMinor: 10000, includesAdjustments: true, entries: [{ memberId: 'a', amountMinor: 12000 }, { memberId: 'b', amountMinor: null }] }).valid, 'over-typed payer leaves nothing for the blank');
+  assert(!splitCustom({ netTotalMinor: 10000, subtotalMinor: 10000, includesAdjustments: true, entries: [{ memberId: 'a', amountMinor: 4000 }, { memberId: 'b', amountMinor: 4000 }] }).valid, 'fully typed but short is rejected');
+  // Payments built this way always pass the stored-payment validation
+  const payments = remainder.rows.filter(r => r.amountMinor > 0).map(r => ({ memberId: r.memberId, amountMinor: r.amountMinor }));
+  assert(validatePayments(10000, payments), 'auto-worked payments validate');
+  // A payer left with nothing is dropped rather than stored as a zero payment
+  const zeroShare = splitCustom({ netTotalMinor: 10000, subtotalMinor: 10000, includesAdjustments: true, entries: [{ memberId: 'a', amountMinor: 10000 }, { memberId: 'b', amountMinor: null }] });
+  eq(zeroShare.rows.filter(r => r.amountMinor > 0).map(r => r.memberId), ['a'], 'zero-share payer is not a payer');
+}
+
+export function testMultiPayerReceiptsShowEveryPayer() {
+  const members = [{ id: 'a', displayName: 'A' }, { id: 'b', displayName: 'B' }, { id: 'c', displayName: 'C' }];
+  const dinner = {
+    id: 'dinner', title: 'ข้าว', date: '2027-01-02', netTotalMinor: 10000,
+    payments: [{ memberId: 'a', amountMinor: 6000 }, { memberId: 'b', amountMinor: 4000 }],
+    allocations: [{ memberId: 'a', amountMinor: 5000 }, { memberId: 'b', amountMinor: 3000 }, { memberId: 'c', amountMinor: 2000 }]
+  };
+  const statements = buildSettlementStatements([dinner], members);
+  const paidA = statements.find(s => s.memberId === 'a').items.find(i => i.role === 'paid');
+  eq(paidA.amountMinor, 6000, 'payer keeps own contribution');
+  eq(paidA.totalMinor, 10000, 'paid row carries the whole bill');
+  eq(paidA.payers.map(p => [p.memberId, p.amountMinor]), [['a', 6000], ['b', 4000]], 'paid row lists every payer with amounts');
+  const shareC = statements.find(s => s.memberId === 'c').items.find(i => i.role === 'share');
+  eq(shareC.payers.map(p => p.memberId), ['a', 'b'], 'share row names every payer');
+  eq(shareC.payers.reduce((n, p) => n + p.amountMinor, 0), 10000, 'payer amounts add up to the bill');
+  const sources = transactionSources({ from: 'c', to: 'a', amountMinor: 2000 }, [dinner]);
+  eq(sources.map(s => [s.expenseId, s.amountMinor, s.totalMinor, s.payers.length]), [['dinner', 2000, 10000, 2]], 'transfer sources show the bill total and every payer');
+}

@@ -1,3 +1,4 @@
+import { scaleToTotal } from './split.js';
 // Reservation helpers — the pure half of “ตั๋ว & ที่พัก” (types, sorting,
 // warnings, “add to plan” payload, cost totals). Firestore-free for unit tests;
 // the CRUD lives in src/js/reservations/index.js and re-exports everything.
@@ -140,3 +141,30 @@ export function reservationWarnings(reservation = {}) {
   return warnings;
 }
 
+/**
+ * The expense book's numbers for a booking whose price changed: the same bill at
+ * the new total, every share and payment scaled pro rata (largest remainder, so
+ * they add up exactly to the new total). Each payment keeps its own method/card.
+ */
+export function expenseUpdateForCost(expense = {}, netMinor = 0) {
+  const net = Math.max(0, Math.round(Number(netMinor) || 0));
+  const scale = (rows = []) => {
+    if (!rows.length) return rows;
+    const scaled = scaleToTotal(net, rows);
+    return rows.map((row, i) => ({ ...row, amountMinor: scaled[i].amountMinor }));
+  };
+  const oldNet = Number(expense.netTotalMinor) || 0;
+  const update = {
+    subtotalMinor: net,
+    netTotalMinor: net,
+    discountMinor: 0,
+    serviceMinor: 0,
+    taxMinor: 0,
+    cardFeeMinor: 0,
+    cardFeePercent: 0,
+    allocations: scale(expense.allocations || []),
+    thbMinor: oldNet > 0 ? Math.round((Number(expense.thbMinor) || 0) * net / oldNet) : net
+  };
+  if (Array.isArray(expense.payments) && expense.payments.length) update.payments = scale(expense.payments);
+  return update;
+}

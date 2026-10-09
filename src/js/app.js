@@ -1,4 +1,10 @@
 import { bindMoneyInputs } from './utils/moneyInput.js';
+import { DASHBOARD_WIDGETS, DASHBOARD_WIDGET_KEYS, normalizeWidgetOrder, normalizeHiddenWidgets } from './dashboard/widgets.js';
+import { ideaCategoryId, placeCategoryLabel, placeCategoryColor, placeCategoryIcon } from './utils/categories.js';
+import { attachMapExpand } from './maps/index.js';
+import { expenseUpdateForCost } from './utils/reservations.js';
+import { paymentMethodOf } from './utils/payments.js';
+import { groupIdeasByCategory } from './utils/ideas.js';
 import { expensePayments, validatePayments } from './utils/payments.js';
 import { auth, db, isFirebaseConfigured, onAuthStateChanged, syncState } from './firebase.js';
 import { Router } from './router.js';
@@ -26,13 +32,13 @@ import {
   fetchExpenses, fetchAllExpenses, addExpense, updateExpense, deleteExpense,
   voidExpense, getExpense, exportExpensesToJson, sumExpenses
 } from './expenses/index.js';
-import { fetchSettlementData, recalculateAndSaveSettlement } from './settlement/index.js';
+import { fetchSettlementData, recordTransfer, deleteTransfer } from './settlement/index.js';
 
 import { listMembers, createMember, updateMember, deleteMember, countMemberReferences, mapFunctionError, MEMBER_ROLES } from './members/index.js';
 import { dayjs, getCurrentTimes, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay, parseDurationInput } from './utils/date.js';
 import { expensesInThb, convertCurrency, formatCurrency, formatCurrencyHtml, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually, tripCurrencyList } from './utils/currency.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses } from './utils/settlement.js';
-import { splitCustom, splitEqual, participantsOf, averagePerPerson } from './utils/split.js';
+import { splitCustom, splitEqual, participantsOf, averagePerPerson, scaleToTotal } from './utils/split.js';
 import { escapeHtml, sanitizeUrl } from './utils/sanitize.js';
 import { APP_VERSION, APP_VERSION_LABEL, APP_UPDATED_ISO, APP_NAME, APP_AUTHOR, APP_NAME_BY, appUpdatedLabel, appUpdatedShort, appBuildLabel, appFooterLabel, copyrightNote } from './utils/buildInfo.js';
 import { BRAND, BRAND_PRIMARY, brandPalette, brandPrimary, memberColors as themeMemberColors, dayHues as themeDayHues, memberColorAt, categoryColorChoices } from './utils/brand.js';
@@ -2439,6 +2445,7 @@ async function renderDashboard(params) {
               <button id="dash-edit-trip" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;">${icon('pencil', 'w-4 h-4')} ${th('แก้ไขทริป','Edit trip')}</button>
               <button id="add-place-quick" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;">${icon('map-pin', 'w-4 h-4')} ${t('addPlace')}</button>
               <button id="add-expense-quick" class="btn btn-sm btn-primary">${icon('wallet', 'w-4 h-4')} ${t('addExpense')}</button>
+              <button id="dash-widgets-btn" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;" title="${th('เลือกการ์ดที่แสดงบนแดชบอร์ด','Choose which cards show on the dashboard')}">${icon('layout-grid', 'w-4 h-4')} ${th('เลือกการ์ด','Choose cards')}</button>
               <button id="dash-layout-edit-btn" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;" aria-pressed="false">${icon('layout-dashboard', 'w-4 h-4')} <span data-layout-label>${th('จัดเรียงการ์ด','Arrange cards')}</span></button>
               <button id="dash-density-btn" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;" title="สลับมุมมองกะทัดรัด/ปกติ">${icon('rows-3', 'w-4 h-4')} <span data-density-label>มุมมองกะทัดรัด</span></button>
             </div>
@@ -2581,6 +2588,16 @@ async function renderDashboard(params) {
           </div>
         </section>
 
+        <section class="dash-widget dash-widget--half" data-dashboard-widget="bookings">
+          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดการจองที่กำลังจะถึง','Drag upcoming bookings card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          <div class="card p-5">
+            <div class="flex items-center justify-between gap-2 mb-3">
+              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('ticket', 'w-4 h-4')}</span> ${th('การจองที่กำลังจะถึง','Upcoming bookings')}</h3>
+              <button id="dash-bookings-link" class="btn btn-ghost btn-sm text-xs">${icon('arrow-right', 'w-3.5 h-3.5')} ${th('ดูทั้งหมด','View all')}</button>
+            </div>
+            <div id="dash-bookings" class="space-y-2"><div class="skeleton h-12"></div></div>
+          </div>
+        </section>
         <section class="dash-widget dash-widget--full" data-dashboard-widget="ideas">
           <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดสถานที่ที่อยากไป','Drag wishlist card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
           <div id="dash-ideas-board" class="card p-5">
@@ -2613,6 +2630,7 @@ async function renderDashboard(params) {
             <div id="recent-expenses" class="space-y-2 stagger"><div class="skeleton h-12"></div></div>
           </div>
         </section>
+        <button id="dash-add-tile" type="button" class="dash-add-tile hidden">${icon('plus', 'w-4 h-4')} <span>${th('เพิ่มการ์ด','Add a card')}</span> <b data-add-count>0</b></button>
       </div>
 
       <!-- legacy dash-tools hidden but kept for compatibility -->
@@ -2634,13 +2652,9 @@ async function renderDashboard(params) {
 
   // Dashboard layout is stored on the shared trip document so every device and
   // trip member sees the same card order.
-  const dashboardWidgetKeys = ['countdown', 'weather', 'kpis', 'wallet', 'current', 'up-next', 'category', 'estimate', 'ideas', 'members', 'recent-expenses'];
+  const dashboardWidgetKeys = DASHBOARD_WIDGET_KEYS;
   const dashboardBoard = document.getElementById('dashboard-board');
-  const normalizeDashboardOrder = (raw) => {
-    const valid = new Set(dashboardWidgetKeys);
-    const kept = Array.isArray(raw) ? [...new Set(raw.map(String).filter(k => valid.has(k)))] : [];
-    return [...kept, ...dashboardWidgetKeys.filter(k => !kept.includes(k))];
-  };
+  const normalizeDashboardOrder = (raw) => normalizeWidgetOrder(raw);
   let lastDashboardOrder = normalizeDashboardOrder(trip?.dashboardLayout);
   let dashboardLayoutEditing = false;
   let dashboardLayoutSaving = false;
@@ -2652,6 +2666,9 @@ async function renderDashboard(params) {
       const widget = dashboardBoard.querySelector(`[data-dashboard-widget="${key}"]`);
       if (widget) dashboardBoard.appendChild(widget);
     }
+    // the “เพิ่มการ์ด” tile always stays after the cards
+    const addTile = document.getElementById('dash-add-tile');
+    if (addTile) dashboardBoard.appendChild(addTile);
   };
   const paintDashboardLayoutControls = () => {
     document.getElementById('dashboard-view')?.classList.toggle('dashboard-layout-editing', dashboardLayoutEditing);
@@ -2723,12 +2740,149 @@ async function renderDashboard(params) {
   });
   paintDashboardLayoutControls();
 
+  // ---- Cards this trip shows: stored as dashboardHidden on the trip, like the order ----
+  let dashboardHidden = new Set(normalizeHiddenWidgets(trip?.dashboardHidden));
+  let dashboardHiddenSaving = false;
+  const applyDashboardVisibility = () => {
+    if (!dashboardBoard) return;
+    for (const key of DASHBOARD_WIDGET_KEYS) {
+      dashboardBoard.querySelector(`[data-dashboard-widget="${key}"]`)?.classList.toggle('is-hidden', dashboardHidden.has(key));
+    }
+    const tile = document.getElementById('dash-add-tile');
+    if (tile) {
+      tile.classList.toggle('hidden', dashboardHidden.size === 0);
+      const count = tile.querySelector('[data-add-count]');
+      if (count) count.textContent = String(dashboardHidden.size);
+    }
+  };
+  // Each card's drag bar gets a × (visible in Arrange mode) that hides that card.
+  dashboardBoard?.querySelectorAll('[data-dashboard-widget]').forEach(section => {
+    const handle = section.querySelector(':scope > .dash-widget-handle');
+    if (!handle || handle.querySelector('.dash-widget-remove')) return;
+    const key = section.dataset.dashboardWidget;
+    handle.insertAdjacentHTML('beforeend', `<button type="button" class="dash-widget-remove" data-remove-widget="${key}" title="${th('ซ่อนการ์ดนี้','Hide this card')}" aria-label="${th('ซ่อนการ์ดนี้','Hide this card')}">${icon('x', 'w-3 h-3')}</button>`);
+  });
+  queueIcons();
+  function pickerRowsHtml() {
+    return DASHBOARD_WIDGETS.map(w => {
+      const off = dashboardHidden.has(w.key);
+      return `
+        <div class="dash-pick-row ${off ? 'is-off' : ''}">
+          <span class="dash-pick-icon">${icon(w.icon, 'w-4 h-4')}</span>
+          <div class="min-w-0 flex-1">
+            <div class="font-semibold text-sm truncate">${escapeHtml(th(w.th, w.en))}</div>
+            <div class="text-[11px] text-[var(--text-secondary)]">${escapeHtml(th(w.hintTh, w.hintEn))}</div>
+          </div>
+          <button type="button" class="btn btn-sm ${off ? 'btn-primary' : 'btn-secondary'}" data-pick="${w.key}">
+            ${off ? `${icon('plus', 'w-3.5 h-3.5')} ${th('เพิ่ม','Add')}` : `${icon('eye-off', 'w-3.5 h-3.5')} ${th('ซ่อน','Hide')}`}
+          </button>
+        </div>`;
+    }).join('');
+  }
+  function repaintPicker() {
+    const list = document.getElementById('dash-pick-list');
+    if (!list) return;
+    list.innerHTML = pickerRowsHtml();
+    queueIcons();
+  }
+  async function saveDashboardHidden() {
+    const list = DASHBOARD_WIDGET_KEYS.filter(k => dashboardHidden.has(k));
+    dashboardHiddenSaving = true;
+    try {
+      await updateTrip(tripId, { dashboardHidden: list });
+      currentTrip = { ...(currentTrip || trip || {}), dashboardHidden: list };
+    } catch (e) {
+      dashboardHidden = new Set(normalizeHiddenWidgets(currentTrip?.dashboardHidden));
+      applyDashboardVisibility();
+      repaintPicker();
+      toast.error(th('บันทึกการ์ดไม่สำเร็จ: ', 'Could not save cards: ') + (e?.message || String(e)));
+    } finally {
+      dashboardHiddenSaving = false;
+    }
+  }
+  function setWidgetHidden(key, hidden) {
+    if (hidden) dashboardHidden.add(key); else dashboardHidden.delete(key);
+    applyDashboardVisibility();
+    repaintPicker();
+    saveDashboardHidden();
+  }
+  function openWidgetPicker() {
+    const sheet = showBottomSheet(`
+      <div class="space-y-3" id="dash-picker">
+        <div>
+          <h3 class="font-bold text-base flex items-center gap-2" style="font-family:var(--font-display);">${icon('layout-grid', 'w-4 h-4')} ${th('เลือกการ์ดบนแดชบอร์ด','Choose dashboard cards')}</h3>
+          <p class="text-[11px] text-[var(--text-secondary)] mt-1">${th('ซ่อนการ์ดที่ไม่ต้องการ หรือกด “เพิ่ม” เพื่อนำการ์ดที่ซ่อนไว้กลับมา การเลือกนี้ซิงก์ให้สมาชิกทริปทุกคน','Hide the cards you do not need, or tap “Add” to bring one back. The choice syncs to every trip member.')}</p>
+        </div>
+        <div id="dash-pick-list" class="dash-pick-list">${pickerRowsHtml()}</div>
+        <div class="btn-row">
+          <button type="button" id="dash-pick-all" class="btn btn-ghost btn-sm">${icon('rotate-ccw', 'w-3.5 h-3.5')} ${th('แสดงทุกการ์ด','Show all cards')}</button>
+          <button type="button" id="dash-pick-done" class="btn btn-primary btn-sm flex-1">${th('เสร็จสิ้น','Done')}</button>
+        </div>
+      </div>`);
+    queueIcons();
+    const body = sheet.sheet;
+    body.querySelector('#dash-pick-list')?.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-pick]');
+      if (btn) setWidgetHidden(btn.dataset.pick, !dashboardHidden.has(btn.dataset.pick));
+    });
+    body.querySelector('#dash-pick-all')?.addEventListener('click', () => {
+      dashboardHidden = new Set();
+      applyDashboardVisibility();
+      repaintPicker();
+      saveDashboardHidden();
+    });
+    body.querySelector('#dash-pick-done')?.addEventListener('click', () => sheet.close());
+  }
+  applyDashboardVisibility();
+  bind('dash-widgets-btn', 'click', openWidgetPicker);
+  bind('dash-add-tile', 'click', openWidgetPicker);
+  bind('dash-bookings-link', 'click', () => { location.hash = `#/trip/${tripId}/bookings`; });
+  dashboardBoard?.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('[data-remove-widget]');
+    if (!btn) return;
+    ev.preventDefault();
+    setWidgetHidden(btn.dataset.removeWidget, true);
+    toast.success(th('ซ่อนการ์ดแล้ว — กด “เพิ่มการ์ด” เพื่อนำกลับมา','Card hidden — tap “Add a card” to bring it back'));
+  });
+
+  // “การจองที่กำลังจะถึง” — the next three bookings from today on.
+  const paintDashboardBookings = (list) => {
+    const box = document.getElementById('dash-bookings');
+    if (!box) return;
+    if (list == null) {
+      box.innerHTML = `<p class="text-sm text-[var(--text-secondary)]">${th('โหลดการจองไม่ได้','Could not load bookings')}</p>`;
+      return;
+    }
+    const next = upcomingReservations(list, dayjs().format('YYYY-MM-DDTHH:mm'), 3);
+    box.innerHTML = next.length
+      ? next.map(r => {
+        const rt = reservationTypeDef(r.type);
+        return `<div class="flex items-center gap-3 min-w-0">
+          <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:color-mix(in srgb, ${rt.tone} 16%, transparent);color:${rt.tone};">${icon(rt.icon, 'w-4 h-4')}</span>
+          <div class="min-w-0 flex-1">
+            <div class="font-semibold text-sm truncate">${escapeHtml(r.title || (lang === 'th' ? rt.th : rt.en))}</div>
+            <div class="text-[11px] text-[var(--text-secondary)]">${escapeHtml(r.date || '')}${r.startTime ? ` • ${escapeHtml(r.startTime)}` : ''}</div>
+          </div>
+        </div>`;
+      }).join('')
+      : `<p class="text-sm text-[var(--text-secondary)]">${th('ยังไม่มีการจองที่กำลังจะถึง','No upcoming bookings yet')}</p>`;
+    queueIcons();
+  };
+  listReservations(tripId)
+    .then(list => { if (!isStale(token)) paintDashboardBookings(list); })
+    .catch(() => { if (!isStale(token)) paintDashboardBookings(null); });
+
   const stopDashboardTripSync = subscribeTrip(tripId, (latestTrip) => {
     if (!latestTrip || isStale(token)) return;
     currentTrip = { ...(currentTrip || {}), ...latestTrip };
     if (!dashboardLayoutEditing && !dashboardLayoutSaving) {
       lastDashboardOrder = normalizeDashboardOrder(latestTrip.dashboardLayout);
       applyDashboardOrder(lastDashboardOrder);
+    }
+    if (!dashboardHiddenSaving) {
+      dashboardHidden = new Set(normalizeHiddenWidgets(latestTrip.dashboardHidden));
+      applyDashboardVisibility();
+      repaintPicker();
     }
   });
   document.addEventListener('routechange', () => {
@@ -2799,7 +2953,7 @@ async function renderDashboard(params) {
   } catch (e) { console.warn('progress', e); }
 
   /* ---------------- Data sections (each guarded separately) ---------------- */
-  let expenses = [], members = [], items = [], groups = [];
+  let expenses = [], members = [], items = [], groups = [], transfers = [];
 
   // Trip groups, money and the itinerary are independent — fetch them together
   // (all of them are served from cache on a revisit, so this is instant).
@@ -2815,6 +2969,7 @@ async function renderDashboard(params) {
   if (dataRes.status === 'fulfilled') {
     expenses = dataRes.value.expenses || [];
     members = dataRes.value.members || [];
+    transfers = dataRes.value.transfers || [];
   } else {
     console.error('dashboard expenses failed', dataRes.reason);
     toast.error(th('โหลดข้อมูลค่าใช้จ่ายไม่สำเร็จ: ', 'Could not load expenses: ') + (dataRes.reason?.message || ''));
@@ -2831,7 +2986,7 @@ async function renderDashboard(params) {
   if (isStale(token)) return;
 
   try {
-    renderDashboardData({ tripId, trip, expenses, members, items, groups, currency, lang, token, params });
+    renderDashboardData({ tripId, trip, expenses, members, transfers, items, groups, currency, lang, token, params });
   } catch (e) {
     console.error('dashboard render failed', e);
     toast.error(th('โหลด Dashboard ไม่สำเร็จ: ', 'Dashboard error: ') + e.message);
@@ -2842,7 +2997,7 @@ async function renderDashboard(params) {
   }
 }
 
-function renderDashboardData({ tripId, trip, expenses, members, items, groups = [], currency, lang, token, params }) {
+function renderDashboardData({ tripId, trip, expenses, members, transfers = [], items, groups = [], currency, lang, token, params }) {
   const th = (a, b) => (lang === 'th' ? a : b);
   if (isStale(token)) return;
   const rate = resolveTripThbRate(trip, expenses, currency);
@@ -2939,7 +3094,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, groups = 
   /* ---- KPI: my balance ---- */
   let balances = [];
   try {
-    balances = calculateSettlement(expenses, members.map(m => ({ id: m.id }))).balances || [];
+    balances = calculateSettlement(expenses, members.map(m => ({ id: m.id })), transfers).balances || [];
   } catch (e) { console.warn('settlement calc failed', e); }
   const myBal = balances.find(b => b.memberId === currentUser.uid);
   const balEl = document.getElementById('kpi-balance');
@@ -3168,7 +3323,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, groups = 
     </div>`);
 
   /* ---- Summary stats ---- */
-  const settlement = (() => { try { return calculateSettlement(expenses, members.map(m => ({ id: m.id }))); } catch { return { transactions: [] }; } })();
+  const settlement = (() => { try { return calculateSettlement(expenses, members.map(m => ({ id: m.id })), transfers); } catch { return { transactions: [] }; } })();
   setHtml('summary-stats', `
     <div class="flex items-center gap-3 flex-wrap">
       <span class="meta-line text-sm">${icon('users', 'w-4 h-4')} ${members.length} ${th('คน','people')}</span>
@@ -3188,7 +3343,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, groups = 
     const isMe = id === currentUser.uid;
     const bal = balances.find(b => b.memberId === id)?.net || 0;
     return `
-      <div class="member-row ${isMe ? 'is-me' : ''}">
+      <div class="member-row ${isMe ? 'is-me' : ''}" data-mid="${escapeHtml(id)}" role="button" tabindex="0" title="${th('แตะเพื่อดูรายการของคนนี้','Tap to see this person’s bills')}">
         <div class="flex items-center gap-3 min-w-0">
           <div class="avatar w-10 h-10 text-sm" style="background:${m?.color || 'var(--primary)'};width:40px;height:40px;">
             ${m?.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m?.displayName || 'U'))}
@@ -3233,7 +3388,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, groups = 
           const delta = g.perPersonMinor - perPersonTrip;
           const places = placesForGroup(g.id, items).length;
           return `
-            <article class="team-card" style="--team-color:${escapeHtml(g.color)};">
+            <article class="team-card" data-gid="${escapeHtml(g.id)}" role="button" tabindex="0" style="--team-color:${escapeHtml(g.color)};">
               <div class="team-card-head">
                 <span class="team-card-name" style="color:${escapeHtml(g.color)};">${icon(g.icon || 'users', 'w-4 h-4')} ${escapeHtml(g.name)}</span>
                 <span class="badge badge-planned text-[10px] ml-auto">${icon('users', 'w-2.5 h-2.5')} ${g.memberCount} ${th('คน','pax')}</span>
@@ -3264,7 +3419,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, groups = 
             </article>`;
         };
         teamBox.innerHTML = report.groups.map(teamCard).join('') + `
-          <article class="team-card team-card--trip">
+          <article class="team-card team-card--trip" data-gid="__trip" role="button" tabindex="0">
             <div class="team-card-head">
               <span class="team-card-name">${icon('users', 'w-4 h-4')} ${th('ทั้งทริป','Whole trip')}</span>
               <span class="badge badge-planned text-[10px] ml-auto">${report.trip.memberCount} ${th('คน','pax')}</span>
@@ -3301,7 +3456,7 @@ function renderDashboardData({ tripId, trip, expenses, members, items, groups = 
           <span class="block font-semibold text-sm truncate">${escapeHtml(e.title)}</span>
           <span class="block text-[11px] text-[var(--text-secondary)]">${escapeHtml(categoryLabel(e.category, lang))}${payer ? ' • ' + escapeHtml(payer) : ''} • ${escapeHtml(e.date || '')}</span>
         </span>
-        <span class="text-right flex-shrink-0">
+        <span class="text-right expense-row-amount">
           ${moneyHtml(e.netTotalMinor || 0, e.currency || currency, e.thbRate || resolveTripThbRate(trip, originalExpenses, e.currency || currency))}
           ${e.isEstimated ? `<span class="badge badge-skipped text-[9px]">${th('ประมาณการ','est.')}</span>` : ''}
         </span>
@@ -3520,6 +3675,15 @@ function renderDashboardData({ tripId, trip, expenses, members, items, groups = 
           ${dashRow(th('เฉลี่ย/คน','Avg / person'), fmt(Math.round(totalMinor / memberCount)))}
         </div>`,
       links: [{ label: th('ดูค่าใช้จ่ายทั้งหมด', 'View all expenses'), hash: `#/trip/${tripId}/expenses`, icon: 'wallet', primary: true }]
+    });
+  });
+
+  // Keyboard parity for the tappable cards (Enter / Space open the same popup).
+  document.querySelectorAll('#member-board-content .member-row[data-mid], #team-board .team-card[data-gid]').forEach(el => {
+    el.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      ev.preventDefault();
+      el.click();
     });
   });
 
@@ -4026,7 +4190,8 @@ async function renderItinerary(params) {
       mapStatus('loading');
       const { renderItineraryMap, refreshMapSize, setMapLang } = await import('./maps/index.js');
       setMapLang('map', lang);   // for the optional place-details labels
-      const res = await renderItineraryMap('map', located, {
+      attachMapExpand(document.getElementById('map-wrap'), 'map', { fitButtonId: 'map-fit-btn', lang });
+    const res = await renderItineraryMap('map', located, {
         dayColors,
         fitBounds: true,
         forceRecreate,
@@ -4973,7 +5138,7 @@ async function renderItinerary(params) {
     const ok = await confirmAction({
       title: th(`ลบ "${item.title}" ?`, `Delete "${item.title}"?`),
       message: th('ลบสถานที่นี้จากแผนการเดินทาง', 'Remove this place from the itinerary'),
-      detail: linked ? th(`รายการประมาณการ "${escapeHtml(linked.title)}" ในหน้าค่าใช้จ่ายจะถูกลบไปด้วย`, `The linked estimated expense will be removed too.`) : '',
+      detail: linked ? (linked.reservationId ? th(`ค่าใช้จ่าย "${escapeHtml(linked.title)}" ที่ผูกกับการจองจะยังอยู่ในหน้าค่าใช้จ่าย`, `The expense linked to a booking stays in Expenses.`) : th(`รายการประมาณการ "${escapeHtml(linked.title)}" ในหน้าค่าใช้จ่ายจะถูกลบไปด้วย`, `The linked estimated expense will be removed too.`)) : '',
       confirmText: t('delete'), danger: true, icon: 'trash-2'
     });
     if (!ok) return;
@@ -6213,6 +6378,7 @@ function expenseFormSectionsHtml({
                   <option value="estimated" ${e.isEstimated ? 'selected' : ''}>${tx('ประมาณการ','Estimated')}</option>
                 </select>
               </div>` : `<input id="${p}ex-type" type="hidden" value="${e.isEstimated ? 'estimated' : 'actual'}">`}
+              <input id="${p}ex-reservation" type="hidden" value="${escapeHtml(e.reservationId || '')}">
               ${lockItinerary
                 ? `<div class="input-group"><label class="input-label">${icon('map-pinned', 'w-3.5 h-3.5')} ${tx('ผูกกับแผนการเดินทาง','Linked place')}</label>
                      <div class="input trail-input" style="display:flex;align-items:center;gap:6px;">${icon('map-pin', 'w-3.5 h-3.5')} <span class="truncate">${escapeHtml(planLabel || e.itineraryItemTitle || '')}</span></div>
@@ -6462,8 +6628,15 @@ function mountExpenseForm({
 
   /* ---- state ---- */
   let payerPending = Boolean(e.payerPending && $('ex-type')?.value === 'estimated');
+  // Several payers follow the unequal-split rule: a typed amount is fixed and blank
+  // payers share what is left. `payerTouched` ends the proportional re-fit of a
+  // prefilled snapshot once the user has changed a payer or the payer list.
+  let payerTouched = false;
   const selectedPayers = new Set(payerPending ? [] : initialPayers);
   const payerAmounts = Object.fromEntries(initialPayments.map(p => [p.memberId, formatAmount(fromMinor(p.amountMinor, decimalsFor(e.currency || currency)), decimalsFor(e.currency || currency))]));
+  // Per payer: how that person paid (cash / card / transfer) and with which card.
+  const payerMethods = Object.fromEntries(initialPayments.map(p => [p.memberId, paymentMethodOf(e, p).method]));
+  const payerCards = Object.fromEntries(initialPayments.map(p => [p.memberId, paymentMethodOf(e, p).cardName]));
   let selectedShare = new Set(members.filter(m => {
     if (!e.allocations) return true;
     return e.allocations.some(a => a.memberId === m.id);
@@ -6497,6 +6670,7 @@ function mountExpenseForm({
 
   payerTiles().forEach(btn => btn.addEventListener('click', () => {
     const id = btn.dataset.payer;
+    payerTouched = true;
     if (id === '__pending') {
       if (!isEstimatedExpense()) return;
       if (payerPending) {
@@ -6778,40 +6952,167 @@ function mountExpenseForm({
     return Object.fromEntries(customResult(v, ids).rows.map(r => [r.memberId, fromMinor(r.amountMinor, dec)]));
   }
 
+  /**
+   * Several payers: the unequal-split rule. Typed amounts are fixed; blank payers
+   * share the remainder (splitCustom, exact to the minor unit). Entries are only
+   * read here — the inputs themselves are never rebuilt while typing.
+   */
+  function payerResult(v) {
+    const dec = decimalsFor(v.cur);
+    const entries = [...selectedPayers].map(memberId => {
+      const raw = payerAmounts[memberId];
+      const typed = raw !== undefined && raw !== null && String(raw).trim() !== '';
+      return { memberId, amountMinor: typed ? toMinor(parseCurrencyInput(raw), dec) : null };
+    });
+    return splitCustom({ subtotalMinor: v.netMinor, netTotalMinor: v.netMinor, includesAdjustments: true, entries });
+  }
+
+  /**
+   * A prefilled multi-payer expense is a snapshot of an OLDER total. Until the user
+   * touches a payer, its amounts are re-fitted proportionally when the total changes
+   * (the same rule the unequal split uses), so editing the bill is never a dead end.
+   */
+  function refitPrefilledPayers(v) {
+    if (payerTouched || selectedPayers.size < 2) return;
+    const ids = [...selectedPayers];
+    if (!ids.every(id => String(payerAmounts[id] ?? '').trim() !== '')) return;   // a blank payer takes the rest instead
+    const dec = decimalsFor(v.cur);
+    const current = ids.map(memberId => ({ memberId, amountMinor: toMinor(parseCurrencyInput(payerAmounts[memberId]), dec) }));
+    if (current.some(r => !Number.isSafeInteger(r.amountMinor))) return;
+    const total = current.reduce((n, r) => n + r.amountMinor, 0);
+    if (!total || total === v.netMinor) return;
+    const area = $('payer-amounts');
+    scaleToTotal(v.netMinor, current).forEach(r => {
+      const text = formatAmount(fromMinor(r.amountMinor, dec), dec);
+      payerAmounts[r.memberId] = text;
+      const input = area?.querySelector(`[data-payment="${r.memberId}"]`);
+      if (input) input.value = text;
+    });
+  }
+
   function readPayments(v) {
     if (payerPending) return [];
-    const ids = [...selectedPayers];
-    if (ids.length === 1) return [{ memberId: ids[0], amountMinor: v.netMinor }];
-    return ids.map(memberId => ({ memberId, amountMinor: toMinor(parseCurrencyInput(payerAmounts[memberId]), decimalsFor(v.cur)) }));
+    if (selectedPayers.size === 1) return [{ memberId: [...selectedPayers][0], amountMinor: v.netMinor }];
+    // A payer who ends up with nothing is not a payer — zero shares are dropped.
+    return payerResult(v).rows
+      .filter(r => r.amountMinor > 0)
+      .map(r => {
+        const paymentMethod = payerMethods[r.memberId] || 'cash';
+        return {
+          memberId: r.memberId,
+          amountMinor: r.amountMinor,
+          paymentMethod,
+          cardName: paymentMethod === 'card' ? String(payerCards[r.memberId] || '').trim() : ''
+        };
+      });
   }
 
   function refreshPayerTotal() {
-    const v = readValues();
-    const payments = readPayments(v);
-    const diff = v.netMinor - payments.reduce((n, p) => n + p.amountMinor, 0);
     const hint = $('payer-total-hint');
     if (!hint) return;
+    const v = readValues();
+    const fmt = n => formatCurrency(n, v.cur);
     if (payerPending) {
       hint.className = 'input-hint';
       hint.textContent = tx('ยอดประมาณการนี้ยังไม่ถูกนับเป็นหนี้ของใคร จนกว่าจะระบุผู้จ่ายภายหลัง','This estimate stays out of everyone’s balance until a payer is assigned.');
       return;
     }
+    if (selectedPayers.size > 1) {
+      refitPrefilledPayers(v);
+      const result = payerResult(v);
+      const finalOf = new Map(result.rows.map(r => [r.memberId, r.amountMinor]));
+      // Patch each row's final amount in place so the field being typed keeps focus.
+      const area = $('payer-amounts');
+      [...selectedPayers].forEach(memberId => {
+        const el = area?.querySelector(`[data-payer-final="${memberId}"]`);
+        if (!el) return;
+        const raw = payerAmounts[memberId];
+        const typed = raw !== undefined && String(raw).trim() !== '';
+        el.textContent = fmt(finalOf.get(memberId) ?? 0);
+        el.classList.toggle('is-auto', !typed);
+        el.title = typed ? '' : tx('ระบบคำนวณจากยอดที่เหลือ', 'Worked out from what is left');
+      });
+      const diff = result.differenceMinor;   // > 0 still unpaid · < 0 over-entered
+      const blanks = result.unfilledCount;
+      if (diff < 0) {
+        hint.className = 'split-warning';
+        hint.textContent = `${tx('ยอดที่กรอกเกินยอดสุทธิ เกินอยู่','Entered amounts exceed the net total, over by')} ${fmt(-diff)}`;
+      } else if (!blanks && diff > 0) {
+        hint.className = 'split-warning';
+        hint.textContent = `${tx('ยอดผู้จ่ายยังไม่ครบ ขาดอีก','Payers are short by')} ${fmt(diff)} • ${tx('ลบยอดของคนใดคนหนึ่งเพื่อให้ระบบคำนวณส่วนที่เหลือ','clear one payer so the rest can be worked out')}`;
+      } else {
+        hint.className = 'input-hint';
+        hint.textContent = `${tx('กรอกแล้ว','Entered')} ${fmt(result.enteredMinor)} / ${fmt(v.netMinor)}`
+          + (blanks ? ` • ${tx('ส่วนที่เหลือ','Remaining')} ${fmt(diff)} ${tx('แบ่งให้','shared by')} ${blanks} ${tx('คนที่ยังว่าง','blank payer(s)')}` : ' ✓');
+      }
+      return;
+    }
+    const payments = readPayments(v);
+    const diff = v.netMinor - payments.reduce((n, p) => n + p.amountMinor, 0);
     hint.className = validatePayments(v.netMinor, payments) ? 'input-hint' : 'split-warning';
-    hint.textContent = `${tx('ยอดผู้จ่ายรวม','Total paid')} ${formatCurrency(v.netMinor - diff, v.cur)} / ${formatCurrency(v.netMinor, v.cur)}` + (diff ? ` • ${tx('ยอดยังไม่ตรง ส่วนต่าง','Mismatch, difference')} ${formatCurrency(Math.abs(diff), v.cur)}` : ' ✓');
+    hint.textContent = `${tx('ยอดผู้จ่ายรวม','Total paid')} ${fmt(v.netMinor - diff)} / ${fmt(v.netMinor)}` + (diff ? ` • ${tx('ยอดยังไม่ตรง ส่วนต่าง','Mismatch, difference')} ${fmt(Math.abs(diff))}` : ' ✓');
+  }
+
+  function payerCardOptionsHtml(selected = '') {
+    const cards = tripCards(currentTrip);
+    return `<option value="">${tx('— เลือกบัตร —', '— pick a card —')}</option>`
+      + cards.map(c => `<option value="${escapeHtml(c.name)}" ${c.name === selected ? 'selected' : ''}>${escapeHtml(tripCardLabel(c))}</option>`).join('')
+      + (selected && !cards.some(c => c.name === selected) ? `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}</option>` : '');
+  }
+
+  /** The second line of a payer row: how that person paid, and the card if it was a card. */
+  function payerPayLineHtml(m) {
+    if (!payerMethods[m.id]) payerMethods[m.id] = $('ex-payment')?.value || 'cash';
+    const pm = payerMethods[m.id];
+    return `<div class="payer-pay-line">
+      <select class="input" data-payer-method="${escapeHtml(m.id)}" aria-label="${escapeHtml(m.displayName)} ${tx('วิธีจ่าย', 'How paid')}">
+        <option value="cash" ${pm === 'cash' ? 'selected' : ''}>${tx('เงินสด', 'Cash')}</option>
+        <option value="card" ${pm === 'card' ? 'selected' : ''}>${tx('บัตรเครดิต', 'Card')}</option>
+        <option value="transfer" ${pm === 'transfer' ? 'selected' : ''}>${tx('โอนเงิน', 'Transfer')}</option>
+      </select>
+      <select class="input" data-payer-card="${escapeHtml(m.id)}" aria-label="${escapeHtml(m.displayName)} ${tx('บัตร', 'Card')}" style="${pm === 'card' ? '' : 'display:none'}">${payerCardOptionsHtml(payerCards[m.id] || '')}</select>
+    </div>`;
   }
 
   function renderPayers() {
     const area = $('payer-amounts');
     if (!area) return;
-    const v = readValues();
-    const rows = !payerPending && selectedPayers.size > 1
-      ? members.filter(m => selectedPayers.has(m.id)).map(m => `<label class="payer-amount-row"><span>${escapeHtml(m.displayName)}</span><input class="input money-input" type="text" inputmode="decimal" data-payment="${m.id}" value="${escapeHtml(payerAmounts[m.id] || '')}" placeholder="0.00"><span>${v.cur}</span></label>`).join('')
-      : '';
+    const picked = members.filter(m => selectedPayers.has(m.id));
+    const multi = !payerPending && picked.length > 1;
+    const rows = multi ? `
+      <div class="payer-columns"><span>${tx('คนจ่าย','Payer')}</span><span>${tx('กรอกยอด','Typed')}</span><span>${tx('ยอดจ่ายจริง','Paid')}</span></div>
+      ${picked.map(m => `
+        <div class="payer-row" data-payer-row="${m.id}">
+          <span class="payer-name">
+            <span class="avatar" style="background:${m.color || 'var(--primary)'};width:26px;height:26px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+            <span class="truncate text-xs font-medium" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
+          </span>
+          <input class="input money-input" type="text" inputmode="decimal" data-payment="${m.id}" aria-label="${escapeHtml(m.displayName)} ${tx('ยอดที่จ่าย','Amount paid')}" value="${escapeHtml(payerAmounts[m.id] || '')}" placeholder="0.00">
+          <span class="payer-final" data-payer-final="${m.id}">—</span>
+          ${payerPayLineHtml(m)}
+        </div>`).join('')}` : '';
     area.innerHTML = `<p class="input-hint">${payerPending
       ? tx('ยังไม่มีคนรับผิดชอบจ่าย — เลือกผู้จ่ายได้ภายหลัง','No one has volunteered to pay yet — assign a payer later.')
-      : tx('เลือกผู้จ่ายได้หลายคน แล้วระบุยอดที่แต่ละคนจ่ายจริงให้รวมเท่ายอดสุทธิ','Select payers and enter what each paid. Payments must match the net total.')}</p>${rows}<div id="payer-total-hint" aria-live="polite"></div>`;
+      : tx('เลือกคนจ่ายได้หลายคน • กรอกยอดของคนแรกที่จ่าย ระบบจะคำนวณส่วนที่เหลือให้คนที่ยังว่างอัตโนมัติ','Pick several payers • type the first payer’s amount and the rest is worked out for the blank payers.')}</p>${rows}<div id="payer-total-hint" aria-live="polite"></div>`;
     bindMoneyInputs(area);
-    area.querySelectorAll('[data-payment]').forEach(inp => inp.addEventListener('input', () => { payerAmounts[inp.dataset.payment] = inp.value; refreshPayerTotal(); }));
+    area.querySelectorAll('[data-payment]').forEach(inp => inp.addEventListener('input', () => {
+      payerTouched = true;
+      payerAmounts[inp.dataset.payment] = inp.value;
+      refreshPayerTotal();
+    }));
+    area.querySelectorAll('[data-payer-method]').forEach(sel => sel.addEventListener('change', () => {
+      payerMethods[sel.dataset.payerMethod] = sel.value;
+      const card = area.querySelector(`[data-payer-card="${sel.dataset.payerMethod}"]`);
+      if (card) card.style.display = sel.value === 'card' ? '' : 'none';
+    }));
+    area.querySelectorAll('[data-payer-card]').forEach(sel => sel.addEventListener('change', () => {
+      payerCards[sel.dataset.payerCard] = sel.value;
+    }));
+    // One bill-level method only makes sense for a single payer; several payers each have their own.
+    [$('ex-payment'), $('ex-card')].forEach(el => {
+      const wrap = el?.closest('.input-group');
+      if (wrap) wrap.style.display = multi ? 'none' : '';
+    });
     refreshPayerTotal();
   }
 
@@ -6857,9 +7158,17 @@ function mountExpenseForm({
     if (!payerPending && !validatePayments(v.netMinor, payments)) throw new Error(tx('ยอดผู้จ่ายรวมต้องเท่ากับยอดสุทธิ และต้องเลือกผู้จ่ายอย่างน้อย 1 คน','Payments must match the net total. Select at least one payer.'));
     if (v.cur !== 'THB' && (!Number.isFinite(v.rate) || !(v.rate > 0))) throw new Error(tx('กรุณาระบุเรทแลกเป็นเงินบาท','Enter the THB exchange rate'));
     if ([v.sub, v.disc, v.serv, v.tax].some(n => n < 0) || v.disc > v.sub) throw new Error(tx('ยอดเงินต้องไม่ติดลบ และส่วนลดต้องไม่เกินยอดก่อนปรับ','Amounts must be non-negative and discount cannot exceed subtotal'));
-    const payMethod = $('ex-payment').value;
-    const pickedCard = !payerPending && payMethod === 'card' ? ($('ex-card')?.value || '').trim() : '';
-    if (!payerPending && payMethod === 'card' && (!pickedCard || pickedCard === '__manage')) {
+    // Several payers: each person's method and card sit on their payment; the bill-level
+    // fields (used by older screens and the list) follow the first payer.
+    const multiPaid = !payerPending && payments.length > 1;
+    const payMethod = multiPaid ? (payments[0].paymentMethod || 'cash') : $('ex-payment').value;
+    const pickedCard = multiPaid
+      ? (payMethod === 'card' ? String(payments[0].cardName || '').trim() : '')
+      : (!payerPending && payMethod === 'card' ? ($('ex-card')?.value || '').trim() : '');
+    if (multiPaid && payments.some(p => p.paymentMethod === 'card' && !p.cardName)) {
+      throw new Error(tx('เลือกบัตรให้ทุกคนที่จ่ายด้วยบัตร', 'Pick a card for everyone who paid by card'));
+    }
+    if (!multiPaid && !payerPending && payMethod === 'card' && (!pickedCard || pickedCard === '__manage')) {
       throw new Error(tx('เลือกบัตรเครดิตจากรายการ หรือเพิ่มบัตรใหม่จากปุ่ม “จัดการบัตร”','Pick a card from the list, or add one via “Manage cards”'));
     }
     const title = $('ex-title').value.trim();
@@ -6891,6 +7200,7 @@ function mountExpenseForm({
       cardName: pickedCard,
       receiptUrl: $('ex-receipt').value.trim(),
       itineraryItemId: $('ex-itinerary')?.value || null,
+      reservationId: $('ex-reservation')?.value || null,
       status: 'active',
       source: e.source || 'manual'
     };
@@ -7028,6 +7338,7 @@ async function renderExpenseAdd(params) {
       // Linked place → keep the plan's estimate in step with the money book, so
       // the same cost never reads differently on the two screens.
       await syncPlanEstimateFromExpense(tripId, payload, savedId);
+      await linkBookingToExpense(tripId, payload, savedId);
 
       // The audit entry is written after the local bookkeeping above, so a slow
       // log write can never delay (or block) the user-visible result.
@@ -7204,6 +7515,7 @@ async function openExpenseSheet({
       if (payload.cardName) rememberCard(tripId, payload.cardName);
       // The linked place keeps the same numbers as the money book.
       await syncPlanEstimateFromExpense(tripId, payload, savedId);
+      await linkBookingToExpense(tripId, payload, savedId);
       await logActivity(tripId, {
         type: editing ? 'expense.update' : 'expense.create',
         targetId: savedId,
@@ -7268,6 +7580,123 @@ async function openItemExpenseSheet({ tripId, item, trip = null, members = [], i
   }).catch((e) => { console.warn(th('[Plan] expense sheet failed', '[Plan] expense sheet failed'), e?.message); });
 }
 
+/** Set while a booking's expense sheet is open, so the saved expense can be linked back to it. */
+let bookingLinkTarget = null;
+
+/**
+ * A saved expense that belongs to a booking. The booking and its expense are one
+ * record seen from two screens, so the expense's amount and currency are copied
+ * back onto the booking (the other direction is syncBookingCost).
+ */
+async function linkBookingToExpense(tripId, payload, expenseId) {
+  if (!payload?.reservationId || !expenseId) return;
+  try {
+    const costMinor = Math.max(0, Math.round(Number(payload.netTotalMinor) || 0));
+    const currency = payload.currency || 'THB';
+    await updateReservation(tripId, payload.reservationId, { expenseId, costMinor, currency }, currentUser?.uid);
+    if (bookingLinkTarget?.reservationId === payload.reservationId) {
+      Object.assign(bookingLinkTarget.booking, { expenseId, costMinor, currency });
+      bookingLinkTarget.onLinked?.();
+    }
+  } catch (err) { console.warn('[Booking] expense link failed', err?.message); }
+}
+
+/**
+ * The booking's price is the source of truth: when it changes, the plan's estimate
+ * and the expense it is linked to follow. Returns { skippedCurrency } when the expense
+ * is in another currency (its own rate is left alone) or { error } if a write failed.
+ */
+async function syncBookingCost(tripId, booking, prev) {
+  const cur = booking.currency || 'THB';
+  const costMinor = Math.max(0, Math.round(Number(booking.costMinor) || 0));
+  if (Number(prev?.costMinor || 0) === costMinor && (prev?.currency || 'THB') === cur) return {};
+  const uid = currentUser?.uid;
+  try {
+    let expenseId = booking.expenseId || null;
+    if (booking.linkedItemId) {
+      const item = await getItineraryItem(tripId, booking.linkedItemId).catch(() => null);
+      if (item) {
+        await updateItineraryItem(tripId, item.id, {
+          estimateAmount: fromMinor(costMinor, getCurrencyDecimals(cur)), estimateCurrency: cur, estimateAutoAdd: true
+        }, uid);
+        expenseId = expenseId || item.expenseId || null;
+      }
+    }
+    if (!expenseId) return {};
+    const expense = await getExpense(tripId, expenseId).catch(() => null);
+    if (!expense || expense.status === 'voided') {
+      booking.expenseId = null;
+      await updateReservation(tripId, booking.id, { expenseId: null }, uid);
+      return {};
+    }
+    if ((expense.currency || 'THB') !== cur) return { skippedCurrency: true };
+    await updateExpense(tripId, expense.id, { reservationId: booking.id, ...expenseUpdateForCost(expense, costMinor) }, uid);
+    if (booking.expenseId !== expense.id) {
+      booking.expenseId = expense.id;
+      await updateReservation(tripId, booking.id, { expenseId: expense.id }, uid);
+    }
+    return {};
+  } catch (err) {
+    console.warn('[Booking] cost sync failed', err?.message);
+    return { error: err?.message || String(err) };
+  }
+}
+
+/** The plan's estimate expense becomes this booking's expense: both point at it, and the amount follows the booking. */
+async function adoptExpenseForBooking(tripId, booking, expense) {
+  const uid = currentUser?.uid;
+  const cur = booking.currency || 'THB';
+  const costMinor = Math.max(0, Math.round(Number(booking.costMinor) || 0));
+  const sameCurrency = (expense.currency || 'THB') === cur;
+  await updateExpense(tripId, expense.id, { reservationId: booking.id, ...(sameCurrency ? expenseUpdateForCost(expense, costMinor) : {}) }, uid);
+  await updateReservation(tripId, booking.id, { expenseId: expense.id }, uid);
+  booking.expenseId = expense.id;
+  if (booking.linkedItemId) {
+    await updateItineraryItem(tripId, booking.linkedItemId, {
+      expenseId: expense.id, estimateAmount: fromMinor(costMinor, getCurrencyDecimals(cur)), estimateCurrency: cur, estimateAutoAdd: true
+    }, uid);
+  }
+  return { sameCurrency };
+}
+
+/**
+ * "เพิ่มเป็นค่าใช้จ่าย": the booking's cost as an expense. A booking already in the plan
+ * uses the plan's estimate expense (one record): an existing one is adopted, otherwise the
+ * estimate is created on that place, so saving it links the plan, the booking and the expense.
+ */
+async function bookingToExpense({ tripId, trip, members = [], lang = 'th', booking, onLinked = null }) {
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const cur = booking.currency || 'THB';
+  const costMinor = Math.max(0, Math.round(Number(booking.costMinor) || 0));
+  const category = booking.type === 'hotel'
+    ? 'stay'
+    : (['flight', 'train', 'bus', 'ferry', 'car'].includes(booking.type) ? 'transport' : 'activity');
+  const defaults = {
+    title: booking.title || '', date: booking.date || dayjs().format('YYYY-MM-DD'), category,
+    currency: cur, subtotalMinor: costMinor, isEstimated: false, reservationId: booking.id, paymentMethod: 'cash'
+  };
+  bookingLinkTarget = { reservationId: booking.id, booking, onLinked };
+  if (booking.linkedItemId) {
+    const item = await getItineraryItem(tripId, booking.linkedItemId).catch(() => null);
+    const existing = (item?.expenseId ? await getExpense(tripId, item.expenseId).catch(() => null) : null)
+      || await findLinkedExpense(tripId, booking.linkedItemId).catch(() => null);
+    if (existing && existing.status !== 'voided') {
+      const { sameCurrency } = await adoptExpenseForBooking(tripId, booking, existing);
+      onLinked?.();
+      toast.success(th('เชื่อมกับค่าใช้จ่ายของแผนแล้ว', "Linked to the plan's expense"));
+      if (!sameCurrency) toast.warning(th('ค่าใช้จ่ายเดิมเป็นสกุลอื่น จึงไม่ได้ปรับยอด', 'That expense uses another currency, so its amount was not changed'));
+      return null;
+    }
+    if (item) {
+      return openExpenseSheet({
+        tripId, trip, members, items: [], lang, expense: null, item, lockItinerary: true,
+        defaults: { ...defaults, isEstimated: true, source: 'itinerary-estimate', itineraryItemId: item.id }
+      });
+    }
+  }
+  return openExpenseSheet({ tripId, trip, members, items: [], lang, expense: null, defaults });
+}
+
 /**
  * Copy a saved expense back onto its linked place (estimate fields + expenseId).
  * The plan keeps its own copy so the card, the day totals and the PNG export stay
@@ -7327,7 +7756,7 @@ async function renderSettlement(params) {
   `;
   queueIcons();
 
-  let state = { expenses: [], members: [], membersMap: {}, statements: [], balances: [], transactions: [] };
+  let state = { expenses: [], members: [], membersMap: {}, statements: [], balances: [], transactions: [], transfers: [] };
   let view = 'overview';   // ภาพรวมเป็นค่าเริ่มต้น (สลับเป็นใบเสร็จรายคนได้)
   let receiptFilter = 'all';  // 'all' = ใบเสร็จทุกคน, หรือ memberId ของคนที่เลือกดู
   // v18: ใบเสร็จรายคนแสดงเป็นการ์ดปัดได้ (Tinder-style) — สลับเป็นรายการยาวได้
@@ -7350,6 +7779,19 @@ async function renderSettlement(params) {
   const moneyPair = (minor) => thbPlusLabelHtml(minor || 0, thbOf(minor));
   const methodLabel = (m) => m === 'card' ? th('บัตรเครดิต', 'Card') : m === 'transfer' ? th('โอนเงิน', 'Transfer') : th('เงินสด', 'Cash');
   const methodIcon = (m) => m === 'card' ? 'credit-card' : m === 'transfer' ? 'arrow-left-right' : 'banknote';
+  /**
+   * Everyone who paid a bill, with what each one put in. Falls back to the first
+   * payer only for rows written before payers were stored in full.
+   */
+  const payersOf = (i) => (i.payers?.length
+    ? i.payers
+    : (i.payerIds || [i.paidBy]).filter(Boolean).map(memberId => ({ memberId, amountMinor: null })));
+  const payersLabel = (payers) => payers.map(p => {
+    const name = escapeHtml(state.membersMap[p.memberId]?.displayName || p.memberId);
+    return p.amountMinor == null ? name : `${name} <b>${money(p.amountMinor)}</b>`;
+  }).join(' • ');
+  /** Every item links to its expense (the same editor the expenses page opens). */
+  const expenseLink = (i) => `<a class="rcpt-open" href="#/trip/${escapeHtml(tripId)}/expenses/add?id=${encodeURIComponent(i.expenseId)}" title="${th('เปิดรายการนี้','Open this expense')}">${escapeHtml(i.title || '')}${icon('arrow-up-right', 'w-2.5 h-2.5')}</a>`;
 
   function memberHeader(m, { withAvatar = true } = {}) {
     const isMe = m.memberId === currentUser.uid;
@@ -7482,18 +7924,24 @@ async function renderSettlement(params) {
     /** One compact item row; rows past COLLAPSE_AFTER fold until "show all". */
     const itemRow = (i, idx, side) => {
       const extra = idx >= COLLAPSE_AFTER;
-      const payerNames = (i.payerIds || [i.paidBy]).map(id => state.membersMap[id]?.displayName || id).filter(Boolean).join(', ');
-      const sub = side === 'paid'
-        ? `${escapeHtml(i.date || '')} • ${methodLabel(i.method)}${i.cardName ? ` • ${escapeHtml(i.cardName)}` : ''}`
-        : `${escapeHtml(i.date || '')} • ${th('จ่ายโดย','paid by')} ${escapeHtml(payerNames || '—')} • ${methodLabel(i.method)}`;
+      const sub = `${escapeHtml(i.date || '')} • ${methodLabel(i.method)}${side === 'paid' && i.cardName ? ` • ${escapeHtml(i.cardName)}` : ''}`;
+      // A shared bill names everyone who paid and how much each put in, so the
+      // receipt explains the whole bill, not just this person's part of it.
+      const payers = payersOf(i);
+      const payerLine = side === 'share'
+        ? `<div class="rcpt-row-payers">${th('จ่ายโดย','paid by')} ${payersLabel(payers) || '—'}</div>`
+        : (payers.length > 1
+          ? `<div class="rcpt-row-payers">${th('จ่ายร่วม','Co-paid')} ${payers.length} ${th('คน','people')} • ${th('ยอดบิลรวม','bill total')} ${money(i.totalMinor ?? i.amountMinor)} — ${payersLabel(payers)}</div>`
+          : '');
       return `
       <div class="rcpt-row ${extra ? 'rcpt-extra' : ''}" ${extra ? 'hidden' : ''}>
         <div class="rcpt-row-main">
-          <div class="rcpt-row-title">${escapeHtml(i.title)}
+          <div class="rcpt-row-title">${expenseLink(i)}
             ${i.estimated ? `<span class="rcpt-mini-badge rcpt-mini-badge--est">${icon('hourglass', 'w-2.5 h-2.5')} ${th('ประมาณการ','est.')}</span>` : ''}
             ${i.hasReceipt ? `<span class="rcpt-mini-badge">${icon('paperclip', 'w-2.5 h-2.5')} ${th('ใบเสร็จ','receipt')}</span>` : ''}
           </div>
           <div class="rcpt-row-sub">${sub}</div>
+          ${payerLine}
           ${commentRows(i.expenseId)}
         </div>
         <div class="rcpt-row-side">
@@ -7626,7 +8074,79 @@ async function renderSettlement(params) {
       </div>`;
   }
 
+  /** Transfers already marked as paid, newest first, each with an undo button. */
+  function paidTransfersHtml() {
+    const paid = state.transfers || [];
+    if (!paid.length) return '';
+    return `<div class="card p-5 mt-4" id="paid-card">
+      <h4 class="font-bold text-sm flex items-center gap-2 mb-3">${icon('badge-check', 'w-4 h-4')} ${th('จ่ายแล้ว', 'Paid')}
+        <span class="badge badge-completed text-[10px]">${paid.length}</span></h4>
+      <div class="space-y-2">${paid.map(p => {
+        const from = state.membersMap[p.fromId];
+        const to = state.membersMap[p.toId];
+        return `<div class="tx-row flex items-center justify-between gap-2">
+          <span class="text-xs min-w-0 truncate">${escapeHtml(from?.displayName || '?')} → ${escapeHtml(to?.displayName || '?')}
+            <span class="text-[var(--text-tertiary)]">• ${escapeHtml(p.date || '')}${p.note ? ` • ${escapeHtml(p.note)}` : ''}</span></span>
+          <span class="flex items-center gap-2 flex-shrink-0">${moneyPair(p.amountMinor)}
+            <button class="icon-btn icon-btn-danger no-export" type="button" data-settle-unpay="${escapeHtml(p.id)}" title="${th('ยกเลิกการบันทึก', 'Undo')}" aria-label="${th('ยกเลิกการบันทึก', 'Undo')}">${icon('undo-2', 'w-3.5 h-3.5')}</button></span>
+        </div>`;
+      }).join('')}</div>
+    </div>`;
+  }
+
   function transactionsHtml() {
+    return remainingTransactionsHtml() + paidTransfersHtml();
+  }
+
+  /** Records a transfer as paid; pre-filled with what is still owed. */
+  function openPayTransferSheet({ fromId, toId, amountMinor }) {
+    const dec = getCurrencyDecimals('THB');
+    const from = state.membersMap[fromId];
+    const to = state.membersMap[toId];
+    const today = dayjs().format('YYYY-MM-DD');
+    const sheet = showBottomSheet(`
+      <div class="space-y-3">
+        <h3 class="font-bold text-base">${th('บันทึกว่าจ่ายแล้ว', 'Record as paid')}</h3>
+        <p class="text-xs text-[var(--text-secondary)]">${escapeHtml(from?.displayName || '')} → ${escapeHtml(to?.displayName || '')} • ${th('ยังค้างอยู่', 'Still owed')} ${moneyPair(amountMinor)}</p>
+        <div class="input-group"><label class="input-label" for="tr-amount">${th('จำนวนที่โอน (฿)', 'Amount sent (฿)')}</label>
+          <input id="tr-amount" class="input" inputmode="decimal" value="${escapeHtml(Number(fromMinor(amountMinor, dec)).toFixed(dec))}"></div>
+        <div class="input-group"><label class="input-label" for="tr-date">${th('วันที่โอน', 'Date sent')}</label>
+          <input id="tr-date" type="date" class="input" value="${today}"></div>
+        <div class="input-group"><label class="input-label" for="tr-note">${th('หมายเหตุ (ไม่บังคับ)', 'Note (optional)')}</label>
+          <input id="tr-note" class="input" maxlength="120" placeholder="${th('เช่น พร้อมเพย์, เงินสด', 'e.g. PromptPay, cash')}"></div>
+        <button id="tr-save" class="btn btn-primary w-full" type="button">${icon('check', 'w-4 h-4')} ${th('บันทึกว่าจ่ายแล้ว', 'Save as paid')}</button>
+      </div>`);
+    const root = sheet.sheet;
+    queueIcons();
+    root.querySelector('#tr-save')?.addEventListener('click', async () => {
+      const amount = toMinor(parseCurrencyInput(root.querySelector('#tr-amount').value) || 0, dec);
+      if (!(amount > 0)) { toast.error(th('ใส่จำนวนเงินที่โอน', 'Enter the amount sent')); return; }
+      if (amount > amountMinor) { toast.error(th('จำนวนมากกว่าที่ค้างอยู่', 'That is more than is still owed')); return; }
+      const tLoad = toast.loading(th('กำลังบันทึก...', 'Saving...'));
+      try {
+        await recordTransfer(tripId, {
+          fromId, toId, amountMinor: amount,
+          date: root.querySelector('#tr-date').value || today,
+          note: root.querySelector('#tr-note').value
+        }, currentUser?.uid);
+        tLoad.close();
+        sheet.close();
+        toast.success(th('บันทึกการโอนแล้ว', 'Transfer recorded'));
+        load();
+      } catch (e) { tLoad.close(); toast.error(e.message || String(e)); }
+    });
+  }
+
+  async function undoTransfer(transferId) {
+    if (!window.confirm(th('ยกเลิกการบันทึกการโอนนี้?', 'Undo this recorded transfer?'))) return;
+    try {
+      await deleteTransfer(tripId, transferId);
+      toast.success(th('ยกเลิกแล้ว', 'Undone'));
+      load();
+    } catch (e) { toast.error(e.message || String(e)); }
+  }
+
+  function remainingTransactionsHtml() {
     if (!state.transactions.length) {
       return `<div class="card p-4">${renderEmptyState({ icon: 'party-popper', title: t('noDebt'), desc: t('allCleared') })}</div>`;
     }
@@ -7661,16 +8181,17 @@ async function renderSettlement(params) {
           <div class="tx-row-actions no-export">
             <button class="link-btn text-[11px]" data-settle-person="${escapeHtml(tx.to)}" type="button">${icon('user-round-search', 'w-3 h-3')} ${th('ดูรายละเอียดผู้รับ','Payee details')}</button>
             <button class="link-btn text-[11px]" data-settle-person="${escapeHtml(tx.from)}" type="button">${icon('user-round-search', 'w-3 h-3')} ${th('ดูรายละเอียดผู้จ่าย','Payer details')}</button>
+            <button class="btn btn-accent btn-sm text-[11px] no-export" style="min-height:30px;padding:2px 10px;" type="button" data-settle-pay data-settle-from="${escapeHtml(tx.from)}" data-settle-to="${escapeHtml(tx.to)}" data-settle-amount="${tx.amountMinor}">${icon('badge-check', 'w-3 h-3')} ${th('จ่ายแล้ว', 'Mark paid')}</button>
           </div>
           ${sourceRows.length ? `<details class="tx-details mt-2">
             <summary class="text-[11px] cursor-pointer" style="color:var(--text-secondary);">${th('จ่ายคืนจากค่าอะไร','Which bills this settles')} (${sourceRows.length})</summary>
             <div class="tx-sources mt-2">
               ${sourceRows.map(i => {
-                const payer = state.membersMap[i.paidBy] || to;
+                const payers = payersOf(i);
                 return `<div class="tx-source-row">
                   <div class="min-w-0">
-                    <div class="text-[11.5px] font-bold truncate">${escapeHtml(i.title)}${i.estimated ? ` <span class="rcpt-mini-badge rcpt-mini-badge--est">${th('ประมาณการ','est.')}</span>` : ''}</div>
-                    <div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(i.date || '')} • ${th('จ่ายโดย','paid by')} ${escapeHtml(payer?.displayName || '')} (${methodLabel(i.method)})</div>
+                    <div class="text-[11.5px] font-bold">${expenseLink(i)}${i.estimated ? ` <span class="rcpt-mini-badge rcpt-mini-badge--est">${th('ประมาณการ','est.')}</span>` : ''}</div>
+                    <div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(i.date || '')} • ${th('จ่ายโดย','paid by')} ${payersLabel(payers) || escapeHtml(to?.displayName || '')} (${methodLabel(i.method)})${payers.length > 1 && i.totalMinor ? ` • ${th('ยอดบิลรวม','bill total')} ${money(i.totalMinor)}` : ''}</div>
                   </div>
                   <span class="text-[11.5px] font-bold flex-shrink-0">${moneyPair(i.amountMinor)}</span>
                 </div>`;
@@ -8497,16 +9018,16 @@ async function renderSettlement(params) {
     try { receiptMode = localStorage.getItem('fuji_receipt_mode') === 'list' ? 'list' : 'deck'; } catch { /* ignore */ }
     try { receiptDensity = localStorage.getItem('fuji_rcpt_density') === 'compact' ? 'compact' : 'full'; } catch { /* ignore */ }
     try {
-      const { expenses, members } = await fetchSettlementData(tripId);
+      const { expenses, members, transfers } = await fetchSettlementData(tripId);
       commentsAll = await listComments(tripId, { limitCount: 400 }).catch(() => []);
       commentMap = commentsByExpense(commentsAll);
       if (!document.getElementById('settlement-content')) return;
       const membersMap = Object.fromEntries(members.map(m => [m.id, m]));
       const normalized = expensesInThb(expenses, trip);
-      const { balances, transactions } = calculateSettlement(normalized, members);
-      const statements = buildSettlementStatements(normalized, members);
+      const { balances, transactions } = calculateSettlement(normalized, members, transfers || []);
+      const statements = buildSettlementStatements(normalized, members, { transfers: transfers || [] });
       thbRate = resolveTripThbRate(trip, expenses, currency);
-      state = { expenses: normalized, members, membersMap, statements, balances, transactions };
+      state = { expenses: normalized, members, membersMap, statements, balances, transactions, transfers: transfers || [] };
       renderView();
       // No rate anywhere → tell the user how to get the baht column.
       if (currency !== 'THB' && !(thbRate > 0)) {
@@ -8591,12 +9112,24 @@ async function renderSettlement(params) {
     }
   });
 
+  // Delegated: the transactions card is re-rendered by renderView, the container is not.
+  document.getElementById('settlement-content')?.addEventListener('click', (e) => {
+    const pay = e.target.closest?.('[data-settle-pay]');
+    if (pay) {
+      openPayTransferSheet({ fromId: pay.dataset.settleFrom, toId: pay.dataset.settleTo, amountMinor: Number(pay.dataset.settleAmount) });
+      return;
+    }
+    const undo = e.target.closest?.('[data-settle-unpay]');
+    if (undo) undoTransfer(undo.dataset.settleUnpay);
+  });
+
   document.getElementById('recalc-settle').addEventListener('click', async () => {
     const btn = document.getElementById('recalc-settle');
     btn.disabled = true;
     const tLoad = toast.loading(lang === 'th' ? 'กำลังคำนวณ...' : 'Calculating...');
     try {
-      await recalculateAndSaveSettlement(tripId, currentUser.uid);
+      // Balances are always computed from the expense book, so recalculating is a reload.
+      await load();
       tLoad.close();
       toast.success(lang === 'th' ? 'คำนวณยอดใหม่แล้ว' : 'Recalculated');
       load();
@@ -10889,7 +11422,7 @@ async function paintDashboardTools({ tripId, trip, members = [], items = [], lan
         return `<div class="flex items-center gap-3 p-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] hover:bg-[var(--surface-2)] transition-colors cursor-pointer" data-idea-id="${escapeHtml(i.id)}">
           <span class="vote-pill flex-shrink-0">${icon('chevron-up','w-3 h-3')} ${voteCount(i)}</span>
           ${hasImg ? `<img src="${escapeHtml(imgs[0])}" alt="" class="w-10 h-10 rounded-lg object-cover flex-shrink-0 cursor-zoom-in" data-idea-img="${escapeHtml(imgs[0])}">` : `<span class="w-10 h-10 rounded-lg bg-[var(--brand-yellow-tint)] grid place-items-center flex-shrink-0">${icon('map-pin','w-4 h-4')}</span>`}
-          <span class="min-w-0 flex-1"><span class="block text-[13px] font-semibold truncate">${escapeHtml(i.title||'')}</span><span class="block text-[11px] text-[var(--text-secondary)] truncate">${escapeHtml(i.address||'')}${i.category ? ' • '+escapeHtml(i.category) : ''}</span></span>
+          <span class="min-w-0 flex-1"><span class="block text-[13px] font-semibold truncate">${escapeHtml(i.title||'')}</span><span class="block text-[11px] text-[var(--text-secondary)] truncate">${escapeHtml(i.address||'')}${i.category ? ' • '+escapeHtml(placeCategoryLabel(ideaCategoryId(i.category), lang)) : ''}</span></span>
           ${icon('chevron-right','w-4 h-4 text-[var(--text-tertiary)]')}
         </div>`;
       }).join('')}
@@ -11655,6 +12188,9 @@ async function renderIdeas(params) {
 
   let filter = 'open';
   let sortMode = 'votes';
+  // Board display (remembered per device): grouped by category or one list, normal or compact.
+  let ideaView = (() => { try { return localStorage.getItem('fuji_ideas_view') === 'flat' ? 'flat' : 'grouped'; } catch { return 'grouped'; } })();
+  let ideaDensity = (() => { try { return localStorage.getItem('fuji_ideas_density') === 'compact' ? 'compact' : 'full'; } catch { return 'full'; } })();
   const myId = currentUser?.uid || '';
 
   appEl.innerHTML = `
@@ -11683,6 +12219,14 @@ async function renderIdeas(params) {
         </select>
       </div>
 
+      <div class="flex items-center justify-between gap-2 flex-wrap" id="idea-view-tools">
+        <div class="chip-row">
+          <button class="chip ${ideaView === 'grouped' ? 'chip-active' : ''}" data-idea-view="grouped">${icon('layers', 'w-3.5 h-3.5')} ${th('แยกตามหมวด','By category')}</button>
+          <button class="chip ${ideaView === 'flat' ? 'chip-active' : ''}" data-idea-view="flat">${icon('list', 'w-3.5 h-3.5')} ${th('รายการเดียว','One list')}</button>
+        </div>
+        <button class="chip ${ideaDensity === 'compact' ? 'chip-active' : ''}" id="idea-density" type="button">${icon('rows-3', 'w-3.5 h-3.5')} <span data-density-text>${ideaDensity === 'compact' ? th('ขนาดปกติ','Comfortable') : th('กระทัดรัด','Compact')}</span></button>
+      </div>
+
       ${loadError ? `<div class="card p-4 text-xs" style="background:var(--warning-bg); border-color:color-mix(in srgb, var(--warning) 35%, transparent);">${icon('info', 'w-4 h-4')} ${escapeHtml(loadError)}</div>` : ''}
       <div id="idea-pending-slot"></div>
       <div class="card p-3" id="ideas-map-card">
@@ -11708,7 +12252,7 @@ async function renderIdeas(params) {
         </div>
         <p class="text-[10px] text-[var(--text-tertiary)] flex items-center gap-1 px-1 pt-2">${icon('info', 'w-3 h-3')} ${th('กดปุ่มหมุดบนการ์ด → แผนที่พาไปที่ไอเดียนั้น • หมุดเขียว = อยู่ในแผนแล้ว','Tap the pin button on a card → the map jumps to that idea • green pin = already in the plan')} • ${th('แผนที่มี 3 โหมดเหมือนหน้าแผนการเดินทาง','Map has 3 modes like itinerary')}</p>
       </div>
-      <div id="ideas-list" class="grid gap-3 stagger sm:grid-cols-2"></div>
+      <div id="ideas-list" class="space-y-5 stagger"></div>
     </div>
   `;
   queueIcons();
@@ -11812,12 +12356,24 @@ async function renderIdeas(params) {
     return best;
   }
 
+  /** Section header for one category group (color + icon + count). */
+  function ideaGroupHeadHtml(g) {
+    const color = placeCategoryColor(g.id);
+    return `<div class="idea-group-head" style="--idea-group:${escapeHtml(color)};">
+      <span class="idea-group-icon">${icon(placeCategoryIcon(g.id), 'w-3.5 h-3.5')}</span>
+      <b class="min-w-0 truncate">${escapeHtml(placeCategoryLabel(g.id, lang))}</b>
+      <span class="idea-group-count">${g.ideas.length}</span>
+    </div>`;
+  }
+
   function paintIdeas() {
     const box = document.getElementById('ideas-list');
     if (!box) return;
     const filtered = filter === 'all' ? ideas : ideas.filter(i => (filter === 'planned' ? i.status === 'planned' : i.status !== 'planned'));
     const sorted = sortIdeas(filtered, sortMode, { lang });
-    listedIdeas = sorted;
+    const groups = ideaView === 'flat' ? [{ id: 'all', ideas: sorted }] : groupIdeasByCategory(sorted);
+    // Numbering follows the order on screen, so the cards and the map pins agree.
+    listedIdeas = groups.flatMap(g => g.ideas);
     if (!sorted.length) {
       box.innerHTML = `<div class="col-span-full">${renderEmptyState({
         icon: 'lightbulb',
@@ -11831,7 +12387,9 @@ async function renderIdeas(params) {
       return;
     }
     const planPinned = planItems.some(p => hasCoords(p));
-    box.innerHTML = sorted.map((idea, idx) => {
+    let pinNo = 0;
+    const ideaCard = (idea) => {
+      const idx = pinNo++;
       const info = voteInfo(idea);
       const voted = hasVoted(idea, myId);
       const voters = voterNames(idea, members).slice(0, 4);
@@ -11856,22 +12414,22 @@ async function renderIdeas(params) {
                 <span class="badge ${idea.status === 'planned' ? 'badge-completed' : 'badge-planned'} text-[10px]">${icon(status.icon, 'w-2.5 h-2.5')} ${lang === 'th' ? status.th : status.en}</span>
               </span>
             </div>
-            ${idea.note ? `<p class="text-xs text-[var(--text-secondary)] mt-1">${escapeHtml(idea.note)}</p>` : ''}
-            ${imgs.length ? `<div class="idea-imgs mt-2">${imgs.map((u, k) => `
+            ${idea.note ? `<p class="text-xs text-[var(--text-secondary)] mt-1 idea-detail">${escapeHtml(idea.note)}</p>` : ''}
+            ${imgs.length ? `<div class="idea-imgs mt-2 idea-detail">${imgs.map((u, k) => `
               <button type="button" class="idea-img" data-act="image" data-id="${idea.id}" data-img="${k}" title="${th('กดเพื่อดูรูป','Tap to view')}">
                 <img src="${escapeHtml(u)}" alt="" loading="lazy" onerror="this.closest('.idea-img').style.display='none'">
               </button>`).join('')}
               <span class="idea-img-hint">${icon('images', 'w-3 h-3')} ${imgs.length}/3</span>
             </div>` : ''}
             <div class="flex items-center gap-2 flex-wrap mt-1.5">
-              <span class="badge badge-planned text-[10px]">${icon(categoryIcon(normalizeCategory(idea.category)), 'w-2.5 h-2.5')} ${escapeHtml(categoryLabel(normalizeCategory(idea.category), lang))}</span>
-              ${idea.address ? `<span class="meta-line">${icon('map-pin', 'w-3 h-3')} <span class="truncate" style="max-width:220px;">${escapeHtml(idea.address)}</span></span>` : ''}
-              ${Number(idea.estimatedCostMinor) > 0 ? `<span class="badge badge-skipped text-[10px]">${icon('coins', 'w-2.5 h-2.5')} ${escapeHtml(formatCurrency(Number(idea.estimatedCostMinor), idea.currency || trip?.baseCurrency || 'THB'))}</span>` : ''}
+              <span class="badge badge-planned text-[10px] idea-cat-badge" style="background:color-mix(in srgb, ${escapeHtml(placeCategoryColor(ideaCategoryId(idea.category)))} 14%, transparent);color:${escapeHtml(placeCategoryColor(ideaCategoryId(idea.category)))};">${icon(placeCategoryIcon(ideaCategoryId(idea.category)), 'w-2.5 h-2.5')} ${escapeHtml(placeCategoryLabel(ideaCategoryId(idea.category), lang))}</span>
+              ${idea.address ? `<span class="meta-line idea-detail">${icon('map-pin', 'w-3 h-3')} <span class="truncate" style="max-width:220px;">${escapeHtml(idea.address)}</span></span>` : ''}
+              ${Number(idea.estimatedCostMinor) > 0 ? `<span class="badge badge-skipped text-[10px] idea-detail">${icon('coins', 'w-2.5 h-2.5')} ${escapeHtml(formatCurrency(Number(idea.estimatedCostMinor), idea.currency || trip?.baseCurrency || 'THB'))}</span>` : ''}
             </div>
-            ${pinned ? `<button type="button" class="idea-pin-line" data-act="locate" data-id="${idea.id}" title="${th('พาแผนที่ไปที่ไอเดียนั้น','Show on the map')}">${icon('crosshair', 'w-3 h-3')} <span class="font-mono">${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}</span> <span class="idea-pin-go">${th('ดูบนแผนที่','View on map')}</span></button>` : ''}
-            ${pinned && near ? `<button type="button" class="idea-near-line" data-act="compare" data-id="${idea.id}" title="${th('เทียบระยะกับแผนแต่ละวัน','Compare with each day')}">${icon('route', 'w-3 h-3')} ${th('ห่างจากแผน','from the plan')} <b>~${ideaKmLabel(near.km)}</b> <span class="truncate" style="max-width:170px;">• ${escapeHtml(near.item.title || '')}</span></button>`
-              : (pinned && !planPinned ? `<p class="idea-near-line is-muted">${icon('route', 'w-3 h-3')} ${th('แผนยังไม่มีพิกัดให้เทียบระยะ','The plan has no pins to compare with yet')}</p>` : '')}
-            ${voters.length ? `<p class="text-[10px] text-[var(--text-tertiary)] mt-1.5">${icon('users', 'w-3 h-3')} ${escapeHtml(voters.join(', '))}${info.count > voters.length ? ` +${info.count - voters.length}` : ''}</p>` : ''}
+            ${pinned ? `<button type="button" class="idea-pin-line idea-detail" data-act="locate" data-id="${idea.id}" title="${th('พาแผนที่ไปที่ไอเดียนั้น','Show on the map')}">${icon('crosshair', 'w-3 h-3')} <span class="font-mono">${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}</span> <span class="idea-pin-go">${th('ดูบนแผนที่','View on map')}</span></button>` : ''}
+            ${pinned && near ? `<button type="button" class="idea-near-line idea-detail" data-act="compare" data-id="${idea.id}" title="${th('เทียบระยะกับแผนแต่ละวัน','Compare with each day')}">${icon('route', 'w-3 h-3')} ${th('ห่างจากแผน','from the plan')} <b>~${ideaKmLabel(near.km)}</b> <span class="truncate" style="max-width:170px;">• ${escapeHtml(near.item.title || '')}</span></button>`
+              : (pinned && !planPinned ? `<p class="idea-near-line is-muted idea-detail">${icon('route', 'w-3 h-3')} ${th('แผนยังไม่มีพิกัดให้เทียบระยะ','The plan has no pins to compare with yet')}</p>` : '')}
+            ${voters.length ? `<p class="text-[10px] text-[var(--text-tertiary)] mt-1.5 idea-detail">${icon('users', 'w-3 h-3')} ${escapeHtml(voters.join(', '))}${info.count > voters.length ? ` +${info.count - voters.length}` : ''}</p>` : ''}
             <div class="flex items-center gap-1 flex-wrap mt-2">
               ${sanitizeUrl(idea.url) ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(sanitizeUrl(idea.url))}" target="_blank" rel="noopener noreferrer">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
               ${idea.address ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(googleMapsPlaceUrl(idea.address, idea.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
@@ -11886,7 +12444,10 @@ async function renderIdeas(params) {
           </div>
         </div>
       </div>`;
-    }).join('');
+    };
+    box.innerHTML = groups.map(g => `
+      ${ideaView === 'flat' ? '' : ideaGroupHeadHtml(g)}
+      <div class="ideas-cards grid gap-3 sm:grid-cols-2 ${ideaView === 'flat' ? '' : 'is-grouped'} ${ideaDensity === 'compact' ? 'is-compact' : ''}">${g.ideas.map(ideaCard).join('')}</div>`).join('');
     queueIcons();
     initReveal(box);
     paintIdeasMap();
@@ -11904,6 +12465,7 @@ async function renderIdeas(params) {
       const { renderIdeasMap, refreshMapSize, setMapLang } = await import('./maps/index.js');
       setMapLang('ideas-map', lang);
       const layerId = currentIdeasLayer;
+      attachMapExpand(document.getElementById('ideas-map-wrap'), 'ideas-map', { fitButtonId: 'ideas-map-fit', lang });
       const res = await renderIdeasMap('ideas-map', listedIdeas, {
         fitBounds: true,
         layerId,
@@ -12073,7 +12635,7 @@ async function renderIdeas(params) {
       subtitle: `${icon('info', 'w-3 h-3')} ${Number(idea.estimatedCostMinor) > 0 ? th('ค่าใช้จ่ายประมาณการจะถูกสร้างเป็นรายการประมาณการในสมุดค่าใช้จ่ายด้วย','The estimated cost will also be created as an estimate in the expense book') : th('รายการนี้จะถูกเพิ่มเข้าแผนของวันที่เลือก','This will be added to the day you pick')}`,
       defaultDate: trip?.startDate || '',
       defaultTime: '09:00',
-      category: normalizeCategory(idea.category),
+      category: ideaCategoryId(idea.category),
       onConfirm: async ({ date, startAt, category }) => {
         const tLoad = toast.loading(th('กำลังเพิ่มเข้าแผน...', 'Adding to the plan...'));
         try {
@@ -12144,7 +12706,7 @@ async function renderIdeas(params) {
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div class="input-group"><label class="input-label">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('หมวดหมู่','Category')}</label>
-            <select id="idea-cat" class="input">${categoryChoices(lang).map(c => `<option value="${c.id}" ${normalizeCategory(idea?.category) === c.id ? 'selected' : ''}>${escapeHtml(categoryChoiceLabel(c, lang))}</option>`).join('')}</select></div>
+            <select id="idea-cat" class="input">${categoryChoices(lang).map(c => `<option value="${c.id}" ${ideaCategoryId(idea?.category || 'sightseeing') === c.id ? 'selected' : ''}>${escapeHtml(categoryChoiceLabel(c, lang))}</option>`).join('')}</select></div>
           <div class="input-group"><label class="input-label">${icon('coins', 'w-3.5 h-3.5')} ${th('ค่าใช้จ่ายประมาณ','Estimated cost')}</label>
             <div class="flex gap-2">
               <input id="idea-cost" class="input money-input flex-1" type="text" inputmode="decimal" value="${escapeHtml(toolAmountValue(idea?.estimatedCostMinor, idea?.currency || trip?.baseCurrency || 'THB'))}" placeholder="0">
@@ -12245,6 +12807,21 @@ async function renderIdeas(params) {
     paintIdeas();
   }));
   bind('idea-sort', 'change', (e) => { sortMode = e.target.value; paintIdeas(); });
+  document.querySelectorAll('[data-idea-view]').forEach(btn => btn.addEventListener('click', () => {
+    ideaView = btn.dataset.ideaView === 'flat' ? 'flat' : 'grouped';
+    try { localStorage.setItem('fuji_ideas_view', ideaView); } catch { /* private mode */ }
+    document.querySelectorAll('[data-idea-view]').forEach(b => b.classList.toggle('chip-active', b === btn));
+    paintIdeas();
+  }));
+  bind('idea-density', 'click', () => {
+    ideaDensity = ideaDensity === 'compact' ? 'full' : 'compact';
+    try { localStorage.setItem('fuji_ideas_density', ideaDensity); } catch { /* private mode */ }
+    const btn = document.getElementById('idea-density');
+    btn?.classList.toggle('chip-active', ideaDensity === 'compact');
+    const label = btn?.querySelector('[data-density-text]');
+    if (label) label.textContent = ideaDensity === 'compact' ? th('ขนาดปกติ', 'Comfortable') : th('กระทัดรัด', 'Compact');
+    paintIdeas();
+  });
   bind('idea-add-btn', 'click', () => openIdeaForm(null));
 
   document.getElementById('ideas-list')?.addEventListener('click', async (e) => {
@@ -12457,7 +13034,8 @@ async function renderBookings(params) {
                     ${sanitizeUrl(r.url) ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(sanitizeUrl(r.url))}" target="_blank" rel="noopener noreferrer">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
                     ${r.address ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(googleMapsPlaceUrl(r.address, r.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
                     ${r.phone ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="tel:${escapeHtml(String(r.phone).replace(/[^\d+#*,;]/g, ''))}">${icon('phone', 'w-3.5 h-3.5')} ${escapeHtml(r.phone)}</a>` : ''}
-                    ${!r.linkedItemId ? `<button class="btn btn-accent btn-sm text-[11px]" style="min-height:30px;padding:2px 10px;" data-act="plan" data-id="${r.id}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>` : ''}
+                    ${r.expenseId ? `<a class="badge badge-completed text-[10px]" href="#/trip/${tripId}/expenses/add?id=${escapeHtml(r.expenseId)}">${icon('receipt', 'w-2.5 h-2.5')} ${th('อยู่ในค่าใช้จ่าย', 'In expenses')}</a>` : (Number(r.costMinor) > 0 ? `<button class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 10px;" data-act="expense" data-id="${escapeHtml(r.id)}">${icon('receipt', 'w-3.5 h-3.5')} ${th('เพิ่มเป็นค่าใช้จ่าย', 'Add as expense')}</button>` : '')}
+              ${!r.linkedItemId ? `<button class="btn btn-accent btn-sm text-[11px]" style="min-height:30px;padding:2px 10px;" data-act="plan" data-id="${r.id}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>` : ''}
                     <button class="icon-btn" data-act="edit" data-id="${r.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
                     <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${r.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
                   </div>
@@ -12495,6 +13073,13 @@ async function renderBookings(params) {
           const { id } = await saveItineraryItem(tripId, payload, currentUser.uid, null, { trip, members });
           await updateReservation(tripId, r.id, { linkedItemId: id }, currentUser?.uid);
           r.linkedItemId = id;
+          if (r.expenseId) {
+            // One record: the booking's expense becomes the plan's estimate for this place.
+            await updateExpense(tripId, r.expenseId, { itineraryItemId: id }, currentUser.uid).catch(e => console.warn('[Booking] plan link failed', e?.message));
+            await updateItineraryItem(tripId, id, { expenseId: r.expenseId }, currentUser.uid).catch(() => {});
+          }
+          const planSync = await syncBookingCost(tripId, r, { costMinor: null, currency: null });
+          if (planSync.error) toast.warning(th('ผูกกับแผนแล้ว แต่ปรับยอดค่าใช้จ่ายไม่สำเร็จ', 'Planned, but the expense amount could not be updated'));
           tLoad.close();
           toast.success(th('เพิ่มเข้าแผนแล้ว', 'Added to the plan'));
           paintList(); paintNext();
@@ -12596,9 +13181,13 @@ async function renderBookings(params) {
       };
       const tLoad = toast.loading(th('กำลังบันทึก...', 'Saving...'));
       try {
+        const prevCost = isEdit ? { costMinor: existing.costMinor, currency: existing.currency } : null;
         if (isEdit) {
           await updateReservation(tripId, existing.id, payload, currentUser?.uid);
           Object.assign(existing, payload);
+          const sync = await syncBookingCost(tripId, existing, prevCost);
+          if (sync.skippedCurrency) toast.warning(th('ค่าใช้จ่ายที่ผูกไว้เป็นสกุลอื่น จึงไม่ได้ปรับยอดให้อัตโนมัติ', 'The linked expense uses another currency, so its amount was not changed'));
+          if (sync.error) toast.warning(th('บันทึกการจองแล้ว แต่ปรับแผนหรือค่าใช้จ่ายที่ผูกไว้ไม่สำเร็จ', 'Saved, but the linked plan or expense could not be updated'));
         } else {
           const id = await createReservation(tripId, payload, currentUser?.uid);
           reservations.push({ id, ...payload });
@@ -12645,6 +13234,7 @@ async function renderBookings(params) {
       if (!r) return;
       if (btn.dataset.act === 'edit') openBookingForm(r);
       if (btn.dataset.act === 'plan') await planBooking(r);
+    if (btn.dataset.act === 'expense') await bookingToExpense({ tripId, trip, members, lang, booking: r, onLinked: () => paintList() });
       if (btn.dataset.act === 'delete') await removeBooking(r);
     });
   }
@@ -12881,7 +13471,7 @@ async function renderExplore(params) {
       subtitle: `${icon('info', 'w-3 h-3')} ${escapeHtml(th(`ไกด์แนะนำ: ${lang === 'th' ? place.note.th : place.note.en}`, `Guide tip: ${place.note.en}`))}`,
       defaultDate: trip?.startDate || '',
       defaultTime: suggestedTime(place),
-      category: normalizeCategory(place.category),
+      category: ideaCategoryId(place.category),
       onConfirm: async ({ date, startAt, category: cat }) => {
         const tLoad = toast.loading(th('กำลังเพิ่มเข้าแผน...', 'Adding to the plan…'));
         try {
@@ -13084,7 +13674,7 @@ async function renderCalendar(params) {
         ${dayItems.length ? `<div class="space-y-2">${dayItems.map(i => `
           <div class="flex items-center gap-3 p-2.5 rounded-2xl" style="background:var(--bg-secondary);border:1px solid var(--border-light);">
             <span class="text-[11px] font-mono font-bold w-12 flex-shrink-0" style="color:var(--primary-strong);">${escapeHtml(String(i.startAt || '').slice(11, 16) || '--:--')}</span>
-            <span class="row-icon" style="width:28px;height:28px;border-radius:10px;">${icon(categoryIcon(normalizeCategory(i.category)), 'w-3.5 h-3.5')}</span>
+            <span class="row-icon" style="width:28px;height:28px;border-radius:10px;">${icon(placeCategoryIcon(ideaCategoryId(i.category)), 'w-3.5 h-3.5')}</span>
             <span class="min-w-0 flex-1">
               <b class="block text-[13px] truncate">${escapeHtml(i.title || '')}</b>
               ${i.address ? `<span class="text-[11px] text-[var(--text-secondary)] truncate block">${escapeHtml(i.address)}</span>` : ''}

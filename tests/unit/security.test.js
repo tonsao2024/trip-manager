@@ -102,8 +102,8 @@ export function testCloudFunctionsAuthorizationHardened() {
   assert(fnSource.includes('ALLOWED_MEMBER_ROLES'), 'createMemberAccount enforces role allowlist');
   assert(/validateExpenseAllocations[\s\S]*?isTripMember\(tripId,\s*uid\)/.test(fnSource),
     'validateExpenseAllocations verifies trip membership');
-  assert(/recalculateSettlement[\s\S]*?isTripMember\(tripId,\s*uid\)/.test(fnSource),
-    'recalculateSettlement verifies trip membership');
+  assert(!/export const recalculateSettlement/.test(fnSource),
+    'the unused recalculateSettlement callable is removed (the client computes settlement itself)');
   assert(/writeAuditLog[\s\S]*?isTripMember\(tripId,\s*uid\)/.test(fnSource),
     'writeAuditLog verifies trip membership');
 }

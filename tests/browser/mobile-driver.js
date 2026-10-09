@@ -104,6 +104,24 @@ exp('e3', {
   allocations: [{ memberId: 'u1', amountMinor: 2867 }, { memberId: 'u2', amountMinor: 2867 }, { memberId: 'u3', amountMinor: 2866 }]
 });
 
+// A bill paid by two people (v25): the settlement must name both payers and their amounts.
+exp('e4', {
+  title: 'ข้าวกลางวันร่วมกัน', date: day2, category: 'food', subtotalMinor: 12000, netTotalMinor: 12000,
+  thbMinor: 2880, isEstimated: false, actualMinor: 12000, paymentMethod: 'card',
+  cardName: 'KBank Visa ••4321', payerId: 'u1',
+  payments: [{ memberId: 'u1', amountMinor: 7000 }, { memberId: 'u2', amountMinor: 5000 }],
+  allocations: [{ memberId: 'u1', amountMinor: 4000 }, { memberId: 'u2', amountMinor: 4000 }, { memberId: 'u3', amountMinor: 4000 }]
+});
+
+// Ideas across place categories (v25): grouped headers, category pin colors, compact view.
+fsdb.__seed('trips/t1/ideas/k1', { title: 'ศาลเจ้าฟูชิมิ อินาริ', note: 'เดินขึ้นเขาประมาณ 2 ชม.', address: 'Kyoto', coordinates: '34.9671,135.7727', category: 'sightseeing', status: 'idea', votes: { u1: true, u2: true }, createdBy: 'u1', createdAt: now, currency: 'JPY', estimatedCostMinor: 0 });
+fsdb.__seed('trips/t1/ideas/k2', { title: 'ร้านราเมนซันโตโอ', note: 'คิวยาว มาก่อนเปิด', address: 'Shinjuku', coordinates: '35.6938,139.7034', category: 'food', status: 'idea', votes: { u2: true }, createdBy: 'u2', createdAt: now });
+fsdb.__seed('trips/t1/ideas/k3', { title: 'ตลาดของฝากโตเกียวสถานี', address: 'Tokyo Station', coordinates: '35.6812,139.7671', category: 'shopping', status: 'idea', votes: {}, createdBy: 'u3', createdAt: now });
+fsdb.__seed('trips/t1/ideas/k4', { title: 'สวนสาธารณะยาโนะ', address: 'Yanaka', category: 'sightseeing', status: 'planned', votes: { u1: true }, createdBy: 'u1', createdAt: now });
+
+// A priced booking (v25): the card can be turned into an expense, and the link goes both ways.
+fsdb.__seed('trips/t1/reservations/r1', { type: 'hotel', title: 'โรงแรมฟูจิ วิว', date: start, startTime: '15:00', endTime: '', address: 'Kawaguchiko', costMinor: 45000, currency: 'JPY', notes: '', createdAt: now, createdBy: 'u1' });
+
 fsdb.__seed('trips/t1/comments/c1', {
   expenseId: 'e1', text: 'ราคานี้รวมอาหารเช้าหรือยัง?', uid: 'u2', name: 'นุ่น', createdAt: now
 });

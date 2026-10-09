@@ -100,7 +100,7 @@ function runnerSvg() {
 
 function fujiSvg() {
   return `
-  <svg class="fuji-scene-svg" viewBox="0 0 320 150" preserveAspectRatio="none" aria-hidden="true">
+  <svg class="fuji-scene-svg" viewBox="0 0 320 142" preserveAspectRatio="none" aria-hidden="true">
     <defs>
       <linearGradient id="cnt-fuji" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="color-mix(in srgb, var(--grad-1) 42%, #ffffff)"/>
@@ -113,7 +113,7 @@ function fujiSvg() {
     </defs>
     <path d="M8 142 C 70 138, 118 128, 160 44 C 202 128, 250 138, 312 142 Z" fill="url(#cnt-fuji)"/>
     <path d="M132 84 C 142 62, 150 52, 160 44 C 170 52, 178 62, 188 84 L 176 78 L 168 88 L 160 78 L 152 88 L 144 78 Z" fill="url(#cnt-snow)"/>
-    <path d="M0 142 H320" stroke="color-mix(in srgb, var(--grad-1) 30%, var(--border))" stroke-width="2"/>
+    <path d="M0 141 H320" stroke="color-mix(in srgb, var(--grad-1) 30%, var(--border))" stroke-width="2"/>
   </svg>`;
 }
 
@@ -125,7 +125,7 @@ export function renderCountdownScene({ startDate, endDate, createdAt, lang = 'th
   const pct = Math.round(c.progress * 100);
   const arrived = c.phase !== 'before';
   return `
-  <div class="countdown-scene ${arrived ? 'is-arrived' : ''}" data-cd-root style="--cd-progress:${pct}%; --cd-runner:${(0.06 + c.progress * 0.6).toFixed(3)};">
+  <div class="countdown-scene ${arrived ? 'is-arrived' : ''} ${compact ? 'is-compact' : ''}" data-cd-root style="--cd-progress:${pct}%; --cd-runner:${(0.06 + c.progress * 0.6).toFixed(3)};">
     <div class="cd-sky">
       <span class="cd-sun"></span>
       <span class="cd-cloud cd-cloud-1"></span>
@@ -150,8 +150,8 @@ export function renderCountdownScene({ startDate, endDate, createdAt, lang = 'th
       </div>
     </div>
     ${compact ? '' : `
-    <div class="cd-progress">
-      <div class="cd-progress-fill" data-cd-bar style="width:${pct}%"></div>
+    <div class="cd-progress" aria-label="${pct}%">
+      <div class="cd-progress-bar"><div class="cd-progress-fill" data-cd-bar style="width:${pct}%"></div></div>
       <span class="cd-progress-label" data-cd-pct>${pct}%</span>
     </div>`}
   </div>`;

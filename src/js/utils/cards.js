@@ -48,7 +48,10 @@ export function suggestCards(tripId, expenses = []) {
     if (!seen.has(key)) seen.set(key, clean);
   };
   listCards(tripId).forEach(push);
-  for (const e of expenses) if (e?.cardName) push(e.cardName);
+  for (const e of expenses) {
+    if (e?.cardName) push(e.cardName);
+    for (const p of e?.payments || []) if (p?.cardName) push(p.cardName);
+  }
   return [...seen.values()];
 }
 

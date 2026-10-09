@@ -27,3 +27,17 @@ export function validateExpensePayerState(totalMinor, payments, { payerPending =
     && Array.isArray(payments)
     && payments.length === 0;
 }
+
+/**
+ * How one payer paid: cash, card or transfer, and the card if it was a card. A
+ * payment without its own method (every record saved before v25) inherits the
+ * bill's, so older expenses keep meaning what they meant.
+ */
+export function paymentMethodOf(expense = {}, payment = {}) {
+  const method = ['cash', 'card', 'transfer'].includes(payment.paymentMethod)
+    ? payment.paymentMethod
+    : (['cash', 'card', 'transfer'].includes(expense.paymentMethod) ? expense.paymentMethod : 'cash');
+  if (method !== 'card') return { method, cardName: '' };
+  const cardName = String(payment.cardName ?? expense.cardName ?? '').trim();
+  return { method, cardName };
+}

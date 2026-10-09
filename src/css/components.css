@@ -879,6 +879,9 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 .team-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .team-card-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 13.5px; min-width: 0; overflow-wrap: anywhere; }
 .team-card-note { font-size: 11px; color: var(--text-tertiary); }
+/* Tappable dashboard cards (member rows open that person's bills, team cards open the team report). */
+.member-row[data-mid], .team-card[data-gid] { cursor: pointer; }
+.member-row[data-mid]:focus-visible, .team-card[data-gid]:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .team-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .team-stat { padding: 8px 10px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border-light); min-width: 0; }
 .team-stat-label { display: block; font-size: 9.5px; font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase; color: var(--text-tertiary); }
@@ -1025,6 +1028,8 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
   cursor: pointer; transition: transform 0.16s ease, background 0.2s ease, border-color 0.2s ease;
 }
 .expense-row:hover { transform: translateX(2px); border-color: color-mix(in srgb, var(--primary-raw) 36%, var(--border)); background: var(--bg-secondary); }
+/* The amount may wrap inside under half the row; a full-width amount squeezed the title and date to 3px */
+.expense-row > .expense-row-amount { flex: 0 1 auto; min-width: 0; max-width: 46%; }
 
 /* ---------- Map overlays ---------- */
 .map-status {
@@ -1059,8 +1064,14 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 .trip-menu-btn:hover { transform: scale(1.06); background: #fff; }
 .trip-menu-btn svg { width: 16px; height: 16px; }
 
-/* ---------- Animated countdown scene (runner heading to Fuji) ---------- */
+/* ---------- Animated countdown scene (runner heading to Fuji) ----------
+   Three stacked zones, bottom-up, so no two elements compete for one band:
+     · progress footer  (--cd-foot)   bar + % on one line, never over the track
+     · ground band      (--cd-ground) runner feet + Fuji base sit on its top edge
+     · sky              the rest     HUD top-left, sun/clouds, Fuji peak right  */
 .countdown-scene {
+  --cd-foot: 34px;
+  --cd-ground: 40px;
   position: relative;
   height: 190px;
   border-radius: 18px;
@@ -1097,11 +1108,14 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 .cd-star-3 { top: 16px; left: 52%; animation-delay: 1.6s; }
 [data-theme="light"] .cd-star { background: color-mix(in srgb, var(--grad-1) 60%, #fff); opacity: 0.5; }
 
+.countdown-scene.is-compact { --cd-foot: 0px; }
 .cd-ground {
-  position: absolute; left: 0; right: 0; bottom: 0; height: 46px;
+  position: absolute; left: 0; right: 0; bottom: var(--cd-foot); height: var(--cd-ground);
   background: linear-gradient(180deg, color-mix(in srgb, var(--grad-2) 26%, transparent), color-mix(in srgb, var(--grad-2) 8%, transparent));
+  border-top: 1px solid color-mix(in srgb, var(--grad-1) 26%, transparent);
 }
-.cd-fuji { position: absolute; right: 2%; bottom: 12px; width: min(52%, 300px); }
+/* Fuji's base (svg y=142 of 142) lands exactly on the ground's top edge. */
+.cd-fuji { position: absolute; right: 4%; bottom: calc(var(--cd-foot) + var(--cd-ground)); width: min(50%, 300px); }
 .fuji-scene-svg { width: 100%; height: auto; display: block; }
 .cd-flag {
   position: absolute; top: 32%; left: 50%; width: 3px; height: 22px;
@@ -1115,7 +1129,8 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 }
 .cd-flag.show { opacity: 1; animation: cdFlagPlant 0.7s cubic-bezier(0.16,1,0.3,1); }
 
-.cd-track { position: absolute; left: 0; right: 0; bottom: 6px; height: 92px; }
+/* Runner feet sit a few px into the ground band, clear of the progress footer. */
+.cd-track { position: absolute; left: 0; right: 0; bottom: calc(var(--cd-foot) + 6px); height: 84px; }
 .cd-runner {
   position: absolute; bottom: 0;
   left: calc(var(--cd-runner, 0.06) * 100%);
@@ -1166,10 +1181,17 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 .cd-meta { display: flex; flex-direction: column; gap: 2px; }
 .cd-phase { font-size: 12px; font-weight: 800; color: var(--text); }
 .cd-eta { font-size: 11px; color: var(--text-secondary); }
+/* Footer strip: the bar and its % share one centred line inside --cd-foot. */
 .cd-progress {
-  position: absolute; left: 14px; right: 14px; bottom: 10px;
-  height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--primary-raw) 16%, transparent);
-  overflow: visible;
+  position: absolute; left: 0; right: 0; bottom: 0; height: var(--cd-foot);
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 14px;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.cd-progress-bar {
+  position: relative; flex: 1; min-width: 0; height: 6px; border-radius: 999px; overflow: hidden;
+  background: color-mix(in srgb, var(--primary-raw) 16%, transparent);
 }
 .cd-progress-fill {
   height: 100%; border-radius: 999px; background: var(--gradient-primary);
@@ -1177,11 +1199,12 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
   transition: width 1.1s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .cd-progress-label {
-  position: absolute; right: 0; top: -18px; font-size: 10px; font-weight: 700;
-  color: var(--text-tertiary);
+  flex: none; min-width: 3.2em; text-align: right;
+  font-size: 11px; font-weight: 700; line-height: 1; color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 @media (max-width: 640px) {
-  .countdown-scene { height: 168px; }
+  .countdown-scene { height: 168px; --cd-ground: 36px; }
   .cd-fuji { width: 58%; }
   .cd-runner { width: 48px; height: 66px; }
   .cd-days { min-width: 46px; height: 46px; font-size: 20px; }
@@ -2505,8 +2528,20 @@ html, body { max-width: 100%; overflow-x: clip; }
 .split-warning { padding: 10px 12px; margin-top: 8px; border: 1px solid var(--danger); border-radius: 10px; color: var(--danger); background: var(--danger-bg); font-size: 12px; }
 .split-adjustments { font-size: 11px; color: var(--text-secondary); line-height: 1.8; }
 .split-adjustments > div { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid var(--border); }
-.payer-amount-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, 150px) 36px; gap: 10px; align-items: center; padding: 8px 0; font-size: 13px; }
-.payer-amount-row input { text-align: right; }
+/* Several payers — same look as the unequal-split rows: name · typed amount · paid amount.
+   A blank typed field means “worked out from what is left”. */
+.payer-columns, .payer-row { display: grid; grid-template-columns: minmax(110px, 1.2fr) minmax(90px, 1fr) minmax(100px, 1fr); gap: 10px; align-items: center; }
+.payer-columns { padding: 4px 12px; font-size: 11px; color: var(--text-tertiary); }
+.payer-columns > :last-child { text-align: right; }
+.payer-row { padding: 8px 10px; border-radius: 12px; background: var(--bg-secondary); margin-top: 6px; }
+.payer-row .payer-pay-line { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.payer-row .payer-pay-line .input { min-height: 36px; font-size: 12px; }
+.payer-row .payer-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.payer-row .payer-name > .truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.payer-row .payer-name .avatar { flex-shrink: 0; }
+.payer-row .money-input { width: 100%; text-align: right; font-variant-numeric: tabular-nums; }
+.payer-final { text-align: right; font-size: 13px; font-weight: 700; color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.payer-final.is-auto { color: var(--primary-strong); }
 /* Remove intrinsic image height from grid sizing, retaining the menu outside. */
 .itin-thumb { box-sizing: border-box; height: auto; min-height: 0; aspect-ratio: 16 / 9; }
 .itin-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -2525,8 +2560,14 @@ html, body { max-width: 100%; overflow-x: clip; }
   #net-preview { padding: 8px 12px; font-size: 13px; border-radius: 10px; }
   #net-preview .money-primary { font-size: 16px; }
   #thb-preview { padding: 6px 10px; font-size: 12px; border-radius: 8px; }
-  .payer-amount-row { grid-template-columns: minmax(0, 1.2fr) minmax(80px, 1.2fr) 30px; gap: 6px; padding: 3px 0; font-size: 12px; }
-  .payer-amount-row input { min-height: 32px; height: 32px; padding: 4px 6px; font-size: 12px; }
+  .payer-columns, .payer-row { grid-template-columns: minmax(70px, 1.2fr) minmax(60px, 1fr) minmax(60px, 1fr); gap: 5px; }
+  .payer-columns { padding: 2px 6px; font-size: 10px; }
+  .payer-row { padding: 4px 6px; border-radius: 8px; margin-top: 4px; }
+  .payer-row .payer-name { gap: 4px; }
+  .payer-row .payer-name .avatar { width: 22px !important; height: 22px !important; font-size: 9px !important; }
+  .payer-row .payer-name > .truncate { font-size: 11.5px; max-width: 60px; }
+  .payer-row .money-input { min-height: 32px; height: 32px; padding: 3px 6px; font-size: 12px; }
+  .payer-final { font-size: 11.5px; }
   .split-equal-row { padding: 5px 8px !important; font-size: 12px !important; border-radius: 8px !important; margin-bottom: 4px !important; }
   .split-equal-row .avatar { width: 22px !important; height: 22px !important; font-size: 9px !important; }
   .split-vat-toggle { padding: 4px 8px; gap: 6px; margin-bottom: 6px; border-radius: 8px; font-size: 11px; }
@@ -2655,6 +2696,16 @@ html, body { max-width: 100%; overflow-x: clip; }
 .rcpt-row-title { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; font-size: 12px; font-weight: 700; color: #1f2937; overflow-wrap: anywhere; }
 .rcpt-row-sub { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 10px; color: #6b7280; margin-top: 2px; }
 .rcpt-row-sub svg { width: 10px; height: 10px; }
+/* Shared bills: who paid with how much, and a link from every item to its expense. */
+.rcpt-row-payers { font-size: 10px; line-height: 1.5; color: #6b7280; margin-top: 2px; overflow-wrap: anywhere; }
+.rcpt-row-payers b { color: #374151; font-weight: 700; }
+.rcpt-open {
+  display: inline-flex; align-items: center; gap: 3px; min-width: 0;
+  color: inherit; text-decoration: none; overflow-wrap: anywhere;
+  border-bottom: 1px dashed color-mix(in srgb, var(--primary) 50%, transparent);
+}
+.rcpt-open svg { width: 10px; height: 10px; flex-shrink: 0; color: var(--primary-strong); }
+.rcpt-open:hover, .rcpt-open:focus-visible { color: var(--primary-strong); border-bottom-style: solid; }
 .rcpt-row-side { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
 .rcpt-row-amount { font-size: 12.5px; font-weight: 800; color: #111827; font-variant-numeric: tabular-nums; text-align: right; }
 .rcpt-row-amount .money-primary { font-size: 12.5px; }
@@ -2887,6 +2938,44 @@ html, body { max-width: 100%; overflow-x: clip; }
 
 /* ---- Ideas board ---- */
 .idea-card { overflow: visible; }
+/* “ขยายแผนที่”: the map card becomes a full-screen layer; the map fills it. */
+.map-expand-btn {
+  position: absolute; left: 10px; bottom: 34px; z-index: 1100;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 11px;
+  border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-primary); font-size: 11px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,0,0,.14);
+}
+.map-expand-btn:hover { background: var(--bg-secondary); }
+.map-expanded {
+  position: fixed !important; inset: 0 !important; z-index: 1200; width: 100vw !important;
+  height: 100dvh !important; max-height: none !important; margin: 0 !important;
+  border-radius: 0 !important; border: 0 !important; background: var(--surface);
+}
+.map-expanded .map-frame { height: 100% !important; min-height: 0 !important; }
+.map-expanded .map-expand-btn { bottom: 26px; }
+body.map-expanded-open { overflow: hidden; }
+/* Ideas board: grouped by category (group header carries the pin color), optional compact rows. */
+.idea-group-head {
+  display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 6px; border-radius: 14px;
+  background: color-mix(in srgb, var(--idea-group) 11%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--idea-group) 30%, transparent);
+  font-size: 12.5px; color: var(--text-primary);
+}
+.idea-group-icon {
+  width: 24px; height: 24px; border-radius: 8px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--idea-group); color: #fff;
+}
+.idea-group-count {
+  margin-left: auto; min-width: 22px; padding: 1px 8px; border-radius: 999px; text-align: center;
+  background: var(--idea-group); color: #fff; font-size: 10.5px; font-weight: 800;
+}
+.ideas-cards.is-grouped .idea-cat-badge { display: none; }
+.ideas-cards.is-compact .idea-card { padding: 10px 12px; }
+.ideas-cards.is-compact .idea-card h3 { font-size: 13px; }
+.ideas-cards.is-compact .idea-detail,
+.ideas-cards.is-compact .idea-card .btn-ghost { display: none !important; }
 .vote-btn {
   flex: 0 0 auto; width: 46px; min-height: 52px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
@@ -3272,6 +3361,38 @@ html, body { max-width: 100%; overflow-x: clip; }
   font-size: 11px;
 }
 .dash-layout-tools > span { display: inline-flex; align-items: center; gap: 6px; }
+/* Choose which cards show (dashboardHidden). Hidden cards stay in the DOM so the order sync keeps working. */
+.dash-widget.is-hidden { display: none !important; }
+.dash-widget-remove {
+  display: none; margin-left: auto; width: 22px; height: 22px; flex-shrink: 0;
+  align-items: center; justify-content: center; border-radius: 999px; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--primary-raw) 30%, var(--border));
+  background: var(--surface); color: var(--primary-strong);
+}
+.dashboard-layout-editing .dash-widget-remove { display: inline-flex; }
+.dash-widget-remove:hover { background: var(--danger-bg); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
+.dash-add-tile {
+  grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 52px; padding: 10px 14px; border-radius: 18px; cursor: pointer;
+  border: 1.5px dashed color-mix(in srgb, var(--primary-raw) 45%, var(--border));
+  background: color-mix(in srgb, var(--primary-raw) 5%, var(--surface));
+  color: var(--primary-strong); font-size: 13px; font-weight: 700;
+}
+.dash-add-tile:hover { background: color-mix(in srgb, var(--primary-raw) 10%, var(--surface)); }
+.dash-add-tile b { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: var(--primary-raw); color: #fff; font-size: 11px; text-align: center; }
+.dash-add-tile.hidden { display: none; }
+.dash-pick-list { display: grid; gap: 8px; max-height: 60vh; overflow-y: auto; }
+.dash-pick-row {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 16px;
+  border: 1px solid var(--border); background: var(--surface);
+}
+.dash-pick-row.is-off { background: var(--bg-secondary); border-style: dashed; }
+.dash-pick-row.is-off .font-semibold { color: var(--text-secondary); }
+.dash-pick-icon {
+  width: 32px; height: 32px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 11px; background: var(--primary-light); color: var(--primary-strong);
+}
+.dash-pick-row.is-off .dash-pick-icon { background: var(--bg-tertiary, var(--bg-secondary)); color: var(--text-tertiary); }
 .dash-layout-status { min-width: 48px; color: var(--text-tertiary); font-size: 10px; text-align: right; }
 #dash-layout-edit-btn.is-active { background: var(--primary) !important; color: #fff !important; }
 #dashboard-view.dash-compact #dashboard-board { gap: 10px; }

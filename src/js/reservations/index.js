@@ -3,7 +3,7 @@
 // Pure helpers are in ../utils/reservations.js and re-exported here.
 // ─────────────────────────────────────────────────────────────────────────────
 import { db, auth, serverTimestamp } from '../firebase.js';
-import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 /**
  * v18: the security rules gate deletes on `createdBy`, and the ideas board used to
@@ -82,5 +82,11 @@ export async function updateReservation(tripId, reservationId, patch = {}, uid =
 
 export async function deleteReservation(tripId, reservationId) {
   if (!db) throw new Error('DB not ready');
+  // The expense stays (it is real spending) but stops pointing at a booking that is gone.
+  try {
+    const snap = await getDoc(doc(db, `trips/${tripId}/reservations/${reservationId}`));
+    const expenseId = snap.exists() ? snap.data().expenseId : null;
+    if (expenseId) await updateDoc(doc(db, `trips/${tripId}/expenses/${expenseId}`), { reservationId: null });
+  } catch (err) { console.warn('[Reservations] expense unlink failed', err?.message); }
   await deleteDoc(doc(db, `trips/${tripId}/reservations/${reservationId}`));
 }

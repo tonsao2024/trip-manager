@@ -1,3 +1,4 @@
+import { ideaCategoryId, placeCategoryColor } from '../utils/categories.js';
 // Maps v4 — Leaflet + free tile providers
 // Key fixes in v4:
 //  • "Map container is already initialized" can never happen again — every map is
@@ -400,6 +401,73 @@ export function refreshMapSize(containerId) {
   });
 }
 
+const MAP_EXPAND_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>';
+const MAP_COLLAPSE_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>';
+
+/**
+ * “ขยายแผนที่”: adds a button to a map card. Expanding turns the card into a
+ * full-screen layer (position: fixed) and refits the pins, so the wider area is
+ * visible at once. The same button, Esc, or a route change collapses it again.
+ * @param {HTMLElement} wrapEl  the element that wraps the map container
+ * @param {string} containerId  the Leaflet container id (e.g. 'map')
+ * @param {{fitButtonId?: string, lang?: string}} opts
+ */
+export function attachMapExpand(wrapEl, containerId, { fitButtonId = null, lang = 'th' } = {}) {
+  if (!wrapEl || wrapEl.querySelector(':scope > .map-expand-btn')) return;
+  document.querySelectorAll('.map-expanded > .map-expand-btn').forEach(btn => btn.click());
+  const label = (open) => (lang === 'th' ? (open ? 'ย่อแผนที่' : 'ขยายแผนที่') : (open ? 'Shrink map' : 'Expand map'));
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'map-expand-btn';
+  const paint = (open) => {
+    btn.innerHTML = `${open ? MAP_COLLAPSE_ICON : MAP_EXPAND_ICON}<span>${label(open)}</span>`;
+    btn.setAttribute('aria-label', label(open));
+    btn.setAttribute('aria-pressed', open ? 'true' : 'false');
+  };
+  const isOpen = () => wrapEl.classList.contains('map-expanded');
+  const onKey = (e) => { if (e.key === 'Escape') collapse(); };
+  function refit() {
+    // Let the layout settle first, then Leaflet measures the new size and the fit button frames the pins.
+    requestAnimationFrame(() => {
+      getMap(containerId)?.invalidateSize?.();
+      if (fitButtonId) document.getElementById(fitButtonId)?.click();
+      setTimeout(() => getMap(containerId)?.invalidateSize?.(), 180);
+    });
+  }
+  // While expanded the wrapper lives directly under <body>: a transformed or contained
+  // ancestor (cards animate in) would otherwise become the containing block of the overlay.
+  let slot = null;
+  function expand() {
+    if (wrapEl.parentNode) {
+      slot = document.createComment('map-slot');
+      wrapEl.parentNode.insertBefore(slot, wrapEl);
+      document.body.appendChild(wrapEl);
+    }
+    wrapEl.classList.add('map-expanded');
+    document.body.classList.add('map-expanded-open');
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('hashchange', collapse);
+    paint(true);
+    refit();
+  }
+  function collapse() {
+    if (!isOpen()) return;
+    wrapEl.classList.remove('map-expanded');
+    document.body.classList.remove('map-expanded-open');
+    document.removeEventListener('keydown', onKey);
+    window.removeEventListener('hashchange', collapse);
+    // Put it back where it was; if the page was re-rendered meanwhile, the old slot is gone.
+    if (slot?.parentNode) slot.parentNode.replaceChild(wrapEl, slot);
+    else wrapEl.remove();
+    slot = null;
+    paint(false);
+    refit();
+  }
+  btn.addEventListener('click', () => (isOpen() ? collapse() : expand()));
+  paint(false);
+  wrapEl.appendChild(btn);
+}
+
 // Re-apply tiles matching the current light/dark theme (call after theme toggle)
 export function refreshMapTheme(map, L) {
   if (!map || !L) return;
@@ -616,7 +684,8 @@ export function addIdeaMarkers(map, L, ideas, opts = {}) {
     const { lat, lng } = pos;
     latlngs.push([lat, lng]);
     const planned = idea.status === 'planned';
-    const color = planned ? '#00a86b' : (idx === 0 ? accent : primary);
+    // Pins are colored by category (the legend is the group headers on the ideas board).
+    const color = placeCategoryColor(ideaCategoryId(idea.category));
     const label = opts.numbered === false ? '💡' : String(idx + 1);
     const icon = L.divIcon({
       className: 'custom-marker',
