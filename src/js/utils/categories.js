@@ -22,6 +22,17 @@ export const ITINERARY_CATEGORIES = [
   { id: 'general', th: 'ทั่วไป', en: 'General', icon: 'map-pin' }
 ];
 
+/** Pin / chip colour per place category (ideas board + map). Each one is distinct. */
+export const PLACE_CATEGORY_COLORS = Object.freeze({
+  sightseeing: '#2aa7a1',
+  food: '#ef8f4e',
+  transport: '#2f6fe4',
+  stay: '#8a7ce8',
+  activity: '#f0ae52',
+  shopping: '#e25f7d',
+  general: '#93a3b4'
+});
+
 // Aliases kept for the Excel layer (it refers to them as "DEFS")
 export const EXPENSE_CATEGORY_DEFS = EXPENSE_CATEGORIES;
 export const ITINERARY_CATEGORY_DEFS = ITINERARY_CATEGORIES;
@@ -108,17 +119,18 @@ export function normalizeCategory(value) {
 }
 
 export function categoryLabel(id, lang = 'th') {
-  const def = getCategoryDef(id);
+  // Place-only ids (e.g. “sightseeing”) have no expense group — use the place name.
+  const def = getCategoryDef(id) || ITINERARY_CATEGORIES.find(c => c.id === id);
   if (!def) return id || 'general';
   return lang === 'th' ? (def.th || def.en) : (def.en || def.th);
 }
 
 export function categoryIcon(id) {
-  return getCategoryDef(id)?.icon || CATEGORY_ICONS[id] || 'package';
+  return getCategoryDef(id)?.icon || CATEGORY_ICONS[id] || ITINERARY_CATEGORIES.find(c => c.id === id)?.icon || 'package';
 }
 
 export function categoryColor(id) {
-  return getCategoryDef(id)?.color || CATEGORY_COLORS[id] || 'var(--primary)';
+  return getCategoryDef(id)?.color || CATEGORY_COLORS[id] || PLACE_CATEGORY_COLORS[id] || 'var(--primary)';
 }
 
 /* ------------------------------------------------------------------\n   v18: ONE category list for places and money.
@@ -209,3 +221,51 @@ export const ITINERARY_STATUSES = [
   { id: 'skipped', th: 'ข้าม', en: 'Skipped' },
   { id: 'cancelled', th: 'ยกเลิก', en: 'Cancelled' }
 ];
+
+/* ------------------------------------------------------------------
+   Place categories for ideas and places (labels, colours, grouping).
+   normalizeCategory() keeps mapping to EXPENSE groups only, so these helpers
+   handle place ids on their own: “sightseeing” stays “sightseeing” instead of
+   falling back to “อื่นๆ”.
+   ------------------------------------------------------------------ */
+
+/**
+ * The category an idea or place is filed under: a place category, or the trip's
+ * own group. Expense ids (ticket, fee, insurance…) map to their place equivalent,
+ * and legacy Thai/English labels are read as well.
+ */
+export function ideaCategoryId(value) {
+  if (!value) return 'general';
+  if (ITINERARY_CATEGORIES.some(c => c.id === value)) return value;
+  if (isCustomCategory(value)) return value;
+  const byLabel = ITINERARY_CATEGORIES.find(c => c.th === value || c.en === value);
+  if (byLabel) return byLabel.id;
+  const expense = normalizeCategory(value);
+  return isCustomCategory(expense) ? expense : placeCategoryForExpense(expense);
+}
+
+/** Display definition for a place category or a trip's own group, or null. */
+export function placeCategoryDef(id) {
+  const place = ITINERARY_CATEGORIES.find(c => c.id === id);
+  if (place) return { ...place, color: PLACE_CATEGORY_COLORS[id] || PLACE_CATEGORY_COLORS.general };
+  const own = isCustomCategory(id) ? getCategoryDef(id) : null;
+  if (own) return { id, th: own.th || own.en, en: own.en || own.th, icon: own.icon || 'tag', color: own.color || 'var(--primary)' };
+  return null;
+}
+
+function placeOrGeneral(id) {
+  return placeCategoryDef(id) || placeCategoryDef('general');
+}
+
+export function placeCategoryLabel(id, lang = 'th') {
+  const def = placeOrGeneral(id);
+  return lang === 'th' ? (def.th || def.en) : (def.en || def.th);
+}
+
+export function placeCategoryColor(id) {
+  return placeOrGeneral(id).color;
+}
+
+export function placeCategoryIcon(id) {
+  return placeOrGeneral(id).icon || 'map-pin';
+}

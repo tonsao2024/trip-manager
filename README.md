@@ -2,6 +2,20 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
+> **v25 — 9 Oct 2026, คนจ่ายหลายคน เคลียร์บิล แดชบอร์ด และการเชื่อมโยงข้อมูล.** A bill with
+> several payers (“คนจ่ายก่อน”) now works like unequal split: typing the first payer's amount fills
+> the rest for the other payers, and the saved `payments[]` sum to the net total. Settlement receipts and
+> transfer sources list every payer with their amount, the bill total and a link to the expense. Excel
+> export writes `name=amount` for shared bills, and import reads them back (mismatched amounts are an
+> error). The dashboard cards are chosen per trip (`dashboardHidden`): × in Arrange mode, the
+> “เลือกการ์ด” sheet, or the “เพิ่มการ์ด” tile; the registry is `src/js/dashboard/widgets.js` (new
+> `bookings` card). The ideas board groups by category with category pin colors, and has a compact
+> toggle. The countdown frame is balanced. Audit fixes: dashboard member rows and team cards open their
+> popups again (click and keyboard); place ids (“sightseeing”) are no longer shown as “อื่นๆ”; the
+> server settlement skips pending-payer estimates. **Open:** a booking's cost edit does not update its
+> linked plan estimate; `markSettlementPaid` and the settlements document are not wired to any screen;
+> `paymentMethod`/`cardName` are still per expense, not per payer.
+>
 > **v24 — 7 Oct 2026, จอมือถือแสดงผลครบทุกช่อง.** Owner screenshots showed the **add-place
 > sheet cut off at the right edge** on an iPhone (the native time control is ~207 px wide and can
 > never fit a half-width column) and **KPI amounts breaking mid-number** (“฿167,7 / 23.09”). On

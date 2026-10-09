@@ -437,6 +437,8 @@ export const recalculateSettlement = onCall(async (request) => {
   const balances = new Map();
   for (const m of members) balances.set(m.id, 0);
   for (const exp of expenses) {
+    // Pending-payer estimates have nobody paid yet: counting them would credit a phantom '' payer.
+    if (exp.payerPending) continue;
     const payments = exp.payments?.length ? exp.payments : [{ memberId: exp.payerId || exp.paidBy, amountMinor: exp.netTotalMinor || 0 }];
     for (const payment of payments) {
       balances.set(payment.memberId, (balances.get(payment.memberId) || 0) + payment.amountMinor);

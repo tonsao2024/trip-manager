@@ -273,6 +273,14 @@ export function itineraryItemToRow(item, members = [], lang = 'th') {
   };
 }
 
+/** Payer cell: one name for a single payer, “name=amount, name=amount” when several people paid. */
+function payerCellText(expense, memberName) {
+  const payments = expensePayments(expense);
+  if (payments.length <= 1) return payments.map(p => memberName(p.memberId)).join(', ');
+  const decimals = getCurrencyDecimals(expense.currency || 'THB');
+  return payments.map(p => `${memberName(p.memberId)}=${fromMinor(p.amountMinor, decimals)}`).join(', ');
+}
+
 export function expenseToRow(expense, members = [], items = [], lang = 'th') {
   const memberName = (id) => members.find(m => m.id === id)?.displayName || id || '';
   const participantIds = (expense.allocations || []).filter(a => a.amountMinor > 0).map(a => a.memberId);
@@ -289,7 +297,7 @@ export function expenseToRow(expense, members = [], items = [], lang = 'th') {
     tax: fromMinor(expense.taxMinor || 0, getCurrencyDecimals(expense.currency || 'THB')),
     netTotal: fromMinor(expense.netTotalMinor || 0, getCurrencyDecimals(expense.currency || 'THB')),
     rate: expense.thbRate ?? 1,
-    payer: sanitizeFormulaCell(expensePayments(expense).map(p => memberName(p.memberId)).join(', ')),
+    payer: sanitizeFormulaCell(payerCellText(expense, memberName)),
     sharedWith: sanitizeFormulaCell(participantIds.map(memberName).filter(Boolean).join(', ')),
     amounts: sanitizeFormulaCell((expense.allocations || []).filter(a => a.amountMinor > 0)
       .map(a => `${memberName(a.memberId)}=${fromMinor(a.amountMinor, getCurrencyDecimals(expense.currency || 'THB'))}`).join(', ')),
@@ -597,9 +605,18 @@ export function importExpenseRows(rows, { trip, members = [], items = [], lang =
     if (!participantIds.length && parsedAmounts.length) participantIds = parsedAmounts.map(a => a.memberId);
     if (!participantIds.length) participantIds = members.map(m => m.id);
 
-    let payerId = row.payer ? resolveMemberId(row.payer, lookup, members) : null;
+    const payerCell = parsePayerCell(row.payer, lookup, members, decimals);
+    let payerId = payerCell.memberIds[0] || null;
     if (!payerId) payerId = participantIds[0] || members[0]?.id || null;
     if (!payerId) errs.push(lang === 'th' ? 'ต้องระบุผู้จ่าย (ยังไม่มีสมาชิกในทริป)' : 'Payer required (no members yet)');
+    if (payerCell.amounts) {
+      const paid = payerCell.amounts.reduce((sum, p) => sum + p.amountMinor, 0);
+      if (paid !== netMinor) {
+        errs.push(lang === 'th'
+          ? 'ยอดของผู้จ่ายแต่ละคนต้องรวมกันเท่ากับยอดสุทธิ'
+          : 'Each payer’s amount must add up to the net total');
+      }
+    }
 
     let allocations;
     if (parsedAmounts.length) {
@@ -636,6 +653,8 @@ export function importExpenseRows(rows, { trip, members = [], items = [], lang =
       thbRate: rate,
       thbMinor: toThbMinor(netMinor, currency, rate),
       payerId,
+      // several payers → every payer and the amount they put in (the bill still totals netTotal)
+      ...(payerCell.amounts ? { payments: payerCell.amounts } : {}),
       allocations,
       description: String(row.description ?? '').trim(),
       paymentMethod: (String(row.paymentMethod || 'cash').trim().toLowerCase().includes('card') ? 'card' : 'cash'),
@@ -646,6 +665,26 @@ export function importExpenseRows(rows, { trip, members = [], items = [], lang =
   });
 
   return { expenses, errors };
+}
+
+/**
+ * Parses the payer cell. `amounts` is set only when there are several payers and
+ * every one of them has an amount; otherwise the first payer pays the whole bill.
+ */
+function parsePayerCell(value, lookup, members, decimals) {
+  const parts = String(value ?? '').split(/[,;|\n]+/).map(s => s.trim()).filter(Boolean);
+  const memberIds = [];
+  const pairs = [];
+  let allPriced = parts.length > 0;
+  for (const part of parts) {
+    const m = part.match(/^(.*?)\s*=\s*(-?[\d.,]+)$/);
+    const id = resolveMemberId(m ? m[1].trim() : part, lookup, members);
+    if (!id) continue;
+    if (!memberIds.includes(id)) memberIds.push(id);
+    if (m) pairs.push({ memberId: id, amountMinor: toMinor(parseNumberCell(m[2], 0), decimals) });
+    else allPriced = false;
+  }
+  return { memberIds, amounts: allPriced && pairs.length > 1 ? pairs : null };
 }
 
 function parseAmountPairs(value, lookup, members, decimals) {

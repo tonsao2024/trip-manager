@@ -104,12 +104,16 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
     const total = Number(exp.netTotalMinor) || 0;
     const payerId = exp.payerId || exp.paidBy;
     const method = ['cash', 'card', 'transfer'].includes(exp.paymentMethod) ? exp.paymentMethod : 'other';
+    // Every payer with the amount they put in: a receipt must show the whole bill,
+    // not just the viewer's own part of it.
+    const payments = expensePayments(exp);
+    const payers = payments.map(p => ({ memberId: p.memberId, amountMinor: p.amountMinor }));
 
-    for (const payment of expensePayments(exp)) {
-      const total = payment.amountMinor;
+    for (const payment of payments) {
+      const paidMinor = payment.amountMinor;
       const payerRow = ensure(payment.memberId);
-      payerRow.paidMinor += total;
-      payerRow.paidByMethod[method] += total;
+      payerRow.paidMinor += paidMinor;
+      payerRow.paidByMethod[method] += paidMinor;
       payerRow.paidCount += 1;
       payerRow.items.push({
         expenseId: exp.id,
@@ -120,7 +124,10 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
         cardName: exp.cardName || '',
         hasReceipt: Boolean(exp.receiptImage || exp.receiptUrl),
         estimated: Boolean(exp.isEstimated),
-        amountMinor: total,
+        amountMinor: paidMinor,
+        totalMinor: total,
+        payers,
+        payerCount: payers.length,
         currency: exp.currency || null
       });
     }
@@ -131,14 +138,17 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
       const row = ensure(alloc.memberId);
       row.owedMinor += share;
       row.shareCount += 1;
-      if (expensePayments(exp).length > 1 || alloc.memberId !== payerId || share !== total) {
+      if (payments.length > 1 || alloc.memberId !== payerId || share !== total) {
         row.items.push({
           expenseId: exp.id,
           title: exp.title || '',
           date: exp.date || '',
           role: 'share',
           paidBy: payerId,
-          payerIds: expensePayments(exp).map(p => p.memberId),
+          payerIds: payers.map(p => p.memberId),
+          payers,
+          payerCount: payers.length,
+          totalMinor: total,
           method,
           cardName: exp.cardName || '',
           hasReceipt: Boolean(exp.receiptImage || exp.receiptUrl),
@@ -212,7 +222,7 @@ export function pendingPayerExpenses(expenses = []) {
  *
  * @param {{from:string,to:string,amountMinor:number}} tx
  * @param {Array} expenses
- * @returns {Array<{expenseId:string,title:string,date:string,amountMinor:number,currency:string|null,method:string}>}
+ * @returns {Array<{expenseId:string,title:string,date:string,amountMinor:number,totalMinor:number,payers:Array<{memberId:string,amountMinor:number}>,currency:string|null,method:string}>}
  */
 export function transactionSources(tx, expenses = []) {
   if (!tx) return [];
@@ -228,6 +238,9 @@ export function transactionSources(tx, expenses = []) {
       title: e.title || '',
       date: e.date || '',
       amountMinor: share.amountMinor || 0,
+      totalMinor: Number(e.netTotalMinor) || 0,
+      // All payers and what each one put in — a shared bill names everyone who paid.
+      payers: expensePayments(e).map(p => ({ memberId: p.memberId, amountMinor: p.amountMinor })),
       currency: e.currency || null,
       method: e.paymentMethod || 'cash',
       estimated: Boolean(e.isEstimated)

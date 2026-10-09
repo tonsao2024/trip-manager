@@ -116,3 +116,33 @@ export function testExcel() {
 
   console.log('All Excel helper tests passed');
 }
+
+// v25: a bill paid by several people keeps every payer and amount through Excel.
+export function testMultiPayerExpenseRoundTrip() {
+  const members = [{ id: 'u1', displayName: 'สมชาย' }, { id: 'u2', displayName: 'นุ่น' }, { id: 'u3', displayName: 'คุณแม่' }];
+  const expense = {
+    id: 'e1', title: 'ข้าวกลางวัน', date: '2027-01-02', currency: 'THB', netTotalMinor: 1000,
+    subtotalMinor: 1000, payerId: 'u1',
+    payments: [{ memberId: 'u1', amountMinor: 600 }, { memberId: 'u2', amountMinor: 400 }],
+    allocations: [{ memberId: 'u1', amountMinor: 300 }, { memberId: 'u2', amountMinor: 300 }, { memberId: 'u3', amountMinor: 400 }]
+  };
+  const row = expenseToRow(expense, members, [], 'th');
+  if (row.payer !== 'สมชาย=6, นุ่น=4') throw new Error(`payer cell: ${row.payer}`);
+  const { expenses, errors } = importExpenseRows([row], { trip: { baseCurrency: 'THB' }, members, lang: 'th' });
+  if (errors.length) throw new Error(`import errors: ${JSON.stringify(errors)}`);
+  const back = expenses[0];
+  if (JSON.stringify(back.payments) !== JSON.stringify([{ memberId: 'u1', amountMinor: 600 }, { memberId: 'u2', amountMinor: 400 }])) {
+    throw new Error(`payments lost: ${JSON.stringify(back.payments)}`);
+  }
+  if (back.payerId !== 'u1' || back.netTotalMinor !== 1000) throw new Error('payer / total changed');
+
+  // one payer stays a plain name (the old format keeps working)
+  const solo = expenseToRow({ ...expense, payments: [{ memberId: 'u2', amountMinor: 1000 }] }, members, [], 'th');
+  if (solo.payer !== 'นุ่น') throw new Error(`single payer cell: ${solo.payer}`);
+  const soloBack = importExpenseRows([solo], { trip: { baseCurrency: 'THB' }, members, lang: 'th' }).expenses[0];
+  if (soloBack.payerId !== 'u2' || soloBack.payments) throw new Error('single payer should not add payments');
+
+  // amounts that do not add up are reported, not silently changed
+  const bad = importExpenseRows([{ ...row, payer: 'สมชาย=6, นุ่น=3' }], { trip: { baseCurrency: 'THB' }, members, lang: 'th' });
+  if (!bad.errors.length) throw new Error('mismatched payer amounts should be an error');
+}

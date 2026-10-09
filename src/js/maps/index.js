@@ -1,3 +1,4 @@
+import { ideaCategoryId, placeCategoryColor } from '../utils/categories.js';
 // Maps v4 — Leaflet + free tile providers
 // Key fixes in v4:
 //  • "Map container is already initialized" can never happen again — every map is
@@ -616,7 +617,8 @@ export function addIdeaMarkers(map, L, ideas, opts = {}) {
     const { lat, lng } = pos;
     latlngs.push([lat, lng]);
     const planned = idea.status === 'planned';
-    const color = planned ? '#00a86b' : (idx === 0 ? accent : primary);
+    // Pins are colored by category (the legend is the group headers on the ideas board).
+    const color = placeCategoryColor(ideaCategoryId(idea.category));
     const label = opts.numbered === false ? '💡' : String(idx + 1);
     const icon = L.divIcon({
       className: 'custom-marker',

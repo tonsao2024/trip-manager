@@ -136,6 +136,24 @@ export function splitCustom({ subtotalMinor, netTotalMinor, discountMinor = 0, s
 }
 
 /**
+ * Re-fit amounts so they add up to totalMinor exactly, keeping their proportions
+ * (largest-remainder rounding). With no amounts to scale from, the total is split equally.
+ */
+export function scaleToTotal(totalMinor, entries = []) {
+  if (!entries.length) return [];
+  const weights = entries.map(e => Math.max(0, Number(e.amountMinor) || 0));
+  const sum = weights.reduce((n, w) => n + w, 0);
+  if (!sum) return splitEqual(totalMinor, entries.map(e => e.memberId));
+  const raw = weights.map(w => totalMinor * w / sum);
+  const values = raw.map(Math.floor);
+  const order = raw.map((n, i) => ({ i, fraction: n - values[i] })).sort((a, b) => b.fraction - a.fraction || a.i - b.i);
+  for (let n = 0, left = totalMinor - values.reduce((a, b) => a + b, 0); n < left; n++) {
+    values[order[n % order.length].i] += 1;
+  }
+  return entries.map((e, i) => ({ memberId: e.memberId, amountMinor: values[i] }));
+}
+
+/**
  * Who actually joined in? Distinct member ids that appear in the allocations of
  * the given expenses — the honest denominator for “เฉลี่ยต่อคน” on the expenses
  * page (a trip of 6 where only 4 people split anything is a 4-person average).
