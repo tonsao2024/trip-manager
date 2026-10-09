@@ -180,7 +180,7 @@ async function syncItineraryExpenseInner(tripId, item, options = {}) {
     // A booking paid for this place: that expense is real spending now. Keep it and only
     // detach it from the plan, because the booking still points at it.
     if (existing?.reservationId) {
-      try { await updateDoc(doc(db, `trips/${tripId}/expenses`, existing.id), { itineraryItemId: null, updatedAt: serverTimestamp() }); }
+      try { await updateDoc(doc(db, `trips/${tripId}/expenses`, existing.id), { itineraryItemId: null, source: null, updatedAt: serverTimestamp() }); }
       catch (e) { console.warn('[Itinerary] could not detach booking expense', e?.message); }
       return null;
     }
