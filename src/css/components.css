@@ -1028,6 +1028,8 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
   cursor: pointer; transition: transform 0.16s ease, background 0.2s ease, border-color 0.2s ease;
 }
 .expense-row:hover { transform: translateX(2px); border-color: color-mix(in srgb, var(--primary-raw) 36%, var(--border)); background: var(--bg-secondary); }
+/* The amount may wrap inside under half the row; a full-width amount squeezed the title and date to 3px */
+.expense-row > .expense-row-amount { flex: 0 1 auto; min-width: 0; max-width: 46%; }
 
 /* ---------- Map overlays ---------- */
 .map-status {

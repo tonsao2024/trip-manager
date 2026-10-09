@@ -13,10 +13,7 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > booking and the expense both ways (`reservationId` / `expenseId`). **Maps:** “ขยายแผนที่” shows the itinerary
 > or ideas map full screen and refits the pins. The dashboard cards are chosen per trip (`dashboardHidden`;
 > registry `src/js/dashboard/widgets.js`). The ideas board groups by category with category pin colors and a
-> compact toggle. The countdown frame is balanced. Audit fixes: dashboard member popups open again (click and
-> keyboard); place ids no longer show as “อื่นๆ”; the server settlement skips pending-payer estimates; the
-> settlement page no longer writes an unread snapshot. **Not yet covered:** Excel keeps one payment method per
-> bill (the first payer's); team cards and live Leaflet pins were not browser-checked in this run.
+> compact toggle. The countdown frame is balanced. **Booking and plan share one expense:** a booking planned from a place adopts that place's estimate expense (`expenseId` on both sides), so there is one record and no second expense, and a cost change flows to the plan estimate and to that expense. Deleting or voiding an expense clears the expense link on its booking and its place. Deleting a place clears the booking's plan link (`linkedItemId`); if a booking paid for that place, its expense stays in Expenses as the booking's cost instead of being deleted with the estimate. Deleting a booking keeps its expense and removes the booking link. **Audit fixes:** dashboard member popups open again (click and keyboard); place ids no longer show as “อื่นๆ”; the server settlement skips pending-payer estimates; the settlement page no longer writes an unread snapshot; receipts net follows recorded transfers; the recent-expense row on a 402 px phone keeps its title (the amount column takes at most 46% of the row). **Rules:** `transfers` create requires a positive integer `amountMinor` and `fromId` ≠ `toId`; members can read and delete; nobody updates. **Removed:** the unused `recalculateSettlement` callable (`functions/src/index.js`). **Deploy:** publish `firestore.rules`, deploy the functions, then delete the old callable with `firebase functions:delete recalculateSettlement --region asia-southeast1`; the deployed copy stays until that runs. **Checked in phone-size browser runs (393 px):** transfer record and undo; booking planned and re-priced; plan place deleted; expense deleted; booking deleted; a two-payer expense saved with cash and card and read back. **Not yet covered:** Excel keeps one payment method per bill (the first payer's); team cards, live Leaflet pins (the CDN is blocked in this sandbox), receipt PNG/PDF export, and desktop or dark-mode passes of the dashboard and ideas board were not browser-checked.
 >
 > **v24 — 7 Oct 2026, จอมือถือแสดงผลครบทุกช่อง.** Owner screenshots showed the **add-place
 > sheet cut off at the right edge** on an iPhone (the native time control is ~207 px wide and can
@@ -146,7 +143,7 @@ See `firestore.indexes.json` — composite for itinerary by date+order, expenses
 - `verifySensitiveActionPin`: Rate limited, verify PIN, create 10-min step-up session.
 - `recalculateItinerarySchedule`: Server-side recalc, batch update, overlap detection.
 - `validateExpenseAllocations`: Ensure sum == total, no negative.
-- `recalculateSettlement`: Minimize transactions (creditor/debtor matching).
+- `recalculateSettlement` was removed in v25: settlement is computed in the browser (`src/js/utils/settlement.js`).
 - `writeAuditLog`: Log sensitive actions.
 
 - `healthCheck`: Diagnostics endpoint for Settings > **ตรวจสอบระบบ** (returns region, project, Firestore write test).

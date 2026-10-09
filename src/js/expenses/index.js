@@ -250,7 +250,26 @@ export function invalidateExpensesCache(tripId) {
 }
 
 /** Soft delete — keeps history/audit intact (works with the current rules). */
+/**
+ * A deleted or voided expense no longer belongs to its booking or its plan place: both stop
+ * pointing at it (best effort; the booking and the place themselves are not touched).
+ */
+async function releaseBookingLink(tripId, expenseId) {
+  // Whatever points at this expense (a booking or a plan place) must stop pointing at it.
+  // Matched by the other side's field, so a one-sided link is cleared too.
+  try {
+    const bookings = await getDocs(query(collection(db, `trips/${tripId}/reservations`), where('expenseId', '==', expenseId)));
+    await Promise.all(bookings.docs.map(d => updateDoc(doc(db, `trips/${tripId}/reservations`, d.id), { expenseId: null })));
+  } catch (err) { console.warn('[Expenses] booking unlink failed', err?.message); }
+  try {
+    const items = await getDocs(query(collection(db, `trips/${tripId}/itineraryItems`), where('expenseId', '==', expenseId)));
+    await Promise.all(items.docs.map(d => updateDoc(doc(db, `trips/${tripId}/itineraryItems`, d.id), { expenseId: null })));
+    if (items.docs.length) cacheInvalidate(`itin:${tripId}`);   // the itinerary is cached per trip
+  } catch (err) { console.warn('[Expenses] plan unlink failed', err?.message); }
+}
+
 export async function voidExpense(tripId, expenseId, userId) {
+  await releaseBookingLink(tripId, expenseId);
   await updateDoc(doc(db, `trips/${tripId}/expenses`, expenseId), {
     status: 'voided',
     voidedAt: serverTimestamp(),
@@ -266,6 +285,7 @@ export async function voidExpense(tripId, expenseId, userId) {
  * @returns {'deleted'|'voided'}
  */
 export async function deleteExpense(tripId, expenseId, userId) {
+  await releaseBookingLink(tripId, expenseId);
   const ref = doc(db, `trips/${tripId}/expenses`, expenseId);
   // Best-effort cleanup of line items
   try {

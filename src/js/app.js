@@ -3456,7 +3456,7 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
           <span class="block font-semibold text-sm truncate">${escapeHtml(e.title)}</span>
           <span class="block text-[11px] text-[var(--text-secondary)]">${escapeHtml(categoryLabel(e.category, lang))}${payer ? ' • ' + escapeHtml(payer) : ''} • ${escapeHtml(e.date || '')}</span>
         </span>
-        <span class="text-right flex-shrink-0">
+        <span class="text-right expense-row-amount">
           ${moneyHtml(e.netTotalMinor || 0, e.currency || currency, e.thbRate || resolveTripThbRate(trip, originalExpenses, e.currency || currency))}
           ${e.isEstimated ? `<span class="badge badge-skipped text-[9px]">${th('ประมาณการ','est.')}</span>` : ''}
         </span>
@@ -5138,7 +5138,7 @@ async function renderItinerary(params) {
     const ok = await confirmAction({
       title: th(`ลบ "${item.title}" ?`, `Delete "${item.title}"?`),
       message: th('ลบสถานที่นี้จากแผนการเดินทาง', 'Remove this place from the itinerary'),
-      detail: linked ? th(`รายการประมาณการ "${escapeHtml(linked.title)}" ในหน้าค่าใช้จ่ายจะถูกลบไปด้วย`, `The linked estimated expense will be removed too.`) : '',
+      detail: linked ? (linked.reservationId ? th(`ค่าใช้จ่าย "${escapeHtml(linked.title)}" ที่ผูกกับการจองจะยังอยู่ในหน้าค่าใช้จ่าย`, `The expense linked to a booking stays in Expenses.`) : th(`รายการประมาณการ "${escapeHtml(linked.title)}" ในหน้าค่าใช้จ่ายจะถูกลบไปด้วย`, `The linked estimated expense will be removed too.`)) : '',
       confirmText: t('delete'), danger: true, icon: 'trash-2'
     });
     if (!ok) return;
@@ -7583,13 +7583,19 @@ async function openItemExpenseSheet({ tripId, item, trip = null, members = [], i
 /** Set while a booking's expense sheet is open, so the saved expense can be linked back to it. */
 let bookingLinkTarget = null;
 
-/** A saved expense that came from a booking: the booking remembers the expense (and the card redraws). */
+/**
+ * A saved expense that belongs to a booking. The booking and its expense are one
+ * record seen from two screens, so the expense's amount and currency are copied
+ * back onto the booking (the other direction is syncBookingCost).
+ */
 async function linkBookingToExpense(tripId, payload, expenseId) {
   if (!payload?.reservationId || !expenseId) return;
   try {
-    await updateReservation(tripId, payload.reservationId, { expenseId }, currentUser?.uid);
+    const costMinor = Math.max(0, Math.round(Number(payload.netTotalMinor) || 0));
+    const currency = payload.currency || 'THB';
+    await updateReservation(tripId, payload.reservationId, { expenseId, costMinor, currency }, currentUser?.uid);
     if (bookingLinkTarget?.reservationId === payload.reservationId) {
-      bookingLinkTarget.booking.expenseId = expenseId;
+      Object.assign(bookingLinkTarget.booking, { expenseId, costMinor, currency });
       bookingLinkTarget.onLinked?.();
     }
   } catch (err) { console.warn('[Booking] expense link failed', err?.message); }
@@ -7597,53 +7603,98 @@ async function linkBookingToExpense(tripId, payload, expenseId) {
 
 /**
  * The booking's price is the source of truth: when it changes, the plan's estimate
- * and the expense created from it follow. An expense in another currency keeps its
- * own rate, so it is left alone.
+ * and the expense it is linked to follow. Returns { skippedCurrency } when the expense
+ * is in another currency (its own rate is left alone) or { error } if a write failed.
  */
 async function syncBookingCost(tripId, booking, prev) {
   const cur = booking.currency || 'THB';
-  const netMinor = Math.max(0, Math.round(Number(booking.costMinor) || 0));
-  const changed = Number(prev?.costMinor || 0) !== netMinor || (prev?.currency || 'THB') !== cur;
-  if (!changed) return;
-  if (booking.linkedItemId) {
-    try {
-      await updateItineraryItem(tripId, booking.linkedItemId, {
-        estimateAmount: fromMinor(netMinor, getCurrencyDecimals(cur)),
-        estimateCurrency: cur,
-        estimateAutoAdd: true
-      }, currentUser?.uid);
-    } catch (err) { console.warn('[Booking] plan estimate sync failed', err?.message); }
-  }
-  if (booking.expenseId) {
-    try {
-      const expense = await getExpense(tripId, booking.expenseId);
-      if (!expense) { await updateReservation(tripId, booking.id, { expenseId: null }, currentUser?.uid); return; }
-      if ((expense.currency || 'THB') !== cur) return;
-      await updateExpense(tripId, expense.id, expenseUpdateForCost(expense, netMinor), currentUser?.uid);
-    } catch (err) { console.warn('[Booking] expense sync failed', err?.message); }
+  const costMinor = Math.max(0, Math.round(Number(booking.costMinor) || 0));
+  if (Number(prev?.costMinor || 0) === costMinor && (prev?.currency || 'THB') === cur) return {};
+  const uid = currentUser?.uid;
+  try {
+    let expenseId = booking.expenseId || null;
+    if (booking.linkedItemId) {
+      const item = await getItineraryItem(tripId, booking.linkedItemId).catch(() => null);
+      if (item) {
+        await updateItineraryItem(tripId, item.id, {
+          estimateAmount: fromMinor(costMinor, getCurrencyDecimals(cur)), estimateCurrency: cur, estimateAutoAdd: true
+        }, uid);
+        expenseId = expenseId || item.expenseId || null;
+      }
+    }
+    if (!expenseId) return {};
+    const expense = await getExpense(tripId, expenseId).catch(() => null);
+    if (!expense || expense.status === 'voided') {
+      booking.expenseId = null;
+      await updateReservation(tripId, booking.id, { expenseId: null }, uid);
+      return {};
+    }
+    if ((expense.currency || 'THB') !== cur) return { skippedCurrency: true };
+    await updateExpense(tripId, expense.id, { reservationId: booking.id, ...expenseUpdateForCost(expense, costMinor) }, uid);
+    if (booking.expenseId !== expense.id) {
+      booking.expenseId = expense.id;
+      await updateReservation(tripId, booking.id, { expenseId: expense.id }, uid);
+    }
+    return {};
+  } catch (err) {
+    console.warn('[Booking] cost sync failed', err?.message);
+    return { error: err?.message || String(err) };
   }
 }
 
-/** Opens the expense sheet pre-filled from a booking; saving it links the two. */
-async function bookingToExpense({ tripId, trip, members = [], lang = 'th', booking, onLinked = null }) {
+/** The plan's estimate expense becomes this booking's expense: both point at it, and the amount follows the booking. */
+async function adoptExpenseForBooking(tripId, booking, expense) {
+  const uid = currentUser?.uid;
   const cur = booking.currency || 'THB';
+  const costMinor = Math.max(0, Math.round(Number(booking.costMinor) || 0));
+  const sameCurrency = (expense.currency || 'THB') === cur;
+  await updateExpense(tripId, expense.id, { reservationId: booking.id, ...(sameCurrency ? expenseUpdateForCost(expense, costMinor) : {}) }, uid);
+  await updateReservation(tripId, booking.id, { expenseId: expense.id }, uid);
+  booking.expenseId = expense.id;
+  if (booking.linkedItemId) {
+    await updateItineraryItem(tripId, booking.linkedItemId, {
+      expenseId: expense.id, estimateAmount: fromMinor(costMinor, getCurrencyDecimals(cur)), estimateCurrency: cur, estimateAutoAdd: true
+    }, uid);
+  }
+  return { sameCurrency };
+}
+
+/**
+ * "เพิ่มเป็นค่าใช้จ่าย": the booking's cost as an expense. A booking already in the plan
+ * uses the plan's estimate expense (one record): an existing one is adopted, otherwise the
+ * estimate is created on that place, so saving it links the plan, the booking and the expense.
+ */
+async function bookingToExpense({ tripId, trip, members = [], lang = 'th', booking, onLinked = null }) {
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const cur = booking.currency || 'THB';
+  const costMinor = Math.max(0, Math.round(Number(booking.costMinor) || 0));
   const category = booking.type === 'hotel'
     ? 'stay'
     : (['flight', 'train', 'bus', 'ferry', 'car'].includes(booking.type) ? 'transport' : 'activity');
+  const defaults = {
+    title: booking.title || '', date: booking.date || dayjs().format('YYYY-MM-DD'), category,
+    currency: cur, subtotalMinor: costMinor, isEstimated: false, reservationId: booking.id, paymentMethod: 'cash'
+  };
   bookingLinkTarget = { reservationId: booking.id, booking, onLinked };
-  return openExpenseSheet({
-    tripId, trip, members, items: [], lang, expense: null,
-    defaults: {
-      title: booking.title || '',
-      date: booking.date || dayjs().format('YYYY-MM-DD'),
-      category,
-      currency: cur,
-      subtotalMinor: Math.max(0, Math.round(Number(booking.costMinor) || 0)),
-      isEstimated: false,
-      reservationId: booking.id,
-      paymentMethod: 'cash'
+  if (booking.linkedItemId) {
+    const item = await getItineraryItem(tripId, booking.linkedItemId).catch(() => null);
+    const existing = (item?.expenseId ? await getExpense(tripId, item.expenseId).catch(() => null) : null)
+      || await findLinkedExpense(tripId, booking.linkedItemId).catch(() => null);
+    if (existing && existing.status !== 'voided') {
+      const { sameCurrency } = await adoptExpenseForBooking(tripId, booking, existing);
+      onLinked?.();
+      toast.success(th('เชื่อมกับค่าใช้จ่ายของแผนแล้ว', "Linked to the plan's expense"));
+      if (!sameCurrency) toast.warning(th('ค่าใช้จ่ายเดิมเป็นสกุลอื่น จึงไม่ได้ปรับยอด', 'That expense uses another currency, so its amount was not changed'));
+      return null;
     }
-  });
+    if (item) {
+      return openExpenseSheet({
+        tripId, trip, members, items: [], lang, expense: null, item, lockItinerary: true,
+        defaults: { ...defaults, isEstimated: true, source: 'itinerary-estimate', itineraryItemId: item.id }
+      });
+    }
+  }
+  return openExpenseSheet({ tripId, trip, members, items: [], lang, expense: null, defaults });
 }
 
 /**
@@ -8974,7 +9025,7 @@ async function renderSettlement(params) {
       const membersMap = Object.fromEntries(members.map(m => [m.id, m]));
       const normalized = expensesInThb(expenses, trip);
       const { balances, transactions } = calculateSettlement(normalized, members, transfers || []);
-      const statements = buildSettlementStatements(normalized, members);
+      const statements = buildSettlementStatements(normalized, members, { transfers: transfers || [] });
       thbRate = resolveTripThbRate(trip, expenses, currency);
       state = { expenses: normalized, members, membersMap, statements, balances, transactions, transfers: transfers || [] };
       renderView();
@@ -13022,6 +13073,13 @@ async function renderBookings(params) {
           const { id } = await saveItineraryItem(tripId, payload, currentUser.uid, null, { trip, members });
           await updateReservation(tripId, r.id, { linkedItemId: id }, currentUser?.uid);
           r.linkedItemId = id;
+          if (r.expenseId) {
+            // One record: the booking's expense becomes the plan's estimate for this place.
+            await updateExpense(tripId, r.expenseId, { itineraryItemId: id }, currentUser.uid).catch(e => console.warn('[Booking] plan link failed', e?.message));
+            await updateItineraryItem(tripId, id, { expenseId: r.expenseId }, currentUser.uid).catch(() => {});
+          }
+          const planSync = await syncBookingCost(tripId, r, { costMinor: null, currency: null });
+          if (planSync.error) toast.warning(th('ผูกกับแผนแล้ว แต่ปรับยอดค่าใช้จ่ายไม่สำเร็จ', 'Planned, but the expense amount could not be updated'));
           tLoad.close();
           toast.success(th('เพิ่มเข้าแผนแล้ว', 'Added to the plan'));
           paintList(); paintNext();
@@ -13127,7 +13185,9 @@ async function renderBookings(params) {
         if (isEdit) {
           await updateReservation(tripId, existing.id, payload, currentUser?.uid);
           Object.assign(existing, payload);
-          await syncBookingCost(tripId, existing, prevCost);
+          const sync = await syncBookingCost(tripId, existing, prevCost);
+          if (sync.skippedCurrency) toast.warning(th('ค่าใช้จ่ายที่ผูกไว้เป็นสกุลอื่น จึงไม่ได้ปรับยอดให้อัตโนมัติ', 'The linked expense uses another currency, so its amount was not changed'));
+          if (sync.error) toast.warning(th('บันทึกการจองแล้ว แต่ปรับแผนหรือค่าใช้จ่ายที่ผูกไว้ไม่สำเร็จ', 'Saved, but the linked plan or expense could not be updated'));
         } else {
           const id = await createReservation(tripId, payload, currentUser?.uid);
           reservations.push({ id, ...payload });

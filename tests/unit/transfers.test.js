@@ -29,3 +29,18 @@ export function testApplyTransfersIgnoresBadRows() {
   eq(applyTransfers(base, [{ fromId: 'b', toId: 'a', amountMinor: 0 }, { fromId: 'a', toId: 'a', amountMinor: 50 }, { fromId: '', toId: 'a', amountMinor: 5 }]), base, 'ignored');
   eq(applyTransfers(base, [{ fromId: 'b', toId: 'a', amountMinor: 100 }]), [{ memberId: 'a', net: 0 }, { memberId: 'b', net: 0 }], 'settles both');
 }
+
+import { buildSettlementStatements } from '../../src/js/utils/settlement.js';
+
+export function testReceiptNetFollowsTransfers() {
+  const members = [{ id: 'u1', displayName: 'A' }, { id: 'u2', displayName: 'B' }, { id: 'u3', displayName: 'C' }];
+  const expenses = [{ id: 'e1', payerId: 'u1', netTotalMinor: 900, currency: 'THB', allocations: [
+    { memberId: 'u1', amountMinor: 300 }, { memberId: 'u2', amountMinor: 300 }, { memberId: 'u3', amountMinor: 300 }
+  ] }];
+  const before = buildSettlementStatements(expenses, members);
+  eq(before.find(r => r.memberId === 'u2').netMinor, -300, 'u2 owes before');
+  const after = buildSettlementStatements(expenses, members, { transfers: [{ fromId: 'u2', toId: 'u1', amountMinor: 300 }] });
+  eq(after.find(r => r.memberId === 'u2').netMinor, 0, 'u2 settled on the receipt');
+  eq(after.find(r => r.memberId === 'u1').netMinor, 300, 'u1 still owed the rest');
+  eq(after.find(r => r.memberId === 'u3').netMinor, -300, 'u3 untouched');
+}

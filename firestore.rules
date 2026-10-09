@@ -253,7 +253,10 @@ service cloud.firestore {
       // Money sent between members to settle up (“จ่ายแล้ว”). A record is written
       // once and can be undone, never edited, so the settlement history stays honest.
       match /transfers/{transferId} {
-        allow read, create, delete: if isTripMember(tripId);
+        allow read, delete: if isTripMember(tripId);
+        allow create: if isTripMember(tripId)
+          && request.resource.data.amountMinor is int && request.resource.data.amountMinor > 0
+          && request.resource.data.fromId != request.resource.data.toId;
         allow update: if false;
       }
 

@@ -177,6 +177,13 @@ async function syncItineraryExpenseInner(tripId, item, options = {}) {
 
   const hasEstimate = !remove && Number(item.estimateAmount) > 0;
   if (!hasEstimate) {
+    // A booking paid for this place: that expense is real spending now. Keep it and only
+    // detach it from the plan, because the booking still points at it.
+    if (existing?.reservationId) {
+      try { await updateDoc(doc(db, `trips/${tripId}/expenses`, existing.id), { itineraryItemId: null, updatedAt: serverTimestamp() }); }
+      catch (e) { console.warn('[Itinerary] could not detach booking expense', e?.message); }
+      return null;
+    }
     if (existing) {
       try { await deleteDoc(doc(db, `trips/${tripId}/expenses`, existing.id)); }
       catch (e) {
@@ -347,6 +354,11 @@ async function deleteItineraryItemInner(tripId, itemId) {
     if (snap.exists()) Object.assign(item, snap.data());
   } catch {}
   await deleteDoc(doc(db, `trips/${tripId}/itineraryItems`, itemId));
+  // A booking planned from this place must not keep pointing at a place that is gone.
+  try {
+    const linked = await getDocs(query(collection(db, `trips/${tripId}/reservations`), where('linkedItemId', '==', itemId)));
+    await Promise.all(linked.docs.map(d => updateDoc(d.ref, { linkedItemId: null })));
+  } catch (err) { console.warn('[Itinerary] booking unlink failed', err?.message); }
   // Remove the auto-created estimated expense as well
   try { await syncItineraryExpense(tripId, item, { remove: true }); } catch (e) { console.warn('linked estimate cleanup failed', e?.message); }
 }

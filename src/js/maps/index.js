@@ -414,6 +414,7 @@ const MAP_COLLAPSE_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill=
  */
 export function attachMapExpand(wrapEl, containerId, { fitButtonId = null, lang = 'th' } = {}) {
   if (!wrapEl || wrapEl.querySelector(':scope > .map-expand-btn')) return;
+  document.querySelectorAll('.map-expanded > .map-expand-btn').forEach(btn => btn.click());
   const label = (open) => (lang === 'th' ? (open ? 'ย่อแผนที่' : 'ขยายแผนที่') : (open ? 'Shrink map' : 'Expand map'));
   const btn = document.createElement('button');
   btn.type = 'button';

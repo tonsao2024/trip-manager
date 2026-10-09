@@ -91,7 +91,7 @@ export function calculateSettlement(expenses, members, transfers = []) {
  *   "actual money only" receipt).
  * @returns {Array<{memberId, displayName, paidMinor, paidByMethod, owedMinor, netMinor, items, transactions}>}
  */
-export function buildSettlementStatements(expenses, members, { includeEstimated = true } = {}) {
+export function buildSettlementStatements(expenses, members, { includeEstimated = true, transfers = [] } = {}) {
   const rows = new Map();
   const ensure = (memberId) => {
     const id = memberId || 'unknown';
@@ -180,9 +180,16 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
     }
   }
 
+  // Money already sent (จ่ายแล้ว): the sender's balance moves toward zero, the receiver's moves back toward zero.
+  for (const t of transfers || []) {
+    const amount = Math.round(Number(t?.amountMinor) || 0);
+    if (!(amount > 0) || t.fromId === t.toId) continue;
+    if (rows.has(t.fromId)) rows.get(t.fromId).settledMinor = (rows.get(t.fromId).settledMinor || 0) + amount;
+    if (rows.has(t.toId)) rows.get(t.toId).settledMinor = (rows.get(t.toId).settledMinor || 0) - amount;
+  }
   const statements = [...rows.values()].map(row => {
     row.items.sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.role.localeCompare(b.role));
-    row.netMinor = row.paidMinor - row.owedMinor;
+    row.netMinor = row.paidMinor - row.owedMinor + (row.settledMinor || 0);
     row.estimatedPaidMinor = row.items.filter(i => i.role === 'paid' && i.estimated).reduce((n, i) => n + i.amountMinor, 0);
     return row;
   });
