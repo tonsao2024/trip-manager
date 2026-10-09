@@ -119,6 +119,9 @@ fsdb.__seed('trips/t1/ideas/k2', { title: 'ร้านราเมนซัน�
 fsdb.__seed('trips/t1/ideas/k3', { title: 'ตลาดของฝากโตเกียวสถานี', address: 'Tokyo Station', coordinates: '35.6812,139.7671', category: 'shopping', status: 'idea', votes: {}, createdBy: 'u3', createdAt: now });
 fsdb.__seed('trips/t1/ideas/k4', { title: 'สวนสาธารณะยาโนะ', address: 'Yanaka', category: 'sightseeing', status: 'planned', votes: { u1: true }, createdBy: 'u1', createdAt: now });
 
+// A priced booking (v25): the card can be turned into an expense, and the link goes both ways.
+fsdb.__seed('trips/t1/reservations/r1', { type: 'hotel', title: 'โรงแรมฟูจิ วิว', date: start, startTime: '15:00', endTime: '', address: 'Kawaguchiko', costMinor: 45000, currency: 'JPY', notes: '', createdAt: now, createdBy: 'u1' });
+
 fsdb.__seed('trips/t1/comments/c1', {
   expenseId: 'e1', text: 'ราคานี้รวมอาหารเช้าหรือยัง?', uid: 'u2', name: 'นุ่น', createdAt: now
 });

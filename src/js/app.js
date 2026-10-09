@@ -6378,11 +6378,11 @@ function expenseFormSectionsHtml({
                   <option value="estimated" ${e.isEstimated ? 'selected' : ''}>${tx('ประมาณการ','Estimated')}</option>
                 </select>
               </div>` : `<input id="${p}ex-type" type="hidden" value="${e.isEstimated ? 'estimated' : 'actual'}">`}
+              <input id="${p}ex-reservation" type="hidden" value="${escapeHtml(e.reservationId || '')}">
               ${lockItinerary
                 ? `<div class="input-group"><label class="input-label">${icon('map-pinned', 'w-3.5 h-3.5')} ${tx('ผูกกับแผนการเดินทาง','Linked place')}</label>
                      <div class="input trail-input" style="display:flex;align-items:center;gap:6px;">${icon('map-pin', 'w-3.5 h-3.5')} <span class="truncate">${escapeHtml(planLabel || e.itineraryItemTitle || '')}</span></div>
                      <input id="${p}ex-itinerary" type="hidden" value="${escapeHtml(e.itineraryItemId || '')}">
-                     <input id="${p}ex-reservation" type="hidden" value="${escapeHtml(e.reservationId || '')}">
                    </div>`
                 : ''}
             </div>
