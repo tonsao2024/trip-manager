@@ -1,5 +1,5 @@
 import { splitCustom } from '../../src/js/utils/split.js';
-import { expensePayments, initialExpensePayerIds, validatePayments, validateExpensePayerState } from '../../src/js/utils/payments.js';
+import { expensePayments, initialExpensePayerIds, findMemberForAccount, validatePayments, validateExpensePayerState } from '../../src/js/utils/payments.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources } from '../../src/js/utils/settlement.js';
 import { toThbMinor, expensesInThb, formatAmount, moneyHtml, parseCurrencyInput } from '../../src/js/utils/currency.js';
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
@@ -141,4 +141,18 @@ export function testMultiPayerReceiptsShowEveryPayer() {
   eq(shareC.payers.reduce((n, p) => n + p.amountMinor, 0), 10000, 'payer amounts add up to the bill');
   const sources = transactionSources({ from: 'c', to: 'a', amountMinor: 2000 }, [dinner]);
   eq(sources.map(s => [s.expenseId, s.amountMinor, s.totalMinor, s.payers.length]), [['dinner', 2000, 10000, 2]], 'transfer sources show the bill total and every payer');
+}
+
+// v26: the signed-in account is found by id, uid or authUid — never by id alone.
+export function testFindMemberForAccountMatchesAllIds() {
+  const members = [
+    { id: 'owner', authUid: 'owner-auth' },
+    { id: 'mb-linked', authUid: 'google-123' },
+    { id: 'pin-member', uid: 'pin-member' }
+  ];
+  eq(findMemberForAccount(members, 'google-123')?.id, 'mb-linked', 'account linked by authUid');
+  eq(findMemberForAccount(members, 'pin-member')?.id, 'pin-member', 'PIN member matched by uid');
+  eq(findMemberForAccount(members, 'nobody'), null, 'unknown account has no member');
+  eq(findMemberForAccount(members, ''), null, 'empty account has no member');
+  eq(initialExpensePayerIds({}, members, 'google-123'), ['mb-linked'], 'default payer follows the linked account, not the first member');
 }

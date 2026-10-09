@@ -2,6 +2,17 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
+> **v26 — 9 Oct 2026, เคลียร์บิลเมื่อคนจ่ายหลายคน.** Non-admin payers now count everywhere they should.
+> **Excel import** (`utils/excel.js` → `parsePayerCell`): every name in the payer cell is kept. A payer with no
+> amount takes the remainder (blank payers share what is left equally), and a cell with names only splits the bill
+> equally. Before, only the first name survived, so the other payers were dropped and the first one (often the
+> admin) paid the whole bill. **Form defaults** (`findMemberForAccount` in `utils/payments.js`): the signed-in
+> member is found by `id`, `uid` or `authUid`, not `id` alone. **Settlement page:** the **สรุปการโอน** chips list
+> who each person pays and who repays them (`netChipLinesHtml`), with a note that a payer is repaid when the debtor
+> transfers and taps “จ่ายแล้ว”. **Debt map:** the payer rows under each receiver open the payer; they used to open
+> the receiver. **ภาพรวมทั้งทริป** is still a collapsible `<details>` (`#settle-overview`). Tests: `testExcelPayerCellKeepsEveryPayer`,
+> `testFindMemberForAccountMatchesAllIds`, and smoke checks for the chip lines, the note, and the debt-map payer rows.
+>
 > **v25 — 9 Oct 2026, คนจ่ายหลายคน จ่ายแล้ว แผนที่ขยาย และการเชื่อมข้อมูล.** A bill with several payers
 > (“คนจ่ายก่อน”) works like unequal split: typing the first payer's amount fills the rest, and each payer
 > keeps **their own payment method and card** (`payments[].paymentMethod` / `cardName`; older expenses inherit

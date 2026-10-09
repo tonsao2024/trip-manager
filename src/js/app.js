@@ -3,7 +3,7 @@ import { DASHBOARD_WIDGETS, DASHBOARD_WIDGET_KEYS, normalizeWidgetOrder, normali
 import { ideaCategoryId, placeCategoryLabel, placeCategoryColor, placeCategoryIcon } from './utils/categories.js';
 import { attachMapExpand } from './maps/index.js';
 import { expenseUpdateForCost } from './utils/reservations.js';
-import { expensePayments, initialExpensePayerIds, paymentMethodOf, validatePayments } from './utils/payments.js';
+import { expensePayments, initialExpensePayerIds, findMemberForAccount, paymentMethodOf, validatePayments } from './utils/payments.js';
 import { groupIdeasByCategory } from './utils/ideas.js';
 import { auth, db, isFirebaseConfigured, onAuthStateChanged, syncState } from './firebase.js';
 import { Router } from './router.js';
@@ -6670,7 +6670,7 @@ function mountExpenseForm({
       if (payerPending) {
         payerPending = false;
         if (!selectedPayers.size) {
-          const fallback = members.find(m => m.id === currentUser.uid) || members[0];
+          const fallback = findMemberForAccount(members, currentUser?.uid) || members[0];
           if (fallback) { selectedPayers.add(fallback.id); payerAmounts[fallback.id] = ''; }
         }
       } else {
@@ -6690,7 +6690,7 @@ function mountExpenseForm({
   on('ex-type', 'change', () => {
     if (!isEstimatedExpense() && payerPending) {
       payerPending = false;
-      const fallback = members.find(m => m.id === currentUser.uid) || members[0];
+      const fallback = findMemberForAccount(members, currentUser?.uid) || members[0];
       if (fallback) { selectedPayers.add(fallback.id); payerAmounts[fallback.id] = ''; }
     }
     syncPayerTiles();
@@ -8279,6 +8279,7 @@ async function renderSettlement(params) {
               <span class="net-chip-body">
                 <span class="net-chip-name">${escapeHtml(m.displayName)}</span>
                 <span class="net-chip-state">${Math.abs(m.netMinor) <= 1 ? th('เคลียร์แล้ว','Settled') : m.netMinor > 0 ? th('รับสุทธิ','Gets back') : th('จ่ายสุทธิ','Pays')}</span>
+                ${netChipLinesHtml(m.memberId)}
               </span>
               <b class="net-chip-amount">${m.netMinor >= 0 ? '+' : '−'}${money(Math.abs(m.netMinor))}</b>
               ${icon('chevron-right', 'w-3.5 h-3.5')}
@@ -8289,7 +8290,20 @@ async function renderSettlement(params) {
           <span>${icon('arrow-up-right', 'w-3 h-3')} ${th('ต้องจ่ายรวม','Total to pay')}: <b>${money(Math.abs(owe.reduce((n, m) => n + m.netMinor, 0)))}</b></span>
           <span class="net-summary-hint">${th('กดที่ชื่อเพื่อดูรายละเอียด','Tap a name for the details')}</span>
         </div>
+        <p class="net-summary-note">${th('ผู้ที่จ่ายเงินล่วงหน้าจะได้คืนเมื่อคนที่ต้องจ่ายโอนให้แล้ว และกด “จ่ายแล้ว” ที่รายการนั้น ระบบจะบันทึกและปรับยอดคงเหลือให้เอง','Someone who fronted money is repaid when the person who owes it transfers and taps “Paid”. The balance updates automatically.')}</p>
       </section>`;
+  }
+
+  /** The who-pays-whom answer inside each net chip (a payer's money comes back from these). */
+  function netChipLinesHtml(memberId) {
+    const { out, inc } = transfersFor(memberId);
+    if (!out.length && !inc.length) return '';
+    const nameOf = (id) => escapeHtml(state.membersMap[id]?.displayName || id);
+    const lines = [
+      ...out.map(t => `<span class="net-chip-line is-out">${th('จ่ายให้','Pay')} ${nameOf(t.to)} ${money(t.amountMinor)}</span>`),
+      ...inc.map(t => `<span class="net-chip-line is-in">${th('ได้คืนจาก','Repaid by')} ${nameOf(t.from)} ${money(t.amountMinor)}</span>`)
+    ];
+    return `<span class="net-chip-lines">${lines.join('')}</span>`;
   }
 
   function overviewHtml() {
@@ -8918,7 +8932,7 @@ async function renderSettlement(params) {
           <div class="debt-payer-list">
             ${payments.map(tx => {
               const payer = membersMap[tx.from] || { displayName: th('ผู้จ่ายเงิน','Payer') };
-              return `<button type="button" class="debt-tx-row" data-settle-person="${escapeHtml(receiverId)}">
+              return `<button type="button" class="debt-tx-row" data-settle-person="${escapeHtml(tx.from)}">
                 <span class="avatar" style="width:24px;height:24px;font-size:9px;background:${escapeHtml(payer.color || 'var(--primary)')};">${initial(payer)}</span>
                 <span class="font-semibold truncate">${escapeHtml(payer.displayName || '')}</span>
                 <span class="debt-row-pays">${icon('arrow-right', 'w-3 h-3')} ${th('จ่ายให้','pays')}</span>

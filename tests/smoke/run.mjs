@@ -2282,6 +2282,9 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   check(chips.length >= 1, `settlement: a net chip per member (${chips.length})`);
   check(!!q('#settle-net .net-chip.is-in') || !!q('#settle-net .net-chip.is-out'), 'settlement: net chips say who gets back / who pays');
   check(/รับสุทธิ|จ่ายสุทธิ|เคลียร์แล้ว/.test(q('#settle-net')?.textContent || ''), 'settlement: each chip carries its verdict text');
+  // v26: the transfer summary says who each person pays / gets money back from
+  check(qa('#settle-net .net-chip-line').length > 0, 'settlement: transfer summary lists who pays whom under each chip');
+  check(!!q('#settle-net .net-summary-note'), 'settlement: transfer summary says when payers get their money back');
   check(!!q('#settle-overview [data-settle-person]'), 'settlement: the overview table rows are tappable too');
   check(q('#settle-overview')?.tagName === 'DETAILS' && q('#settle-overview').open,
     'settlement: the trip overview is expanded by default and uses an accessible disclosure');
@@ -2343,6 +2346,14 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   check(nodes.every(n => n.getAttribute('role') === 'button' && n.getAttribute('tabindex') === '0'), 'debt map: nodes are announced as buttons');
   check(/รับสุทธิ|จ่ายสุทธิ|เคลียร์/.test(q('#settlement-content')?.textContent || ''), 'debt map: labels spell out net receive / net pay');
   check(!!q('.debt-map-legend'), 'debt map: legend explains the colours');
+  // v26: the payer rows under the map open the PAYER (they used to open the receiver)
+  const payRows = qa('.debt-tx-row[data-settle-person]');
+  const payRowsOk = payRows.length > 0 && payRows.every(r => {
+    const group = r.closest('.debt-recipient-group');
+    return !!group?.querySelector(`.debt-map-node--payer[data-debt-person="${r.dataset.settlePerson}"]`)
+      && !group?.querySelector(`.debt-map-node--receiver[data-debt-person="${r.dataset.settlePerson}"]`);
+  });
+  check(payRowsOk, `debt map: each payer row opens the payer, not the receiver (${payRows.length} rows)`);
   if (nodes.length) {
     // <g> is SVG: it has no .click(), dispatch the event like a real tap does
     nodes[0].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));

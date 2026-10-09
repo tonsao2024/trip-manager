@@ -16,6 +16,20 @@ export function expensePayments(expense = {}) {
  * member in the list — that first entry is commonly the trip owner/admin, which
  * used to attribute every member-created expense to the admin by accident.
  */
+/**
+ * The member record for the signed-in account. A PIN member's id is its uid, a
+ * join-approved member's id is the auth uid, and an admin-created member may be
+ * linked by `authUid` — all three are matched, so nobody silently falls back to
+ * the first (usually admin) member.
+ */
+export function findMemberForAccount(members = [], currentUserId = '') {
+  const uid = String(currentUserId || '');
+  if (!uid) return null;
+  return members.find(m =>
+    String(m?.id || '') === uid || String(m?.uid || '') === uid || String(m?.authUid || '') === uid
+  ) || null;
+}
+
 export function initialExpensePayerIds(expense = {}, members = [], currentUserId = '') {
   if (expense.payerPending) return [];
 
@@ -25,10 +39,7 @@ export function initialExpensePayerIds(expense = {}, members = [], currentUserId
   }
 
   const uid = String(currentUserId || '');
-  const currentMember = members.find(m =>
-    String(m?.id || '') === uid || String(m?.uid || '') === uid || String(m?.authUid || '') === uid
-  );
-  const fallback = currentMember || members[0];
+  const fallback = findMemberForAccount(members, uid) || members[0];
   const payerId = fallback?.id || fallback?.uid || uid;
   return payerId ? [String(payerId)] : [];
 }

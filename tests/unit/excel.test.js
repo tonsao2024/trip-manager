@@ -146,3 +146,35 @@ export function testMultiPayerExpenseRoundTrip() {
   const bad = importExpenseRows([{ ...row, payer: 'สมชาย=6, นุ่น=3' }], { trip: { baseCurrency: 'THB' }, members, lang: 'th' });
   if (!bad.errors.length) throw new Error('mismatched payer amounts should be an error');
 }
+
+// v26: every payer in the cell counts — not just the first name.
+export function testExcelPayerCellKeepsEveryPayer() {
+  const members = [{ id: 'u1', displayName: 'สมชาย' }, { id: 'u2', displayName: 'นุ่น' }, { id: 'u3', displayName: 'คุณแม่' }];
+  const base = { title: 'ข้าว', date: '2027-01-02', currency: 'THB', netTotal: 1000, subtotal: 1000, sharedWith: 'สมชาย, นุ่น, คุณแม่' };
+  const run = (payer) => importExpenseRows([{ ...base, payer }], { trip: { baseCurrency: 'THB' }, members, lang: 'th' });
+  const sum = (list) => list.reduce((n, p) => n + p.amountMinor, 0);
+  const asMap = (list) => Object.fromEntries(list.map(p => [p.memberId, p.amountMinor]));
+
+  // names only, no amounts → the bill is split equally between the named payers
+  let r = run('นุ่น, คุณแม่');
+  if (r.errors.length) throw new Error(`names-only errors: ${JSON.stringify(r.errors)}`);
+  let e = r.expenses[0];
+  if (!e.payments || e.payments.length !== 2) throw new Error(`names-only payers dropped: ${JSON.stringify(e.payments)}`);
+  if (JSON.stringify(asMap(e.payments)) !== JSON.stringify({ u2: 50000, u3: 50000 })) throw new Error(`names-only split: ${JSON.stringify(e.payments)}`);
+
+  // first payer typed, the rest blank → the blank payer gets the remainder (not dropped)
+  r = run('นุ่น=400, คุณแม่');
+  if (r.errors.length) throw new Error(`partial errors: ${JSON.stringify(r.errors)}`);
+  e = r.expenses[0];
+  if (JSON.stringify(asMap(e.payments)) !== JSON.stringify({ u2: 40000, u3: 60000 })) throw new Error(`partial remainder: ${JSON.stringify(e.payments)}`);
+  if (sum(e.payments) !== 100000) throw new Error('payments must total the bill');
+
+  // one priced payer that is NOT first, others blank → remainder to the blanks
+  r = run('สมชาย, นุ่น=300, คุณแม่');
+  e = r.expenses[0];
+  if (JSON.stringify(asMap(e.payments)) !== JSON.stringify({ u1: 35000, u2: 30000, u3: 35000 })) throw new Error(`mixed blanks: ${JSON.stringify(e.payments)}`);
+
+  // priced amounts already above the total → reported
+  r = run('นุ่น=1200, คุณแม่');
+  if (!r.errors.length) throw new Error('over-total payer amounts should be an error');
+}
