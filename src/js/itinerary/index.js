@@ -7,6 +7,7 @@ import { dayjs } from '../utils/date.js';
 import { toThbMinor, toMinor, getCurrencyDecimals, calculateNetTotal, resolveTripThbRate } from '../utils/currency.js';
 import { splitEqual } from '../utils/split.js';
 import { stayNights as computeStayNights } from '../utils/stays.js';
+import { planPayerFields } from '../utils/payments.js';
 
 /* ------------------------------------------------------------------ *
  * Estimate → expense bridging (item cost flows into the expense book)
@@ -108,6 +109,12 @@ const EXPENSE_EXTRAS = [
   'receiptUrl', 'receiptImage', 'receiptStorage', 'notes'
 ];
 
+/**
+ * The plan card's payer fields, read from the expense that is actually saved:
+ * every payer (v26), the first one as the single-payer field, and the pending flag.
+ * Written back to the place after every sync, so the card never shows one payer
+ * for a bill that several people fronted.
+ */
 function carryOverExpenseExtras(payload, existing = {}) {
   for (const key of EXPENSE_EXTRAS) {
     if (existing[key] !== undefined) payload[key] = existing[key];
@@ -207,6 +214,7 @@ async function syncItineraryExpenseInner(tripId, item, options = {}) {
       updatedBy: userId,
       updatedAt: serverTimestamp()
     });
+    await writePlanPayers(tripId, item.id, payload);
     return existing.id;
   }
   const ref = await addDoc(collection(db, `trips/${tripId}/expenses`), {
@@ -216,7 +224,15 @@ async function syncItineraryExpenseInner(tripId, item, options = {}) {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   });
+  await writePlanPayers(tripId, item.id, payload);
   return ref.id;
+}
+
+async function writePlanPayers(tripId, itemId, expense) {
+  if (!itemId) return;
+  try {
+    await updateDoc(doc(db, `trips/${tripId}/itineraryItems`, itemId), planPayerFields(expense));
+  } catch (e) { console.warn('[Itinerary] could not write payers back to the place', e?.message); }
 }
 
 /* ------------------------------------------------------------------ *
@@ -374,6 +390,7 @@ async function saveItineraryItemInner(tripId, data, userId, itemId = null, { tri
       estimateCategory: data.estimateCategory || '',
       estimatePayerId: data.estimatePayerId || '',
       estimatePayerPending: data.estimatePayerPending === true,
+      estimatePayerIds: (data.estimatePayerId && data.estimatePayerPending !== true) ? [data.estimatePayerId] : [],
       estimateShareWith: data.estimateShareWith || [],
       estimateAutoAdd: data.estimateAutoAdd !== false,
       stayCheckIn: data.stayCheckIn || '',

@@ -10,8 +10,14 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > member is found by `id`, `uid` or `authUid`, not `id` alone. **Settlement page:** the **สรุปการโอน** chips list
 > who each person pays and who repays them (`netChipLinesHtml`), with a note that a payer is repaid when the debtor
 > transfers and taps “จ่ายแล้ว”. **Debt map:** the payer rows under each receiver open the payer; they used to open
-> the receiver. **ภาพรวมทั้งทริป** is still a collapsible `<details>` (`#settle-overview`). Tests: `testExcelPayerCellKeepsEveryPayer`,
-> `testFindMemberForAccountMatchesAllIds`, and smoke checks for the chip lines, the note, and the debt-map payer rows.
+> the receiver. **ภาพรวมทั้งทริป** is still a collapsible `<details>` (`#settle-overview`).
+> **Blank payer (Excel):** an estimate with no payer is saved as “ยังไม่ระบุผู้จ่าย” (`payerPending`, no payments, outside
+> balances). Actual spending with a blank payer, or a payer name that matches no member, is reported as a row error
+> instead of defaulting to the admin or the first member. Plan items imported without a payer are pending too.
+> **Plan card:** the place stores every payer of its linked cost (`estimatePayerIds`, written back after each expense
+> save or plan sync, `planPayerFields` in `utils/payments.js`), and the card shows “N คนจ่าย” with the names on hover.
+> Tests: unit `testExcelPayerCellKeepsEveryPayer`, `testExcelBlankPayerIsNotAssigned`, `testFindMemberForAccountMatchesAllIds`,
+> `testPlanPayerFieldsKeepEveryPayer`; smoke checks for the chip lines, the note, the debt-map payer rows and the plan card.
 >
 > **v25 — 9 Oct 2026, คนจ่ายหลายคน จ่ายแล้ว แผนที่ขยาย และการเชื่อมข้อมูล.** A bill with several payers
 > (“คนจ่ายก่อน”) works like unequal split: typing the first payer's amount fills the rest, and each payer

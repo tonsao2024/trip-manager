@@ -2585,6 +2585,41 @@ console.log('\n▶ v19 requests: drag only in edit mode, teams every, per-group 
   check(/สถานที่|ที่/.test(q('#exp-group-avg')?.textContent || ''), 'expenses: team cards carry the number of places that team visits');
 }
 
+console.log('\n▶ plan card: a second payer on the linked cost shows on the place');
+{
+  // v26: editing the expense linked to a place must make the place card name every payer
+  const placeId = place?.[0]?.split('/').pop();
+  const linkedEntry = [...fsdb.__store.entries()].find(([, v]) => v && v.source === 'itinerary-estimate' && v.itineraryItemId === placeId);
+  const expId = linkedEntry?.[0]?.split('/').pop();
+  const total = Number(linkedEntry?.[1]?.netTotalMinor) || 0;
+  await goto('#/trip/t1/expenses/add?id=' + expId);
+  await waitFor(() => q('#expense-form') && qa('[data-payer]').length, { label: 'linked estimate edit form' });
+  await sleep(150);
+  if (!q('[data-payer="u2"]')?.classList.contains('tile-selected')) await click('[data-payer="u2"]');
+  await sleep(100);
+  const u1Input = q('[data-payment="u1"]');
+  check(!!u1Input && !!q('[data-payment="u2"]'), 'plan card: the edit form lists both payers');
+  if (u1Input) {
+    u1Input.value = String(Math.round(total / 2));
+    u1Input.dispatchEvent(new window.Event('input', { bubbles: true }));
+  }
+  submit(q('#expense-form'));
+  await waitFor(() => (fsdb.__store.get('trips/t1/expenses/' + expId)?.payments || []).length === 2, { timeout: 6000, label: 'two payers saved' }).catch(() => {});
+  const savedLinked = fsdb.__store.get('trips/t1/expenses/' + expId);
+  check((savedLinked?.payments || []).length === 2 && savedLinked.payments.reduce((n, p) => n + p.amountMinor, 0) === total,
+    'plan card: the linked expense keeps both payers and the full total');
+  const placeAfter = fsdb.__store.get('trips/t1/itineraryItems/' + placeId);
+  check(Array.isArray(placeAfter?.estimatePayerIds) && placeAfter.estimatePayerIds.length === 2,
+    'plan card: the place records every payer of its linked cost');
+  await goto('#/trip/t1/itinerary');
+  await waitFor(() => q('#view-all-btn'), { label: 'itinerary shell' }).catch(() => {});
+  if (q('#view-all-btn')) await click('#view-all-btn');  // the default view is scoped to "today"
+  await waitFor(() => qa('.itin-card').length > 0, { timeout: 8000, label: 'itinerary cards' }).catch(() => {});
+  await sleep(200);
+  const card = qa('.itin-card').find(c => c.textContent.includes('ภูเขามิโตะ'));
+  check(!!card && /2 คนจ่าย/.test(card.textContent), 'plan card: the place card says 2 payers instead of one');
+}
+
 console.log('\n▶ delete the whole trip (UI)');
 // leave the member session so the admin flow runs with a "logged out" auth state
 window.localStorage.removeItem('fuji_member_session');

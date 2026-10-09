@@ -525,6 +525,9 @@ export function importItineraryRows(rows, { trip, members = [], lang = 'th' } = 
     const coordinates = parseCoordinatesCell(row.coordinates);
     const sharedIds = parsePeopleCell(row.sharedWith).map(p => resolveMemberId(p, lookup, members)).filter(Boolean);
     const payerId = row.paidBy ? resolveMemberId(row.paidBy, lookup, members) : null;
+    if (String(row.paidBy ?? '').trim() && !payerId) {
+      errs.push(lang === 'th' ? `ไม่พบผู้จ่ายในรายชื่อสมาชิก: ${String(row.paidBy).trim()}` : `Payer not found among members: ${String(row.paidBy).trim()}`);
+    }
 
     if (errs.length) { errors.push({ row: rowNo, errors: errs, data: rawRow }); return; }
 
@@ -545,7 +548,9 @@ export function importItineraryRows(rows, { trip, members = [], lang = 'th' } = 
       estimateAmount: estimateAmount > 0 ? estimateAmount : 0,
       estimateCurrency: currency,
       estimateCategory: normalizeCategory(row.expenseCategory),
-      estimatePayerId: payerId || (members[0]?.id || null),
+      // v26: no payer typed → "ยังไม่ระบุเจ้าภาพ" (never silently the admin / first member)
+      estimatePayerId: payerId || '',
+      estimatePayerPending: !payerId && estimateAmount > 0,
       estimateShareWith: sharedIds.length ? sharedIds : members.map(m => m.id),
       estimateAutoAdd: estimateAmount > 0 ? parseBooleanCell(row.autoAddExpense, true) : false,
       _row: rowNo
@@ -605,10 +610,21 @@ export function importExpenseRows(rows, { trip, members = [], items = [], lang =
     if (!participantIds.length && parsedAmounts.length) participantIds = parsedAmounts.map(a => a.memberId);
     if (!participantIds.length) participantIds = members.map(m => m.id);
 
+    // Payer rules (v26): a blank payer is never silently the first member or the
+    // admin. An estimate may stay unassigned ("ยังไม่ระบุผู้จ่าย"); actual spending
+    // must name who paid, and an unknown name is reported instead of guessed.
     const payerCell = parsePayerCell(row.payer, lookup, members, decimals, netMinor);
+    const payerText = String(row.payer ?? '').trim();
+    const payerPending = !payerText && isEstimated;
     let payerId = payerCell.memberIds[0] || null;
-    if (!payerId) payerId = participantIds[0] || members[0]?.id || null;
-    if (!payerId) errs.push(lang === 'th' ? 'ต้องระบุผู้จ่าย (ยังไม่มีสมาชิกในทริป)' : 'Payer required (no members yet)');
+    if (!payerText && !isEstimated) {
+      errs.push(lang === 'th' ? 'ค่าใช้จ่ายจริงต้องระบุผู้จ่าย (เว้นว่างได้เฉพาะรายการประมาณการ)' : 'Actual spending needs a payer (only estimates may leave it blank)');
+    } else if (payerText && !payerCell.memberIds.length) {
+      errs.push(lang === 'th' ? `ไม่พบผู้จ่ายในรายชื่อสมาชิก: ${payerText}` : `Payer not found among members: ${payerText}`);
+    } else if (payerCell.unresolved.length) {
+      errs.push(lang === 'th' ? `ไม่พบผู้จ่ายในรายชื่อสมาชิก: ${payerCell.unresolved.join(', ')}` : `Payer not found among members: ${payerCell.unresolved.join(', ')}`);
+    }
+    if (payerPending) payerId = null;
     if (payerCell.amounts) {
       const paid = payerCell.amounts.reduce((sum, p) => sum + p.amountMinor, 0);
       if (paid !== netMinor) {
@@ -654,7 +670,8 @@ export function importExpenseRows(rows, { trip, members = [], items = [], lang =
       thbMinor: toThbMinor(netMinor, currency, rate),
       payerId,
       // several payers → every payer and the amount they put in (the bill still totals netTotal)
-      ...(payerCell.amounts ? { payments: payerCell.amounts } : {}),
+      ...(payerPending ? { payerPending: true, payments: [] } : {}),
+      ...(!payerPending && payerCell.amounts ? { payments: payerCell.amounts } : {}),
       allocations,
       description: String(row.description ?? '').trim(),
       paymentMethod: (String(row.paymentMethod || 'cash').trim().toLowerCase().includes('card') ? 'card' : 'cash'),
@@ -679,14 +696,15 @@ function parsePayerCell(value, lookup, members, decimals, netMinor = 0) {
   const parts = String(value ?? '').split(/[,;|\n]+/).map(s => s.trim()).filter(Boolean);
   const memberIds = [];
   const typed = new Map();   // memberId → amountMinor (only the payers with an amount)
+  const unresolved = [];     // names that match no member of the trip
   for (const part of parts) {
     const m = part.match(/^(.*?)\s*=\s*(-?[\d.,]+)$/);
     const id = resolveMemberId(m ? m[1].trim() : part, lookup, members);
-    if (!id) continue;
+    if (!id) { unresolved.push(m ? m[1].trim() : part); continue; }
     if (!memberIds.includes(id)) memberIds.push(id);
     if (m) typed.set(id, toMinor(parseNumberCell(m[2], 0), decimals));
   }
-  if (memberIds.length < 2) return { memberIds, amounts: null };
+  if (memberIds.length < 2) return { memberIds, amounts: null, unresolved };
 
   const blanks = memberIds.filter(id => !typed.has(id));
   const typedTotal = [...typed.values()].reduce((n, v) => n + v, 0);
@@ -702,7 +720,7 @@ function parsePayerCell(value, lookup, members, decimals, netMinor = 0) {
     memberId: id,
     amountMinor: typed.has(id) ? typed.get(id) : (blankShares.get(id) ?? 0)
   }));
-  return { memberIds, amounts };
+  return { memberIds, amounts, unresolved };
 }
 
 function parseAmountPairs(value, lookup, members, decimals) {

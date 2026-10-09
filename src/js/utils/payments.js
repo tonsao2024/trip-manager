@@ -77,3 +77,18 @@ export function paymentMethodOf(expense = {}, payment = {}) {
   const cardName = String(payment.cardName ?? expense.cardName ?? '').trim();
   return { method, cardName };
 }
+
+/** Every payer a place's estimate is recorded with (empty while still unassigned). */
+export function planPayerIds(item = {}) {
+  if (Array.isArray(item?.estimatePayerIds) && item.estimatePayerIds.length) return item.estimatePayerIds.filter(Boolean);
+  return item?.estimatePayerId && item.estimatePayerPending !== true ? [item.estimatePayerId] : [];
+}
+
+export function planPayerFields(expense = {}) {
+  const ids = expensePayments(expense).map(p => p.memberId).filter(Boolean);
+  return {
+    estimatePayerId: expense.payerPending ? '' : (ids[0] || ''),
+    estimatePayerIds: expense.payerPending ? [] : ids,
+    estimatePayerPending: expense.payerPending === true
+  };
+}

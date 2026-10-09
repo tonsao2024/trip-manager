@@ -1,5 +1,5 @@
 import { splitCustom } from '../../src/js/utils/split.js';
-import { expensePayments, initialExpensePayerIds, findMemberForAccount, validatePayments, validateExpensePayerState } from '../../src/js/utils/payments.js';
+import { expensePayments, initialExpensePayerIds, findMemberForAccount, planPayerFields, planPayerIds, validatePayments, validateExpensePayerState } from '../../src/js/utils/payments.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources } from '../../src/js/utils/settlement.js';
 import { toThbMinor, expensesInThb, formatAmount, moneyHtml, parseCurrencyInput } from '../../src/js/utils/currency.js';
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
@@ -155,4 +155,16 @@ export function testFindMemberForAccountMatchesAllIds() {
   eq(findMemberForAccount(members, 'nobody'), null, 'unknown account has no member');
   eq(findMemberForAccount(members, ''), null, 'empty account has no member');
   eq(initialExpensePayerIds({}, members, 'google-123'), ['mb-linked'], 'default payer follows the linked account, not the first member');
+}
+
+// v26: a plan card shows every payer of its linked expense, not only the first.
+export function testPlanPayerFieldsKeepEveryPayer() {
+  const multi = { payerId: 'a', payments: [{ memberId: 'a', amountMinor: 300 }, { memberId: 'b', amountMinor: 700 }] };
+  eq(planPayerFields(multi), { estimatePayerId: 'a', estimatePayerIds: ['a', 'b'], estimatePayerPending: false }, 'two payers are both kept');
+  eq(planPayerFields({ payerId: 'c', netTotalMinor: 500 }), { estimatePayerId: 'c', estimatePayerIds: ['c'], estimatePayerPending: false }, 'legacy single payer');
+  eq(planPayerFields({ payerPending: true, payments: [] }), { estimatePayerId: '', estimatePayerIds: [], estimatePayerPending: true }, 'unassigned estimate stays unassigned');
+  eq(planPayerIds({ estimatePayerIds: ['a', 'b'], estimatePayerId: 'a' }), ['a', 'b'], 'card reads the full list');
+  eq(planPayerIds({ estimatePayerId: 'x' }), ['x'], 'older plan items fall back to the single payer');
+  eq(planPayerIds({ estimatePayerId: 'x', estimatePayerPending: true }), [], 'pending plan item has no payer');
+  eq(planPayerIds({}), [], 'no payer at all');
 }
