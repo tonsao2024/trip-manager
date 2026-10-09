@@ -2282,6 +2282,9 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   check(chips.length >= 1, `settlement: a net chip per member (${chips.length})`);
   check(!!q('#settle-net .net-chip.is-in') || !!q('#settle-net .net-chip.is-out'), 'settlement: net chips say who gets back / who pays');
   check(/รับสุทธิ|จ่ายสุทธิ|เคลียร์แล้ว/.test(q('#settle-net')?.textContent || ''), 'settlement: each chip carries its verdict text');
+  // v26: the transfer summary says who each person pays / gets money back from
+  check(qa('#settle-net .net-chip-line').length > 0, 'settlement: transfer summary lists who pays whom under each chip');
+  check(!!q('#settle-net .net-summary-note'), 'settlement: transfer summary says when payers get their money back');
   check(!!q('#settle-overview [data-settle-person]'), 'settlement: the overview table rows are tappable too');
   check(q('#settle-overview')?.tagName === 'DETAILS' && q('#settle-overview').open,
     'settlement: the trip overview is expanded by default and uses an accessible disclosure');
@@ -2343,6 +2346,14 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   check(nodes.every(n => n.getAttribute('role') === 'button' && n.getAttribute('tabindex') === '0'), 'debt map: nodes are announced as buttons');
   check(/รับสุทธิ|จ่ายสุทธิ|เคลียร์/.test(q('#settlement-content')?.textContent || ''), 'debt map: labels spell out net receive / net pay');
   check(!!q('.debt-map-legend'), 'debt map: legend explains the colours');
+  // v26: the payer rows under the map open the PAYER (they used to open the receiver)
+  const payRows = qa('.debt-tx-row[data-settle-person]');
+  const payRowsOk = payRows.length > 0 && payRows.every(r => {
+    const group = r.closest('.debt-recipient-group');
+    return !!group?.querySelector(`.debt-map-node--payer[data-debt-person="${r.dataset.settlePerson}"]`)
+      && !group?.querySelector(`.debt-map-node--receiver[data-debt-person="${r.dataset.settlePerson}"]`);
+  });
+  check(payRowsOk, `debt map: each payer row opens the payer, not the receiver (${payRows.length} rows)`);
   if (nodes.length) {
     // <g> is SVG: it has no .click(), dispatch the event like a real tap does
     nodes[0].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
@@ -2572,6 +2583,41 @@ console.log('\n▶ v19 requests: drag only in edit mode, teams every, per-group 
 
   // ---- 4) the plan → team link: the place count per team is real
   check(/สถานที่|ที่/.test(q('#exp-group-avg')?.textContent || ''), 'expenses: team cards carry the number of places that team visits');
+}
+
+console.log('\n▶ plan card: a second payer on the linked cost shows on the place');
+{
+  // v26: editing the expense linked to a place must make the place card name every payer
+  const placeId = place?.[0]?.split('/').pop();
+  const linkedEntry = [...fsdb.__store.entries()].find(([, v]) => v && v.source === 'itinerary-estimate' && v.itineraryItemId === placeId);
+  const expId = linkedEntry?.[0]?.split('/').pop();
+  const total = Number(linkedEntry?.[1]?.netTotalMinor) || 0;
+  await goto('#/trip/t1/expenses/add?id=' + expId);
+  await waitFor(() => q('#expense-form') && qa('[data-payer]').length, { label: 'linked estimate edit form' });
+  await sleep(150);
+  if (!q('[data-payer="u2"]')?.classList.contains('tile-selected')) await click('[data-payer="u2"]');
+  await sleep(100);
+  const u1Input = q('[data-payment="u1"]');
+  check(!!u1Input && !!q('[data-payment="u2"]'), 'plan card: the edit form lists both payers');
+  if (u1Input) {
+    u1Input.value = String(Math.round(total / 2));
+    u1Input.dispatchEvent(new window.Event('input', { bubbles: true }));
+  }
+  submit(q('#expense-form'));
+  await waitFor(() => (fsdb.__store.get('trips/t1/expenses/' + expId)?.payments || []).length === 2, { timeout: 6000, label: 'two payers saved' }).catch(() => {});
+  const savedLinked = fsdb.__store.get('trips/t1/expenses/' + expId);
+  check((savedLinked?.payments || []).length === 2 && savedLinked.payments.reduce((n, p) => n + p.amountMinor, 0) === total,
+    'plan card: the linked expense keeps both payers and the full total');
+  const placeAfter = fsdb.__store.get('trips/t1/itineraryItems/' + placeId);
+  check(Array.isArray(placeAfter?.estimatePayerIds) && placeAfter.estimatePayerIds.length === 2,
+    'plan card: the place records every payer of its linked cost');
+  await goto('#/trip/t1/itinerary');
+  await waitFor(() => q('#view-all-btn'), { label: 'itinerary shell' }).catch(() => {});
+  if (q('#view-all-btn')) await click('#view-all-btn');  // the default view is scoped to "today"
+  await waitFor(() => qa('.itin-card').length > 0, { timeout: 8000, label: 'itinerary cards' }).catch(() => {});
+  await sleep(200);
+  const card = qa('.itin-card').find(c => c.textContent.includes('ภูเขามิโตะ'));
+  check(!!card && /2 คนจ่าย/.test(card.textContent), 'plan card: the place card says 2 payers instead of one');
 }
 
 console.log('\n▶ delete the whole trip (UI)');

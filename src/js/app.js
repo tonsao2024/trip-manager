@@ -3,7 +3,7 @@ import { DASHBOARD_WIDGETS, DASHBOARD_WIDGET_KEYS, normalizeWidgetOrder, normali
 import { ideaCategoryId, placeCategoryLabel, placeCategoryColor, placeCategoryIcon } from './utils/categories.js';
 import { attachMapExpand } from './maps/index.js';
 import { expenseUpdateForCost } from './utils/reservations.js';
-import { expensePayments, initialExpensePayerIds, paymentMethodOf, validatePayments } from './utils/payments.js';
+import { expensePayments, initialExpensePayerIds, findMemberForAccount, paymentMethodOf, validatePayments, planPayerFields, planPayerIds } from './utils/payments.js';
 import { groupIdeasByCategory } from './utils/ideas.js';
 import { auth, db, isFirebaseConfigured, onAuthStateChanged, syncState } from './firebase.js';
 import { Router } from './router.js';
@@ -4847,7 +4847,9 @@ async function renderItinerary(params) {
     // A stay distributes its price per night — each day only counts that night.
     const dayMinor = it.isStay && it.stayNightMinor != null ? it.stayNightMinor : fullMinor;
     const perNightMinor = it.isStay && it.stayNights > 0 ? Math.round(fullMinor / it.stayNights) : 0;
-    const payerName = members.find(m => m.id === it.estimatePayerId)?.displayName;
+    // v26: several people can front one estimate — the card says how many, and the names on hover.
+    const payerNames = planPayerIds(it).map(id => members.find(m => m.id === id)?.displayName).filter(Boolean);
+    const payerName = payerNames.length > 1 ? th(`${payerNames.length} คนจ่าย`, `${payerNames.length} payers`) : payerNames[0];
     const pendingPayer = fullMinor > 0 && (it.estimatePayerPending === true || (!payerName && !(it.estimateShareWith || []).length));
     const sharedNames = (it.estimateShareWith || []).map(id => members.find(m => m.id === id)?.displayName).filter(Boolean);
     const statusDef = ITINERARY_STATUSES.find(st => st.id === (it.status || 'planned'));
@@ -4906,7 +4908,7 @@ async function renderItinerary(params) {
                   ${icon(it.isStay ? 'bed-double' : 'hourglass', 'w-3.5 h-3.5')}
                   <span>${isVirtual ? th('ส่วนของคืนนี้','This night’s share') : th('ประมาณการ','Est.')} <b>${moneyHtml(dayMinor, cur, rate)}</b></span>
                   ${isCheckin && perNightMinor && nights > 1 ? `<span class="text-[10px] itin-detail">${th('เฉลี่ย','avg')} ${moneyHtml(perNightMinor, cur, rate)} / ${th('คืน','night')}</span>` : ''}
-                  ${!it.isStay ? `<span class="text-[10px] itin-detail">${escapeHtml(categoryLabel(it.estimateCategory || 'general', lang))}${payerName ? ` • ${th('จ่าย','paid by')} ${escapeHtml(payerName)}` : ''}${sharedNames.length ? ` • ${th('หาร','split')} ${sharedNames.length} ${th('คน','pax')}` : ''}</span>` : ''}
+                  ${!it.isStay ? `<span class="text-[10px] itin-detail" ${payerNames.length > 1 ? `title="${escapeHtml(payerNames.join(', '))}"` : ''}>${escapeHtml(categoryLabel(it.estimateCategory || 'general', lang))}${payerName ? ` • ${th('จ่าย','paid by')} ${escapeHtml(payerName)}` : ''}${sharedNames.length ? ` • ${th('หาร','split')} ${sharedNames.length} ${th('คน','pax')}` : ''}</span>` : ''}
                   ${pendingPayer ? `<span class="badge badge-pending text-[9px] itin-detail">${icon('help-circle', 'w-2.5 h-2.5')} ${th('ยังไม่ระบุเจ้าภาพ','payer TBD')}</span>` : ''}
                   ${isVirtual ? '' : `<button type="button" class="badge badge-skipped text-[9px] itin-expense-btn itin-detail" data-act="expense" data-id="${it.id}">${icon(it.expenseId ? 'pencil' : 'plus', 'w-2.5 h-2.5')} ${it.expenseId ? th('แก้ไขค่าใช้จ่าย','Edit expense') : th('ผูกค่าใช้จ่าย','Link a cost')}</button>`}
                 </div>` : ''}
@@ -5195,6 +5197,7 @@ async function renderItinerary(params) {
     const durInit = toUnit(it.durationMinutes ?? 60);
     const travelInit = toUnit(it.travelToNextMinutes ?? 0);
     const initPayer = it.estimatePayerPending ? '__pending' : (it.estimatePayerId || currentUser.uid);
+    const editorPayers = planPayerIds(it).map(id => members.find(m => m.id === id)?.displayName).filter(Boolean);
     // ONE category for both sides (a request): the expense group this place bills
     // into is always derived from the place category, so there is nothing to keep
     // in sync and nothing to choose twice.
@@ -5342,6 +5345,7 @@ async function renderItinerary(params) {
                       </span>
                     </button>`).join('')}
                 </div>
+                ${editorPayers.length > 1 ? `<p class="input-hint">${icon('users', 'w-3 h-3')} ${escapeHtml(th(`ค่าใช้จ่ายนี้มี ${editorPayers.length} คนจ่าย (${editorPayers.join(', ')}) — ปรับยอดและผู้จ่ายได้ที่ “แก้ไขค่าใช้จ่าย”`, `This cost has ${editorPayers.length} payers (${editorPayers.join(', ')}) — change amounts and payers in “Edit expense”.`))}</p>` : ''}
                 <p class="input-hint">${th('รายการที่กะคร่าวๆ ไว้ก่อนและยังไม่มีใครอาสาสำรองจ่าย — เลือก “ยังไม่ระบุเจ้าภาพ” ได้ ยอดจะไม่ถูกนับเป็นหนี้ของใครจนกว่าจะระบุผู้จ่ายทีหลัง','Rough estimates nobody has fronted yet can stay “TBD” — they are excluded from everybody’s balance until a payer is assigned')}</p>
               </div>
               <div class="input-group">
@@ -6670,7 +6674,7 @@ function mountExpenseForm({
       if (payerPending) {
         payerPending = false;
         if (!selectedPayers.size) {
-          const fallback = members.find(m => m.id === currentUser.uid) || members[0];
+          const fallback = findMemberForAccount(members, currentUser?.uid) || members[0];
           if (fallback) { selectedPayers.add(fallback.id); payerAmounts[fallback.id] = ''; }
         }
       } else {
@@ -6690,7 +6694,7 @@ function mountExpenseForm({
   on('ex-type', 'change', () => {
     if (!isEstimatedExpense() && payerPending) {
       payerPending = false;
-      const fallback = members.find(m => m.id === currentUser.uid) || members[0];
+      const fallback = findMemberForAccount(members, currentUser?.uid) || members[0];
       if (fallback) { selectedPayers.add(fallback.id); payerAmounts[fallback.id] = ''; }
     }
     syncPayerTiles();
@@ -7706,8 +7710,7 @@ async function syncPlanEstimateFromExpense(tripId, payload, expenseId, itemId = 
       estimateAmount: fromMinor(payload.netTotalMinor || 0, dec),
       estimateCurrency: payload.currency || 'THB',
       estimateCategory: payload.category || 'general',
-      estimatePayerId: payload.payerId || '',
-      estimatePayerPending: payload.payerPending === true,
+      ...planPayerFields(payload),
       estimateShareWith: (payload.allocations || []).map(a => a.memberId),
       estimateAutoAdd: true
     }, currentUser.uid);
@@ -8279,6 +8282,7 @@ async function renderSettlement(params) {
               <span class="net-chip-body">
                 <span class="net-chip-name">${escapeHtml(m.displayName)}</span>
                 <span class="net-chip-state">${Math.abs(m.netMinor) <= 1 ? th('เคลียร์แล้ว','Settled') : m.netMinor > 0 ? th('รับสุทธิ','Gets back') : th('จ่ายสุทธิ','Pays')}</span>
+                ${netChipLinesHtml(m.memberId)}
               </span>
               <b class="net-chip-amount">${m.netMinor >= 0 ? '+' : '−'}${money(Math.abs(m.netMinor))}</b>
               ${icon('chevron-right', 'w-3.5 h-3.5')}
@@ -8289,7 +8293,20 @@ async function renderSettlement(params) {
           <span>${icon('arrow-up-right', 'w-3 h-3')} ${th('ต้องจ่ายรวม','Total to pay')}: <b>${money(Math.abs(owe.reduce((n, m) => n + m.netMinor, 0)))}</b></span>
           <span class="net-summary-hint">${th('กดที่ชื่อเพื่อดูรายละเอียด','Tap a name for the details')}</span>
         </div>
+        <p class="net-summary-note">${th('ผู้ที่จ่ายเงินล่วงหน้าจะได้คืนเมื่อคนที่ต้องจ่ายโอนให้แล้ว และกด “จ่ายแล้ว” ที่รายการนั้น ระบบจะบันทึกและปรับยอดคงเหลือให้เอง','Someone who fronted money is repaid when the person who owes it transfers and taps “Paid”. The balance updates automatically.')}</p>
       </section>`;
+  }
+
+  /** The who-pays-whom answer inside each net chip (a payer's money comes back from these). */
+  function netChipLinesHtml(memberId) {
+    const { out, inc } = transfersFor(memberId);
+    if (!out.length && !inc.length) return '';
+    const nameOf = (id) => escapeHtml(state.membersMap[id]?.displayName || id);
+    const lines = [
+      ...out.map(t => `<span class="net-chip-line is-out">${th('จ่ายให้','Pay')} ${nameOf(t.to)} ${money(t.amountMinor)}</span>`),
+      ...inc.map(t => `<span class="net-chip-line is-in">${th('ได้คืนจาก','Repaid by')} ${nameOf(t.from)} ${money(t.amountMinor)}</span>`)
+    ];
+    return `<span class="net-chip-lines">${lines.join('')}</span>`;
   }
 
   function overviewHtml() {
@@ -8918,7 +8935,7 @@ async function renderSettlement(params) {
           <div class="debt-payer-list">
             ${payments.map(tx => {
               const payer = membersMap[tx.from] || { displayName: th('ผู้จ่ายเงิน','Payer') };
-              return `<button type="button" class="debt-tx-row" data-settle-person="${escapeHtml(receiverId)}">
+              return `<button type="button" class="debt-tx-row" data-settle-person="${escapeHtml(tx.from)}">
                 <span class="avatar" style="width:24px;height:24px;font-size:9px;background:${escapeHtml(payer.color || 'var(--primary)')};">${initial(payer)}</span>
                 <span class="font-semibold truncate">${escapeHtml(payer.displayName || '')}</span>
                 <span class="debt-row-pays">${icon('arrow-right', 'w-3 h-3')} ${th('จ่ายให้','pays')}</span>

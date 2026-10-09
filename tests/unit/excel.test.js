@@ -146,3 +146,70 @@ export function testMultiPayerExpenseRoundTrip() {
   const bad = importExpenseRows([{ ...row, payer: 'สมชาย=6, นุ่น=3' }], { trip: { baseCurrency: 'THB' }, members, lang: 'th' });
   if (!bad.errors.length) throw new Error('mismatched payer amounts should be an error');
 }
+
+// v26: every payer in the cell counts — not just the first name.
+export function testExcelPayerCellKeepsEveryPayer() {
+  const members = [{ id: 'u1', displayName: 'สมชาย' }, { id: 'u2', displayName: 'นุ่น' }, { id: 'u3', displayName: 'คุณแม่' }];
+  const base = { title: 'ข้าว', date: '2027-01-02', currency: 'THB', netTotal: 1000, subtotal: 1000, sharedWith: 'สมชาย, นุ่น, คุณแม่' };
+  const run = (payer) => importExpenseRows([{ ...base, payer }], { trip: { baseCurrency: 'THB' }, members, lang: 'th' });
+  const sum = (list) => list.reduce((n, p) => n + p.amountMinor, 0);
+  const asMap = (list) => Object.fromEntries(list.map(p => [p.memberId, p.amountMinor]));
+
+  // names only, no amounts → the bill is split equally between the named payers
+  let r = run('นุ่น, คุณแม่');
+  if (r.errors.length) throw new Error(`names-only errors: ${JSON.stringify(r.errors)}`);
+  let e = r.expenses[0];
+  if (!e.payments || e.payments.length !== 2) throw new Error(`names-only payers dropped: ${JSON.stringify(e.payments)}`);
+  if (JSON.stringify(asMap(e.payments)) !== JSON.stringify({ u2: 50000, u3: 50000 })) throw new Error(`names-only split: ${JSON.stringify(e.payments)}`);
+
+  // first payer typed, the rest blank → the blank payer gets the remainder (not dropped)
+  r = run('นุ่น=400, คุณแม่');
+  if (r.errors.length) throw new Error(`partial errors: ${JSON.stringify(r.errors)}`);
+  e = r.expenses[0];
+  if (JSON.stringify(asMap(e.payments)) !== JSON.stringify({ u2: 40000, u3: 60000 })) throw new Error(`partial remainder: ${JSON.stringify(e.payments)}`);
+  if (sum(e.payments) !== 100000) throw new Error('payments must total the bill');
+
+  // one priced payer that is NOT first, others blank → remainder to the blanks
+  r = run('สมชาย, นุ่น=300, คุณแม่');
+  e = r.expenses[0];
+  if (JSON.stringify(asMap(e.payments)) !== JSON.stringify({ u1: 35000, u2: 30000, u3: 35000 })) throw new Error(`mixed blanks: ${JSON.stringify(e.payments)}`);
+
+  // priced amounts already above the total → reported
+  r = run('นุ่น=1200, คุณแม่');
+  if (!r.errors.length) throw new Error('over-total payer amounts should be an error');
+}
+
+// v26: a blank payer is never silently the admin / first member.
+export function testExcelBlankPayerIsNotAssigned() {
+  const members = [{ id: 'u1', displayName: 'สมชาย' }, { id: 'u2', displayName: 'นุ่น' }];
+  const base = { title: 'ค่าเข้า', date: '2027-01-02', currency: 'THB', netTotal: 500, subtotal: 500, sharedWith: 'สมชาย, นุ่น' };
+  const trip = { baseCurrency: 'THB' };
+
+  // estimate + blank payer → "ยังไม่ระบุผู้จ่าย": no payer, no payments, and no error
+  let r = importExpenseRows([{ ...base, kind: 'ประมาณการ', payer: '' }], { trip, members, lang: 'th' });
+  if (r.errors.length) throw new Error(`blank estimate payer should import: ${JSON.stringify(r.errors)}`);
+  let e = r.expenses[0];
+  if (e.payerPending !== true || e.payerId !== null || (e.payments || []).length !== 0) {
+    throw new Error(`blank estimate payer should stay pending: ${JSON.stringify({ payerPending: e.payerPending, payerId: e.payerId, payments: e.payments })}`);
+  }
+
+  // actual spending + blank payer → reported, not guessed
+  r = importExpenseRows([{ ...base, kind: 'จ่ายจริง', payer: '' }], { trip, members, lang: 'th' });
+  if (!r.errors.length || r.expenses.length) throw new Error('blank payer on actual spending must be an error row');
+
+  // a name that is not a member → reported, not the admin
+  r = importExpenseRows([{ ...base, kind: 'จ่ายจริง', payer: 'ไม่มีชื่อนี้' }], { trip, members, lang: 'th' });
+  if (!r.errors.length || r.expenses.length) throw new Error('unknown payer must be an error row');
+  r = importExpenseRows([{ ...base, kind: 'จ่ายจริง', payer: 'นุ่น, ไม่มีชื่อนี้' }], { trip, members, lang: 'th' });
+  if (!r.errors.length) throw new Error('unknown name among payers must be reported');
+
+  // itinerary: a priced place with no payer → pending; an unknown payer → error
+  const place = { 'Date': '2027-01-17', 'Start Time': '09:00', 'Place Name': 'Fuji', 'Estimated Cost': 1500, 'Estimate Currency': 'JPY' };
+  let imp = importItineraryRows([place], { trip, members, lang: 'th' });
+  if (imp.errors.length) throw new Error(`blank plan payer should import: ${JSON.stringify(imp.errors)}`);
+  if (imp.items[0].estimatePayerId === 'u1' || imp.items[0].estimatePayerPending !== true) {
+    throw new Error(`blank plan payer must not become the admin: ${JSON.stringify(imp.items[0])}`);
+  }
+  imp = importItineraryRows([{ ...place, 'Paid By': 'ไม่มีชื่อนี้' }], { trip, members, lang: 'th' });
+  if (!imp.errors.length || imp.items.length) throw new Error('unknown plan payer must be an error row');
+}
