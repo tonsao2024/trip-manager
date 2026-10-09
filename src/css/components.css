@@ -2532,6 +2532,8 @@ html, body { max-width: 100%; overflow-x: clip; }
 .payer-columns { padding: 4px 12px; font-size: 11px; color: var(--text-tertiary); }
 .payer-columns > :last-child { text-align: right; }
 .payer-row { padding: 8px 10px; border-radius: 12px; background: var(--bg-secondary); margin-top: 6px; }
+.payer-row .payer-pay-line { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.payer-row .payer-pay-line .input { min-height: 36px; font-size: 12px; }
 .payer-row .payer-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .payer-row .payer-name > .truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .payer-row .payer-name .avatar { flex-shrink: 0; }
@@ -2934,6 +2936,23 @@ html, body { max-width: 100%; overflow-x: clip; }
 
 /* ---- Ideas board ---- */
 .idea-card { overflow: visible; }
+/* “ขยายแผนที่”: the map card becomes a full-screen layer; the map fills it. */
+.map-expand-btn {
+  position: absolute; left: 10px; bottom: 34px; z-index: 1100;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 11px;
+  border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-primary); font-size: 11px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,0,0,.14);
+}
+.map-expand-btn:hover { background: var(--bg-secondary); }
+.map-expanded {
+  position: fixed !important; inset: 0 !important; z-index: 1200; width: 100vw !important;
+  height: 100dvh !important; max-height: none !important; margin: 0 !important;
+  border-radius: 0 !important; border: 0 !important; background: var(--surface);
+}
+.map-expanded .map-frame { height: 100% !important; min-height: 0 !important; }
+.map-expanded .map-expand-btn { bottom: 26px; }
+body.map-expanded-open { overflow: hidden; }
 /* Ideas board: grouped by category (group header carries the pin color), optional compact rows. */
 .idea-group-head {
   display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 6px; border-radius: 14px;

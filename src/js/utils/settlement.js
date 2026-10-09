@@ -1,4 +1,4 @@
-import { expensePayments } from './payments.js';
+import { expensePayments, paymentMethodOf } from './payments.js';
 /**
  * Settlement algorithm - minimize transactions
  * Net balance = Paid - Owed
@@ -53,8 +53,26 @@ export function minimizeTransactions(balances, toleranceMinor = 1) {
   return transactions;
 }
 
-export function calculateSettlement(expenses, members) {
-  const balances = calculateNetBalances(expenses, members);
+/**
+ * Money already sent between members (“จ่ายแล้ว”). A transfer from a debtor to a
+ * creditor moves both nets toward zero, so the transactions that are still
+ * suggested come from what is genuinely left to pay.
+ * @param {{memberId:string, net:number}[]} balances
+ * @param {{fromId:string, toId:string, amountMinor:number}[]} transfers
+ */
+export function applyTransfers(balances, transfers = []) {
+  const net = new Map(balances.map(b => [b.memberId, b.net]));
+  for (const t of transfers || []) {
+    const amount = Math.round(Number(t?.amountMinor) || 0);
+    if (!(amount > 0) || !t.fromId || !t.toId || t.fromId === t.toId) continue;
+    net.set(t.fromId, (net.get(t.fromId) || 0) + amount);
+    net.set(t.toId, (net.get(t.toId) || 0) - amount);
+  }
+  return Array.from(net.entries()).map(([memberId, n]) => ({ memberId, net: n }));
+}
+
+export function calculateSettlement(expenses, members, transfers = []) {
+  const balances = applyTransfers(calculateNetBalances(expenses, members), transfers);
   const transactions = minimizeTransactions(balances);
   return { balances, transactions };
 }
@@ -113,15 +131,17 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
       const paidMinor = payment.amountMinor;
       const payerRow = ensure(payment.memberId);
       payerRow.paidMinor += paidMinor;
-      payerRow.paidByMethod[method] += paidMinor;
+      const pay = paymentMethodOf(exp, payment);
+      const payMethod = ['cash', 'card', 'transfer'].includes(pay.method) ? pay.method : 'other';
+      payerRow.paidByMethod[payMethod] += paidMinor;
       payerRow.paidCount += 1;
       payerRow.items.push({
         expenseId: exp.id,
         title: exp.title || '',
         date: exp.date || '',
         role: 'paid',
-        method,
-        cardName: exp.cardName || '',
+        method: payMethod,
+        cardName: pay.cardName,
         hasReceipt: Boolean(exp.receiptImage || exp.receiptUrl),
         estimated: Boolean(exp.isEstimated),
         amountMinor: paidMinor,
@@ -180,22 +200,35 @@ export function cardSummary(expenses = [], membersMap = {}) {
   const rows = new Map();
   for (const e of expenses) {
     if (!e || (e.status || 'active') === 'voided') continue;
-    if (e.paymentMethod !== 'card' || !e.cardName) continue;
-    const key = String(e.cardName).trim();
-    if (!key) continue;
-    if (!rows.has(key)) rows.set(key, { card: key, totalMinor: 0, count: 0, holders: [], currency: e.currency || null, estimatedMinor: 0 });
-    const row = rows.get(key);
-    const amount = Number(e.netTotalMinor) || 0;
-    row.totalMinor += amount;
-    row.count += 1;
-    if (e.isEstimated) row.estimatedMinor += amount;
+    // Each payer's own card counts — a bill can be split across two cards.
+    const byCard = new Map();
     for (const p of expensePayments(e)) {
+      const pay = paymentMethodOf(e, p);
+      if (pay.method !== 'card' || !pay.cardName) continue;
+      if (!byCard.has(pay.cardName)) byCard.set(pay.cardName, { amountMinor: 0, holders: [] });
+      const bucket = byCard.get(pay.cardName);
+      bucket.amountMinor += Number(p.amountMinor) || 0;
       const holder = membersMap[p.memberId]?.displayName;
-      if (holder && !row.holders.includes(holder)) row.holders.push(holder);
+      if (holder && !bucket.holders.includes(holder)) bucket.holders.push(holder);
     }
-    if (!row.currency && e.currency) row.currency = e.currency;
+    for (const [key, bucket] of byCard) {
+      if (!rows.has(key)) rows.set(key, { card: key, totalMinor: 0, count: 0, holders: [], currency: e.currency || null, estimatedMinor: 0 });
+      const row = rows.get(key);
+      row.totalMinor += bucket.amountMinor;
+      row.count += 1;
+      if (e.isEstimated) row.estimatedMinor += bucket.amountMinor;
+      for (const h of bucket.holders) if (!row.holders.includes(h)) row.holders.push(h);
+      if (!row.currency && e.currency) row.currency = e.currency;
+    }
   }
   return [...rows.values()].sort((a, b) => b.totalMinor - a.totalMinor);
+}
+
+/** How the creditor paid for a bill (falls back to the bill's own method). */
+function sourceMethod(e, tx) {
+  const payments = expensePayments(e);
+  const payer = payments.find(p => p.memberId === tx?.to) || payments[0];
+  return payer ? paymentMethodOf(e, payer).method : (e.paymentMethod || 'cash');
 }
 
 /** Which expenses a settlement transaction settles (debtor's share of each). */
@@ -242,7 +275,7 @@ export function transactionSources(tx, expenses = []) {
       // All payers and what each one put in — a shared bill names everyone who paid.
       payers: expensePayments(e).map(p => ({ memberId: p.memberId, amountMinor: p.amountMinor })),
       currency: e.currency || null,
-      method: e.paymentMethod || 'cash',
+      method: sourceMethod(e, tx),
       estimated: Boolean(e.isEstimated)
     });
   }

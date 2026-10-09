@@ -121,6 +121,7 @@ function buildPayload(data) {
     cardName: String(data.cardName || '').trim(),
     cardId: data.cardId || null,
     itineraryItemId: data.itineraryItemId || null,
+    reservationId: data.reservationId || null,
     receiptUrl: data.receiptUrl || '',
     // Optional receipt photo (Storage URL or an inlined data-URL image).
     receiptImage: data.receiptImage || '',
