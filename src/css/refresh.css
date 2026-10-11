@@ -860,6 +860,40 @@ select.input { border-radius: var(--radius); }
 
 .tx-row-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
 
+/* Outstanding payments are grouped once by payer, with their recipients nested. */
+.tx-payer-group { overflow: hidden; border: 1px solid var(--border-light); border-radius: 16px; background: var(--surface); }
+.tx-payer-head {
+  display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap;
+  padding: 12px 14px; background: var(--surface-2); border-bottom: 1px solid var(--border-light);
+}
+.tx-person-link {
+  appearance: none; border: 0; padding: 0; margin: 0; background: transparent;
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.tx-person-link:hover b { color: var(--primary-strong); }
+.tx-person-link:focus-visible { outline: 2px solid var(--primary-raw); outline-offset: 3px; border-radius: 8px; }
+.tx-payer-person, .tx-recipient-person { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.tx-payer-person { flex: 1 1 180px; }
+.tx-payer-person b, .tx-recipient-person b { color: var(--text-strong); font-size: 12px; }
+.tx-payer-person small, .tx-recipient-person small { display: block; color: var(--text-tertiary); font-size: 10px; line-height: 1.35; }
+.tx-payer-total { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.tx-payer-total > span { color: var(--text-tertiary); font-size: 9.5px; font-weight: 700; }
+.tx-payer-total > b { color: var(--danger); font-size: 13px; }
+.tx-payer-recipients { display: grid; gap: 8px; padding: 10px; }
+.tx-recipient-row { min-width: 0; padding: 10px 12px; background: var(--bg-secondary); }
+.tx-recipient-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tx-recipient-person { flex: 1 1 auto; }
+.tx-recipient-amount { flex: 0 0 auto; text-align: right; font-weight: 800; }
+.tx-recipient-row .tx-details { border-top: 1px dashed var(--border); padding-top: 8px; }
+@media (max-width: 540px) {
+  .tx-payer-head { gap: 8px; padding: 10px; }
+  .tx-payer-person { flex-basis: 100%; }
+  .tx-payer-total { align-items: flex-start; margin-right: auto; }
+  .tx-payer-recipients { padding: 8px; }
+  .tx-recipient-row { padding: 9px; }
+  .tx-row-actions { gap: 8px; }
+}
+
 /* “กระทัดรัด” — keep the totals, hide the item rows */
 .is-compact .rcpt-row,
 .is-compact .rcpt-showall,
@@ -883,13 +917,21 @@ select.input { border-radius: var(--radius); }
 .debt-map-node { transition: filter .18s ease, opacity .18s ease; }
 .debt-map-node:hover { filter: brightness(1.06); }
 .debt-tx-row {
-  display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 8px 10px; border-radius: 12px; cursor: pointer; text-align: left;
+  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0;
+  padding: 8px 10px; border-radius: 12px; text-align: left;
   background: var(--surface-2); border: 1.5px solid var(--border);
   font-size: 12px; color: var(--text-secondary);
 }
 .debt-tx-row:hover { border-color: color-mix(in srgb, var(--primary-raw) 44%, var(--border)); }
-.debt-tx-row svg:last-child { color: var(--text-tertiary); }
+.debt-person-link {
+  display: inline-flex; align-items: center; gap: 6px; flex: 1 1 0; min-width: 0;
+  appearance: none; border: 0; padding: 0; background: transparent;
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.debt-person-link:hover .debt-person-name { color: var(--primary-strong); }
+.debt-person-link:focus-visible { outline: 2px solid var(--primary-raw); outline-offset: 2px; border-radius: 8px; }
+.debt-person-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.debt-row-amount { flex: 0 0 auto; margin-left: auto; color: var(--text-strong); font-weight: 800; font-family: var(--font-mono, monospace); white-space: nowrap; }
 
 /* ==================================================================
    v18.2 — expenses: “เฉลี่ยต่อคน” chip + queued ideas
@@ -1012,8 +1054,7 @@ select.input { border-radius: var(--radius); }
 [data-theme="dark"] .debt-legend-item.is-out { color: #fda4af; }
 [data-theme="dark"] .expense-avg-chip { background: color-mix(in srgb, var(--primary-raw) 24%, transparent); color: #dbeafe; }
 
-/* v28 debt map: ONE map for the whole trip — curved transfer lines whose
-   amount labels are staggered + haloed so nothing stacks into a blur. */
+/* v28+ debt map: distinct transfer hues and collision-checked amount tags. */
 .debt-map-card { overflow: hidden; }
 .debt-map-container { overflow-x: auto !important; overscroll-behavior-inline: contain; }
 .debt-map-svg {
@@ -1024,14 +1065,27 @@ select.input { border-radius: var(--radius); }
   border-radius: 13px;
   background: color-mix(in srgb, var(--surface) 88%, var(--primary-light));
 }
-.debt-map-edge text { paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+.debt-map-amount-label rect { vector-effect: non-scaling-stroke; }
+.debt-map-amount-label .debt-map-amount {
+  fill: var(--text-strong);
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px;
+  font-weight: 850;
+  paint-order: normal;
+  stroke: none !important;
+}
 .debt-map-node:focus { outline: none; filter: drop-shadow(0 0 4px color-mix(in srgb, var(--primary-raw) 48%, transparent)); }
 .debt-map-node--receiver:hover { filter: drop-shadow(0 3px 7px color-mix(in srgb, var(--success) 30%, transparent)); }
 .debt-map-node--payer:hover { filter: drop-shadow(0 3px 7px color-mix(in srgb, var(--danger) 26%, transparent)); }
 .debt-map-node--mixed:hover { filter: drop-shadow(0 3px 7px color-mix(in srgb, var(--primary-raw) 30%, transparent)); }
 .debt-payer-list { display: grid; gap: 6px; margin-top: 9px; }
-.debt-payer-list .debt-tx-row { min-width: 0; min-height: 42px; }
+.debt-payer-list .debt-tx-row { min-width: 0; min-height: 42px; border-left: 4px solid var(--debt-edge-color, var(--primary)); }
 .debt-row-pays { display: inline-flex; align-items: center; gap: 3px; color: var(--text-tertiary); font-size: 9px; white-space: nowrap; }
+.debt-legend-item--unique { background: var(--surface); color: var(--text-secondary); border: 1px solid var(--border-light); }
+.debt-legend-swatch {
+  width: 16px; height: 4px; display: inline-block; border-radius: 999px;
+  background: linear-gradient(90deg, #1677ff, #e11d48, #059669, #d97706, #7c3aed, #0891b2);
+}
 @media (max-width: 600px) {
   .debt-map-card { padding: 12px !important; }
   .debt-recipient-group { padding: 9px; }
@@ -1096,43 +1150,30 @@ select.input { border-radius: var(--radius); }
   .expenses-compact .expense-day-head { padding: 6px 8px; }
 }
 
-/* The trip-wide settlement overview folds independently of the debt summary. */
-#settle-overview {
-  display: block;
-  padding: 0;
-  overflow: hidden;
+/* Trip-overview summary cards stay visible; only the detailed member list folds. */
+#settle-overview { overflow: hidden; }
+.settle-overview-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; color: var(--text-strong);
 }
-#settle-overview > summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 52px;
-  padding: 14px 18px;
-  cursor: pointer;
-  list-style: none;
-  color: var(--text-strong);
-}
-#settle-overview > summary::-webkit-details-marker { display: none; }
-#settle-overview > summary::marker { content: ''; }
-#settle-overview > summary:hover { background: color-mix(in srgb, var(--primary-raw) 5%, transparent); }
-#settle-overview > summary:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary-raw) 45%, transparent); outline-offset: -3px; }
 .settle-overview-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-  color: var(--text-tertiary);
-  font-size: 10px;
-  font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  flex: 0 0 auto; padding: 7px 10px; border-radius: 999px;
+  color: var(--primary-strong); background: var(--primary-lighter);
+  border: 1px solid color-mix(in srgb, var(--primary-raw) 24%, var(--border));
+  font-size: 10px; font-weight: 750; cursor: pointer;
+  transition: background .16s ease, border-color .16s ease;
 }
+.settle-overview-toggle:hover { background: var(--primary-light); border-color: var(--primary-raw); }
+.settle-overview-toggle:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary-raw) 45%, transparent); outline-offset: 2px; }
 .settle-overview-chevron { transition: transform .18s ease; }
-#settle-overview[open] .settle-overview-chevron { transform: rotate(180deg); }
-#settle-overview[open] .overview-hint-collapsed,
-#settle-overview:not([open]) .overview-hint-expanded { display: none; }
-.settle-overview-body { padding: 0 18px 18px; }
+.settle-overview-toggle.is-expanded .settle-overview-chevron { transform: rotate(180deg); }
+.settle-overview-details {
+  margin-top: 16px; padding-top: 14px;
+  border-top: 1px solid var(--border-light); overflow-x: auto;
+}
+#settle-overview-details[hidden] { display: none !important; }
 @media (max-width: 540px) {
-  #settle-overview > summary { min-height: 48px; padding: 12px 13px; }
-  .settle-overview-body { padding: 0 13px 13px; }
-  .settle-overview-toggle { font-size: 9px; }
+  #settle-overview { padding: 13px !important; }
+  .settle-overview-toggle { font-size: 9px; padding: 6px 9px; }
 }

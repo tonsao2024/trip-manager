@@ -1099,7 +1099,11 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
   --cd-foot: 34px;
   --cd-ground: 40px;
   position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
   height: 190px;
+  box-sizing: border-box;
   border-radius: 18px;
   overflow: hidden;
   background: linear-gradient(180deg,
@@ -3180,7 +3184,6 @@ body.map-expanded-open { overflow: hidden; }
 #dashboard-view.dash-compact .my-wallet-sub { font-size: 10px; }
 #dashboard-view.dash-compact .team-card { padding: 10px 12px; gap: 6px; }
 #dashboard-view.dash-compact .dash-subhead { margin: 10px 0 6px; padding-top: 10px; }
-#dashboard-view.dash-compact #countdown-scene { zoom: .85; }
 #dashboard-view.dash-compact .tool-tile { padding: 12px; }
 
 /* ---- Weather (today + 7 days, multi-city) ---- */

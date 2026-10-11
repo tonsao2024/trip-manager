@@ -141,6 +141,44 @@ export function calculateSettlement(expenses, members, transfers = []) {
   return { balances, transactions };
 }
 
+/**
+ * Group outstanding transfers by the member who must pay. Recipients stay nested
+ * beneath that payer so a multi-recipient payer appears only once in the UI.
+ */
+export function groupTransfersByPayer(transactions = []) {
+  const payers = new Map();
+  for (const tx of transactions || []) {
+    if (!tx?.from || !tx?.to || tx.from === tx.to) continue;
+    const amountMinor = Math.round(Number(tx.amountMinor) || 0);
+    if (amountMinor <= 0) continue;
+
+    if (!payers.has(tx.from)) {
+      payers.set(tx.from, { from: tx.from, totalMinor: 0, recipients: new Map() });
+    }
+    const payer = payers.get(tx.from);
+    payer.totalMinor += amountMinor;
+    if (!payer.recipients.has(tx.to)) {
+      payer.recipients.set(tx.to, { to: tx.to, amountMinor: 0, transactions: [] });
+    }
+    const recipient = payer.recipients.get(tx.to);
+    recipient.amountMinor += amountMinor;
+    recipient.transactions.push(tx);
+  }
+
+  return [...payers.values()]
+    .map(payer => ({
+      from: payer.from,
+      totalMinor: payer.totalMinor,
+      recipients: [...payer.recipients.values()]
+        .map(recipient => ({
+          ...recipient,
+          transactions: recipient.transactions.slice().sort((a, b) => b.amountMinor - a.amountMinor)
+        }))
+        .sort((a, b) => b.amountMinor - a.amountMinor || String(a.to).localeCompare(String(b.to)))
+    }))
+    .sort((a, b) => b.totalMinor - a.totalMinor || String(a.from).localeCompare(String(b.from)));
+}
+
 
 /**
  * Per-member statement for the "เคลียร์บิล" page — the receipt view:
