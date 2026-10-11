@@ -780,26 +780,30 @@ function setTrip(tripId) {
 }
 
 // --- Desktop Nav - instant ---
-// v18 keeps the top bar short: the trip’s core work only. ชวนไปที่นี่ / การจอง /
-// เตรียมตัว / ปฏิทิน were taken out of the menu on request, and ตั้งค่า now lives
-// behind the profile picture (top-right) instead of in the menu.
+// v29: the menu owns its own row inside the sticky header (see index.html), so
+// every item is visible at once on computers. Chips carry a full label plus a
+// short one; CSS shows the short label on compact laptop widths (768–1279px)
+// and the full label from 1280px up — never icon-only, never overlapping.
+// ชวนไปที่นี่ / การจอง / เตรียมตัว / ปฏิทิน were taken out of the menu on request,
+// and ตั้งค่า now lives behind the profile picture (top-right) instead.
 function renderDesktopNav() {
   if (!currentTripId) { desktopNavEl.innerHTML = ''; return; }
   const base = `#/trip/${currentTripId}`;
   const currentHash = location.hash.split('?')[0];
+  const th = getLang() === 'th';
   const items = [
-    { label: getLang() === 'th' ? 'ทริปทั้งหมด' : 'All Trips', path: '#/trips', icon: 'compass', exact: true },
-    { label: t('dashboard'), path: `${base}/dashboard`, icon: 'layout-dashboard' },
-    { label: t('itinerary'), path: `${base}/itinerary`, icon: 'map-pinned' },
-    { label: t('ideas'), path: `${base}/ideas`, icon: 'lightbulb' },
-    { label: t('expenses'), path: `${base}/expenses`, icon: 'wallet' },
-    { label: t('settlement'), path: `${base}/settlement`, icon: 'hand-coins' },
-    { label: t('members'), path: `${base}/members`, icon: 'users' },
-    { label: getLang() === 'th' ? 'เอกสาร' : 'Documents', path: `${base}/documents`, icon: 'folder' },
+    { label: th ? 'ทริปทั้งหมด' : 'All Trips', short: th ? 'ทริป' : 'Trips', path: '#/trips', icon: 'compass', exact: true },
+    { label: t('dashboard'), short: th ? 'แดชบอร์ด' : 'Board', path: `${base}/dashboard`, icon: 'layout-dashboard' },
+    { label: t('itinerary'), short: th ? 'แผน' : 'Plan', path: `${base}/itinerary`, icon: 'map-pinned' },
+    { label: t('ideas'), short: th ? 'ไอเดีย' : 'Ideas', path: `${base}/ideas`, icon: 'lightbulb' },
+    { label: t('expenses'), short: th ? 'ค่าใช้จ่าย' : 'Expenses', path: `${base}/expenses`, icon: 'wallet' },
+    { label: t('settlement'), short: th ? 'เคลียร์บิล' : 'Settle', path: `${base}/settlement`, icon: 'hand-coins' },
+    { label: t('members'), short: th ? 'สมาชิก' : 'Members', path: `${base}/members`, icon: 'users' },
+    { label: th ? 'เอกสาร' : 'Documents', short: th ? 'เอกสาร' : 'Docs', path: `${base}/documents`, icon: 'folder' },
   ];
   desktopNavEl.innerHTML = items.map(i => {
     const active = currentHash.startsWith(i.path) ? 'chip-active active' : '';
-    return `<a href="${i.path}" class="chip menu-item ${active}" data-nav="${i.path}" style="text-decoration:none;">${icon(i.icon, 'w-4 h-4')}<span class="menu-item-label">${i.label}</span></a>`;
+    return `<a href="${i.path}" class="chip menu-item ${active}" data-nav="${i.path}" title="${i.label}" style="text-decoration:none;">${icon(i.icon, 'w-4 h-4')}<span class="menu-item-label">${i.label}</span><span class="menu-item-label-short">${i.short}</span></a>`;
   }).join('');
   queueIcons();
 }
@@ -8849,7 +8853,8 @@ async function renderSettlement(params) {
       });
     });
 
-    /* ---- edges: unique colour per transfer + collision-free amount labels ---- */
+    /* ---- edges: colour = the RECEIVER's node colour (owner request,
+         11 Oct 2026 — “สีเส้นควรแสดงสีตามผู้รับเงิน”) + collision-free labels ---- */
     const markerDefs = [];
     let edgesHtml = '';
     const sortedTx = txns.slice().sort((a, b) => (b.amountMinor || 0) - (a.amountMinor || 0));
@@ -8872,7 +8877,9 @@ async function renderSettlement(params) {
       if (!p1 || !p2) return null;
       const payer = membersMap[tx.from] || { displayName: th('ผู้จ่ายเงิน', 'Payer') };
       const receiver = membersMap[tx.to] || { displayName: th('ผู้รับเงิน', 'Receiver') };
-      const color = debtMapColor(i);
+      // Every line pointing at the same receiver shares that person's colour,
+      // so “who gets the money” reads at a glance.
+      const color = nodeColors.get(tx.to) || debtMapColor(i);
       const markerId = `debt-arrow-${i}`;
       markerDefs.push(`<marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0L10 5L0 10z" fill="${escapeHtml(color)}"/></marker>`);
       const dx = p2.x - p1.x, dy = p2.y - p1.y;
@@ -8960,12 +8967,12 @@ async function renderSettlement(params) {
             ${th('แผนที่หนี้ — เส้นเดียวต่อการโอนหนึ่งครั้ง', 'Debt map — one line per transfer')}
             <span class="badge badge-planned text-[10px]">${txns.length} ${th('รายการ', 'transfers')}</span>
           </h3>
-          <span class="text-[10px] text-[var(--text-tertiary)]">${th('เส้นชี้จากผู้จ่ายไปยังผู้รับ • จำนวนเงินจัดวางไม่ให้ทับกัน • กดชื่อเพื่อดูรายการค่าใช้จ่าย', 'Lines point from payer to receiver • amount labels never overlap • tap a name for the expense list')}</span>
+          <span class="text-[10px] text-[var(--text-tertiary)]">${th('เส้นชี้จากผู้จ่ายไปยังผู้รับ • สีเส้นเป็นสีของผู้รับเงิน • กดชื่อเพื่อดูรายการค่าใช้จ่าย', 'Lines point from payer to receiver • each line uses the receiver’s colour • tap a name for the expense list')}</span>
         </div>
         <div class="debt-map-legend">
           <span class="debt-legend-item is-out">${icon('circle-arrow-up', 'w-3 h-3')} ${th('จ่ายเงิน (ลูกศรออก)', 'Pays (arrow out)')}</span>
           <span class="debt-legend-item is-in">${icon('circle-arrow-down', 'w-3 h-3')} ${th('รับเงิน (ลูกศรเข้า)', 'Gets back (arrow in)')}</span>
-          <span class="debt-legend-item debt-legend-item--unique"><i class="debt-legend-swatch"></i>${th('แต่ละสีแทนการโอนคนละรายการ','Each colour identifies a different transfer')}</span>
+          <span class="debt-legend-item debt-legend-item--unique"><i class="debt-legend-swatch"></i>${th('สีเส้น = สีของผู้รับเงินรายการนั้น','Line colour = the receiver’s colour')}</span>
           <span class="debt-legend-hint">${th('ยอดแสดงบนป้ายที่ไม่ทับกัน และมีรายการด้านล่าง','Amount tags do not overlap; matching rows are listed below')}</span>
         </div>
         <div class="debt-map-container">

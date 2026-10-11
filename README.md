@@ -2,6 +2,22 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
+> **v29 — 11 Oct 2026, เมนูบนเห็นครบ + การ์ดนับถอยหลังเต็มใบ + สีเส้นตามผู้รับ.** Three owner
+> requests from the desktop screenshot review. **(1) การ์ดนับถอยหลัง:** the runner scene used to stay
+> 190px tall inside a card the dashboard grid stretches to the tallest neighbour (the weather card),
+> leaving a dead band under the progress bar — the scene now fills the whole card body
+> (`flex: 1` on `#countdown-scene`, sky decor moved to % tops so clouds/sun spread over a taller sky).
+> **(2) แผนที่หนี้:** every transfer line (arrow head + amount tag + row accent) now uses the
+> RECEIVER's node colour instead of a per-transfer hue, so “who gets the money” reads at a glance;
+> the legend says so (`สีเส้น = สีของผู้รับเงินรายการนั้น`). **(3) แถบเมนูด้านบน:** the menu owns its own
+> row inside the sticky header on desktop (brand row 56px + menu row 44px, `--header-h: 101px` at
+> ≥768px) so all eight menus are visible at once — full labels from 1280px, short labels on compact
+> laptops (768–1279px), never icon-only, never overlapping, no hidden horizontal scroll; the sync pill
+> + world clock moved to the right end of that menu row (shown from 1024px). Verified by the new dev
+> tool `tests/browser/desktop-check.mjs` (1024/1280/1440: 8 chips, no overlap, no scroll, scene fills
+> the card, every edge stroke === receiver fill) and the phone sweep still passes. Tests: unit 152 pass,
+> smoke gains a v29 block (menu row + 8 labelled chips, countdown fill, receiver-coloured lines).
+
 > **v28 — 11 Oct 2026, เคลียร์บิลใหม่ + แถบบน + ภาพใหญ่.** Seven owner requests landed.
 > **(1) ใบเสร็จปัดการ์ดถูกนำออกจากระบบ:** the swipe-card receipt deck on the clear-bill page is gone
 > (chip, code, `utils/deck.js` and its tests) — **ใบเสร็จรายคน** is the long list now, and every receipt
