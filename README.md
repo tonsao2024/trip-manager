@@ -2,6 +2,23 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
+> **v28 — 11 Oct 2026, เคลียร์บิลใหม่ + แถบบน + ภาพใหญ่.** Seven owner requests landed.
+> **(1) ใบเสร็จปัดการ์ดถูกนำออกจากระบบ:** the swipe-card receipt deck on the clear-bill page is gone
+> (chip, code, `utils/deck.js` and its tests) — **ใบเสร็จรายคน** is the long list now, and every receipt
+> still opens full detail from the person sheet. **(2) แผนที่หนี้ = แผนที่เดียว:** one map with a node per
+> person and a curved line per transfer; nodes are barycentre-ordered, each line has its own curvature
+> and the amount labels are staggered + haloed, so money lines never stack into an unreadable blur
+> (the old map drew one receiver-centred wheel per receiver). **(3) Footer** shrank (smaller mark, type
+> 8.5–11.5px, tighter padding). **(4) แถบบน:** the desktop menu (ทริปทั้งหมด / แดชบอร์ด / แผนการเดินทาง / …)
+> moved INTO the top bar (icon-only chips on narrow desktops) so every page regains the nav row's space,
+> and the twin BKK/TYO clocks became one compact chip with a city picker (14 cities + the trip timezone,
+> remembered per device in `fuji_clock_city`). **(5) ชื่อสถานที่บนแผนที่:** a labels toggle prints place
+> names beside every pin on the itinerary + ideas maps (`fuji_map_labels`, also in Settings → แผนที่เริ่มต้น).
+> **(6) แผนการเดินทาง:** tapping a place photo opens a large viewer (← / → flip). **(7) ไอเดีย:** the photo
+> popup is now a wide lightbox (up to 1080px) that fully contains the image — no more tiny desktop popup
+> with the frame clipping the picture. Tests: unit 148 pass (deck suite deleted), smoke has a v28 block
+> (deck gone, single debt map, footer sizes, header nav + clock picker, label toggle, photo viewers).
+
 > **v27 — 9 Oct 2026, คืนเงินตามบิล.** The transfer list (`utils/settlement.js` → `settleByBill`) now settles each
 > bill inside itself: the people who shared a bill pay back the people who fronted it, then debts are netted per
 > pair. Before, all balances were netted together and the largest creditor (usually the admin) received everything,

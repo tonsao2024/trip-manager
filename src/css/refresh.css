@@ -414,9 +414,6 @@ select.input { border-radius: var(--radius); }
   .page-scene { background: none !important; }
   /* Deck mode prints every receipt at once, not just the card on top. */
   .print-only { display: block !important; }
-  .rcpt-deck-nav, .deck-people, .deck-tip, .rcpt-deck-peek, .rcpt-deck-badge, .rcpt-deck-hint, .rcpt-deck-more { display: none !important; }
-  .rcpt-deck-stage { min-height: 0 !important; perspective: none !important; }
-  .rcpt-deck-card { box-shadow: none !important; transform: none !important; cursor: default; }
   .expense-day-total-bar { background: #fff !important; border-color: #d8e0e8 !important; }
 }
 /* On screen the print-only blocks are hidden. */
@@ -509,24 +506,24 @@ select.input { border-radius: var(--radius); }
 #settings-account-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 
 /* ==================================================================
-   Footer (v18.2 redesign) — a deliberate brand lock-up instead of the loose
-   stack of centred lines that read like a copy-paste. One row of chips, one
-   quiet legal line, on a tinted bar that lifts it off the page.
+   Footer (v18.2 redesign → v28 compact) — a deliberate brand lock-up.
+   Kept as one slim row of chips + one quiet legal line, but with smaller
+   type, smaller mark and tighter padding so it never eats page space.
    ================================================================== */
 .app-footer {
   position: relative;
-  margin-top: 40px;
-  padding: 22px 18px calc(30px + env(safe-area-inset-bottom));
+  margin-top: 22px;
+  padding: 12px 14px calc(16px + env(safe-area-inset-bottom));
   background:
     linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--primary-raw) 8%, var(--bg)) 42%, color-mix(in srgb, var(--primary-raw) 13%, var(--bg)) 100%);
   border-top: 1px solid color-mix(in srgb, var(--primary-raw) 22%, var(--border));
   color: var(--text-secondary);
-  font-size: 11.5px;
-  line-height: 1.5;
+  font-size: 10px;
+  line-height: 1.45;
 }
 .app-footer::before {
   content: '';
-  position: absolute; inset-inline: 0; top: 0; height: 3px;
+  position: absolute; inset-inline: 0; top: 0; height: 2px;
   background: var(--gradient-duo);
   opacity: .9;
 }
@@ -534,37 +531,37 @@ select.input { border-radius: var(--radius); }
   max-width: var(--content-max);
   margin: 0 auto;
   display: flex; align-items: center; justify-content: space-between;
-  gap: 14px 20px; flex-wrap: wrap;
+  gap: 8px 14px; flex-wrap: wrap;
 }
-.app-footer-brand-row { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.app-footer-brand-row { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
 .app-footer-mark {
   display: grid; place-items: center;
-  width: 34px; height: 34px; border-radius: 12px;
+  width: 22px; height: 22px; border-radius: 8px;
   background: var(--gradient-primary); color: var(--on-primary);
   box-shadow: var(--shadow-primary);
   flex-shrink: 0;
 }
-.app-footer-mark svg { width: 17px; height: 17px; }
+.app-footer-mark svg { width: 12px; height: 12px; }
 .app-footer-wordmark {
-  font-family: var(--font-display); font-weight: 800; font-size: 15px;
+  font-family: var(--font-display); font-weight: 800; font-size: 11.5px;
   letter-spacing: -.01em; color: var(--text-strong);
 }
 .app-footer-by {
-  font-family: var(--font-display); font-weight: 800; font-size: 10px; letter-spacing: .1em;
-  text-transform: uppercase; padding: 3px 9px; border-radius: 999px;
+  font-family: var(--font-display); font-weight: 800; font-size: 8px; letter-spacing: .08em;
+  text-transform: uppercase; padding: 2px 7px; border-radius: 999px;
   background: color-mix(in srgb, var(--brand-yellow-raw) 24%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--brand-yellow-raw) 58%, transparent);
   color: var(--brand-yellow-ink);
   white-space: nowrap;
 }
-.app-footer-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.app-footer-chips { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 .app-footer-chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 5px 11px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px;
   background: color-mix(in srgb, var(--surface) 88%, transparent);
-  border: 1.5px solid color-mix(in srgb, var(--primary-raw) 26%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--primary-raw) 26%, var(--border));
   color: var(--text-secondary);
-  font-size: 10.5px; font-weight: 700; white-space: nowrap;
+  font-size: 8.5px; font-weight: 700; white-space: nowrap;
 }
 .app-footer-chip--version {
   background: color-mix(in srgb, var(--primary-raw) 14%, var(--surface));
@@ -575,20 +572,20 @@ select.input { border-radius: var(--radius); }
 .app-footer-chip--build { font-family: var(--font-mono); }
 .app-footer-legal {
   max-width: var(--content-max);
-  margin: 14px auto 0;
-  padding-top: 12px;
+  margin: 7px auto 0;
+  padding-top: 6px;
   border-top: 1px dashed color-mix(in srgb, var(--primary-raw) 24%, var(--border));
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   justify-content: center; text-align: center;
-  font-size: 10.5px; color: var(--text-tertiary);
-  line-height: 1.65;
+  font-size: 8.5px; color: var(--text-tertiary);
+  line-height: 1.5;
 }
 .app-footer-legal .app-footer-sep {
-  width: 6px; height: 6px; border-radius: 50%; background: var(--brand-yellow-raw); flex-shrink: 0;
+  width: 4px; height: 4px; border-radius: 50%; background: var(--brand-yellow-raw); flex-shrink: 0;
 }
 .app-footer-legal .dot { opacity: .5; }
 @media (max-width: 640px) {
-  .app-footer { padding-inline: 14px; text-align: left; }
+  .app-footer { padding-inline: 12px; text-align: left; }
   .app-footer-inner { justify-content: flex-start; }
   .app-footer-legal { text-align: left; justify-content: flex-start; }
   .app-footer-legal .app-footer-sep { display: none; }
@@ -634,109 +631,22 @@ select.input { border-radius: var(--radius); }
    duration (“ระยะเวลาเดินทาง 1 ชม. 30 นาที”) is desktop-grade detail. */
 @media (max-width: 639px) { .itin-leg-stay { display: none; } }
 
-/* --- ใบเสร็จแบบปัดการ์ด --- */
-.rcpt-deck { display: flex; flex-direction: column; gap: 10px; }
-.deck-person {
-  flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 5px 9px 5px 5px;
+/* --- ใบเสร็จรายคน (รายละเอียดแบบแผ่น + ตัวสลับคน) --- */
+.rd-person {
+  flex: 0 0 auto; display: inline-flex; padding: 3px;
   border-radius: 999px; border: 1.5px solid var(--border); background: var(--surface);
-  cursor: pointer; transition: border-color .16s ease, background .16s ease, transform .16s ease;
+  cursor: pointer; transition: border-color .16s ease, background .16s ease;
 }
-.deck-person:hover { transform: translateY(-1px); }
-.deck-person.is-active { border-color: var(--primary); background: color-mix(in srgb, var(--primary-raw) 12%, var(--surface)); box-shadow: 0 4px 12px color-mix(in srgb, var(--primary-raw) 20%, transparent); }
-.deck-person .avatar { width: 24px; height: 24px; font-size: 11px; }
-.deck-person-name { font-size: 11.5px; font-weight: 800; color: var(--text-secondary); max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.deck-person-amt { font-family: var(--font-mono); font-size: 10.5px; font-weight: 800; }
-.deck-person-amt.is-pos { color: #00a184; }
-.deck-person-amt.is-neg { color: #d64a08; }
-.deck-person--mini { padding: 4px; }
-.deck-person--mini .avatar { width: 26px; height: 26px; }
-
-.rcpt-deck-stage { position: relative; min-height: 340px; perspective: 1000px; }
-.rcpt-deck-peek {
-  position: absolute; inset: 0; pointer-events: none; filter: saturate(.7); opacity: .45;
-  transform: translateY(16px) scale(.94); transition: transform .2s ease, opacity .2s ease;
-  z-index: 0;
-}
-.rcpt-deck-peek .rcpt-deck-card { cursor: default; }
-/* v18.1: the main card sits above the peek card with proper spacing, no overlap */
-.rcpt-deck-card {
-  position: relative; display: flex; flex-direction: column; gap: 10px; padding: 18px;
-  border-radius: 20px; background: var(--surface);
-  border: 1.5px solid color-mix(in srgb, var(--deck-color, var(--primary)) 34%, var(--border));
-  box-shadow: 0 14px 30px rgba(15,23,42,.14), 0 2px 8px rgba(15,23,42,.07);
-  touch-action: pan-y; user-select: none; cursor: grab;
-  will-change: transform;
-  z-index: 2;
-}
-.rcpt-deck-card:active { cursor: grabbing; }
-.rcpt-deck-card::before {
-  content: ""; position: absolute; inset: 0 0 auto 0; height: 5px; border-radius: 20px 20px 0 0;
-  background: linear-gradient(90deg, var(--deck-color, var(--primary)), color-mix(in srgb, var(--deck-color, var(--primary)) 45%, #fff));
-}
-.rcpt-deck-head { display: flex; align-items: center; gap: 10px; }
-.rcpt-deck-head .avatar { width: 38px; height: 38px; font-family: var(--font-display); font-weight: 900; color: #fff; font-size: 15px; }
-.rcpt-deck-kicker { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text-tertiary); }
-.rcpt-deck-name { font-family: var(--font-display); font-size: 17px; font-weight: 900; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rcpt-deck-you { font-size: 9.5px; font-weight: 800; vertical-align: 2px; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--primary-raw) 14%, transparent); color: var(--primary-strong); }
-.rcpt-deck-mood { margin-left: auto; flex-shrink: 0; }
-.rcpt-deck-balance {
-  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-radius: 14px;
-  background: color-mix(in srgb, var(--deck-color, var(--primary)) 9%, var(--surface-2));
-  border: 1px dashed color-mix(in srgb, var(--deck-color, var(--primary)) 34%, var(--border));
-}
-.rcpt-deck-balance-label { font-size: 11px; font-weight: 800; color: var(--text-secondary); }
-.rcpt-deck-balance-value { font-family: var(--font-display); font-size: 22px; font-weight: 900; letter-spacing: -.01em; color: var(--text-primary); }
-.rcpt-deck-card.is-positive .rcpt-deck-balance-value { color: #00a184; }
-.rcpt-deck-card.is-negative .rcpt-deck-balance-value { color: #d64a08; }
-.rcpt-deck-balance-thb { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-tertiary); }
-.rcpt-deck-totals { display: flex; gap: 10px; font-size: 11px; color: var(--text-secondary); }
-.rcpt-deck-totals > span { flex: 1; display: flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 10px; background: var(--surface-2); }
-.rcpt-deck-totals b { font-family: var(--font-mono); font-weight: 800; color: var(--text-primary); }
-.rcpt-deck-totals i { font-style: normal; font-size: 10px; color: var(--text-tertiary); margin-left: auto; }
-.rcpt-deck-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-.rcpt-deck-chips .rcpt-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; padding: 3px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-secondary); }
-.rcpt-deck-chips .rcpt-chip b { font-family: var(--font-mono); }
-.rcpt-deck-rows { display: flex; flex-direction: column; gap: 4px; }
-.rcpt-deck-row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; }
-.rcpt-deck-row-mark { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; }
-.rcpt-deck-row-mark.is-in { background: rgba(0,161,132,.14); color: #00a184; }
-.rcpt-deck-row-mark.is-out { background: rgba(214,74,8,.14); color: #d64a08; }
-.rcpt-deck-row-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
-.rcpt-deck-row-amount { font-family: var(--font-mono); font-weight: 800; flex-shrink: 0; }
-.rcpt-deck-more {
-  display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 8px;
-  border-radius: 12px; border: 1px solid color-mix(in srgb, var(--deck-color, var(--primary)) 40%, var(--border));
-  background: color-mix(in srgb, var(--deck-color, var(--primary)) 6%, transparent);
-  color: var(--primary-strong); font-weight: 800; font-size: 11.5px; cursor: pointer;
-  transition: background .16s ease, transform .16s ease;
-}
-.rcpt-deck-more:hover { background: color-mix(in srgb, var(--deck-color, var(--primary)) 14%, transparent); transform: translateY(-1px); }
-.rcpt-deck-foot { display: flex; align-items: center; gap: 8px; }
-.rcpt-deck-hint { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--text-tertiary); }
-.rcpt-deck-flag { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; font-size: 10.5px; font-weight: 800; color: #d64a08; }
-.rcpt-deck-nav { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center; }
-.deck-pos { font-family: var(--font-mono); font-size: 11px; font-weight: 800; color: var(--text-secondary); min-width: 74px; text-align: center; }
-.deck-tip { letter-spacing: .02em; }
-.rcpt-deck-badge {
-  position: absolute; top: 14px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
-  border-radius: 999px; font-size: 10.5px; font-weight: 900; color: #fff; opacity: 0; transform: scale(.9);
-  transition: opacity .14s ease, transform .14s ease; pointer-events: none; z-index: 3;
-}
-.rcpt-deck-badge.is-on { opacity: 1; transform: scale(1); }
-.rcpt-deck-badge--next { right: 0; background: linear-gradient(90deg, var(--grad-1), var(--grad-2)); }
-.rcpt-deck-badge--prev { left: 0; background: linear-gradient(90deg, var(--brand-ink-raw), #42507e); }
+.rd-person:hover { border-color: var(--primary); }
+.rd-person.is-active { border-color: var(--primary); background: color-mix(in srgb, var(--primary-raw) 12%, var(--surface)); box-shadow: 0 4px 12px color-mix(in srgb, var(--primary-raw) 20%, transparent); }
+.rd-person .avatar { width: 24px; height: 24px; font-size: 11px; }
 .receipt-detail-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .receipt-detail-body { max-height: 62vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .receipt-detail-body .receipt { border: 0; box-shadow: none; padding: 0; }
 
 @media (prefers-reduced-motion: reduce) {
-  .rcpt-deck-peek, .deck-person, .theme-card, .rcpt-deck-more { transition: none; }
+  .rd-person, .theme-card { transition: none; }
 }
-@media (max-width: 420px) {
-  .rcpt-deck-stage { min-height: 320px; }
-  .rcpt-deck-balance-value { font-size: 19px; }
-}
-
 
 /* --- รายละเอียดสถานที่เพิ่มเติม (Overpass + Wikipedia) --- */
 .place-sheet { display: flex; flex-direction: column; gap: 10px; }
@@ -955,12 +865,9 @@ select.input { border-radius: var(--radius); }
 .is-compact .rcpt-showall,
 .is-compact .rcpt-comment,
 .is-compact .rcpt-summary-comments,
-.is-compact .rcpt-deck-rows,
-.is-compact .rcpt-deck-more,
 .is-compact .rcpt-empty { display: none !important; }
 .is-compact .rcpt-block-body { padding-top: 4px; }
 .is-compact .rcpt-block-total-line { border-top: 0; padding-top: 6px; }
-.is-compact .rcpt-deck-card { min-height: 0; }
 
 /* ==================================================================
    v18.2 — แผนที่หนี้ (debt map): legend + tappable rows
@@ -1105,55 +1012,23 @@ select.input { border-radius: var(--radius); }
 [data-theme="dark"] .debt-legend-item.is-out { color: #fda4af; }
 [data-theme="dark"] .expense-avg-chip { background: color-mix(in srgb, var(--primary-raw) 24%, transparent); color: #dbeafe; }
 
-/* Receiver-centred debt map: one clear hub with payers around it. */
+/* v28 debt map: ONE map for the whole trip — curved transfer lines whose
+   amount labels are staggered + haloed so nothing stacks into a blur. */
 .debt-map-card { overflow: hidden; }
-.debt-recipient-groups { display: grid; gap: 18px; }
-.debt-recipient-group {
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--bg-secondary) 42%, var(--surface));
-}
-.debt-recipient-heading {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin: 0 0 9px;
-  padding: 0 2px;
-}
-.debt-recipient-avatar {
-  display: grid;
-  flex: 0 0 38px;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border-radius: 50%;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 900;
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary-raw) 10%, transparent);
-}
-.debt-recipient-heading small { display: block; color: var(--success); font-size: 9px; font-weight: 900; letter-spacing: .08em; }
-.debt-recipient-heading b { display: block; overflow: hidden; color: var(--text-primary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.debt-recipient-count { flex: 0 0 auto; color: var(--text-secondary); font-size: 10px; font-weight: 750; }
 .debt-map-container { overflow-x: auto !important; overscroll-behavior-inline: contain; }
-.debt-recipient-svg {
+.debt-map-svg {
   display: block;
   width: 100%;
-  min-width: 560px;
-  max-width: 760px;
+  min-width: 540px;
   margin: 0 auto;
   border-radius: 13px;
   background: color-mix(in srgb, var(--surface) 88%, var(--primary-light));
 }
-.debt-map-orbit { fill: none; stroke: color-mix(in srgb, var(--primary-raw) 24%, var(--border)); stroke-width: 1.5; stroke-dasharray: 4 7; }
-.debt-map-caption { fill: var(--text-tertiary); font: 800 9px var(--font-sans); letter-spacing: .11em; }
-.debt-map-edge rect { filter: drop-shadow(0 2px 3px rgba(15, 35, 62, .1)); }
-.debt-map-edge text { paint-order: stroke; stroke: var(--surface); stroke-width: 2px; stroke-linejoin: round; }
+.debt-map-edge text { paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
 .debt-map-node:focus { outline: none; filter: drop-shadow(0 0 4px color-mix(in srgb, var(--primary-raw) 48%, transparent)); }
 .debt-map-node--receiver:hover { filter: drop-shadow(0 3px 7px color-mix(in srgb, var(--success) 30%, transparent)); }
 .debt-map-node--payer:hover { filter: drop-shadow(0 3px 7px color-mix(in srgb, var(--danger) 26%, transparent)); }
+.debt-map-node--mixed:hover { filter: drop-shadow(0 3px 7px color-mix(in srgb, var(--primary-raw) 30%, transparent)); }
 .debt-payer-list { display: grid; gap: 6px; margin-top: 9px; }
 .debt-payer-list .debt-tx-row { min-width: 0; min-height: 42px; }
 .debt-row-pays { display: inline-flex; align-items: center; gap: 3px; color: var(--text-tertiary); font-size: 9px; white-space: nowrap; }

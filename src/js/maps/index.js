@@ -72,6 +72,25 @@ export function setStoredLayerId(id) {
   try { localStorage.setItem(MAP_LAYER_STORAGE_KEY, id); } catch {}
 }
 
+/**
+ * v28: “เปิด/ปิดชื่อสถานที่บนแผนที่” — place-name labels beside every pin.
+ * Stored per device; ON by default so the map reads without tapping each pin.
+ */
+export const MAP_LABELS_STORAGE_KEY = 'fuji_map_labels';
+
+export function getStoredLabelsVisible() {
+  try {
+    const v = localStorage.getItem(MAP_LABELS_STORAGE_KEY);
+    if (v === 'off') return false;
+    if (v === 'on') return true;
+  } catch {}
+  return true;
+}
+
+export function setStoredLabelsVisible(visible) {
+  try { localStorage.setItem(MAP_LABELS_STORAGE_KEY, visible ? 'on' : 'off'); } catch {}
+}
+
 export function getLayerDef(id) {
   return BASE_LAYERS.find(l => l.id === id) || BASE_LAYERS[0];
 }
@@ -507,6 +526,44 @@ function escapePopupText(str) {
 }
 
 /**
+ * v28 place-name label beside a pin (a permanent tooltip). The toggle lives in
+ * the map toolbar + settings; the title is remembered on the marker so
+ * refreshMapLabels() can turn every label on/off without redrawing the pins.
+ */
+function applyPinLabel(marker, title) {
+  if (!marker) return;
+  marker._fujiTitle = title || '';
+  try {
+    if (marker.getTooltip()) marker.unbindTooltip();
+    if (title && getStoredLabelsVisible()) {
+      marker.bindTooltip(escapePopupText(title), {
+        permanent: true,
+        direction: 'top',
+        offset: [0, -38],
+        className: 'map-pin-label',
+        opacity: 1
+      });
+    }
+  } catch { /* Leaflet not ready / no tooltip support */ }
+}
+
+/** Turn place-name labels on/off on a live map (no refit, no flicker). */
+export function refreshMapLabels(containerId, visible = null) {
+  if (visible != null) setStoredLabelsVisible(visible);
+  const el = document.getElementById(containerId) || CONTAINER_IDS.get(containerId);
+  const entry = el ? MAP_REGISTRY.get(el) : null;
+  const layer = entry?.markers;
+  if (!layer?.getLayers) return 0;
+  let count = 0;
+  layer.getLayers().forEach(marker => {
+    if (!marker || marker._fujiTitle == null) return;
+    applyPinLabel(marker, marker._fujiTitle);
+    if (marker.getTooltip && marker.getTooltip()) count++;
+  });
+  return count;
+}
+
+/**
  * Draw numbered markers + dashed order polyline for itinerary items.
  * Replaces any markers previously drawn on this map (no duplicates / no leaks).
  */
@@ -548,6 +605,8 @@ export function addItineraryMarkers(map, L, items, dayColors, opts = {}) {
     // Tag the pin so the list → map focus can find & open the right popup.
     marker._fujiItemId = item.id;
     marker._fujiMasterId = item.masterId || null;
+    // v28: optional place-name label beside the pin (toggle in the map toolbar).
+    applyPinLabel(marker, item.title || '');
     const thumb = item.imageUrl
       ? `<div class="map-popup-thumb"><img src="${escapePopupText(item.imageUrl)}" alt="" onerror="this.parentElement.style.display='none'"></div>`
       : '';
@@ -696,6 +755,8 @@ export function addIdeaMarkers(map, L, ideas, opts = {}) {
     });
     const marker = L.marker([lat, lng], { icon, riseOnHover: true }).addTo(layer);
     marker._fujiItemId = idea.id;
+    // v28: optional place-name label beside the pin (toggle in the map toolbar).
+    applyPinLabel(marker, idea.title || '');
     const imgs = Array.isArray(idea.imageUrls) && idea.imageUrls.length
       ? idea.imageUrls.filter(u => /^https?:\/\//i.test(String(u || ''))).slice(0, 1)
       : (idea.imageUrl ? [idea.imageUrl] : []);

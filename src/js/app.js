@@ -34,7 +34,7 @@ import {
 import { fetchSettlementData, recordTransfer, deleteTransfer } from './settlement/index.js';
 
 import { listMembers, createMember, updateMember, deleteMember, countMemberReferences, mapFunctionError, MEMBER_ROLES } from './members/index.js';
-import { dayjs, getCurrentTimes, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay, parseDurationInput } from './utils/date.js';
+import { dayjs, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay, parseDurationInput } from './utils/date.js';
 import { expensesInThb, convertCurrency, formatCurrency, formatCurrencyHtml, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually, tripCurrencyList } from './utils/currency.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses } from './utils/settlement.js';
 import { splitCustom, splitEqual, participantsOf, averagePerPerson, scaleToTotal } from './utils/split.js';
@@ -46,7 +46,6 @@ import {
   readStoredTheme, saveTheme, themeVars, buildCustomPalette, mix as mixThemeColor, lighten as lightenThemeColor
 } from './utils/themes.js';
 import { renderFujiBuddy, fujiBuddyMood, fujiBuddyLine } from './components/mascot.js';
-import { deckOrder, deckStep, deckSummary, swipeIntent, swipeTilt, swipePeek, swipeHint, deckPositionLabel } from './utils/deck.js';
 import { showBottomSheet, showModal } from './components/modal.js';
 import { confirmAction, promptAction } from './components/confirm.js';
 import { mountCountdown, computeCountdown, countdownHeadline } from './components/countdown.js';
@@ -54,7 +53,7 @@ import { initReveal, countUp, confetti, celebrateFrom, restagger } from './compo
 import { resolvePermissions, clearPermissionsCache } from './utils/permissions.js';
 import { renderPageScene } from './components/scenes.js';
 import { listNotes, createNote, updateNote, deleteNote, NOTE_COLORS, noteColorHex, setNoteArchived, localArchivedIds } from './notes/index.js';
-import { googleMapsPlaceUrl, googleMapsDirectionsUrl, BASE_LAYERS, setMapLayer, getStoredLayerId, setStoredLayerId } from './maps/index.js';
+import { googleMapsPlaceUrl, googleMapsDirectionsUrl, BASE_LAYERS, setMapLayer, getStoredLayerId, setStoredLayerId, refreshMapLabels, getStoredLabelsVisible, setStoredLabelsVisible } from './maps/index.js';
 import {
   EXPENSE_CATEGORIES, CATEGORY_ICONS, categoryLabel, categoryIcon, categoryColor,
   ITINERARY_CATEGORIES, ITINERARY_STATUSES, normalizeCategory,
@@ -483,18 +482,100 @@ try {
   }).observe(appEl, { childList: true, subtree: true });
 } catch (e) { console.warn('reveal observer failed', e); }
 
-// --- Clocks ---
-function updateClocks() {
-  const times = getCurrentTimes();
-  const bkk = document.getElementById('clock-bkk');
-  const tokyo = document.getElementById('clock-tokyo');
-  const bkkText = `BKK ${times.bangkok.format('HH:mm')}`;
-  const tokyoText = `TYO ${times.tokyo.format('HH:mm')}`;
-  if (bkk && bkk.textContent !== bkkText) bkk.textContent = bkkText;
-  if (tokyo && tokyo.textContent !== tokyoText) tokyo.textContent = tokyoText;
+// --- Clocks: one compact chip in the header, with a city picker ---
+// The old twin “BKK / TYO” clocks are replaced by a single chip that shows the
+// time in the city you pick (saved per device). Clicking the chip opens a tiny
+// menu — the chip itself stays one line so the top bar keeps room for the menu.
+const CLOCK_CITIES = [
+  { id: 'trip', label: 'ทริป', name: 'เขตเวลาของทริป (ตามตั้งค่าทริป)', tz: null, icon: 'plane' },
+  { id: 'bkk', label: 'BKK', name: 'กรุงเทพฯ Bangkok', tz: 'Asia/Bangkok' },
+  { id: 'tyo', label: 'TYO', name: 'โตเกียว Tokyo', tz: 'Asia/Tokyo' },
+  { id: 'sel', label: 'SEL', name: 'โซล Seoul', tz: 'Asia/Seoul' },
+  { id: 'sin', label: 'SIN', name: 'สิงคโปร์ Singapore', tz: 'Asia/Singapore' },
+  { id: 'hkg', label: 'HKG', name: 'ฮ่องกง Hong Kong', tz: 'Asia/Hong_Kong' },
+  { id: 'tpe', label: 'TPE', name: 'ไทเป Taipei', tz: 'Asia/Taipei' },
+  { id: 'sha', label: 'SHA', name: 'เซี่ยงไฮ้ Shanghai', tz: 'Asia/Shanghai' },
+  { id: 'dxb', label: 'DXB', name: 'ดูไบ Dubai', tz: 'Asia/Dubai' },
+  { id: 'lon', label: 'LON', name: 'ลอนดอน London', tz: 'Europe/London' },
+  { id: 'par', label: 'PAR', name: 'ปารีส Paris', tz: 'Europe/Paris' },
+  { id: 'nyc', label: 'NYC', name: 'นิวยอร์ก New York', tz: 'America/New_York' },
+  { id: 'lax', label: 'LAX', name: 'ลอสแอนเจลิส Los Angeles', tz: 'America/Los_Angeles' },
+  { id: 'syd', label: 'SYD', name: 'ซิดนีย์ Sydney', tz: 'Australia/Sydney' }
+];
+let clockMenuBuilt = false;
+function activeClockCity() {
+  let id = 'bkk';
+  try { id = localStorage.getItem('fuji_clock_city') || 'bkk'; } catch { /* ignore */ }
+  let city = CLOCK_CITIES.find(c => c.id === id);
+  if (!city) city = CLOCK_CITIES.find(c => c.id === 'bkk');
+  if (city?.id === 'trip') {
+    try {
+      const tz = currentTrip?.timezone;
+      if (tz) return { ...city, label: String(city.label), tz };
+    } catch { /* trip state not ready yet (module boot) */ }
+    return CLOCK_CITIES.find(c => c.id === 'bkk');
+  }
+  return city || CLOCK_CITIES[1];
 }
-updateClocks();
-setInterval(updateClocks, 60000);
+function updateClocks() {
+  const city = activeClockCity();
+  let timeText = '--:--';
+  try {
+    const now = dayjs().tz(city.tz || 'Asia/Bangkok');
+    timeText = now.isValid() ? now.format('HH:mm') : dayjs().format('HH:mm');
+  } catch {
+    try { timeText = dayjs().format('HH:mm'); } catch { /* ignore */ }
+  }
+  const cityLabel = document.getElementById('clock-city-label');
+  const timeEl = document.getElementById('clock-time');
+  if (cityLabel && cityLabel.textContent !== city.label) cityLabel.textContent = city.label;
+  if (timeEl && timeEl.textContent !== timeText) timeEl.textContent = timeText;
+  const chip = document.getElementById('clock-chip');
+  if (chip) chip.title = `${city.name} • ${city.tz || ''}`.trim();
+  if (clockMenuBuilt) {
+    document.querySelectorAll('#clock-menu [data-clock-city]').forEach(b => {
+      b.classList.toggle('is-active', b.dataset.clockCity === city.id);
+    });
+  }
+}
+function initClockPicker() {
+  const menu = document.getElementById('clock-menu');
+  const chip = document.getElementById('clock-chip');
+  if (!menu || !chip || clockMenuBuilt) { updateClocks(); return; }
+  clockMenuBuilt = true;
+  menu.innerHTML = `
+    <div class="clock-menu-title">${icon('clock', 'w-3 h-3')} ${getLang() === 'th' ? 'เลือกเมืองสำหรับเวลาบนแถบ' : 'Pick the city for the header clock'}</div>
+    ${CLOCK_CITIES.map(c => `
+      <button type="button" class="clock-menu-item" data-clock-city="${escapeHtml(c.id)}">
+        ${icon(c.icon || 'map-pin', 'w-3 h-3')}
+        <span class="clock-menu-label">${escapeHtml(c.label)}</span>
+        <span class="clock-menu-name">${escapeHtml(c.name)}</span>
+      </button>`).join('')}`;
+  const setMenuOpen = (open) => {
+    menu.classList.toggle('hidden', !open);
+    chip.setAttribute('aria-expanded', String(open));
+    chip.querySelector('svg')?.classList?.toggle('is-open', open);
+  };
+  chip.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setMenuOpen(menu.classList.contains('hidden'));
+    updateClocks();
+  });
+  menu.addEventListener('click', (e) => {
+    const btn = e.target.closest?.('[data-clock-city]');
+    if (!btn) return;
+    try { localStorage.setItem('fuji_clock_city', btn.dataset.clockCity); } catch { /* ignore */ }
+    setMenuOpen(false);
+    updateClocks();
+  });
+  document.addEventListener('click', (e) => {
+    if (!menu.classList.contains('hidden') && !e.target.closest?.('#clock-menu, #clock-chip')) setMenuOpen(false);
+  });
+  queueIcons();
+  updateClocks();
+}
+initClockPicker();
+setInterval(updateClocks, 30000);
 
 // --- Sync status ---
 syncState.subscribe(status => {
@@ -717,7 +798,7 @@ function renderDesktopNav() {
   ];
   desktopNavEl.innerHTML = items.map(i => {
     const active = currentHash.startsWith(i.path) ? 'chip-active active' : '';
-    return `<a href="${i.path}" class="chip menu-item ${active}" data-nav="${i.path}" style="text-decoration:none;">${icon(i.icon, 'w-4 h-4')}${i.label}</a>`;
+    return `<a href="${i.path}" class="chip menu-item ${active}" data-nav="${i.path}" style="text-decoration:none;">${icon(i.icon, 'w-4 h-4')}<span class="menu-item-label">${i.label}</span></a>`;
   }).join('');
   queueIcons();
 }
@@ -846,6 +927,67 @@ function addPasswordToggle(inputId) {
   };
   wrapper.appendChild(btn);
   queueIcons();
+}
+
+// --- Shared image viewer (v28) -------------------------------------------------
+/**
+ * Big image viewer used by the plan page (tap a photo), the ideas board and the
+ * dashboard wishlist thumbs. The modal is a WIDE variant on desktop and the
+ * photo is fully contained inside it — the old popup was too small on a computer
+ * and its frame clipped the image.
+ */
+function openImageViewer(images, startIndex = 0, title = '') {
+  const imgs = (images || []).filter(Boolean);
+  if (!imgs.length) return null;
+  let cur = Math.min(Math.max(0, startIndex | 0), imgs.length - 1);
+  const closeLabel = getLang() === 'th' ? 'ปิด' : 'Close';
+  const dlg = showModal(`
+    <div class="idea-lightbox">
+      <div class="flex items-start justify-between gap-2 mb-2">
+        <h3 class="font-bold text-sm pr-2 min-w-0 truncate">${icon('images', 'w-4 h-4')} ${escapeHtml(title || '')}</h3>
+        <button class="icon-btn flex-shrink-0" data-lb="close" aria-label="${closeLabel}">${icon('x', 'w-4 h-4')}</button>
+      </div>
+      <div class="idea-lightbox-main">
+        ${imgs.length > 1 ? `<button class="idea-lightbox-nav" data-lb="prev" aria-label="‹">${icon('chevron-left', 'w-5 h-5')}</button>` : ''}
+        <img data-lb="img" src="${escapeHtml(imgs[cur])}" alt="" onerror="this.style.opacity='.25'">
+        ${imgs.length > 1 ? `<button class="idea-lightbox-nav" data-lb="next" aria-label="›">${icon('chevron-right', 'w-5 h-5')}</button>` : ''}
+      </div>
+      <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
+        <span class="text-[11px] font-bold text-[var(--text-tertiary)]" data-lb="count">${cur + 1} / ${imgs.length}</span>
+        <a data-lb="open" class="btn btn-ghost btn-sm text-[11px]" href="${escapeHtml(imgs[cur])}" target="_blank" rel="noopener">${icon('external-link', 'w-3.5 h-3.5')} ${getLang() === 'th' ? 'เปิดรูปต้นฉบับ' : 'Open original'}</a>
+      </div>
+      ${imgs.length > 1 ? `<div class="idea-lightbox-thumbs">${imgs.map((u, k) => `
+        <button data-lb="thumb" data-k="${k}" class="${k === cur ? 'is-active' : ''}"><img src="${escapeHtml(u)}" alt="" loading="lazy" onerror="this.closest('[data-lb=thumb]').style.display='none'"></button>`).join('')}</div>` : ''}
+    </div>
+  `, { className: 'modal-card--lightbox' });
+  queueIcons();
+  const paint = () => {
+    const img = dlg.modal.querySelector('[data-lb="img"]');
+    if (img) { img.style.opacity = ''; img.src = imgs[cur]; }
+    const open = dlg.modal.querySelector('[data-lb="open"]');
+    if (open) open.href = imgs[cur];
+    const count = dlg.modal.querySelector('[data-lb="count"]');
+    if (count) count.textContent = `${cur + 1} / ${imgs.length}`;
+    dlg.modal.querySelectorAll('[data-lb="thumb"]').forEach(b => b.classList.toggle('is-active', Number(b.dataset.k) === cur));
+  };
+  dlg.modal.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-lb]');
+    if (!btn || btn.tagName === 'A') return;
+    const act = btn.dataset.lb;
+    if (act === 'close') dlg.close();
+    if (act === 'prev') { cur = (cur - 1 + imgs.length) % imgs.length; paint(); }
+    if (act === 'next') { cur = (cur + 1) % imgs.length; paint(); }
+    if (act === 'thumb') { cur = Number(btn.dataset.k) || 0; paint(); }
+  });
+  // ← / → flip through the photos; Escape is already handled by showModal.
+  const onKey = (e) => {
+    if (e.key === 'ArrowLeft') { cur = (cur - 1 + imgs.length) % imgs.length; paint(); }
+    else if (e.key === 'ArrowRight') { cur = (cur + 1) % imgs.length; paint(); }
+  };
+  document.addEventListener('keydown', onKey);
+  const close = dlg.close;
+  dlg.close = () => { document.removeEventListener('keydown', onKey); close(); };
+  return dlg;
 }
 
 // --- Auth ---
@@ -3862,6 +4004,7 @@ async function renderItinerary(params) {
                 <button class="map-tool-btn" data-layer="map">${icon('map', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</button>
                 <button class="map-tool-btn" data-layer="satellite">${icon('satellite', 'w-3.5 h-3.5')} ${th('ดาวเทียม','Satellite')}</button>
                 <button class="map-tool-btn" data-layer="terrain">${icon('mountain', 'w-3.5 h-3.5')} ${th('ภูมิประเทศ','Terrain')}</button>
+                <button class="map-tool-btn" id="map-labels-btn" aria-pressed="${getStoredLabelsVisible()}">${icon('tags', 'w-3.5 h-3.5')} ${th('ชื่อสถานที่','Labels')}</button>
               </div>
               <div id="map-status" class="map-status"><span class="skeleton" style="width:26px;height:26px;border-radius:50%;"></span> <span>${th('กำลังโหลดแผนที่...','Loading map...')}</span></div>
               <div id="map-empty" class="map-status hidden"><div class="text-center px-4">
@@ -4319,6 +4462,12 @@ async function renderItinerary(params) {
     document.querySelectorAll('#map-layer-bar [data-layer]').forEach(btn => {
       btn.classList.toggle('is-active', btn.dataset.layer === active);
     });
+    const labelsBtn = document.getElementById('map-labels-btn');
+    if (labelsBtn) {
+      const on = getStoredLabelsVisible();
+      labelsBtn.classList.toggle('is-active', on);
+      labelsBtn.setAttribute('aria-pressed', String(on));
+    }
   }
   document.querySelectorAll('#map-layer-bar [data-layer]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -4335,6 +4484,16 @@ async function renderItinerary(params) {
       const def = BASE_LAYERS.find(l => l.id === layerId);
       toast.success(lang === 'th' ? `แสดงแบบ${def?.name || layerId}` : `${def?.en || layerId} view`);
     });
+  });
+  // v28: show / hide the place names printed next to every pin.
+  document.getElementById('map-labels-btn')?.addEventListener('click', () => {
+    const next = !getStoredLabelsVisible();
+    setStoredLabelsVisible(next);
+    refreshMapLabels('map');
+    paintLayerButtons();
+    toast.success(next
+      ? (lang === 'th' ? 'แสดงชื่อสถานที่บนแผนที่แล้ว' : 'Place names shown on the map')
+      : (lang === 'th' ? 'ซ่อนชื่อสถานที่บนแผนที่แล้ว' : 'Place names hidden on the map'));
   });
   paintLayerButtons();
 
@@ -4918,7 +5077,7 @@ async function renderItinerary(params) {
         </div>
         <div class="itin-thumb">
           ${it.imageUrl
-            ? `<img src="${escapeHtml(it.imageUrl)}" alt="" loading="lazy" onerror="this.classList.add('hidden'); this.parentElement.classList.add('is-empty');">`
+            ? `<button type="button" class="itin-thumb-zoom" data-act="photo" data-id="${it.id}" title="${th('กดเพื่อดูภาพใหญ่','Tap to view a large photo')}" aria-label="${th('ดูภาพขนาดใหญ่','View large photo')}"><img src="${escapeHtml(it.imageUrl)}" alt="" loading="lazy" onerror="this.classList.add('hidden'); this.closest('.itin-thumb')?.classList.add('is-empty');"></button>`
             : `<span class="itin-thumb-ph">${icon(isVirtual || isCheckin ? 'bed-double' : categoryIcon(it.category), 'w-5 h-5')}</span>`}
           <!-- 3-dot menu lives on the photo (was duplicated + unclickable in the action row) -->
           <div class="itin-more-wrap">
@@ -5023,6 +5182,12 @@ async function renderItinerary(params) {
           btn.setAttribute('aria-expanded', String(open));
           btn.innerHTML = `${icon(open ? 'chevron-up' : 'chevron-down', 'w-3.5 h-3.5')} <span>${open ? th('ซ่อนรายละเอียด','Hide details') : th('ดูเพิ่มเติม','More details')}</span>`;
           queueIcons();
+          return;
+        }
+        // v28: tapping the photo opens it BIG (the plan is full of small thumbs).
+        if (btn.dataset.act === 'photo') {
+          const pic = visibleItems.find(i => i.id === btn.dataset.id);
+          if (pic?.imageUrl) openImageViewer([pic.imageUrl], 0, pic.title || '');
           return;
         }
         let item = visibleItems.find(i => i.id === btn.dataset.id);
@@ -7744,8 +7909,7 @@ async function renderSettlement(params) {
       <div class="chip-row mb-4" id="settle-views">
         <button class="chip chip-active" data-view="overview">${icon('scale', 'w-3.5 h-3.5')} ${th('ภาพรวม','Overview')}</button>
         <button class="chip" data-view="debt-map">${icon('map', 'w-3.5 h-3.5')} ${th('แผนที่หนี้','Debt map')}</button>
-        <button class="chip" data-view="receipts">${icon('hand', 'w-3.5 h-3.5')} ${th('ใบเสร็จรายคน (ปัดการ์ด)','Receipt cards — swipe')}</button>
-        <button class="chip" data-view="receipts-list">${icon('list', 'w-3.5 h-3.5')} ${th('แบบรายการยาว','Long list')}</button>
+        <button class="chip" data-view="receipts">${icon('list', 'w-3.5 h-3.5')} ${th('ใบเสร็จรายคน','Receipts by person')}</button>
       </div>
 
       <div id="settlement-content" class="space-y-4"><div class="skeleton h-32"></div></div>
@@ -7754,15 +7918,12 @@ async function renderSettlement(params) {
   queueIcons();
 
   let state = { expenses: [], members: [], membersMap: {}, statements: [], balances: [], transactions: [], transfers: [] };
-  let view = 'overview';   // ภาพรวมเป็นค่าเริ่มต้น (สลับเป็นใบเสร็จรายคนได้)
+  let view = 'overview';   // ภาพรวมเป็นค่าเริ่มต้น
   let overviewExpanded = true;
   let receiptFilter = 'all';  // 'all' = ใบเสร็จทุกคน, หรือ memberId ของคนที่เลือกดู
-  // v18: ใบเสร็จรายคนแสดงเป็นการ์ดปัดได้ (Tinder-style) — สลับเป็นรายการยาวได้
-  let receiptMode = 'deck';
   // v18.2: “กระทัดรัด” — the detail views can hide the per-item rows and keep
   // only the paid / share / balance answer (remembered per device).
   let receiptDensity = 'full';
-  let deckIndex = 0;
   let commentsAll = [];       // ความเห็น/ทักท้วงของทั้งทริป (ใช้ในใบเสร็จด้วย)
   let commentMap = new Map();
 
@@ -8433,7 +8594,6 @@ async function renderSettlement(params) {
           // The overview is on screen — render the receipts again before capturing.
           view = 'receipts';
           receiptFilter = 'all';   // make sure the receipt we capture exists
-          receiptMode = 'deck';
           document.querySelectorAll('#settle-views .chip').forEach(c => c.classList.toggle('chip-active', c.dataset.view === 'receipts'));
           renderView();
         }
@@ -8509,91 +8669,6 @@ async function renderSettlement(params) {
         toast.success(th('คัดลอกแล้ว', 'Copied'));
       } catch { toast.error(th('คัดลอกไม่สำเร็จ', 'Copy failed')); }
     }));
-  }
-
-  /* ---------------- v18: ใบเสร็จแบบการ์ดปัด (Tinder-style deck) ---------------- */
-
-  /** The deck always holds every statement — the picker only decides who is on top. */
-  function deckList() {
-    return deckOrder(state.statements, { myId: currentUser?.uid || null, lang });
-  }
-
-  function deckCardHtml(m, idx, total) {
-    const sum = deckSummary(m, { money, lang, flagged: flaggedCount(m) });
-    const th2 = thbOf(Math.abs(m.netMinor));
-    const tone = sum.positive ? 'is-positive' : 'is-negative';
-    const chips = ['cash', 'card', 'transfer'].filter(k => m.paidByMethod[k] > 0)
-      .map(k => `<span class="rcpt-chip rcpt-chip--${k}">${icon(methodIcon(k), 'w-3 h-3')} ${methodLabel(k)} <b>${money(m.paidByMethod[k])}</b></span>`).join('');
-    const topRows = sum.top.length
-      ? sum.top.map(i => `
-          <div class="rcpt-deck-row">
-            <span class="rcpt-deck-row-mark ${i.role === 'paid' ? 'is-in' : 'is-out'}">${icon(i.role === 'paid' ? 'arrow-down-circle' : 'arrow-up-circle', 'w-3 h-3')}</span>
-            <span class="rcpt-deck-row-title">${escapeHtml(i.title)}${i.estimated ? ` <i class="rcpt-mini-badge rcpt-mini-badge--est">${th('ประมาณการ', 'est.')}</i>` : ''}</span>
-            <span class="rcpt-deck-row-amount">${escapeHtml(i.amount)}</span>
-          </div>`).join('')
-      : `<p class="rcpt-empty">${th('ยังไม่มีรายการ', 'No items yet')}</p>`;
-    return `
-      <article class="rcpt-deck-card ${tone}" data-deck-card="${escapeHtml(m.memberId)}" tabindex="0"
-               role="button" aria-label="${escapeHtml(m.displayName)}"
-               style="--deck-color:${escapeHtml(m.color || 'var(--primary)')};">
-        <header class="rcpt-deck-head">
-          <div class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">
-            ${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" alt="" class="w-full h-full rounded-full object-cover">` : escapeHtml(sum.initials)}
-          </div>
-          <div class="min-w-0 flex-1">
-            <p class="rcpt-deck-kicker">${th('ใบเสร็จของ', 'Receipt for')} • ${idx + 1}/${total}</p>
-            <h4 class="rcpt-deck-name">${escapeHtml(m.displayName)}${m.memberId === currentUser?.uid ? ` <span class="rcpt-deck-you">${th('คุณ', 'you')}</span>` : ''}</h4>
-          </div>
-          <span class="rcpt-deck-mood">${moodFaceHtml(balanceMood(m.netMinor), { size: 34, lang })}</span>
-        </header>
-        <div class="rcpt-deck-balance">
-          <span class="rcpt-deck-balance-label">${sum.settled ? th('เคลียร์ครบแล้ว', 'All settled') : sum.positive ? th('จะได้รับคืน', 'Gets back') : th('ต้องจ่ายคืน', 'Owes')}</span>
-          <strong class="rcpt-deck-balance-value">${sum.positive ? '+' : '−'}${escapeHtml(sum.headline)}</strong>
-          ${th2 ? `<span class="rcpt-deck-balance-thb">≈ ${escapeHtml(th2)}</span>` : ''}
-        </div>
-        <div class="rcpt-deck-totals">
-          <span>${th('รับ', 'Paid')} <b>${escapeHtml(sum.paidLabel)}</b> <i>${m.paidCount} ${th('รายการ', 'items')}</i></span>
-          <span>${th('หัก', 'Share')} <b>${escapeHtml(sum.owedLabel)}</b> <i>${m.shareCount} ${th('คน', 'pax')}</i></span>
-        </div>
-        ${chips ? `<div class="rcpt-deck-chips">${chips}</div>` : ''}
-        <div class="rcpt-deck-answer">${transferLinesHtml(m.memberId)}</div>
-        <div class="rcpt-deck-rows">${topRows}</div>
-        ${m.items.length > 3 ? `<button type="button" class="rcpt-deck-more" data-deck-open>${icon('expand', 'w-3.5 h-3.5')} ${th(`ดูรายละเอียดทั้งหมด (${m.items.length} รายการ)`, `Open full receipt (${m.items.length} items)`)}</button>`
-          : `<button type="button" class="rcpt-deck-more" data-deck-open>${icon('expand', 'w-3.5 h-3.5')} ${th('ดูรายละเอียด', 'Open details')}</button>`}
-        <footer class="rcpt-deck-foot">
-          <span class="rcpt-deck-hint">${icon('move-horizontal', 'w-3 h-3')} ${th('ปัดซ้าย/ขวาเพื่อเปลี่ยนคน • แตะการ์ดเพื่อดูรายละเอียด', 'Swipe to switch person • tap for details')}</span>
-          ${sum.flagged ? `<span class="rcpt-deck-flag">${icon('message-square', 'w-3 h-3')} ${sum.flagged}</span>` : ''}
-        </footer>
-      </article>`;
-  }
-
-  function deckHtml() {
-    const list = deckList();
-    if (!list.length) {
-      return `<div class="card p-4">${renderEmptyState({ icon: 'receipt-text', title: th('ยังไม่มีใบเสร็จ', 'No receipts yet'), desc: th('เพิ่มค่าใช้จ่ายแล้วกลับมาดูใหม่', 'Add expenses and come back') })}</div>`;
-    }
-    if (deckIndex >= list.length || deckIndex < 0) deckIndex = 0;
-    const current = list[deckIndex];
-    const next = list[deckStep(deckIndex, 1, list.length)];
-    return `
-      <div class="rcpt-deck" id="rcpt-deck">
-        ${receiptPickerHtml()}
-        <div class="rcpt-deck-stage ${receiptDensity === 'compact' ? 'is-compact' : ''}" id="deck-stage">
-          ${deckCardHtml(current, deckIndex, list.length)}
-          ${next && list.length > 1 ? `<div class="rcpt-deck-peek" aria-hidden="true">${deckCardHtml(next, deckStep(deckIndex, 1, list.length), list.length)}</div>` : ''}
-          <div class="rcpt-deck-badge rcpt-deck-badge--prev" data-deck-badge="prev">${icon('chevron-left', 'w-4 h-4')} <span data-hint-label>${th('คนก่อนหน้า', 'previous')}</span></div>
-          <div class="rcpt-deck-badge rcpt-deck-badge--next" data-deck-badge="next"><span data-hint-label>${th('คนถัดไป', 'next')}</span> ${icon('chevron-right', 'w-4 h-4')}</div>
-        </div>
-        <div class="rcpt-deck-nav no-export">
-          <button type="button" class="btn btn-secondary btn-sm" data-deck-step="-1" aria-label="${th('คนก่อนหน้า', 'previous')}">${icon('chevron-left', 'w-4 h-4')}</button>
-          <span class="deck-pos" data-deck-pos>${escapeHtml(deckPositionLabel(deckIndex, list.length, lang))}</span>
-          <button type="button" class="btn btn-secondary btn-sm" data-deck-step="1" aria-label="${th('คนถัดไป', 'next')}">${icon('chevron-right', 'w-4 h-4')}</button>
-          <button type="button" class="btn btn-ghost btn-sm" data-deck-open>${icon('maximize', 'w-3.5 h-3.5')} ${th('รายละเอียด', 'Details')}</button>
-          <button type="button" class="btn btn-ghost btn-sm" data-export-receipt="${escapeHtml(current.memberId)}">${icon('image', 'w-3.5 h-3.5')} PNG</button>
-          <button type="button" class="btn btn-ghost btn-sm" data-deck-mode="list">${icon('list', 'w-3.5 h-3.5')} ${th('แบบรายการยาว', 'Long list')}</button>
-        </div>
-        <p class="deck-tip text-[10.5px] text-[var(--text-tertiary)] text-center mt-1">${th('ใช้ปุ่ม ← → บนคีย์บอร์ด หรือลากการ์ดปัดได้', 'Use the ← → keys, or drag the card')}</p>
-      </div>`;
   }
 
   /**
@@ -8673,9 +8748,9 @@ async function renderSettlement(params) {
     body.querySelector('#sp-close')?.addEventListener('click', () => sheet.close());
   }
 
-  /** Open the full receipt of one member in a sheet (scrollable, exportable). */
+  /** Open the full receipt of one member in a sheet (scrollable, exportable). */ 
   function openReceiptDetail(memberId) {
-    const m = state.statements.find(x => x.memberId === memberId) || deckList()[deckIndex];
+    const m = state.statements.find(x => x.memberId === memberId) || state.statements[0];
     if (!m) return;
     const detail = showBottomSheet(`
       <div class="receipt-detail-head">
@@ -8701,17 +8776,16 @@ async function renderSettlement(params) {
       <div class="receipt-detail-body ${receiptDensity === 'compact' ? 'is-compact' : ''}" id="receipt-detail-${escapeHtml(m.memberId)}">${receiptHtml(m)}</div>
       <div class="btn-row mt-3 no-export" id="rd-switch"></div>
     `, { className: 'sheet--wide' });
-    const all = deckList();
+    // Person switcher: everyone with a balance movement, biggest first.
+    const all = [...state.statements].sort((a, b) => Math.abs(b.netMinor) - Math.abs(a.netMinor));
     const switchBar = detail.sheet.querySelector('#rd-switch');
     if (switchBar) {
       switchBar.innerHTML = all.map(x => `
-        <button type="button" class="deck-person deck-person--mini ${x.memberId === m.memberId ? 'is-active' : ''}" data-detail-person="${escapeHtml(x.memberId)}">
+        <button type="button" class="rd-person ${x.memberId === m.memberId ? 'is-active' : ''}" data-detail-person="${escapeHtml(x.memberId)}" title="${escapeHtml(x.displayName || '')}" aria-label="${escapeHtml(x.displayName || '')}">
           <span class="avatar" style="background:${escapeHtml(x.color || 'var(--primary)')};width:24px;height:24px;font-size:10px;">${escapeHtml((x.displayName || '?').trim().charAt(0).toUpperCase())}</span>
         </button>`).join('');
       switchBar.querySelectorAll('[data-detail-person]').forEach(btn => btn.addEventListener('click', () => {
         detail.close();
-        const idx = all.findIndex(x => x.memberId === btn.dataset.detailPerson);
-        if (idx >= 0) { deckIndex = idx; renderView(); }
         setTimeout(() => openReceiptDetail(btn.dataset.detailPerson), 60);
       }));
     }
@@ -8723,125 +8797,23 @@ async function renderSettlement(params) {
       document.querySelectorAll('.receipt-detail-body').forEach(el => el.classList.toggle('is-compact', receiptDensity === 'compact'));
       // keep the page behind the sheet in sync too
       document.querySelectorAll('.receipt-grid').forEach(el => el.classList.toggle('is-compact', receiptDensity === 'compact'));
-      document.querySelectorAll('#deck-stage').forEach(el => el.classList.toggle('is-compact', receiptDensity === 'compact'));
     }));
     bindReceiptActions();
     queueIcons();
   }
 
-  /** Drag / keyboard behaviour for the deck (pointer events, no libraries). */
-  function mountDeck() {
-    const stage = document.getElementById('deck-stage');
-    const deck = document.getElementById('rcpt-deck');
-    if (!stage || !deck) return;
-    const card = stage.querySelector('[data-deck-card]');
-    if (!card) return;
-
-    const go = (delta) => {
-      const list = deckList();
-      if (!list.length) return;
-      deckIndex = deckStep(deckIndex, delta, list.length);
-      renderView();
-    };
-    const open = () => {
-      const cur = deckList()[deckIndex];
-      if (cur) openReceiptDetail(cur.memberId);
-    };
-
-    let dragging = false, startX = 0, startY = 0, dx = 0, dy = 0, moved = false;
-    const setTransform = () => {
-      const tilt = swipeTilt(dx, stage.clientWidth || 360);
-      card.style.transform = `translate(${dx}px, ${dy * 0.25}px) rotate(${tilt}deg)`;
-      card.style.transition = 'none';
-      const peek = stage.querySelector('.rcpt-deck-peek');
-      if (peek) {
-        const p = Math.min(1, Math.abs(dx) / Math.max(160, (stage.clientWidth || 360) * 0.6));
-        peek.style.transform = `translateY(${10 - p * 10}px) scale(${0.965 + p * 0.035})`;
-        // swipePeek() fades the next card IN as the current one leaves
-        peek.style.opacity = String(swipePeek(1 - p));
-      }
-      const hint = swipeHint(dx, { next: th('คนถัดไป', 'next'), prev: th('คนก่อนหน้า', 'previous') });
-      ['next', 'prev'].forEach((tone) => {
-        const badge = stage.querySelector(`[data-deck-badge="${tone}"]`);
-        if (!badge) return;
-        badge.classList.toggle('is-on', hint?.tone === tone);
-        if (hint?.tone === tone) {
-          const label = badge.querySelector('[data-hint-label]');
-          if (label) label.textContent = hint.label;
-        }
-      });
-    };
-    const resetTransform = () => {
-      card.style.transition = 'transform .28s cubic-bezier(.2,.9,.3,1)';
-      card.style.transform = '';
-      stage.querySelector('.rcpt-deck-peek')?.style.setProperty('transform', '');
-      stage.querySelectorAll('[data-deck-badge]').forEach(b => b.classList.remove('is-on'));
-    };
-    const onDown = (e) => {
-      if (e.target.closest('button, a, input, select, textarea, .no-export')) return;
-      dragging = true; moved = false;
-      startX = e.clientX; startY = e.clientY; dx = 0; dy = 0;
-      card.setPointerCapture?.(e.pointerId);
-    };
-    const onMove = (e) => {
-      if (!dragging) return;
-      dx = e.clientX - startX; dy = e.clientY - startY;
-      if (Math.abs(dx) > 6 || Math.abs(dy) > 6) moved = true;
-      if (moved) setTransform();
-    };
-    const onUp = () => {
-      if (!dragging) return;
-      dragging = false;
-      const intent = swipeIntent({ dx, dy, width: stage.clientWidth || 360 });
-      if (intent === 'next' || intent === 'prev') {
-        const out = intent === 'next' ? -1 : 1;
-        card.style.transition = 'transform .22s ease-in, opacity .22s ease-in';
-        card.style.transform = `translate(${out * (window.innerWidth || 600)}px, ${dy * 0.3}px) rotate(${out * 18}deg)`;
-        card.style.opacity = '0';
-        setTimeout(() => go(out), 130);
-      } else if (intent === 'open' || !moved) {
-        resetTransform();
-        open();
-      } else resetTransform();
-      dx = 0; dy = 0;
-    };
-    card.addEventListener('pointerdown', onDown);
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
-
-    const onKey = (e) => {
-      if (!document.getElementById('rcpt-deck')) return;
-      if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
-      else if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
-      else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
-    };
-    window.addEventListener('keydown', onKey);
-    document.addEventListener('routechange', () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-    }, { once: true });
-
-    deck.querySelectorAll('[data-deck-step]').forEach(btn => btn.addEventListener('click', () => go(Number(btn.dataset.deckStep) || 1)));
-    deck.querySelectorAll('[data-deck-open]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); open(); }));
-    deck.querySelectorAll('[data-deck-mode]').forEach(btn => btn.addEventListener('click', () => {
-      receiptMode = btn.dataset.deckMode === 'list' ? 'list' : 'deck';
-      try { localStorage.setItem('fuji_receipt_mode', receiptMode); } catch { /* ignore */ }
-      renderView();
-    }));
-    // the tap on the whole card also opens the detail (only when it was a tap)
-    card.addEventListener('click', (e) => {
-      if (e.target.closest('button, a, .no-export')) return;
-      if (moved) return;
-      open();
-    });
-  }
-
-  /** Recipient-centred debt map: the receiver is the hub, payers surround them. */
+  /**
+   * ONE debt map for the whole trip (v28): every person is a node and every
+   * transfer is a connecting line. The old map drew one receiver-centred wheel
+   * per receiver and the money lines piled up unreadable.
+   *
+   * Anti-overlap rules: nodes sit on one ellipse with a barycentre ordering so
+   * linked people land next to each other (fewer crossings), every line gets its
+   * own curvature and direction (they never lie on top of each other), and the
+   * amount labels are staggered along the lines with a halo behind the text.
+   */
   function debtMapHtml() {
-    const txns = state.transactions || [];
+    const txns = (state.transactions || []).filter(tx => tx?.from && tx?.to && tx.from !== tx.to);
     const membersMap = state.membersMap || {};
     if (!txns.length) {
       return `<div class="card p-5">${renderEmptyState({ icon: 'party-popper', title: t('noDebt'), desc: t('allCleared') })}</div>`;
@@ -8852,117 +8824,166 @@ async function renderSettlement(params) {
     };
     const POS = tokenColor('--success', '#00a86b');
     const NEG = tokenColor('--danger', '#ef2b3d');
-    const byReceiver = new Map();
-    txns.forEach(tx => {
-      if (!tx?.to || !tx?.from) return;
-      if (!byReceiver.has(tx.to)) byReceiver.set(tx.to, []);
-      byReceiver.get(tx.to).push(tx);
-    });
-    const groups = [...byReceiver.entries()].sort((a, b) =>
-      (membersMap[a[0]]?.displayName || '').localeCompare(membersMap[b[0]]?.displayName || '')
-    );
     const initial = (person) => escapeHtml((person?.displayName || '?').trim().charAt(0).toUpperCase() || '?');
-    const shortName = (person, max = 15) => {
+    const shortName = (person, max = 14) => {
       const name = person?.displayName || '?';
       return escapeHtml(name.length > max ? `${name.slice(0, max - 1)}…` : name);
     };
-    const groupsHtml = groups.map(([receiverId, payments], groupIndex) => {
-      const receiver = membersMap[receiverId] || { displayName: th('ผู้รับเงิน','Receiver') };
-      const width = 720, height = 430, cx = 360, cy = 208;
-      const radius = Math.min(158, Math.max(126, 92 + payments.length * 8));
-      const receiverRadius = 48, payerRadius = 25;
-      const markerId = `debt-arrow-${groupIndex}`;
-      const coords = payments.map((tx, i) => {
-        const angle = (2 * Math.PI * i / payments.length) - Math.PI / 2;
-        return { tx, x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) };
+
+    /* ---- who is on the map: everyone who sends or receives money ---- */
+    const send = new Map();   // id -> total sent
+    const recv = new Map();   // id -> total received
+    const partners = new Map(); // id -> Set(partner ids) for the ordering pass
+    txns.forEach(tx => {
+      send.set(tx.from, (send.get(tx.from) || 0) + (tx.amountMinor || 0));
+      recv.set(tx.to, (recv.get(tx.to) || 0) + (tx.amountMinor || 0));
+      for (const [a, b] of [[tx.from, tx.to], [tx.to, tx.from]]) {
+        if (!partners.has(a)) partners.set(a, new Set());
+        partners.get(a).add(b);
+      }
+    });
+    const ids = [...new Set([...send.keys(), ...recv.keys()])];
+    // Biggest movement first is a stable, readable default order.
+    ids.sort((a, b) => (Math.abs((recv.get(b) || 0) - (send.get(b) || 0)) - Math.abs((recv.get(a) || 0) - (send.get(a) || 0))));
+
+    /* ---- layout: one ellipse, barycentre ordering to reduce crossings ---- */
+    const W = 820, H = 500;
+    const cx = W / 2, cy = H / 2 - 4;
+    const n = ids.length;
+    const radiusX = Math.min(320, 190 + n * 14);
+    const radiusY = Math.min(192, 118 + n * 10);
+    // one ordering pass: each person moves towards the average angle of the
+    // people they pay / get paid by, keeping connected people near each other.
+    const angleOf = (i) => (2 * Math.PI * i) / Math.max(1, n) - Math.PI / 2;
+    let order = ids.slice();
+    if (n > 2) {
+      const idxOf = new Map(order.map((id, i) => [id, i]));
+      const bary = order.map((id) => {
+        const ps = [...(partners.get(id) || [])].filter(p => idxOf.has(p));
+        if (!ps.length) return idxOf.get(id);
+        // circular mean of partner positions (in index space)
+        let sx = 0, sy = 0;
+        ps.forEach(p => { sx += Math.cos(angleOf(idxOf.get(p))); sy += Math.sin(angleOf(idxOf.get(p))); });
+        let ang = Math.atan2(sy, sx) + Math.PI / 2; // back to index space (0 = top)
+        if (ang < 0) ang += 2 * Math.PI;
+        return (ang / (2 * Math.PI)) * n;
       });
-      let linesHtml = '';
-      let payersHtml = '';
-      coords.forEach(({ tx, x, y }) => {
-        const payer = membersMap[tx.from] || { displayName: th('ผู้จ่ายเงิน','Payer') };
-        const dx = cx - x, dy = cy - y;
-        const len = Math.hypot(dx, dy) || 1;
-        const sx = x + dx / len * (payerRadius + 2);
-        const sy = y + dy / len * (payerRadius + 2);
-        const ex = cx - dx / len * (receiverRadius + 5);
-        const ey = cy - dy / len * (receiverRadius + 5);
-        const midX = (sx + ex) / 2;
-        const midY = (sy + ey) / 2;
-        const payerColor = payer.color || 'var(--primary)';
-        linesHtml += `
-          <g class="debt-map-edge">
-            <path d="M${sx.toFixed(1)},${sy.toFixed(1)} L${ex.toFixed(1)},${ey.toFixed(1)}" fill="none" stroke="${escapeHtml(payerColor)}" stroke-width="2.5" stroke-opacity=".78" marker-end="url(#${markerId})"/>
-            <rect x="${(midX - 43).toFixed(1)}" y="${(midY - 11).toFixed(1)}" width="86" height="22" rx="7" fill="var(--surface)" stroke="var(--border)" stroke-width="1" opacity=".97"/>
-            <text x="${midX.toFixed(1)}" y="${(midY + 3.5).toFixed(1)}" text-anchor="middle" fill="var(--text-strong)" font-size="10" font-weight="850" font-family="var(--font-mono)">${money(tx.amountMinor)}</text>
-          </g>`;
-        payersHtml += `
-          <g class="debt-map-node debt-map-node--payer" data-member="${escapeHtml(tx.from)}" data-debt-person="${escapeHtml(tx.from)}" role="button" tabindex="0" style="cursor:pointer;">
-            <title>${escapeHtml(payer.displayName || '')} ${th('จ่ายให้','pays')} ${escapeHtml(receiver.displayName || '')}: ${money(tx.amountMinor)}</title>
-            <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="31" fill="${escapeHtml(payerColor)}" opacity=".13"/>
-            <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${payerRadius}" fill="${escapeHtml(payerColor)}"/>
-            <text x="${x.toFixed(1)}" y="${(y + 1).toFixed(1)}" text-anchor="middle" dominant-baseline="central" fill="#fff" font-size="12" font-weight="900" font-family="var(--font-display)">${initial(payer)}</text>
-            <text x="${x.toFixed(1)}" y="${(y + 40).toFixed(1)}" text-anchor="middle" fill="var(--text-strong)" font-size="10" font-weight="750" font-family="var(--font-sans)">${shortName(payer, 16)}</text>
-            <text x="${x.toFixed(1)}" y="${(y + 54).toFixed(1)}" text-anchor="middle" fill="${NEG}" font-size="8" font-weight="800" font-family="var(--font-sans)">${th('จ่าย','PAYS')}</text>
-          </g>`;
+      order = order
+        .map((id, i) => ({ id, key: bary[i] }))
+        .sort((a, b) => a.key - b.key)
+        .map(o => o.id);
+    }
+    const posOf = new Map();
+    order.forEach((id, i) => {
+      const ang = angleOf(i);
+      posOf.set(id, {
+        x: cx + radiusX * Math.cos(ang),
+        y: cy + radiusY * Math.sin(ang),
+        ang
       });
-      const receiverColor = receiver.color || 'var(--primary)';
-      const receiverNet = (state.statements || []).find(m => m.memberId === receiverId)?.netMinor;
-      const receiverNetLabel = Number.isFinite(receiverNet) ? money(Math.abs(receiverNet)) : '';
-      return `
-        <section class="debt-recipient-group" aria-label="${escapeHtml(th('ผู้รับเงิน','Money recipient'))}: ${escapeHtml(receiver.displayName || '')}">
-          <div class="debt-recipient-heading">
-            <span class="debt-recipient-avatar" style="background:${escapeHtml(receiverColor)};">${initial(receiver)}</span>
-            <span class="min-w-0 flex-1"><small>${th('ผู้รับเงิน','RECEIVES')}</small><b>${escapeHtml(receiver.displayName || '')}</b></span>
-            <span class="debt-recipient-count">${payments.length} ${th('คนจ่าย','payers')}${receiverNetLabel ? ` · ${receiverNetLabel}` : ''}</span>
-          </div>
-          <div class="debt-map-container">
-            <svg class="debt-recipient-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(th('ผู้รับเงินอยู่ตรงกลาง ผู้จ่ายเงินอยู่รอบนอก','Receiver in the center, payers around them'))}">
-              <defs><marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--primary-strong)"/></marker></defs>
-              <circle cx="${cx}" cy="${cy}" r="${radius}" class="debt-map-orbit"/>
-              <text x="${cx}" y="25" text-anchor="middle" class="debt-map-caption">${th('ผู้จ่ายเงินอยู่รอบผู้รับ','PAYERS SURROUND THE RECEIVER')}</text>
-              ${linesHtml}
-              <g class="debt-map-node debt-map-node--receiver" data-member="${escapeHtml(receiverId)}" data-debt-person="${escapeHtml(receiverId)}" role="button" tabindex="0" style="cursor:pointer;">
-                <title>${escapeHtml(receiver.displayName || '')} ${th('รับเงินสุทธิ','receives money')}${receiverNetLabel ? `: ${receiverNetLabel}` : ''}</title>
-                <circle cx="${cx}" cy="${cy}" r="58" fill="${escapeHtml(receiverColor)}" opacity=".13"/>
-                <circle cx="${cx}" cy="${cy}" r="${receiverRadius}" fill="${escapeHtml(receiverColor)}"/>
-                <text x="${cx}" y="${cy + 1}" text-anchor="middle" dominant-baseline="central" fill="#fff" font-size="18" font-weight="900" font-family="var(--font-display)">${initial(receiver)}</text>
-                <text x="${cx}" y="${cy + 66}" text-anchor="middle" fill="var(--text-strong)" font-size="11" font-weight="850" font-family="var(--font-sans)">${shortName(receiver, 20)}</text>
-                <text x="${cx}" y="${cy + 81}" text-anchor="middle" fill="${POS}" font-size="8.5" font-weight="900" font-family="var(--font-sans)">${th('รับสุทธิ','RECEIVES')}</text>
-              </g>
-              ${payersHtml}
-            </svg>
-          </div>
-          <div class="debt-payer-list">
-            ${payments.map(tx => {
-              const payer = membersMap[tx.from] || { displayName: th('ผู้จ่ายเงิน','Payer') };
-              return `<button type="button" class="debt-tx-row" data-settle-person="${escapeHtml(tx.from)}">
-                <span class="avatar" style="width:24px;height:24px;font-size:9px;background:${escapeHtml(payer.color || 'var(--primary)')};">${initial(payer)}</span>
-                <span class="font-semibold truncate">${escapeHtml(payer.displayName || '')}</span>
-                <span class="debt-row-pays">${icon('arrow-right', 'w-3 h-3')} ${th('จ่ายให้','pays')}</span>
-                <span class="avatar" style="width:24px;height:24px;font-size:9px;background:${escapeHtml(receiverColor)};">${initial(receiver)}</span>
-                <span class="font-semibold truncate">${escapeHtml(receiver.displayName || '')}</span>
-                <span class="ml-auto font-bold font-mono">${money(tx.amountMinor)}</span>
-                ${icon('chevron-right', 'w-3.5 h-3.5')}
-              </button>`;
-            }).join('')}
-          </div>
-        </section>`;
+    });
+
+    /* ---- edges: one curved line per transfer, labels staggered ---- */
+    const markerDefs = [];
+    let edgesHtml = '';
+    const sortedTx = txns.slice().sort((a, b) => (b.amountMinor || 0) - (a.amountMinor || 0));
+    sortedTx.forEach((tx, i) => {
+      const p1 = posOf.get(tx.from), p2 = posOf.get(tx.to);
+      if (!p1 || !p2) return;
+      const payer = membersMap[tx.from] || { displayName: th('ผู้จ่ายเงิน', 'Payer') };
+      const receiver = membersMap[tx.to] || { displayName: th('ผู้รับเงิน', 'Receiver') };
+      const color = payer.color || 'var(--primary)';
+      const markerId = `debt-arrow-${i}`;
+      markerDefs.push(`<marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0L10 5L0 10z" fill="${escapeHtml(color)}"/></marker>`);
+      // shorten the line so it starts / ends at the node rims (not under them)
+      const dx = p2.x - p1.x, dy = p2.y - p1.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len, uy = dy / len;
+      const sxp = p1.x + ux * 30, syp = p1.y + uy * 30;
+      const exp = p2.x - ux * 34, eyp = p2.y - uy * 34;
+      // fan the curves out: alternating bulge side + growing magnitude, so two
+      // lines never share the same path (and their labels never stack)
+      const side = i % 2 === 0 ? 1 : -1;
+      const bulge = side * (30 + Math.floor(i / 2) * 12);
+      const mx = (sxp + exp) / 2 - uy * bulge;
+      const my = (syp + eyp) / 2 + ux * bulge;
+      // amount label: staggered along the curve (t differs per line) + halo text
+      const tSteps = [0.5, 0.4, 0.62, 0.32, 0.7, 0.26, 0.76, 0.2, 0.82];
+      const t = tSteps[i % tSteps.length];
+      const it = 1 - t;
+      const lx = it * it * sxp + 2 * it * t * mx + t * t * exp;
+      const ly = it * it * syp + 2 * it * t * my + t * t * eyp;
+      edgesHtml += `
+        <g class="debt-map-edge" data-edge="${escapeHtml(tx.from)}→${escapeHtml(tx.to)}">
+          <title>${escapeHtml(payer.displayName || '')} ${th('จ่ายให้', 'pays')} ${escapeHtml(receiver.displayName || '')}: ${money(tx.amountMinor)}</title>
+          <path d="M${sxp.toFixed(1)},${syp.toFixed(1)} Q${mx.toFixed(1)},${my.toFixed(1)} ${exp.toFixed(1)},${eyp.toFixed(1)}" fill="none" stroke="${escapeHtml(color)}" stroke-width="2.5" stroke-opacity=".8" stroke-linecap="round" marker-end="url(#${markerId})"/>
+          <text class="debt-map-amount" x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="central">${money(tx.amountMinor)}</text>
+        </g>`;
+    });
+
+    /* ---- people: one node each, role spelled out ---- */
+    let nodesHtml = '';
+    order.forEach((id) => {
+      const person = membersMap[id] || { displayName: id };
+      const p = posOf.get(id);
+      const out = send.get(id) || 0;
+      const inc = recv.get(id) || 0;
+      const role = out > 0 && inc > 0 ? 'mixed' : inc > 0 ? 'receiver' : 'payer';
+      const roleLabel = role === 'mixed'
+        ? th('จ่าย/รับ', 'PAYS / GETS')
+        : role === 'receiver' ? th('รับเงิน', 'GETS BACK') : th('จ่ายเงิน', 'PAYS');
+      const tone = role === 'receiver' ? POS : role === 'payer' ? NEG : 'var(--primary-strong)';
+      const color = person.color || 'var(--primary)';
+      const nodeR = n > 8 ? 21 : 25;
+      nodesHtml += `
+        <g class="debt-map-node debt-map-node--${role}" data-member="${escapeHtml(id)}" data-debt-person="${escapeHtml(id)}" role="button" tabindex="0" style="cursor:pointer;">
+          <title>${escapeHtml(person.displayName || '')}${out ? ` • ${th('จ่าย', 'pays')} ${money(out)}` : ''}${inc ? ` • ${th('รับ', 'gets')} ${money(inc)}` : ''}</title>
+          <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${nodeR + 6}" fill="${escapeHtml(color)}" opacity=".13"/>
+          <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${nodeR}" fill="${escapeHtml(color)}"/>
+          <text x="${p.x.toFixed(1)}" y="${(p.y + 1).toFixed(1)}" text-anchor="middle" dominant-baseline="central" fill="#fff" font-size="12" font-weight="900" font-family="var(--font-display)">${initial(person)}</text>
+          <text x="${p.x.toFixed(1)}" y="${(p.y + nodeR + 15).toFixed(1)}" text-anchor="middle" fill="var(--text-strong)" font-size="10.5" font-weight="800" font-family="var(--font-sans)">${shortName(person, 16)}</text>
+          <text x="${p.x.toFixed(1)}" y="${(p.y + nodeR + 28).toFixed(1)}" text-anchor="middle" fill="${escapeHtml(tone)}" font-size="8" font-weight="850" font-family="var(--font-sans)">${roleLabel}</text>
+        </g>`;
+    });
+
+    /* ---- the row list under the map stays: exact amounts + tap targets ---- */
+    const rowsHtml = sortedTx.map(tx => {
+      const payer = membersMap[tx.from] || { displayName: th('ผู้จ่ายเงิน', 'Payer') };
+      const receiver = membersMap[tx.to] || { displayName: th('ผู้รับเงิน', 'Receiver') };
+      return `<button type="button" class="debt-tx-row" data-settle-person="${escapeHtml(tx.from)}">
+        <span class="avatar" style="width:24px;height:24px;font-size:9px;background:${escapeHtml(payer.color || 'var(--primary)')};">${initial(payer)}</span>
+        <span class="font-semibold truncate">${escapeHtml(payer.displayName || '')}</span>
+        <span class="debt-row-pays">${icon('arrow-right', 'w-3 h-3')} ${th('จ่ายให้', 'pays')}</span>
+        <span class="avatar" style="width:24px;height:24px;font-size:9px;background:${escapeHtml(receiver.color || 'var(--primary)')};">${initial(receiver)}</span>
+        <span class="font-semibold truncate">${escapeHtml(receiver.displayName || '')}</span>
+        <span class="ml-auto font-bold font-mono">${money(tx.amountMinor)}</span>
+        ${icon('chevron-right', 'w-3.5 h-3.5')}
+      </button>`;
     }).join('');
+
     return `
       <div class="card p-5 debt-map-card">
         <div class="flex items-start justify-between gap-2 mb-3 flex-wrap">
           <h3 class="font-bold flex items-center gap-2">
             <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('network', 'w-4 h-4')}</span>
-            ${th('แผนที่หนี้ — ผู้รับอยู่ตรงกลาง','Debt map — receivers at the center')}
-            <span class="badge badge-planned text-[10px]">${txns.length} ${th('รายการ','transfers')}</span>
+            ${th('แผนที่หนี้ — เส้นเดียวต่อการโอนหนึ่งครั้ง', 'Debt map — one line per transfer')}
+            <span class="badge badge-planned text-[10px]">${txns.length} ${th('รายการ', 'transfers')}</span>
           </h3>
-          <span class="text-[10px] text-[var(--text-tertiary)]">${th('ลูกศรชี้จากผู้จ่ายไปยังผู้รับ · กดชื่อเพื่อดูรายละเอียด','Arrows point from each payer to the receiver · tap a person for details')}</span>
+          <span class="text-[10px] text-[var(--text-tertiary)]">${th('เส้นชี้จากผู้จ่ายไปยังผู้รับ • ยอดเงินบนเส้นไม่ทับกัน • กดชื่อเพื่อดูรายละเอียด', 'Lines point from payer to receiver • amounts never overlap • tap a person for details')}</span>
         </div>
         <div class="debt-map-legend">
-          <span class="debt-legend-item is-in">${icon('circle-arrow-down', 'w-3 h-3')} ${th('ตรงกลาง: ผู้รับเงิน / รับสุทธิ','Center: receives money')}</span>
-          <span class="debt-legend-item is-out">${icon('circle-arrow-up', 'w-3 h-3')} ${th('รอบนอก: ผู้จ่าย / จ่ายสุทธิ','Around the receiver: payers')}</span>
+          <span class="debt-legend-item is-out">${icon('circle-arrow-up', 'w-3 h-3')} ${th('จ่ายเงิน (ลูกศรออก)', 'Pays (arrow out)')}</span>
+          <span class="debt-legend-item is-in">${icon('circle-arrow-down', 'w-3 h-3')} ${th('รับเงิน (ลูกศรเข้า)', 'Gets back (arrow in)')}</span>
+          <span class="debt-legend-hint">${th('ตัวเลขบนเส้น = ยอดที่ต้องโอน', 'Numbers on the lines = amount to transfer')}</span>
         </div>
-        <div class="debt-recipient-groups">${groupsHtml}</div>
+        <div class="debt-map-container">
+          <svg class="debt-map-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected by money-transfer lines'))}">
+            <defs>${markerDefs.join('')}</defs>
+            ${edgesHtml}
+            ${nodesHtml}
+          </svg>
+        </div>
+        <div class="debt-payer-list">${rowsHtml}</div>
       </div>
       ${netSummaryHtml()}`;
   }
@@ -9007,40 +9028,17 @@ async function renderSettlement(params) {
       bindReceiptActions();
       return;
     }
-    // ใบเสร็จรายคน: การ์ดปัดได้ (ค่าเริ่มต้น v18) หรือรายการยาวแบบเดิม
+    // ใบเสร็จรายคน — รายการยาว (ใบเสร็จแบบปัดการ์ดถูกนำออกแล้ว)
     if (receiptFilter !== 'all' && !state.statements.some(m => m.memberId === receiptFilter)) receiptFilter = 'all';
-    if (view === 'receipts' && receiptMode === 'deck' && state.statements.length) {
-      // the picker above the deck also moves the deck to that person
-      if (receiptFilter !== 'all') {
-        const at = deckList().findIndex(m => m.memberId === receiptFilter);
-        if (at >= 0) deckIndex = at;
-      }
-      const visible = receiptFilter === 'all' ? state.statements : state.statements.filter(m => m.memberId === receiptFilter);
-      // ใบเสร็จแบบยาวถูกซ่อนไว้บนจอ แต่ใช้ตอนสั่งพิมพ์ (ทุกใบเสร็จในหน้าเดียว)
-      // For a big group that copy is expensive, so beyond 8 people it is built only
-      // for whoever is on top of the deck — PNG/PDF export creates the rest on demand.
-      const printable = visible.length > 8 && receiptFilter === 'all' ? [visible[deckIndex]].filter(Boolean) : visible;
-      content.innerHTML = `${densityToolbarHtml()}${deckHtml()}${pendingHtml()}${transactionsHtml()}<div class="print-only receipt-grid mt-3">${printable.map(receiptHtml).join('')}</div>`;
-      queueIcons();
-      bindReceiptActions();
-      mountDeck();
-      return;
-    }
     const visible = receiptFilter === 'all' ? state.statements : state.statements.filter(m => m.memberId === receiptFilter);
-    content.innerHTML = `${densityToolbarHtml()}${receiptPickerHtml()}<div class="receipt-grid ${receiptDensity === 'compact' ? 'is-compact' : ''}">${visible.map(receiptHtml).join('')}</div>${pendingHtml()}${transactionsHtml()}${state.statements.length ? `<div class="btn-row mt-2"><button class="btn btn-secondary btn-sm" data-deck-mode="deck">${icon('hand', 'w-3.5 h-3.5')} ${th('ดูแบบปัดการ์ด', 'Swipe cards')}</button></div>` : ''}`;
+    content.innerHTML = `${densityToolbarHtml()}${receiptPickerHtml()}<div class="receipt-grid ${receiptDensity === 'compact' ? 'is-compact' : ''}">${visible.map(receiptHtml).join('')}</div>${pendingHtml()}${transactionsHtml()}`;
     queueIcons();
     bindReceiptActions();
-    content.querySelectorAll('[data-deck-mode]').forEach(btn => btn.addEventListener('click', () => {
-      receiptMode = btn.dataset.deckMode === 'deck' ? 'deck' : 'list';
-      try { localStorage.setItem('fuji_receipt_mode', receiptMode); } catch { /* ignore */ }
-      renderView();
-    }));
   }
 
   async function load() {
     const content = document.getElementById('settlement-content');
     if (!content) return;
-    try { receiptMode = localStorage.getItem('fuji_receipt_mode') === 'list' ? 'list' : 'deck'; } catch { /* ignore */ }
     try { receiptDensity = localStorage.getItem('fuji_rcpt_density') === 'compact' ? 'compact' : 'full'; } catch { /* ignore */ }
     try {
       // A balance is financial advice: always read the current expense book here.
@@ -9078,11 +9076,9 @@ async function renderSettlement(params) {
 
   document.querySelectorAll('#settle-views [data-view]').forEach(btn => btn.addEventListener('click', () => {
     const wanted = btn.dataset.view;
-    receiptMode = wanted === 'receipts-list' ? 'list' : 'deck';
     if (wanted === 'overview') view = 'overview';
     else if (wanted === 'debt-map') view = 'debt-map';
     else view = 'receipts';
-    try { localStorage.setItem('fuji_receipt_mode', receiptMode); } catch { /* ignore */ }
     document.querySelectorAll('#settle-views .chip').forEach(c => c.classList.remove('chip-active'));
     btn.classList.add('chip-active');
     renderView();
@@ -10809,6 +10805,13 @@ async function renderSettings(params) {
         </div>
         <button id="save-map-default" type="button" class="btn btn-secondary btn-sm w-full">${icon('save', 'w-4 h-4')} ${th('บันทึกแผนที่เริ่มต้น','Save default map')}</button>
         <p class="text-[10px] text-[var(--text-tertiary)]">${th('การกดเปลี่ยนชั้นแผนที่บนแผนที่จริงจะมีผลเฉพาะการดูครั้งนั้น หากต้องการเปลี่ยนค่าเริ่มต้นให้บันทึกที่นี่','Switching layers on a live map is temporary; save your preferred default here.')}</p>
+        <label class="settings-toggle-row" for="map-labels-toggle">
+          <span class="min-w-0">
+            <b>${icon('tags', 'w-3.5 h-3.5')} ${th('แสดงชื่อสถานที่บนแผนที่','Show place names on the map')}</b>
+            <small>${th('ชื่อสถานที่จะแสดงข้างหมุดทุกใบบนแผนการเดินทางและแผนที่ไอเดีย (ตั้งค่าต่ออุปกรณ์)','Names print beside every pin on the itinerary and ideas maps (per device)')}</small>
+          </span>
+          <input type="checkbox" id="map-labels-toggle" class="settings-toggle" ${getStoredLabelsVisible() ? 'checked' : ''}>
+        </label>
       </div>
 
       <!-- v18: the profile picture lands here, so the account lives with it -->
@@ -10969,6 +10972,19 @@ async function renderSettings(params) {
     } catch (e) {
       toast.error(th('บันทึกแผนที่เริ่มต้นไม่สำเร็จ: ','Could not save the default map: ') + (e?.message || String(e)));
     } finally { btn.disabled = false; }
+  });
+  // v28: place-name labels on/off — applies live to every open map + remembered
+  // per device (same switch exists in each map toolbar).
+  bind('map-labels-toggle', 'change', (ev) => {
+    const on = !!ev.target.checked;
+    setStoredLabelsVisible(on);
+    try {
+      refreshMapLabels('map', on);
+      refreshMapLabels('ideas-map', on);
+    } catch { /* maps not mounted on this page */ }
+    toast.success(on
+      ? th('แสดงชื่อสถานที่บนแผนที่แล้ว','Place names shown on the map')
+      : th('ซ่อนชื่อสถานที่บนแผนที่แล้ว','Place names hidden on the map'));
   });
   paintDefaultMapOptions();
 
@@ -11479,8 +11495,7 @@ async function paintDashboardTools({ tripId, trip, members = [], items = [], lan
       e.stopPropagation();
       const url = img.dataset.ideaImg;
       if (!url) return;
-      const sheet = showBottomSheet(`<div class="idea-lightbox"><div class="idea-lightbox-main"><img src="${escapeHtml(url)}" alt=""></div><p class="text-xs text-[var(--text-secondary)] mt-2 text-center">${th('รูปจากสถานที่ที่อยากไป','Image from wishlist')}</p></div>`, { maxWidth: '640px' });
-      queueIcons();
+      openImageViewer([url], 0, th('รูปจากสถานที่ที่อยากไป','Image from wishlist'));
     }));
   } catch (e) {
     console.warn('dash ideas failed', e?.message);
@@ -12280,6 +12295,7 @@ async function renderIdeas(params) {
               <button class="chip text-[10px]" data-ideas-layer="map" style="min-height:26px;padding:2px 8px;">${icon('map','w-3 h-3')} ${th('แผนที่','Map')}</button>
               <button class="chip text-[10px]" data-ideas-layer="satellite" style="min-height:26px;padding:2px 8px;">${icon('satellite','w-3 h-3')} ${th('ดาวเทียม','Sat')}</button>
               <button class="chip text-[10px]" data-ideas-layer="terrain" style="min-height:26px;padding:2px 8px;">${icon('mountain','w-3 h-3')} ${th('ภูมิประเทศ','Terrain')}</button>
+              <button class="chip text-[10px]" id="ideas-map-labels" aria-pressed="${getStoredLabelsVisible()}" style="min-height:26px;padding:2px 8px;">${icon('tags','w-3 h-3')} ${th('ชื่อสถานที่','Labels')}</button>
             </div>
             <span id="ideas-map-count" class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:var(--bg-secondary);">0 ${th('หมุด','pins')}</span>
             <button id="ideas-map-fit" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:2px 8px;">${icon('maximize', 'w-3 h-3')} ${th('พอดีจอ','Fit')}</button>
@@ -12558,49 +12574,13 @@ async function renderIdeas(params) {
     } catch (e) { console.warn('[Ideas] map focus failed', e?.message); }
   }
 
-  /** Photo viewer for an idea's attached images (max 3). */
+  /**
+   * Photo viewer for an idea's attached images (max 3) — v28 delegates to the
+   * shared wide viewer, so the popup fills the desktop screen and the picture is
+   * never clipped by the modal frame.
+   */
   function openIdeaLightbox(idea, startIdx = 0) {
-    const imgs = ideaImages(idea);
-    if (!imgs.length) return;
-    let cur = Math.min(Math.max(0, startIdx | 0), imgs.length - 1);
-    const dlg = showModal(`
-      <div class="idea-lightbox">
-        <div class="flex items-start justify-between gap-2 mb-2">
-          <h3 class="font-bold text-sm pr-2 min-w-0 truncate">${icon('images', 'w-4 h-4')} ${escapeHtml(idea.title || '')}</h3>
-          <button class="icon-btn flex-shrink-0" data-lb="close" aria-label="${th('ปิด','Close')}">${icon('x', 'w-4 h-4')}</button>
-        </div>
-        <div class="idea-lightbox-main">
-          ${imgs.length > 1 ? `<button class="idea-lightbox-nav" data-lb="prev" aria-label="‹">${icon('chevron-left', 'w-5 h-5')}</button>` : ''}
-          <img data-lb="img" src="${escapeHtml(imgs[cur])}" alt="" onerror="this.style.opacity='.25'">
-          ${imgs.length > 1 ? `<button class="idea-lightbox-nav" data-lb="next" aria-label="›">${icon('chevron-right', 'w-5 h-5')}</button>` : ''}
-        </div>
-        <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
-          <span class="text-[11px] font-bold text-[var(--text-tertiary)]" data-lb="count">${cur + 1} / ${imgs.length}</span>
-          <a data-lb="open" class="btn btn-ghost btn-sm text-[11px]" href="${escapeHtml(imgs[cur])}" target="_blank" rel="noopener">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดรูปต้นฉบับ','Open original')}</a>
-        </div>
-        ${imgs.length > 1 ? `<div class="idea-lightbox-thumbs">${imgs.map((u, k) => `
-          <button data-lb="thumb" data-k="${k}" class="${k === cur ? 'is-active' : ''}"><img src="${escapeHtml(u)}" alt="" loading="lazy" onerror="this.closest('[data-lb=thumb]').style.display='none'"></button>`).join('')}</div>` : ''}
-      </div>
-    `);
-    queueIcons();
-    const paint = () => {
-      const img = dlg.modal.querySelector('[data-lb="img"]');
-      if (img) { img.style.opacity = ''; img.src = imgs[cur]; }
-      const open = dlg.modal.querySelector('[data-lb="open"]');
-      if (open) open.href = imgs[cur];
-      const count = dlg.modal.querySelector('[data-lb="count"]');
-      if (count) count.textContent = `${cur + 1} / ${imgs.length}`;
-      dlg.modal.querySelectorAll('[data-lb="thumb"]').forEach(b => b.classList.toggle('is-active', Number(b.dataset.k) === cur));
-    };
-    dlg.modal.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-lb]');
-      if (!btn || btn.tagName === 'A') return;
-      const act = btn.dataset.lb;
-      if (act === 'close') dlg.close();
-      if (act === 'prev') { cur = (cur - 1 + imgs.length) % imgs.length; paint(); }
-      if (act === 'next') { cur = (cur + 1) % imgs.length; paint(); }
-      if (act === 'thumb') { cur = Number(btn.dataset.k) || 0; paint(); }
-    });
+    openImageViewer(ideaImages(idea), startIdx, idea.title || '');
   }
 
   /** Per-day distance breakdown: is this idea near any planned day? */
@@ -12898,6 +12878,24 @@ async function renderIdeas(params) {
   try {
     document.getElementById('ideas-map-layers')?.querySelectorAll('[data-ideas-layer]').forEach(b => b.classList.toggle('chip-active', b.dataset.ideasLayer === currentIdeasLayer));
   } catch {}
+  // v28: show / hide the place names printed next to every pin (ideas map too)
+  const paintIdeasLabelsBtn = () => {
+    const b = document.getElementById('ideas-map-labels');
+    if (!b) return;
+    const on = getStoredLabelsVisible();
+    b.classList.toggle('chip-active', on);
+    b.setAttribute('aria-pressed', String(on));
+  };
+  document.getElementById('ideas-map-labels')?.addEventListener('click', () => {
+    const next = !getStoredLabelsVisible();
+    setStoredLabelsVisible(next);
+    try { refreshMapLabels('ideas-map'); } catch { /* map not ready */ }
+    paintIdeasLabelsBtn();
+    toast.success(next
+      ? (lang === 'th' ? 'แสดงชื่อสถานที่บนแผนที่แล้ว' : 'Place names shown on the map')
+      : (lang === 'th' ? 'ซ่อนชื่อสถานที่บนแผนที่แล้ว' : 'Place names hidden on the map'));
+  });
+  paintIdeasLabelsBtn();
   // Map fit button
   document.getElementById('ideas-map-fit')?.addEventListener('click', async () => {
     try {
@@ -14041,7 +14039,7 @@ function renderMore(params) {
 }
 
 window.addEventListener('load', () => { if (window.lucide) lucide.createIcons(); });
-window.addEventListener('langchange', () => { renderDesktopNav(); updateBottomNav(); });
+window.addEventListener('langchange', () => { renderDesktopNav(); updateBottomNav(); updateClocks(); });
 window.addEventListener('error', (e) => console.error('Global error', e));
 window.addEventListener('unhandledrejection', (e) => { console.error('Unhandled', e); toast.error(e.reason?.message || 'Error'); });
 window.addEventListener('unhandledrejection', (e) => { console.error('Unhandled', e); toast.error(e.reason?.message || 'Error'); });

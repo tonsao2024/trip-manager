@@ -1759,8 +1759,8 @@ console.log('\n▶ v11: ใบเสร็จ — เลือกดูราย
     .catch(() => {});
   q('.bottom-sheet-backdrop')?.click();
   await sleep(320);
-  // v18: the receipt view is a swipe deck, so the comment arrives with a re-render of
-  // the deck + its print block — the old 4 s window was too tight on a loaded machine.
+  // v18: the comment arrives with a re-render of the receipt list — the old 4 s
+  // window was too tight on a loaded machine.
   // Read the copy that belongs to the page (an open detail sheet keeps its own).
   const inPage = () => (q('#settlement-content #receipt-u1')?.textContent || '').includes('ทักท้วงจากใบเสร็จ');
   await waitFor(inPage, { timeout: 12000, label: 'comment inside receipt' }).catch(() => {});
@@ -2330,28 +2330,32 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   await sleep(220);
   check(window.localStorage.getItem('fuji_rcpt_density') === 'full', 'settlement: switching back to detailed persists too');
 
-  // ---- 8) the debt map is tappable and labels net receive / net pay ----
+  // ---- 8) the debt map is ONE map with a connecting line per transfer ----
   await click('#settle-views [data-view="debt-map"]');
   await waitFor(() => q('.debt-map-container') || q('.debt-map-node'), { timeout: 8000, label: 'debt map' }).catch(() => {});
   const nodes = qa('.debt-map-node[data-debt-person]');
   const receiverNodes = qa('.debt-map-node--receiver[data-debt-person]');
   const payerNodes = qa('.debt-map-node--payer[data-debt-person]');
-  check(nodes.length >= 1, `debt map: person nodes render (${nodes.length})`);
-  check(receiverNodes.length >= 1 && payerNodes.length >= 1, 'debt map: receivers are centered and payers surround them');
-  const memberReceiver = q('.debt-map-node--receiver[data-debt-person="u2"]');
-  const memberReceiverGroup = memberReceiver?.closest('.debt-recipient-group');
-  check(!!memberReceiverGroup?.querySelector('.debt-map-node--payer[data-debt-person="u1"]')
-    && !!memberReceiverGroup?.querySelector('.debt-map-edge path[marker-end]'),
-  'debt map: the owner’s arrow points to the non-admin member who paid');
+  check(qa('.debt-map-svg').length === 1 && qa('.debt-recipient-group').length === 0,
+    'debt map: the whole trip is ONE map (no per-receiver wheels)');
+  check(nodes.length >= 2, `debt map: person nodes render (${nodes.length})`);
+  check(receiverNodes.length >= 1 && payerNodes.length >= 1, 'debt map: receivers and payers are both on the map');
+  const edgePath = q('.debt-map-edge[data-edge="u1→u2"] path[marker-end]');
+  check(!!edgePath, 'debt map: a line points from the debtor to the member who paid');
+  // v28: money labels are staggered along the lines + haloed, so they never stack
+  const amounts = qa('.debt-map-amount');
+  check(amounts.length >= 1, `debt map: every transfer carries its amount (${amounts.length})`);
+  const labelSpots = amounts.map(t => `${t.getAttribute('x')},${t.getAttribute('y')}`);
+  check(new Set(labelSpots).size === labelSpots.length, 'debt map: amount labels sit in different spots (no overlap)');
+  check(amounts.every(t => (t.getAttribute('class') || '').includes('debt-map-amount')), 'debt map: amounts carry the halo style class');
   check(nodes.every(n => n.getAttribute('role') === 'button' && n.getAttribute('tabindex') === '0'), 'debt map: nodes are announced as buttons');
-  check(/รับสุทธิ|จ่ายสุทธิ|เคลียร์/.test(q('#settlement-content')?.textContent || ''), 'debt map: labels spell out net receive / net pay');
+  check(/รับเงิน|จ่ายเงิน|GETS|PAYS/.test(q('#settlement-content')?.textContent || ''), 'debt map: labels spell out who pays / who gets');
   check(!!q('.debt-map-legend'), 'debt map: legend explains the colours');
-  // v26: the payer rows under the map open the PAYER (they used to open the receiver)
+  // v26: the payer rows open the PAYER (they used to open the receiver)
   const payRows = qa('.debt-tx-row[data-settle-person]');
   const payRowsOk = payRows.length > 0 && payRows.every(r => {
-    const group = r.closest('.debt-recipient-group');
-    return !!group?.querySelector(`.debt-map-node--payer[data-debt-person="${r.dataset.settlePerson}"]`)
-      && !group?.querySelector(`.debt-map-node--receiver[data-debt-person="${r.dataset.settlePerson}"]`);
+    const from = r.dataset.settlePerson;
+    return !!qa('.debt-map-edge').some(e => String(e.dataset.edge || '').startsWith(`${from}→`));
   });
   check(payRowsOk, `debt map: each payer row opens the payer, not the receiver (${payRows.length} rows)`);
   if (nodes.length) {
@@ -2373,7 +2377,7 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
 
   // Every receipt side and the transfer breakdown must retain an exact link to
   // the expense that produced the debt, and that link must open the editor.
-  await click('#settle-views [data-view="receipts-list"]');
+  await click('#settle-views [data-view="receipts"]');
   await waitFor(() => q('#receipt-u2') && q('#tx-list'), { timeout: 8000, label: 'receipts and transaction list' }).catch(() => {});
   const expenseHref = `#/trip/t1/expenses/add?id=${remoteExpenseId}`;
   check(!!q(`#receipt-u2 [data-receipt-section="received"] .rcpt-open[href="${expenseHref}"]`),
@@ -2502,13 +2506,15 @@ console.log('\n▶ v17/v18 offline strip + colour themes');
     'nav: calendar / bookings / prep / explore / settings are not menu entries');
   check(/openAvatarAction/.test(appSrc), 'nav: settings opens from the avatar');
 
-  // v18: mascot + swipe deck + place details are real modules, not dead imports.
+  // v18: mascot + place details are real modules, not dead imports; v28 removed
+  // the swipe-card receipt deck from the clear-bill page entirely.
   const shell = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   // v18.1: the dashboard mascot was removed (it rendered incompletely on real
   // screens). The module stays for reuse, but the dashboard must not mount it.
   check(fs.existsSync(path.join(root, 'src/js/components/mascot.js')) && !/dash-buddy/.test(appSrc),
     'mascot: the dashboard buddy stays removed (module kept for reuse)');
-  check(fs.existsSync(path.join(root, 'src/js/utils/deck.js')) && /rcpt-deck-card/.test(appSrc), 'deck: receipts are swipeable cards');
+  check(!fs.existsSync(path.join(root, 'src/js/utils/deck.js')) && !/rcpt-deck-card/.test(appSrc),
+    'deck: the swipe-card receipts are removed from the system');
   check(fs.existsSync(path.join(root, 'src/js/utils/placeDetails.js')), 'details: the optional place lookup module exists');
   check(/data-footer-version/.test(shell) && /data-footer-updated/.test(shell) && /TonSkywalker/.test(shell),
     'shell: version, update date and copyright live in the footer');
@@ -2516,7 +2522,7 @@ console.log('\n▶ v17/v18 offline strip + colour themes');
 
   const refresh = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
   check(/\.explore-hero/.test(refresh) && /\.cal-cell/.test(refresh) && /\.offline-strip/.test(refresh), 'styles: v17 component sheet covers the new pages');
-  check(/\.theme-grid/.test(refresh) && /\.rcpt-deck-card/.test(refresh) && /\.app-footer/.test(refresh), 'styles: v18 theme / deck / footer styles shipped');
+  check(/\.theme-grid/.test(refresh) && /\.debt-map-svg/.test(refresh) && /\.app-footer/.test(refresh), 'styles: theme / debt-map / footer styles shipped');
 }
 
 console.log('\n▶ v19 requests: drag only in edit mode, teams every, per-group averages');
@@ -2618,6 +2624,106 @@ console.log('\n▶ plan card: a second payer on the linked cost shows on the pla
   await sleep(200);
   const card = qa('.itin-card').find(c => c.textContent.includes('ภูเขามิโตะ'));
   check(!!card && /2 คนจ่าย/.test(card.textContent), 'plan card: the place card says 2 payers instead of one');
+}
+
+console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, header nav + clock city, map labels, big photos');
+{
+  authStub.__emitAuth({ uid: 'u1', email: 'admin@example.com', displayName: 'สมชาย', photoURL: null, providerData: [{ providerId: 'password' }] });
+  await sleep(80);
+
+  // ---- 1) ใบเสร็จแบบปัดการ์ดถูกนำออกจากระบบแล้ว ----
+  await goto('#/trip/t1/settlement');
+  await waitFor(() => q('#settle-views'), { label: 'settlement page' });
+  await sleep(220);
+  check(qa('#settle-views .chip').length === 3 && !q('#settle-views [data-view="receipts-list"]'),
+    'settlement: three views only — ภาพรวม / แผนที่หนี้ / ใบเสร็จรายคน (no swipe-card chip)');
+  check(!/ปัดการ์ด|Swipe cards/.test(q('#settle-views')?.textContent || ''), 'settlement: the swipe-card wording is gone');
+  await click('#settle-views [data-view="receipts"]');
+  await waitFor(() => q('#settlement-content #receipt-u1'), { timeout: 8000, label: 'receipt list' }).catch(() => {});
+  check(!!q('#settlement-content #receipt-u1') && !q('#rcpt-deck') && !q('[data-deck-card]'),
+    'settlement: the per-person receipts render as a plain list (no swipe deck)');
+
+  // ---- 2) แผนที่หนี้ = แผนที่เดียว เส้นไม่ทับกัน ----
+  await click('#settle-views [data-view="debt-map"]');
+  await waitFor(() => q('.debt-map-svg'), { timeout: 8000, label: 'debt map' }).catch(() => {});
+  check(qa('.debt-map-svg').length === 1, 'debt map: rendered as ONE map');
+  const v28amounts = qa('.debt-map-amount');
+  const v28spots = v28amounts.map(t => `${t.getAttribute('x')},${t.getAttribute('y')}`);
+  check(v28amounts.length > 0 && new Set(v28spots).size === v28spots.length,
+    'debt map: every money label sits in its own spot');
+
+  // ---- 3) footer ขนาดเล็กลง ----
+  const footCss = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
+  check(/\.app-footer \{[^}]*font-size: 10px/.test(footCss) && /\.app-footer-chip \{[^}]*font-size: 8\.5px/.test(footCss)
+    && /\.app-footer \{[^}]*padding: 12px 14px/.test(footCss),
+    'footer: smaller type + tighter padding');
+
+  // ---- 4) แถบบน: เมนูย้ายขึ้นมาอยู่ใน header + นาฬิกาเลือกเมืองได้ ----
+  const shellHtml = window.document.getElementById('app-header')?.innerHTML || '';
+  check(!!q('#app-header #desktop-nav') && qa('nav.desktop-nav').every(n => n.closest('#app-header')),
+    'header: the desktop menu lives inside the top bar (no second row)');
+  check(qa('#app-header .menu-item').length >= 5, 'header: trip menu chips render in the bar');
+  check(!!q('#clock-chip') && !!q('#clock-time') && !!q('#clock-city-label'), 'header: one compact clock chip');
+  check(!q('#clock-bkk') && !q('#clock-tokyo'), 'header: the twin BKK/TYO clocks are gone');
+  await click('#clock-chip');
+  await sleep(60);
+  check(!q('#clock-menu')?.classList.contains('hidden') && qa('#clock-menu [data-clock-city]').length >= 8,
+    'clock: tapping the chip opens the city picker');
+  await click('#clock-menu [data-clock-city="tyo"]');
+  await sleep(60);
+  check(window.localStorage.getItem('fuji_clock_city') === 'tyo'
+    && (q('#clock-city-label')?.textContent || '').trim() === 'TYO',
+    'clock: choosing a city updates the chip and is remembered');
+
+  // ---- 5) แผนที่: เปิด/ปิดชื่อสถานที่ ----
+  await goto('#/trip/t1/itinerary');
+  await waitFor(() => q('#map-labels-btn'), { timeout: 8000, label: 'map labels toggle' }).catch(() => {});
+  check(!!q('#map-labels-btn'), 'map: the toolbar can show / hide place names');
+  await click('#map-labels-btn');
+  await sleep(80);
+  check(window.localStorage.getItem('fuji_map_labels') === 'off'
+    && q('#map-labels-btn')?.getAttribute('aria-pressed') === 'false',
+    'map: the label toggle switches off and is remembered');
+  await click('#map-labels-btn');
+  await sleep(80);
+  check(window.localStorage.getItem('fuji_map_labels') === 'on', 'map: the label toggle switches back on');
+
+  // ---- 6) แผนการเดินทาง: กดภาพ → ดูภาพใหญ่ ----
+  if (q('#view-all-btn') && !q('.itin-thumb-zoom[data-act="photo"]')) {
+    await click('#view-all-btn');   // show every day so a place with a photo is on screen
+    await sleep(300);
+  }
+  await waitFor(() => q('.itin-thumb-zoom[data-act="photo"]'), { timeout: 8000, label: 'plan photo' }).catch(() => {});
+  check(!!q('.itin-thumb-zoom[data-act="photo"] img'), 'plan: the photo is a tappable zoom target');
+  if (q('.itin-thumb-zoom[data-act="photo"]')) {
+    await click('.itin-thumb-zoom[data-act="photo"]');
+    await waitFor(() => q('.modal-card--lightbox [data-lb="img"]'), { timeout: 4000, label: 'image viewer' }).catch(() => {});
+    check(!!q('.modal-card--lightbox [data-lb="img"]'), 'plan: tapping the photo opens the large viewer');
+    await click('.modal-card--lightbox [data-lb="close"]');
+    await sleep(300);
+  }
+
+  // ---- 7) ไอเดีย: ป๊อปอัพภาพใหญ่เต็มจอ ไม่ถูกขอบบัง ----
+  fsdb.__seed('trips/t1/ideas/idea-img-v28', {
+    title: 'ไอเดียพร้อมรูป', category: 'nature', votes: {}, status: 'idea',
+    imageUrls: ['https://example.com/idea-photo.jpg'], createdBy: 'u1'
+  });
+  await goto('#/trip/t1/ideas');
+  await waitFor(() => q('.idea-card'), { timeout: 8000, label: 'ideas board' }).catch(() => {});
+  await sleep(250);
+  const imgBtn = qa('.idea-card [data-act="image"]')[0];
+  check(!!imgBtn, 'ideas: an image opens the photo viewer');
+  if (imgBtn) {
+    imgBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await waitFor(() => q('.modal-card--lightbox [data-lb="img"]'), { timeout: 4000, label: 'idea lightbox' }).catch(() => {});
+    const box = q('.modal-card--lightbox');
+    check(!!box && !!box.querySelector('[data-lb="img"]'), 'ideas: the zoom popup is the wide lightbox (image fully inside)');
+    const lbCss = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8');
+    check(/\.modal-card--lightbox/.test(lbCss) && /max-height: min\(76vh/.test(lbCss),
+      'ideas: the lightbox CSS keeps the whole photo on screen');
+    await click('.modal-card--lightbox [data-lb="close"]');
+    await sleep(300);
+  }
 }
 
 console.log('\n▶ delete the whole trip (UI)');

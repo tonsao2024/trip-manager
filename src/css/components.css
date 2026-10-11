@@ -940,6 +940,14 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
 }
 .itin-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.45s cubic-bezier(0.16,1,0.3,1); }
 .itin-card:hover .itin-thumb img { transform: scale(1.06); }
+/* v28: tap the photo → open it big (the button is the whole thumbnail) */
+.itin-thumb-zoom {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  padding: 0; border: 0; background: transparent;
+  cursor: zoom-in; display: block;
+}
+.itin-thumb-zoom:focus-visible { outline: 2px solid var(--primary-raw); outline-offset: -2px; border-radius: inherit; }
 .itin-thumb.is-empty { background: var(--gradient-fuji-soft); }
 .itin-thumb-ph { color: var(--primary-strong); opacity: 0.75; }
 .itin-thumb-ph svg { width: 22px; height: 22px; }
@@ -1049,6 +1057,24 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
   animation: markerDrop 0.45s cubic-bezier(0.16,1,0.3,1) backwards;
 }
 .map-pin-marker span { transform: rotate(45deg); color: #fff; font-weight: 800; font-size: 12px; line-height: 1; }
+/* v28: place-name labels beside the pins (toggle: map toolbar / settings) */
+.map-pin-label {
+  background: color-mix(in srgb, var(--surface) 92%, transparent) !important;
+  color: var(--text-strong) !important;
+  border: 1px solid color-mix(in srgb, var(--primary-raw) 26%, var(--border)) !important;
+  border-radius: 8px !important;
+  padding: 2px 7px !important;
+  font-size: 10.5px !important;
+  font-weight: 800 !important;
+  line-height: 1.3 !important;
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, .16);
+  pointer-events: none;
+}
+.map-pin-label::before { display: none !important; }
 .map-popup { font-family: inherit; min-width: 150px; }
 .map-popup-thumb { width: 100%; aspect-ratio: 16/9; border-radius: 10px; overflow: hidden; margin-bottom: 6px; }
 .map-popup-thumb img { width: 100%; height: 100%; object-fit: cover; }
@@ -3050,10 +3076,27 @@ body.map-expanded-open { overflow: hidden; }
   background: var(--bg-secondary); border: 1px solid var(--border);
 }
 .idea-compare-day { flex: 0 0 auto; font-size: 11px; font-weight: 800; color: var(--primary-strong); min-width: 52px; }
-/* Lightbox */
-.idea-lightbox { min-width: min(560px, 78vw); }
-.idea-lightbox-main { position: relative; border-radius: 14px; overflow: hidden; background: #0b1220; min-height: 200px; display: grid; place-items: center; }
-.idea-lightbox-main img { width: 100%; max-height: 62vh; object-fit: contain; display: block; }
+/* Lightbox (v28) — the modal goes WIDE and the photo is fully contained:
+   on a desktop screen the old 520px popup was too small and its frame clipped
+   the picture. Nothing is cut off any more; the whole image is on screen. */
+.modal-card--lightbox {
+  width: min(1080px, 96vw);
+  max-width: min(1080px, 96vw);
+  max-height: 92dvh;
+  padding: 14px;
+}
+.idea-lightbox { min-width: 0; width: 100%; }
+.idea-lightbox-main {
+  position: relative; border-radius: 14px; overflow: hidden;
+  background: #0b1220; min-height: 200px;
+  display: grid; place-items: center;
+}
+.idea-lightbox-main img {
+  width: auto; max-width: 100%;
+  max-height: min(76vh, 820px);
+  object-fit: contain;
+  display: block; margin: 0 auto;
+}
 .idea-lightbox-nav {
   position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
   width: 38px; height: 38px; border-radius: 9999px; display: grid; place-items: center;
@@ -3194,12 +3237,50 @@ body.map-expanded-open { overflow: hidden; }
   border-color: transparent; box-shadow: var(--shadow-primary);
 }
 
-/* ---- Debt map (settlement) ---- */
+/* ---- Debt map (settlement) — v28: ONE map, curved lines with haloed labels ---- */
 .debt-map-container { border-radius: var(--radius-md); overflow: hidden; }
-.debt-map-container svg { background: var(--bg-secondary); border-radius: var(--radius-md); }
-.debt-map-node { cursor: pointer; transition: transform .15s ease; }
-.debt-map-node:hover { transform: scale(1.08); }
+.debt-map-svg { display: block; width: 100%; height: auto; background: var(--bg-secondary); border-radius: var(--radius-md); }
+.debt-map-node { cursor: pointer; transition: filter .15s ease; }
+.debt-map-node:hover { filter: brightness(1.08); }
+.debt-map-node:focus { outline: none; }
+.debt-map-node:focus-visible circle:nth-of-type(2) { stroke: var(--primary-strong); stroke-width: 3; }
+.debt-map-amount {
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px;
+  font-weight: 850;
+  fill: var(--text-strong);
+  /* white halo keeps every amount readable where lines pass by */
+  stroke: var(--surface);
+  stroke-width: 4;
+  paint-order: stroke fill;
+  stroke-linejoin: round;
+}
+.debt-map-edge path { transition: stroke-opacity .15s ease; }
+.debt-map-edge:hover path { stroke-opacity: 1; stroke-width: 3.2; }
 .debt-map-label rect { transition: fill .15s ease; }
+
+/* ---- Settings: compact switch rows (map labels etc.) ---- */
+.settings-toggle-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border-radius: 12px;
+  border: 1.5px solid var(--border); background: var(--surface);
+  cursor: pointer;
+}
+.settings-toggle-row b { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-strong); }
+.settings-toggle-row small { display: block; margin-top: 2px; font-size: 10px; color: var(--text-tertiary); line-height: 1.45; }
+.settings-toggle {
+  flex-shrink: 0; width: 40px; height: 22px; appearance: none; -webkit-appearance: none;
+  border-radius: 999px; background: var(--bg-secondary); border: 1.5px solid var(--border-strong);
+  position: relative; cursor: pointer; transition: background .18s ease, border-color .18s ease;
+}
+.settings-toggle::after {
+  content: ''; position: absolute; top: 1.5px; left: 2px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  transition: transform .18s ease;
+}
+.settings-toggle:checked { background: var(--gradient-primary); border-color: transparent; }
+.settings-toggle:checked::after { transform: translateX(17px); }
 
 /* ==================================================================
    v22 — Dashboard redesign per user request
@@ -3294,8 +3375,8 @@ body.map-expanded-open { overflow: hidden; }
   .settings-compact .settings-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
 }
 
-/* Ideas image lightbox larger */
-.idea-lightbox-main img { max-height: 72vh; }
+/* Ideas image lightbox: keep the whole photo visible inside the wide modal */
+.idea-lightbox-main img { max-height: min(76vh, 820px); }
 
 /* Profile sheet account */
 .account-sheet .avatar { width: 56px; height: 56px; font-size: 18px; }
