@@ -36,7 +36,8 @@ import { fetchSettlementData, recordTransfer, deleteTransfer } from './settlemen
 import { listMembers, createMember, updateMember, deleteMember, countMemberReferences, mapFunctionError, MEMBER_ROLES } from './members/index.js';
 import { dayjs, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay, parseDurationInput } from './utils/date.js';
 import { expensesInThb, convertCurrency, formatCurrency, formatCurrencyHtml, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually, tripCurrencyList } from './utils/currency.js';
-import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses } from './utils/settlement.js';
+import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses, groupTransfersByPayer } from './utils/settlement.js';
+import { debtMapColor, layoutDebtMapAmountLabels } from './utils/debtMap.js';
 import { splitCustom, splitEqual, participantsOf, averagePerPerson, scaleToTotal } from './utils/split.js';
 import { escapeHtml, sanitizeUrl } from './utils/sanitize.js';
 import { APP_VERSION, APP_VERSION_LABEL, APP_UPDATED_ISO, APP_NAME, APP_AUTHOR, APP_NAME_BY, appUpdatedLabel, appUpdatedShort, appBuildLabel, appFooterLabel, copyrightNote } from './utils/buildInfo.js';
@@ -881,22 +882,19 @@ function updateUserDisplay(user) {
     if (userMenu && userMenu.parentElement) {
       nameEl = document.createElement('div');
       nameEl.id = 'user-display-name';
-      nameEl.className = 'hidden md:flex flex-col items-end mr-2 text-right';
-      nameEl.innerHTML = `<span class="text-[13px] font-semibold leading-none" id="user-name-text"></span><span class="text-[11px] text-[var(--text-tertiary)]" id="user-email-text"></span>`;
+      nameEl.className = 'user-display-name hidden md:flex items-center mr-1 text-right';
+      nameEl.innerHTML = `<span class="text-[13px] font-semibold leading-none" id="user-name-text"></span>`;
       userMenu.parentElement.insertBefore(nameEl, userMenu);
     }
   }
   if (nameEl) {
     const nameText = document.getElementById('user-name-text');
-    const emailText = document.getElementById('user-email-text');
     if (user) {
       nameText.textContent = user.displayName || user.email?.split('@')[0] || 'User';
-      emailText.textContent = user.email || user.uid?.slice(0,8) || '';
-      // Phones show the avatar only: a truncated name + email in the header used
-      // to widen the layout viewport, which zoomed the whole page out and cut
-      // off the right edge of every screen.
+      // Keep the useful account name in the desktop bar, but never spend a second
+      // line on the email address: that squeezed the dashboard menu into the logo.
       nameEl.classList.add('hidden', 'md:flex');
-      nameEl.title = `${nameText.textContent}${emailText.textContent ? ` • ${emailText.textContent}` : ''}`;
+      nameEl.title = nameText.textContent;
     } else {
       nameEl.classList.add('hidden');
       nameEl.classList.remove('md:flex');
@@ -7919,7 +7917,7 @@ async function renderSettlement(params) {
 
   let state = { expenses: [], members: [], membersMap: {}, statements: [], balances: [], transactions: [], transfers: [] };
   let view = 'overview';   // ภาพรวมเป็นค่าเริ่มต้น
-  let overviewExpanded = true;
+  let overviewDetailsExpanded = true;
   let receiptFilter = 'all';  // 'all' = ใบเสร็จทุกคน, หรือ memberId ของคนที่เลือกดู
   // v18.2: “กระทัดรัด” — the detail views can hide the per-item rows and keep
   // only the paid / share / balance answer (remembered per device).
@@ -7998,8 +7996,7 @@ async function renderSettlement(params) {
   }
 
   /**
-   * “ต้องจ่ายใคร / ได้รับจากใคร” — the one-line answer per member. Rows are
-   * tappable (data-settle-person) so the summary opens the full detail screen.
+   * “ต้องจ่ายใคร / ได้รับจากใคร” — each recipient/sender name opens their itemized receipt.
    */
   function transferLinesHtml(memberId, { showNames = true } = {}) {
     const { out, inc } = transfersFor(memberId);
@@ -8309,56 +8306,73 @@ async function renderSettlement(params) {
     if (!state.transactions.length) {
       return `<div class="card p-4">${renderEmptyState({ icon: 'party-popper', title: t('noDebt'), desc: t('allCleared') })}</div>`;
     }
+    const payerGroups = groupTransfersByPayer(state.transactions);
     return `<div class="card p-5" id="tx-card">
       <div class="flex items-center justify-between gap-2 mb-4 flex-wrap">
         <h4 class="font-bold text-sm flex items-center gap-2">${icon('arrow-left-right', 'w-4 h-4')} ${t('transactions')}
-          <span class="badge badge-planned text-[10px]">${state.transactions.length}</span></h4>
-        <!-- Expand / collapse every breakdown at once (a request) -->
+          <span class="badge badge-planned text-[10px]">${state.transactions.length} ${th('รายการโอน','transfers')}</span></h4>
         <div class="btn-row no-export">
           <button class="btn btn-ghost btn-sm tx-tool-btn" data-tx-toggle="open" type="button">${icon('unfold-vertical', 'w-3.5 h-3.5')} ${th('ขยายทั้งหมด','Expand all')}</button>
           <button class="btn btn-ghost btn-sm tx-tool-btn" data-tx-toggle="close" type="button">${icon('fold-vertical', 'w-3.5 h-3.5')} ${th('ย่อทั้งหมด','Collapse all')}</button>
         </div>
       </div>
-      <div class="space-y-3 stagger" id="tx-list">${state.transactions.map(tx => {
-        const from = state.membersMap[tx.from]; const to = state.membersMap[tx.to];
-        const fromStatement = state.statements.find(x => x.memberId === tx.from);
-        // The expenses the creditor paid that the debtor shares in — the answer to
-        // "จ่ายคืนจากค่าอะไร"; falls back to the member's own share list.
-        const details = transactionSources(tx, state.expenses);
+      <div class="space-y-3 stagger" id="tx-list">${payerGroups.map(group => {
+        const from = state.membersMap[group.from] || {};
+        const fromStatement = state.statements.find(x => x.memberId === group.from);
         const fallbackDetails = (fromStatement?.items || []).filter(i => i.role === 'share');
-        const sourceRows = details.length ? details : fallbackDetails;
-        return `<div class="tx-row">
-          <div class="flex items-center justify-between gap-2">
-            <div class="flex items-center gap-2 min-w-0">
-              <span class="avatar w-8 h-8 text-[10px]" style="background:${from?.color || 'var(--primary)'};width:32px;height:32px;">${from?.photoURL ? `<img src="${escapeHtml(from.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(from?.displayName || ''))}</span>
-              <span style="color:var(--text-tertiary);">${icon('arrow-right', 'w-4 h-4')}</span>
-              <span class="avatar w-8 h-8 text-[10px]" style="background:${to?.color || 'var(--primary)'};width:32px;height:32px;">${to?.photoURL ? `<img src="${escapeHtml(to.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(to?.displayName || ''))}</span>
-              <span class="text-xs truncate">${escapeHtml(from?.displayName || '')} → ${escapeHtml(to?.displayName || '')}</span>
-            </div>
-            <div class="text-right flex-shrink-0">${moneyPair(tx.amountMinor)}</div>
+        return `<section class="tx-payer-group" data-tx-payer="${escapeHtml(group.from)}">
+          <div class="tx-payer-head">
+            <button type="button" class="tx-person-link tx-payer-person" data-settle-person="${escapeHtml(group.from)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${from.displayName || 'สมาชิก'}`, `View expenses for ${from.displayName || 'member'}`))}">
+              <span class="avatar" style="background:${escapeHtml(from.color || 'var(--primary)')};width:36px;height:36px;font-size:11px;">${from.photoURL ? `<img src="${escapeHtml(from.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(from.displayName || ''))}</span>
+              <span class="min-w-0">
+                <b class="block truncate">${escapeHtml(from.displayName || th('สมาชิก','Member'))}</b>
+                <small>${th('ต้องโอนให้','Owes')} ${group.recipients.length} ${th('คน','people')}</small>
+              </span>
+            </button>
+            <div class="tx-payer-total"><span>${th('ยอดที่ต้องโอนรวม','Total to send')}</span><b>${moneyPair(group.totalMinor)}</b></div>
           </div>
-          <div class="tx-row-actions no-export">
-            <button class="link-btn text-[11px]" data-settle-person="${escapeHtml(tx.to)}" type="button">${icon('user-round-search', 'w-3 h-3')} ${th('ดูรายละเอียดผู้รับ','Payee details')}</button>
-            <button class="link-btn text-[11px]" data-settle-person="${escapeHtml(tx.from)}" type="button">${icon('user-round-search', 'w-3 h-3')} ${th('ดูรายละเอียดผู้จ่าย','Payer details')}</button>
-            <button class="btn btn-accent btn-sm text-[11px] no-export" style="min-height:30px;padding:2px 10px;" type="button" data-settle-pay data-settle-from="${escapeHtml(tx.from)}" data-settle-to="${escapeHtml(tx.to)}" data-settle-amount="${tx.amountMinor}">${icon('badge-check', 'w-3 h-3')} ${th('จ่ายแล้ว', 'Mark paid')}</button>
+          <div class="tx-payer-recipients">
+            ${group.recipients.map(recipient => {
+              const to = state.membersMap[recipient.to] || {};
+              const sourceMap = new Map();
+              recipient.transactions.forEach(tx => transactionSources(tx, state.expenses).forEach(item => {
+                if (!sourceMap.has(item.expenseId)) sourceMap.set(item.expenseId, item);
+              }));
+              // Legacy expenses without explicit payment rows still get an itemized
+              // fallback from this payer’s statement rather than a blank breakdown.
+              const hasMatchedSources = sourceMap.size > 0;
+              const sourceRows = hasMatchedSources ? [...sourceMap.values()] : fallbackDetails;
+              return `<div class="tx-row tx-recipient-row" data-tx-recipient="${escapeHtml(recipient.to)}">
+                <div class="tx-recipient-head">
+                  <button type="button" class="tx-person-link tx-recipient-person" data-settle-person="${escapeHtml(recipient.to)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${to.displayName || 'สมาชิก'}`, `View expenses for ${to.displayName || 'member'}`))}">
+                    <span class="avatar" style="background:${escapeHtml(to.color || 'var(--primary)')};width:30px;height:30px;font-size:10px;">${to.photoURL ? `<img src="${escapeHtml(to.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(to.displayName || ''))}</span>
+                    <span class="min-w-0"><small>${th('โอนให้','Pay to')}</small><b class="block truncate">${escapeHtml(to.displayName || th('สมาชิก','Member'))}</b></span>
+                  </button>
+                  <div class="tx-recipient-amount">${moneyPair(recipient.amountMinor)}</div>
+                </div>
+                <div class="tx-row-actions no-export">
+                  <button class="btn btn-accent btn-sm text-[11px] no-export" style="min-height:30px;padding:2px 10px;" type="button" data-settle-pay data-settle-from="${escapeHtml(group.from)}" data-settle-to="${escapeHtml(recipient.to)}" data-settle-amount="${recipient.amountMinor}">${icon('badge-check', 'w-3 h-3')} ${th('จ่ายแล้ว', 'Mark paid')}</button>
+                </div>
+                <details class="tx-details mt-2">
+                  <summary class="text-[11px] cursor-pointer" style="color:var(--text-secondary);">${hasMatchedSources ? th('รายการที่ทำให้เกิดยอดโอน','Expenses behind this transfer') : th('รายการค่าใช้จ่ายของผู้จ่าย','Payer expense items')} (${sourceRows.length})</summary>
+                  ${sourceRows.length ? `<div class="tx-sources mt-2">
+                    ${sourceRows.map(i => {
+                      const payers = payersOf(i);
+                      return `<div class="tx-source-row">
+                        <div class="min-w-0">
+                          <div class="text-[11.5px] font-bold">${expenseLink(i)}${i.estimated ? ` <span class="rcpt-mini-badge rcpt-mini-badge--est">${th('ประมาณการ','est.')}</span>` : ''}</div>
+                          <div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(i.date || '')} • ${th('จ่ายโดย','paid by')} ${payersLabel(payers) || escapeHtml(to.displayName || '')} (${methodLabel(i.method)})${payers.length > 1 && i.totalMinor ? ` • ${th('ยอดบิลรวม','bill total')} ${money(i.totalMinor)}` : ''}</div>
+                        </div>
+                        <span class="text-[11.5px] font-bold flex-shrink-0">${moneyPair(i.amountMinor)}</span>
+                      </div>`;
+                    }).join('')}
+                  </div>` : `<p class="text-[10px] mt-2" style="color:var(--text-tertiary);">${th('ไม่พบรายการต้นทางที่จับคู่ได้ — เปิดรายการค่าใช้จ่ายผู้จ่ายเพื่อดูรายละเอียดทั้งหมด','No matching source items were found — open the payer expense list for the full details.')}</p>`}
+                  ${hasMatchedSources ? `<p class="text-[10px] mt-2" style="color:var(--text-tertiary);">${th('ยอดโอนจริงถูกหักกลบกับรายการที่อีกฝ่ายจ่ายให้แล้ว จึงอาจไม่เท่ากับผลรวมรายการ','Recorded transfers are netted against prior payments, so this explanation may not add up to the transfer total.')}</p>` : ''}
+                </details>
+              </div>`;
+            }).join('')}
           </div>
-          ${sourceRows.length ? `<details class="tx-details mt-2">
-            <summary class="text-[11px] cursor-pointer" style="color:var(--text-secondary);">${th('จ่ายคืนจากค่าอะไร','Which bills this settles')} (${sourceRows.length})</summary>
-            <div class="tx-sources mt-2">
-              ${sourceRows.map(i => {
-                const payers = payersOf(i);
-                return `<div class="tx-source-row">
-                  <div class="min-w-0">
-                    <div class="text-[11.5px] font-bold">${expenseLink(i)}${i.estimated ? ` <span class="rcpt-mini-badge rcpt-mini-badge--est">${th('ประมาณการ','est.')}</span>` : ''}</div>
-                    <div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(i.date || '')} • ${th('จ่ายโดย','paid by')} ${payersLabel(payers) || escapeHtml(to?.displayName || '')} (${methodLabel(i.method)})${payers.length > 1 && i.totalMinor ? ` • ${th('ยอดบิลรวม','bill total')} ${money(i.totalMinor)}` : ''}</div>
-                  </div>
-                  <span class="text-[11.5px] font-bold flex-shrink-0">${moneyPair(i.amountMinor)}</span>
-                </div>`;
-              }).join('')}
-            </div>
-            <p class="text-[10px] mt-2" style="color:var(--text-tertiary);">${th('ยอดโอนจริงถูกหักกลบกับรายการที่อีกฝ่ายจ่ายให้แล้ว จึงอาจไม่เท่ากับผลรวมข้างบน','The transfer is netted against what the other side already paid, so it may differ from the sum above.')}</p>
-          </details>` : ''}
-        </div>`;
+        </section>`;
       }).join('')}</div>
     </div>`;
   }
@@ -8421,8 +8435,7 @@ async function renderSettlement(params) {
   }
 
   /**
-   * “ใครต้องจ่าย ใครได้คืน” — one tap opens that member's detail screen
-   * (openSettlePerson). This is the summary the clear-bill page now leads with.
+   * “ใครต้องจ่าย ใครได้คืน” — one tap opens the member's itemized expense receipt.
    */
   function netSummaryHtml() {
     if (!state.statements.length) return '';
@@ -8477,22 +8490,23 @@ async function renderSettlement(params) {
       return acc;
     }, { cash: 0, card: 0, transfer: 0 });
     return `
-      <details class="card" id="settle-overview" ${overviewExpanded ? 'open' : ''}>
-        <summary class="settle-overview-summary">
-          <span class="font-bold text-sm flex items-center gap-2">${icon('scale', 'w-4 h-4')} ${th('ภาพรวมทั้งทริป','Trip overview')}</span>
-          <span class="settle-overview-toggle no-export">
-            <span class="overview-hint-expanded">${th('กดเพื่อย่อ','Click to collapse')}</span>
-            <span class="overview-hint-collapsed">${th('กดเพื่อขยาย','Click to expand')}</span>
+      <section class="card p-5" id="settle-overview">
+        <div class="settle-overview-header mb-4">
+          <h4 class="font-bold text-sm flex items-center gap-2">${icon('scale', 'w-4 h-4')} ${th('ภาพรวมทั้งทริป','Trip overview')}</h4>
+          <button class="settle-overview-toggle no-export ${overviewDetailsExpanded ? 'is-expanded' : ''}" data-overview-details-toggle type="button" aria-expanded="${overviewDetailsExpanded}" aria-controls="settle-overview-details">
+            <span data-overview-toggle-label>${overviewDetailsExpanded ? th('ซ่อนรายการใต้การ์ด','Hide details below cards') : th('แสดงรายการใต้การ์ด','Show details below cards')}</span>
             ${icon('chevron-down', 'w-3.5 h-3.5 settle-overview-chevron')}
-          </span>
-        </summary>
-        <div class="settle-overview-body">
-          <div class="kpi-strip mb-4">
-            <div class="kpi-mini"><span class="kpi-mini-label">${th('จ่ายจริงรวม','Total paid')}</span><b>${moneyPair(totalPaid)}</b></div>
-            <div class="kpi-mini"><span class="kpi-mini-label">${th('เงินสด','Cash')}</span><b>${moneyPair(byMethod.cash)}</b></div>
-            <div class="kpi-mini"><span class="kpi-mini-label">${th('บัตร','Card')}</span><b>${moneyPair(byMethod.card)}</b></div>
-            <div class="kpi-mini"><span class="kpi-mini-label">${th('โอน','Transfer')}</span><b>${moneyPair(byMethod.transfer)}</b></div>
-          </div>
+          </button>
+        </div>
+        <div class="kpi-strip mb-4">
+          <div class="kpi-mini"><span class="kpi-mini-label">${th('จ่ายจริงรวม','Total paid')}</span><b>${moneyPair(totalPaid)}</b></div>
+          <div class="kpi-mini"><span class="kpi-mini-label">${th('เงินสด','Cash')}</span><b>${moneyPair(byMethod.cash)}</b></div>
+          <div class="kpi-mini"><span class="kpi-mini-label">${th('บัตร','Card')}</span><b>${moneyPair(byMethod.card)}</b></div>
+          <div class="kpi-mini"><span class="kpi-mini-label">${th('โอน','Transfer')}</span><b>${moneyPair(byMethod.transfer)}</b></div>
+        </div>
+        <div class="settle-overview-credit-cards">${cardsSummaryHtml()}</div>
+        <div id="settle-overview-details" class="settle-overview-details" ${overviewDetailsExpanded ? '' : 'hidden'}>
+          <h5 class="font-bold text-xs mb-2">${th('สรุปค่าใช้จ่ายแยกตามสมาชิก','Member expense breakdown')}</h5>
           <table class="receipt-table">
             <thead><tr>
               <th>${th('สมาชิก','Member')}</th>
@@ -8502,7 +8516,7 @@ async function renderSettlement(params) {
             </tr></thead>
             <tbody>
               ${state.statements.map(m => `
-                <tr class="receipt-table-row" data-settle-person="${escapeHtml(m.memberId)}" title="${th('กดเพื่อดูรายละเอียด','Tap for details')}">
+                <tr class="receipt-table-row" data-settle-person="${escapeHtml(m.memberId)}" title="${th('กดเพื่อดูรายการค่าใช้จ่าย','Tap to view expense items')}">
                   <td>${escapeHtml(m.displayName)}</td>
                   <td class="num">${moneyPair(m.paidMinor)}</td>
                   <td class="num">${moneyPair(m.owedMinor)}</td>
@@ -8511,9 +8525,8 @@ async function renderSettlement(params) {
             </tbody>
           </table>
           <div class="receipt-line muted"><span>${th('ยอดรวมทุกคน','Everyone together')}</span><span>${money(state.statements.reduce((s, m) => s + m.netMinor, 0))}</span></div>
-          ${cardsSummaryHtml()}
         </div>
-      </details>
+      </section>
       ${netSummaryHtml()}
       ${pendingHtml()}
       ${transactionsHtml()}`;
@@ -8526,28 +8539,47 @@ async function renderSettlement(params) {
     if (view === 'receipts') renderView();
   }
 
-  function bindReceiptActions() {
-    // Every “who owes whom” surface opens the person screen (summary → detail).
-    document.querySelectorAll('[data-settle-person]').forEach(el => el.addEventListener('click', (e) => {
+  function bindReceiptActions(root = document, { inSheet = false } = {}) {
+    const queryAll = (selector) => root.querySelectorAll(selector);
+    // Summary taps go straight to an itemized receipt; there is no extra
+    // recipient/payer summary screen between the transfer and its expenses.
+    queryAll('[data-settle-person]').forEach(el => el.addEventListener('click', (e) => {
       if (e.target.closest('[data-assign-payer]')) return;
       const id = el.dataset.settlePerson;
-      if (id) openSettlePerson(id);
+      if (!id) return;
+      if (inSheet) {
+        root.querySelector('#rd-close')?.click();
+        setTimeout(() => openReceiptDetail(id), 90);
+      } else openReceiptDetail(id);
+    }));
+
+    queryAll('[data-overview-details-toggle]').forEach(btn => btn.addEventListener('click', () => {
+      const details = root.querySelector('#settle-overview-details');
+      if (!details) return;
+      overviewDetailsExpanded = !overviewDetailsExpanded;
+      details.hidden = !overviewDetailsExpanded;
+      btn.setAttribute('aria-expanded', String(overviewDetailsExpanded));
+      const label = btn.querySelector('[data-overview-toggle-label]');
+      if (label) label.textContent = overviewDetailsExpanded
+        ? th('ซ่อนรายการใต้การ์ด', 'Hide details below cards')
+        : th('แสดงรายการใต้การ์ด', 'Show details below cards');
+      btn.classList.toggle('is-expanded', overviewDetailsExpanded);
     }));
 
     // ละเอียด / กระทัดรัด (persisted, applies to both receipt views + the sheet)
-    document.querySelectorAll('#receipt-density [data-density]').forEach(btn => btn.addEventListener('click', () => {
+    queryAll('#receipt-density [data-density]').forEach(btn => btn.addEventListener('click', () => {
       receiptDensity = btn.dataset.density === 'compact' ? 'compact' : 'full';
       try { localStorage.setItem('fuji_rcpt_density', receiptDensity); } catch { /* ignore */ }
       renderView();
     }));
 
-    document.querySelectorAll('#receipt-picker [data-receipt-filter]').forEach(btn => btn.addEventListener('click', () => {
+    queryAll('#receipt-picker [data-receipt-filter]').forEach(btn => btn.addEventListener('click', () => {
       receiptFilter = btn.dataset.receiptFilter === 'all' ? 'all' : btn.dataset.receiptFilter;
       renderView();
     }));
 
     // "ดูทั้งหมด / ย่อรายการ" — long item lists fold inside each receipt block.
-    document.querySelectorAll('[data-rcpt-more]').forEach(btn => btn.addEventListener('click', () => {
+    queryAll('[data-rcpt-more]').forEach(btn => btn.addEventListener('click', () => {
       const block = btn.closest('.rcpt-block');
       if (!block) return;
       const rows = [...block.querySelectorAll('.rcpt-extra')];
@@ -8559,18 +8591,18 @@ async function renderSettlement(params) {
     }));
 
     // ธุรกรรมที่ต้องทำ — expand / collapse EVERY breakdown at once (a request).
-    document.querySelectorAll('[data-tx-toggle]').forEach(btn => btn.addEventListener('click', () => {
+    queryAll('[data-tx-toggle]').forEach(btn => btn.addEventListener('click', () => {
       const open = btn.dataset.txToggle === 'open';
-      document.querySelectorAll('#settlement-content details.tx-details').forEach(d => { d.open = open; });
+      queryAll('details.tx-details').forEach(d => { d.open = open; });
     }));
 
     // "ระบุผู้จ่าย" for items nobody hosts yet → the expense editor.
-    document.querySelectorAll('[data-assign-payer]').forEach(btn => btn.addEventListener('click', () => {
+    queryAll('[data-assign-payer]').forEach(btn => btn.addEventListener('click', () => {
       location.hash = `#/trip/${tripId}/expenses/add?id=${encodeURIComponent(btn.dataset.assignPayer)}`;
     }));
 
     // ทักท้วง/แสดงความเห็นบนรายการในใบเสร็จได้เลย
-    document.querySelectorAll('[data-receipt-comment]').forEach(btn => btn.addEventListener('click', async () => {
+    queryAll('[data-receipt-comment]').forEach(btn => btn.addEventListener('click', async () => {
       const expenseId = btn.dataset.receiptComment;
       const exp = state.expenses.find(e => e.id === expenseId);
       await openCommentSheet({
@@ -8584,7 +8616,7 @@ async function renderSettlement(params) {
       });
     }));
 
-    document.querySelectorAll('[data-export-receipt]').forEach(btn => btn.addEventListener('click', async () => {
+    queryAll('[data-export-receipt]').forEach(btn => btn.addEventListener('click', async () => {
       const id = btn.dataset.exportReceipt;
       const tLoad = toast.loading(th('กำลังสร้างรูป...', 'Creating image...'));
       try {
@@ -8623,7 +8655,7 @@ async function renderSettlement(params) {
       ...statement.items.map(i => `• ${i.role === 'paid' ? '↑' : '↓'} ${i.title} ${money(i.amountMinor)}`)
     ];
 
-    document.querySelectorAll('[data-share-receipt]').forEach(btn => btn.addEventListener('click', async () => {
+    queryAll('[data-share-receipt]').forEach(btn => btn.addEventListener('click', async () => {
       const statement = state.statements.find(x => x.memberId === btn.dataset.shareReceipt);
       if (!statement) return;
       const text = receiptLines(statement).join('\n');
@@ -8654,7 +8686,7 @@ async function renderSettlement(params) {
       }
     }));
 
-    document.querySelectorAll('[data-copy-receipt]').forEach(btn => btn.addEventListener('click', async () => {
+    queryAll('[data-copy-receipt]').forEach(btn => btn.addEventListener('click', async () => {
       const statement = state.statements.find(x => x.memberId === btn.dataset.copyReceipt);
       if (!statement) return;
       const lines = [
@@ -8671,87 +8703,13 @@ async function renderSettlement(params) {
     }));
   }
 
-  /**
-   * “รายละเอียดอีกหน้า” (v18.2): the person screen behind every net chip, debt-map
-   * node and transfer row. Answers รับ/จ่ายสุทธิ + who to pay, then links to the
-   * full itemised receipt.
-   */
-  function openSettlePerson(memberId) {
-    const m = state.statements.find(x => x.memberId === memberId);
-    if (!m) return;
-    const { out, inc } = transfersFor(memberId);
-    const positive = m.netMinor >= 0;
-    const settled = Math.abs(m.netMinor) <= 1;
-    const rows = [...out.map(t => ({ t, dir: 'out' })), ...inc.map(t => ({ t, dir: 'in' }))];
-    const sheet = showBottomSheet(`
-      <div class="space-y-4" id="settle-person">
-        <div class="flex items-center gap-3">
-          <div class="avatar" style="width:46px;height:46px;font-size:16px;background:${escapeHtml(m.color || 'var(--primary)')};">
-            ${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}
-          </div>
-          <div class="min-w-0">
-            <h3 class="font-bold text-base leading-tight" style="font-family:var(--font-display);">${escapeHtml(m.displayName)}</h3>
-            <p class="text-[11px] text-[var(--text-secondary)]">${th('จ่ายจริง','paid')} ${money(m.paidMinor)} • ${th('ส่วนที่ต้องรับผิดชอบ','share')} ${money(m.owedMinor)}</p>
-          </div>
-        </div>
-
-        <div class="settle-person-verdict ${settled ? 'is-clear' : positive ? 'is-in' : 'is-out'}">
-          <span class="settle-person-verdict-label">${settled ? th('เคลียร์ครบแล้ว','All settled') : positive ? th('รับสุทธิ (ได้คืน)','Net receive') : th('จ่ายสุทธิ (ต้องโอน)','Net pay')}</span>
-          <b>${settled ? money(0) : `${positive ? '+' : '−'}${money(Math.abs(m.netMinor))}`}</b>
-          ${currency !== 'THB' && thbOf(m.netMinor) ? `<span class="text-[11px]">≈ ${thbOf(Math.abs(m.netMinor))}</span>` : ''}
-        </div>
-
-        <div>
-          <p class="text-xs font-bold mb-1.5 flex items-center gap-1.5">${icon('list-checks', 'w-3.5 h-3.5')} ${th('ต้องโอนให้ใคร / รับจากใคร','Transfers to make')}</p>
-          ${rows.length ? `<div class="settle-answers">
-            ${rows.map(({ t, dir }) => {
-              const other = state.membersMap[dir === 'out' ? t.to : t.from] || {};
-              return `<button type="button" class="settle-answer-row ${dir}" data-settle-person="${escapeHtml(other.id || '')}">
-                <span class="settle-answer-dir">${icon(dir === 'out' ? 'arrow-up-right' : 'arrow-down-left', 'w-3.5 h-3.5')}</span>
-                <span class="avatar" style="width:22px;height:22px;font-size:9px;background:${escapeHtml(other.color || 'var(--primary)')};">${escapeHtml(getInitials(other.displayName || '?'))}</span>
-                <span class="settle-answer-who">${dir === 'out' ? th('โอนให้','Transfer to') : th('รับจาก','Receive from')} ${escapeHtml(other.displayName || '')}</span>
-                <b class="settle-answer-amount">${money(t.amountMinor)}</b>
-                ${icon('chevron-right', 'w-3 h-3')}
-              </button>`;
-            }).join('')}
-          </div>` : `<p class="settle-answer is-clear">${icon('check-circle-2', 'w-3.5 h-3.5')} ${th('ไม่มีการโอนที่ต้องทำ','Nothing to transfer')}</p>`}
-        </div>
-
-        <div class="btn-row">
-          <button id="sp-receipt" class="btn btn-primary btn-sm" type="button">${icon('receipt-text', 'w-4 h-4')} ${th('ดูใบเสร็จเต็ม','Full receipt')}</button>
-          <button id="sp-copy" class="btn btn-secondary btn-sm" type="button">${icon('clipboard-copy', 'w-4 h-4')} ${th('คัดลอกสรุป','Copy summary')}</button>
-          <button id="sp-close" class="btn btn-ghost btn-sm" type="button">${icon('x', 'w-4 h-4')} ${th('ปิด','Close')}</button>
-        </div>
-      </div>
-    `);
-    queueIcons();
-    const body = sheet.sheet;
-    body.querySelectorAll('[data-settle-person]').forEach(btn => btn.addEventListener('click', () => {
-      const next = btn.dataset.settlePerson;
-      if (!next || next === memberId) return;
-      sheet.close();
-      setTimeout(() => openSettlePerson(next), 90);
-    }));
-    body.querySelector('#sp-receipt')?.addEventListener('click', () => {
-      sheet.close();
-      setTimeout(() => openReceiptDetail(memberId), 90);
-    });
-    body.querySelector('#sp-copy')?.addEventListener('click', async () => {
-      const lines = [
-        `${m.displayName} — ${settled ? th('เคลียร์ครบ','settled') : positive ? th('รับสุทธิ','net receive') : th('จ่ายสุทธิ','net pay')} ${money(Math.abs(m.netMinor))}`,
-        ...out.map(t => `${th('โอนให้','Pay to')} ${state.membersMap[t.to]?.displayName || ''}: ${money(t.amountMinor)}`),
-        ...inc.map(t => `${th('รับจาก','Receive from')} ${state.membersMap[t.from]?.displayName || ''}: ${money(t.amountMinor)}`)
-      ];
-      try { await navigator.clipboard?.writeText(lines.join('\n')); toast.success(th('คัดลอกแล้ว','Copied')); }
-      catch { toast.error(th('คัดลอกไม่ได้','Copy failed')); }
-    });
-    body.querySelector('#sp-close')?.addEventListener('click', () => sheet.close());
-  }
-
-  /** Open the full receipt of one member in a sheet (scrollable, exportable). */ 
+  /** Open every expense row for one member in a sheet (scrollable, exportable). */
   function openReceiptDetail(memberId) {
     const m = state.statements.find(x => x.memberId === memberId) || state.statements[0];
     if (!m) return;
+    // A summary tap is specifically an inspection action: always open detailed
+    // rows even if the receipts page was previously left in compact mode.
+    const detailDensity = 'full';
     const detail = showBottomSheet(`
       <div class="receipt-detail-head">
         <div class="avatar" style="width:40px;height:40px;background:${escapeHtml(m.color || 'var(--primary)')};">
@@ -8765,17 +8723,25 @@ async function renderSettlement(params) {
       </div>
       <div class="receipt-toolbar no-export">
         <div class="segmented" id="rd-density">
-          <button type="button" class="segmented-item ${receiptDensity === 'full' ? 'active' : ''}" data-rd-density="full">${icon('rows-3', 'w-3.5 h-3.5')} ${th('ละเอียด','Detailed')}</button>
-          <button type="button" class="segmented-item ${receiptDensity === 'compact' ? 'active' : ''}" data-rd-density="compact">${icon('align-justify', 'w-3.5 h-3.5')} ${th('กระทัดรัด','Compact')}</button>
+          <button type="button" class="segmented-item ${detailDensity === 'full' ? 'active' : ''}" data-rd-density="full">${icon('rows-3', 'w-3.5 h-3.5')} ${th('ละเอียด','Detailed')}</button>
+          <button type="button" class="segmented-item ${detailDensity === 'compact' ? 'active' : ''}" data-rd-density="compact">${icon('align-justify', 'w-3.5 h-3.5')} ${th('กระทัดรัด','Compact')}</button>
         </div>
       </div>
       <div class="settle-person-verdict ${Math.abs(m.netMinor) <= 1 ? 'is-clear' : m.netMinor > 0 ? 'is-in' : 'is-out'}">
         <span class="settle-person-verdict-label">${Math.abs(m.netMinor) <= 1 ? th('เคลียร์ครบแล้ว','All settled') : m.netMinor > 0 ? th('รับสุทธิ (ได้คืน)','Net receive') : th('จ่ายสุทธิ (ต้องโอน)','Net pay')}</span>
         <b>${Math.abs(m.netMinor) <= 1 ? money(0) : `${m.netMinor > 0 ? '+' : '−'}${money(Math.abs(m.netMinor))}`}</b>
       </div>
-      <div class="receipt-detail-body ${receiptDensity === 'compact' ? 'is-compact' : ''}" id="receipt-detail-${escapeHtml(m.memberId)}">${receiptHtml(m)}</div>
+      <div class="receipt-detail-body ${detailDensity === 'compact' ? 'is-compact' : ''}" id="receipt-detail-${escapeHtml(m.memberId)}">${receiptHtml(m)}</div>
       <div class="btn-row mt-3 no-export" id="rd-switch"></div>
     `, { className: 'sheet--wide' });
+    // Summary actions open a genuinely itemized receipt, even when the page's
+    // compact preference would otherwise hide older rows.
+    detail.sheet.querySelectorAll('.rcpt-extra[hidden]').forEach(row => row.removeAttribute('hidden'));
+    detail.sheet.querySelectorAll('.rcpt-showall').forEach(btn => {
+      btn.classList.add('is-expanded');
+      btn.querySelector('[data-more-label]')?.classList.add('hidden');
+      btn.querySelector('[data-less-label]')?.classList.remove('hidden');
+    });
     // Person switcher: everyone with a balance movement, biggest first.
     const all = [...state.statements].sort((a, b) => Math.abs(b.netMinor) - Math.abs(a.netMinor));
     const switchBar = detail.sheet.querySelector('#rd-switch');
@@ -8798,7 +8764,7 @@ async function renderSettlement(params) {
       // keep the page behind the sheet in sync too
       document.querySelectorAll('.receipt-grid').forEach(el => el.classList.toggle('is-compact', receiptDensity === 'compact'));
     }));
-    bindReceiptActions();
+    bindReceiptActions(detail.sheet, { inSheet: true });
     queueIcons();
   }
 
@@ -8807,10 +8773,10 @@ async function renderSettlement(params) {
    * transfer is a connecting line. The old map drew one receiver-centred wheel
    * per receiver and the money lines piled up unreadable.
    *
-   * Anti-overlap rules: nodes sit on one ellipse with a barycentre ordering so
-   * linked people land next to each other (fewer crossings), every line gets its
-   * own curvature and direction (they never lie on top of each other), and the
-   * amount labels are staggered along the lines with a halo behind the text.
+   * Anti-overlap rules: nodes sit on one ellipse with a barycentre ordering,
+   * every transfer gets its own high-contrast colour and curve, and amount tags
+   * are collision-checked against other tags and member labels. If the graph is
+   * too dense, a tag gets its own row below the drawing instead of overlapping.
    */
   function debtMapHtml() {
     const txns = (state.transactions || []).filter(tx => tx?.from && tx?.to && tx.from !== tx.to);
@@ -8847,8 +8813,8 @@ async function renderSettlement(params) {
     ids.sort((a, b) => (Math.abs((recv.get(b) || 0) - (send.get(b) || 0)) - Math.abs((recv.get(a) || 0) - (send.get(a) || 0))));
 
     /* ---- layout: one ellipse, barycentre ordering to reduce crossings ---- */
-    const W = 820, H = 500;
-    const cx = W / 2, cy = H / 2 - 4;
+    const W = 820, GRAPH_H = 500;
+    const cx = W / 2, cy = GRAPH_H / 2 - 4;
     const n = ids.length;
     const radiusX = Math.min(320, 190 + n * 14);
     const radiusY = Math.min(192, 118 + n * 10);
@@ -8883,41 +8849,67 @@ async function renderSettlement(params) {
       });
     });
 
-    /* ---- edges: one curved line per transfer, labels staggered ---- */
+    /* ---- edges: unique colour per transfer + collision-free amount labels ---- */
     const markerDefs = [];
     let edgesHtml = '';
     const sortedTx = txns.slice().sort((a, b) => (b.amountMinor || 0) - (a.amountMinor || 0));
-    sortedTx.forEach((tx, i) => {
+    const nodeR = n > 8 ? 21 : 25;
+    const nodeObstacles = order.map(id => {
+      const person = membersMap[id] || { displayName: id };
+      const p = posOf.get(id);
+      const label = (person.displayName || '?').slice(0, 16);
+      const halfWidth = Math.max(nodeR + 10, Math.max(56, label.length * 6.4) / 2) + 7;
+      return {
+        left: p.x - halfWidth,
+        right: p.x + halfWidth,
+        top: p.y - nodeR - 8,
+        bottom: p.y + nodeR + 36
+      };
+    });
+    const nodeColors = new Map(order.map((id, i) => [id, debtMapColor(sortedTx.length + 24 + i)]));
+    const edgeRows = sortedTx.map((tx, i) => {
       const p1 = posOf.get(tx.from), p2 = posOf.get(tx.to);
-      if (!p1 || !p2) return;
+      if (!p1 || !p2) return null;
       const payer = membersMap[tx.from] || { displayName: th('ผู้จ่ายเงิน', 'Payer') };
       const receiver = membersMap[tx.to] || { displayName: th('ผู้รับเงิน', 'Receiver') };
-      const color = payer.color || 'var(--primary)';
+      const color = debtMapColor(i);
       const markerId = `debt-arrow-${i}`;
       markerDefs.push(`<marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0L10 5L0 10z" fill="${escapeHtml(color)}"/></marker>`);
-      // shorten the line so it starts / ends at the node rims (not under them)
       const dx = p2.x - p1.x, dy = p2.y - p1.y;
       const len = Math.hypot(dx, dy) || 1;
       const ux = dx / len, uy = dy / len;
       const sxp = p1.x + ux * 30, syp = p1.y + uy * 30;
       const exp = p2.x - ux * 34, eyp = p2.y - uy * 34;
-      // fan the curves out: alternating bulge side + growing magnitude, so two
-      // lines never share the same path (and their labels never stack)
+      // Give every parallel connection a unique bend as well as a unique hue.
       const side = i % 2 === 0 ? 1 : -1;
       const bulge = side * (30 + Math.floor(i / 2) * 12);
       const mx = (sxp + exp) / 2 - uy * bulge;
       const my = (syp + eyp) / 2 + ux * bulge;
-      // amount label: staggered along the curve (t differs per line) + halo text
-      const tSteps = [0.5, 0.4, 0.62, 0.32, 0.7, 0.26, 0.76, 0.2, 0.82];
-      const t = tSteps[i % tSteps.length];
-      const it = 1 - t;
-      const lx = it * it * sxp + 2 * it * t * mx + t * t * exp;
-      const ly = it * it * syp + 2 * it * t * my + t * t * eyp;
+      return {
+        tx, index: i, payer, receiver, color, markerId,
+        start: { x: sxp, y: syp }, control: { x: mx, y: my }, end: { x: exp, y: eyp },
+        amountLabel: money(tx.amountMinor)
+      };
+    }).filter(Boolean);
+    const amountLayout = layoutDebtMapAmountLabels(
+      edgeRows.map(edge => ({ start: edge.start, control: edge.control, end: edge.end, label: edge.amountLabel })),
+      nodeObstacles,
+      { width: W, height: GRAPH_H }
+    );
+    const H = amountLayout.height;
+    edgeRows.forEach((edge, i) => {
+      const { tx, payer, receiver, color, markerId, start, control, end, amountLabel } = edge;
+      const label = amountLayout.positions[i];
+      const labelMarkup = label ? `
+        <g class="debt-map-amount-label" data-overflow-label="${label.fallback ? 'true' : 'false'}" aria-hidden="true">
+          <rect x="${(label.x - label.width / 2).toFixed(1)}" y="${(label.y - label.height / 2).toFixed(1)}" width="${label.width.toFixed(1)}" height="${label.height.toFixed(1)}" rx="8" fill="var(--surface)" fill-opacity=".97" stroke="${escapeHtml(color)}" stroke-width="1.5"/>
+          <text class="debt-map-amount" x="${label.x.toFixed(1)}" y="${label.y.toFixed(1)}" text-anchor="middle" dominant-baseline="central">${escapeHtml(amountLabel)}</text>
+        </g>` : '';
       edgesHtml += `
-        <g class="debt-map-edge" data-edge="${escapeHtml(tx.from)}→${escapeHtml(tx.to)}">
-          <title>${escapeHtml(payer.displayName || '')} ${th('จ่ายให้', 'pays')} ${escapeHtml(receiver.displayName || '')}: ${money(tx.amountMinor)}</title>
-          <path d="M${sxp.toFixed(1)},${syp.toFixed(1)} Q${mx.toFixed(1)},${my.toFixed(1)} ${exp.toFixed(1)},${eyp.toFixed(1)}" fill="none" stroke="${escapeHtml(color)}" stroke-width="2.5" stroke-opacity=".8" stroke-linecap="round" marker-end="url(#${markerId})"/>
-          <text class="debt-map-amount" x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="central">${money(tx.amountMinor)}</text>
+        <g class="debt-map-edge" data-edge="${escapeHtml(tx.from)}→${escapeHtml(tx.to)}" data-color="${escapeHtml(color)}">
+          <title>${escapeHtml(payer.displayName || '')} ${th('จ่ายให้', 'pays')} ${escapeHtml(receiver.displayName || '')}: ${escapeHtml(amountLabel)}</title>
+          <path d="M${start.x.toFixed(1)},${start.y.toFixed(1)} Q${control.x.toFixed(1)},${control.y.toFixed(1)} ${end.x.toFixed(1)},${end.y.toFixed(1)}" fill="none" stroke="${escapeHtml(color)}" stroke-width="2.8" stroke-opacity=".9" stroke-linecap="round" marker-end="url(#${markerId})"/>
+          ${labelMarkup}
         </g>`;
     });
 
@@ -8933,8 +8925,7 @@ async function renderSettlement(params) {
         ? th('จ่าย/รับ', 'PAYS / GETS')
         : role === 'receiver' ? th('รับเงิน', 'GETS BACK') : th('จ่ายเงิน', 'PAYS');
       const tone = role === 'receiver' ? POS : role === 'payer' ? NEG : 'var(--primary-strong)';
-      const color = person.color || 'var(--primary)';
-      const nodeR = n > 8 ? 21 : 25;
+      const color = nodeColors.get(id) || debtMapColor(order.indexOf(id));
       nodesHtml += `
         <g class="debt-map-node debt-map-node--${role}" data-member="${escapeHtml(id)}" data-debt-person="${escapeHtml(id)}" role="button" tabindex="0" style="cursor:pointer;">
           <title>${escapeHtml(person.displayName || '')}${out ? ` • ${th('จ่าย', 'pays')} ${money(out)}` : ''}${inc ? ` • ${th('รับ', 'gets')} ${money(inc)}` : ''}</title>
@@ -8946,20 +8937,20 @@ async function renderSettlement(params) {
         </g>`;
     });
 
-    /* ---- the row list under the map stays: exact amounts + tap targets ---- */
-    const rowsHtml = sortedTx.map(tx => {
-      const payer = membersMap[tx.from] || { displayName: th('ผู้จ่ายเงิน', 'Payer') };
-      const receiver = membersMap[tx.to] || { displayName: th('ผู้รับเงิน', 'Receiver') };
-      return `<button type="button" class="debt-tx-row" data-settle-person="${escapeHtml(tx.from)}">
-        <span class="avatar" style="width:24px;height:24px;font-size:9px;background:${escapeHtml(payer.color || 'var(--primary)')};">${initial(payer)}</span>
-        <span class="font-semibold truncate">${escapeHtml(payer.displayName || '')}</span>
+    /* ---- exact transfer rows under the map repeat each edge colour ---- */
+    const rowsHtml = edgeRows.map(({ tx, payer, receiver, color }) => `
+      <div class="debt-tx-row" style="--debt-edge-color:${escapeHtml(color)};">
+        <button type="button" class="debt-person-link" data-settle-person="${escapeHtml(tx.from)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${payer.displayName || 'ผู้จ่าย'}`, `View expenses for ${payer.displayName || 'payer'}`))}">
+          <span class="avatar" style="width:24px;height:24px;font-size:9px;background:${escapeHtml(payer.color || 'var(--primary)')};">${initial(payer)}</span>
+          <span class="debt-person-name">${escapeHtml(payer.displayName || '')}</span>
+        </button>
         <span class="debt-row-pays">${icon('arrow-right', 'w-3 h-3')} ${th('จ่ายให้', 'pays')}</span>
-        <span class="avatar" style="width:24px;height:24px;font-size:9px;background:${escapeHtml(receiver.color || 'var(--primary)')};">${initial(receiver)}</span>
-        <span class="font-semibold truncate">${escapeHtml(receiver.displayName || '')}</span>
-        <span class="ml-auto font-bold font-mono">${money(tx.amountMinor)}</span>
-        ${icon('chevron-right', 'w-3.5 h-3.5')}
-      </button>`;
-    }).join('');
+        <button type="button" class="debt-person-link" data-settle-person="${escapeHtml(tx.to)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${receiver.displayName || 'ผู้รับ'}`, `View expenses for ${receiver.displayName || 'receiver'}`))}">
+          <span class="avatar" style="width:24px;height:24px;font-size:9px;background:${escapeHtml(receiver.color || 'var(--primary)')};">${initial(receiver)}</span>
+          <span class="debt-person-name">${escapeHtml(receiver.displayName || '')}</span>
+        </button>
+        <span class="debt-row-amount">${money(tx.amountMinor)}</span>
+      </div>`).join('');
 
     return `
       <div class="card p-5 debt-map-card">
@@ -8969,12 +8960,13 @@ async function renderSettlement(params) {
             ${th('แผนที่หนี้ — เส้นเดียวต่อการโอนหนึ่งครั้ง', 'Debt map — one line per transfer')}
             <span class="badge badge-planned text-[10px]">${txns.length} ${th('รายการ', 'transfers')}</span>
           </h3>
-          <span class="text-[10px] text-[var(--text-tertiary)]">${th('เส้นชี้จากผู้จ่ายไปยังผู้รับ • ยอดเงินบนเส้นไม่ทับกัน • กดชื่อเพื่อดูรายละเอียด', 'Lines point from payer to receiver • amounts never overlap • tap a person for details')}</span>
+          <span class="text-[10px] text-[var(--text-tertiary)]">${th('เส้นชี้จากผู้จ่ายไปยังผู้รับ • จำนวนเงินจัดวางไม่ให้ทับกัน • กดชื่อเพื่อดูรายการค่าใช้จ่าย', 'Lines point from payer to receiver • amount labels never overlap • tap a name for the expense list')}</span>
         </div>
         <div class="debt-map-legend">
           <span class="debt-legend-item is-out">${icon('circle-arrow-up', 'w-3 h-3')} ${th('จ่ายเงิน (ลูกศรออก)', 'Pays (arrow out)')}</span>
           <span class="debt-legend-item is-in">${icon('circle-arrow-down', 'w-3 h-3')} ${th('รับเงิน (ลูกศรเข้า)', 'Gets back (arrow in)')}</span>
-          <span class="debt-legend-hint">${th('ตัวเลขบนเส้น = ยอดที่ต้องโอน', 'Numbers on the lines = amount to transfer')}</span>
+          <span class="debt-legend-item debt-legend-item--unique"><i class="debt-legend-swatch"></i>${th('แต่ละสีแทนการโอนคนละรายการ','Each colour identifies a different transfer')}</span>
+          <span class="debt-legend-hint">${th('ยอดแสดงบนป้ายที่ไม่ทับกัน และมีรายการด้านล่าง','Amount tags do not overlap; matching rows are listed below')}</span>
         </div>
         <div class="debt-map-container">
           <svg class="debt-map-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected by money-transfer lines'))}">
@@ -8988,13 +8980,13 @@ async function renderSettlement(params) {
       ${netSummaryHtml()}`;
   }
 
-  /** Debt-map interactions: nodes / rows / summary chips all open a person page. */
+  /** Debt-map interactions: nodes / rows open that member's itemized expense receipt. */
   function bindDebtMap() {
     const content = document.getElementById('settlement-content');
     if (!content) return;
     const open = (el) => {
       const id = el.dataset.debtPerson || el.dataset.settlePerson;
-      if (id) openSettlePerson(id);
+      if (id) openReceiptDetail(id);
     };
     content.querySelectorAll('[data-debt-person], [data-settle-person]').forEach(el => {
       el.addEventListener('click', () => open(el));
@@ -9002,6 +8994,8 @@ async function renderSettlement(params) {
       // and Space must do the same thing as a tap
       el.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter' && e.key !== ' ') return;
+        // Buttons already synthesize click for Enter / Space; avoid opening twice.
+        if (el.matches('button')) return;
         e.preventDefault();
         open(el);
       });
@@ -9019,13 +9013,9 @@ async function renderSettlement(params) {
     }
     if (view === 'overview') {
       content.innerHTML = overviewHtml();
-      const overview = document.getElementById('settle-overview');
-      overview?.addEventListener('toggle', () => {
-        if (overview.isConnected) overviewExpanded = overview.open;
-      });
       queueIcons();
       // The overview also shows the pending-payer panel + transactions strip.
-      bindReceiptActions();
+      bindReceiptActions(content);
       return;
     }
     // ใบเสร็จรายคน — รายการยาว (ใบเสร็จแบบปัดการ์ดถูกนำออกแล้ว)
@@ -9033,7 +9023,7 @@ async function renderSettlement(params) {
     const visible = receiptFilter === 'all' ? state.statements : state.statements.filter(m => m.memberId === receiptFilter);
     content.innerHTML = `${densityToolbarHtml()}${receiptPickerHtml()}<div class="receipt-grid ${receiptDensity === 'compact' ? 'is-compact' : ''}">${visible.map(receiptHtml).join('')}</div>${pendingHtml()}${transactionsHtml()}`;
     queueIcons();
-    bindReceiptActions();
+    bindReceiptActions(content);
   }
 
   async function load() {
@@ -9098,14 +9088,11 @@ async function renderSettlement(params) {
     return list;
   }
   function expandOverviewForExport(target) {
-    const overview = target === 'settle-overview' ? document.getElementById('settle-overview') : null;
-    if (!overview) return () => {};
-    const wasOpen = overview.open;
-    overview.open = true;
-    return () => {
-      overview.open = wasOpen;
-      overviewExpanded = wasOpen;
-    };
+    const details = target === 'settle-overview' ? document.getElementById('settle-overview-details') : null;
+    if (!details) return () => {};
+    const wasHidden = details.hidden;
+    details.hidden = false;
+    return () => { details.hidden = wasHidden; };
   }
 
   bind('export-overview-png', 'click', async () => {

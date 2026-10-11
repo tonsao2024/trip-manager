@@ -76,13 +76,14 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        flex: 1 1 auto;
+        flex: 1 1 0%;
         min-width: 0;
-        justify-content: center;
+        justify-content: flex-start;
         overflow-x: auto;
         scrollbar-width: none;
         -ms-overflow-style: none;
-        margin-inline: 8px;
+        margin-inline: 6px;
+        padding-inline: 4px;
       }
       .desktop-nav::-webkit-scrollbar { display: none; }
       .desktop-nav .menu-item {
@@ -94,8 +95,9 @@
         min-height: 34px;
       }
     }
-    /* Below lg the menu labels shrink to icons so the bar never overflows */
-    @media (min-width: 768px) and (max-width: 1119.9px) {
+    /* Keep the whole menu visible on common laptop/desktop widths; the nav can
+       scroll at very wide layouts without its first item sliding under the logo. */
+    @media (min-width: 768px) and (max-width: 1439.9px) {
       .desktop-nav .menu-item .menu-item-label { display: none; }
       .desktop-nav .menu-item { padding: 7px 9px; }
     }
@@ -183,6 +185,15 @@
       margin-left: 6px; white-space: nowrap; color: var(--text-secondary);
     }
     @media (min-width: 768px) { .app-by { font-size: 10px; } }
+    /* The account name is useful on desktop; email is intentionally omitted so
+       it cannot crowd the dashboard navigation. Long names truncate safely. */
+    .user-display-name { flex: 0 1 auto; min-width: 0; max-width: clamp(56px, 9vw, 116px); }
+    .user-display-name > span { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    @media (min-width: 768px) {
+      #app-header > div { min-width: 0; }
+      #logo-link { flex: 0 1 auto; min-width: 0; }
+      .header-controls-group { flex: 0 0 auto; min-width: 0; }
+    }
     /* profile picture = settings (a small gear badge hints at it) */
     #user-avatar-btn.has-settings { position: relative; }
     .avatar-gear {
@@ -230,7 +241,7 @@
            bottom navigation instead. -->
       <nav class="desktop-nav" id="desktop-nav" aria-label="เมนูหลัก"></nav>
 
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-3 header-controls-group">
         <div id="sync-status" class="hidden md:flex items-center gap-2 text-[11px] px-3 py-1.5 rounded-full border font-medium" style="background:var(--surface); border-color:var(--border); box-shadow: var(--shadow-xs);">
           <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span><span>Online</span>
         </div>

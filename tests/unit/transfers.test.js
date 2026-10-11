@@ -1,4 +1,4 @@
-import { applyTransfers, calculateSettlement } from '../../src/js/utils/settlement.js';
+import { applyTransfers, calculateSettlement, groupTransfersByPayer } from '../../src/js/utils/settlement.js';
 
 function eq(actual, expected, label) {
   const a = JSON.stringify(actual);
@@ -28,6 +28,21 @@ export function testApplyTransfersIgnoresBadRows() {
   const base = [{ memberId: 'a', net: 100 }, { memberId: 'b', net: -100 }];
   eq(applyTransfers(base, [{ fromId: 'b', toId: 'a', amountMinor: 0 }, { fromId: 'a', toId: 'a', amountMinor: 50 }, { fromId: '', toId: 'a', amountMinor: 5 }]), base, 'ignored');
   eq(applyTransfers(base, [{ fromId: 'b', toId: 'a', amountMinor: 100 }]), [{ memberId: 'a', net: 0 }, { memberId: 'b', net: 0 }], 'settles both');
+}
+
+export function testTransfersGroupOnceByPayerWithNestedRecipients() {
+  const groups = groupTransfersByPayer([
+    { from: 'a', to: 'b', amountMinor: 250 },
+    { from: 'a', to: 'c', amountMinor: 500 },
+    { from: 'a', to: 'b', amountMinor: 150 },
+    { from: 'd', to: 'c', amountMinor: 100 },
+    { from: 'd', to: 'd', amountMinor: 900 },
+    { from: 'a', to: 'c', amountMinor: 0 }
+  ]);
+  eq(groups.map(g => [g.from, g.totalMinor, g.recipients.map(r => [r.to, r.amountMinor, r.transactions.length])]), [
+    ['a', 900, [['c', 500, 1], ['b', 400, 2]]],
+    ['d', 100, [['c', 100, 1]]]
+  ], 'one parent per payer and nested recipient totals');
 }
 
 import { buildSettlementStatements } from '../../src/js/utils/settlement.js';

@@ -205,6 +205,13 @@ await waitFor(() => q('#countdown-scene .cd-runner'), { label: 'countdown scene'
 check(!!q('#countdown-scene .cd-fuji'), 'countdown: Fuji scene rendered');
 check(!!q('#countdown-scene .cd-runner .runner-svg'), 'countdown: animated runner rendered');
 check(!!q('#countdown-scene .cd-progress-fill'), 'countdown: progress bar rendered');
+{
+  const countdownCss = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8');
+  const sceneRule = countdownCss.match(/\.countdown-scene\s*\{[^}]*\}/s)?.[0] || '';
+  check(/width:\s*100%/.test(sceneRule), 'countdown: the runner scene fills the available frame width');
+  check(!/#dashboard-view\.dash-compact\s+#countdown-scene\s*\{[^}]*zoom\s*:/s.test(countdownCss),
+    'countdown: compact mode does not scale the scene down inside its frame');
+}
 check(!!q('.hero-card'), 'dashboard: hero card');
 check(!!q('.kpi-tile'), 'dashboard: KPI tiles');
 await waitFor(() => (window.document.getElementById('kpi-total')?.textContent || '').trim() !== '--', { label: 'KPI totals' }).catch(() => {});
@@ -1783,8 +1790,8 @@ console.log('\n▶ v12: จอเล็ก (iPhone) — header ไม่ดั�
   check(/@media \(max-width: 520px\)[\s\S]{0,400}#app-header \.flex\.items-center\.gap-3 \{ gap: 6px; min-width: 0; \}/.test(css),
     'phone: the header row shrinks instead of pushing the layout wider');
 
-  // 2) The avatar stands in for the name: the block is hidden on phones and the
-  //    full name/email stays available as a tooltip (and as text on desktop).
+  // 2) The avatar stands in for the name on phones; desktop keeps only the
+  //    display name so an email address cannot crowd the navigation.
   const authStubX = await import(stub('firebase-auth.mjs'));
   authStubX.__emitAuth({ uid: 'u1', email: 'somchai.wattanakul@example.com', displayName: 'สมชาย วัฒนากุล ยาวมาก ๆ', photoURL: null });
   await sleep(120);
@@ -1794,7 +1801,8 @@ console.log('\n▶ v12: จอเล็ก (iPhone) — header ไม่ดั�
     'phone: the name is hidden on small screens and shown from md up');
   check(!nameEl?.classList.contains('flex') || nameEl?.classList.contains('md:flex'),
     'phone: the name block is not forced visible on phones');
-  check(String(nameEl?.title || '').includes('สมชาย'), 'phone: the full name is kept as a tooltip on the avatar row');
+  check(String(nameEl?.title || '').includes('สมชาย'), 'phone: the full display name is kept as a tooltip');
+  check(!q('#user-email-text') && !String(nameEl?.title || '').includes('@'), 'header: the email is omitted to save navigation space');
   check(!!q('#user-avatar-btn'), 'phone: the avatar button is still there');
 }
 
@@ -2277,6 +2285,13 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   check(!!q('#settle-net .net-chip.is-in[data-settle-person="u2"]'), 'settlement: a remotely added non-admin payer appears as a creditor');
   check(!!qa('#tx-list [data-settle-pay]').find(b => b.dataset.settleFrom === 'u1' && b.dataset.settleTo === 'u2'),
     'settlement: the transfer list directs the debtor to reimburse that member');
+  check(!!q('#tx-list [data-tx-payer="u1"] .tx-payer-person[data-settle-person="u1"]'),
+    'settlement: tapping the payer name opens that member’s expense list');
+  check(!!q('#tx-list [data-tx-payer="u1"] [data-tx-recipient="u2"] .tx-recipient-person[data-settle-person="u2"]'),
+    'settlement: tapping the recipient name opens that member’s expense list');
+  const payerGroupIds = qa('#tx-list .tx-payer-group').map(group => group.dataset.txPayer);
+  check(new Set(payerGroupIds).size === payerGroupIds.length,
+    'settlement: each payer is shown once with recipients nested beneath');
 
   const chips = qa('#settle-net .net-chip[data-settle-person]');
   check(chips.length >= 1, `settlement: a net chip per member (${chips.length})`);
@@ -2285,39 +2300,40 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   // v26: the transfer summary says who each person pays / gets money back from
   check(qa('#settle-net .net-chip-line').length > 0, 'settlement: transfer summary lists who pays whom under each chip');
   check(!!q('#settle-net .net-summary-note'), 'settlement: transfer summary says when payers get their money back');
-  check(!!q('#settle-overview [data-settle-person]'), 'settlement: the overview table rows are tappable too');
-  check(q('#settle-overview')?.tagName === 'DETAILS' && q('#settle-overview').open,
-    'settlement: the trip overview is expanded by default and uses an accessible disclosure');
-  await click('#settle-overview > summary');
-  check(!q('#settle-overview')?.open, 'settlement: the trip overview can be collapsed');
-  await click('#settle-overview > summary');
-  check(!!q('#settle-overview')?.open, 'settlement: the trip overview can be expanded again');
+  check(!!q('#settle-overview [data-settle-person]'), 'settlement: the overview member rows are tappable too');
+  check(q('#settle-overview')?.tagName === 'SECTION' && !!q('#settle-overview .kpi-strip'),
+    'settlement: overview cards remain visible outside the collapsible member list');
+  check(!!q('#settle-overview .card-summary-grid') || /ยังไม่มีรายการที่ระบุชื่อบัตร/.test(q('#settle-overview')?.textContent || ''),
+    'settlement: card-summary area stays visible in the overview');
+  await click('#settle-overview [data-overview-details-toggle]');
+  check(q('#settle-overview-details')?.hidden && !!q('#settle-overview .kpi-strip'),
+    'settlement: collapsing hides only the member rows, not the summary cards');
+  await click('#settle-overview [data-overview-details-toggle]');
+  check(!q('#settle-overview-details')?.hidden, 'settlement: member details expand beneath the cards');
 
-  // tap a chip → the person screen opens (avatar + verdict + transfer rows)
-  const firstId = chips[0].dataset.settlePerson;
+  // Tapping a transfer-summary member goes directly to their itemized receipt.
   await click(chips[0]);
-  await waitFor(() => q('#settle-person'), { label: 'person sheet' });
-  check(!!q('#settle-person .settle-person-verdict'), 'settlement: the person sheet shows the net verdict');
-  check(!!q('#sp-receipt') && !!q('#sp-copy') && !!q('#sp-close'), 'settlement: the person sheet offers receipt / copy / close');
-  const chained = qa('#settle-person [data-settle-person]').filter(el => el.dataset.settlePerson && el.dataset.settlePerson !== firstId);
-  if (chained.length) {
-    const nextId = chained[0].dataset.settlePerson;
-    await click(chained[0]);
-    await waitFor(() => q('#settle-person') && q('#settle-person').textContent.includes((q('#settle-person')?.textContent || '')), { label: 'chained person sheet' }).catch(() => {});
-    await sleep(260);
-    const nowIds = qa('#settle-person [data-settle-person]').map(el => el.dataset.settlePerson);
-    check(nowIds.includes(nextId) || (q('#settle-person')?.textContent || '').length > 0, 'settlement: tapping a transfer row chains to the other person');
-  } else {
-    check(true, 'settlement: no transfer rows for this member (nothing to chain)');
-  }
-  await click('#sp-receipt');
-  await waitFor(() => q('.receipt-detail-body'), { timeout: 6000, label: 'receipt detail sheet' }).catch(() => {});
+  await waitFor(() => q('.receipt-detail-body'), { label: 'itemized receipt from transfer summary' });
+  check(!q('#settle-person') && !!q('.receipt-detail-body [data-receipt-section="deduct"]'),
+    'settlement: transfer summary opens the expense list instead of another net-summary screen');
+  check(!q('.receipt-detail-body')?.classList.contains('is-compact') && !qa('.receipt-detail-body .rcpt-extra[hidden]').length,
+    'settlement: summary opens every expense row in detailed mode');
+  check(!!q('#rd-close') && !!q('#rd-density [data-rd-density="compact"]'),
+    'settlement: the itemized receipt sheet has close and density controls');
   check(!!q('#rd-density [data-rd-density="compact"]'), 'settlement: the receipt sheet has a compact toggle');
   await click('#rd-density [data-rd-density="compact"]');
   await sleep(220);
   check(window.localStorage.getItem('fuji_rcpt_density') === 'compact', 'settlement: the compact choice is remembered');
   check(!!q('.receipt-detail-body.is-compact') || !!q('#rd-density [data-rd-density="compact"].active'),
     'settlement: compact mode is applied to the receipt');
+  await click('#rd-close');
+  await sleep(240);
+  // Even with compact mode persisted, a summary tap must reopen all item rows.
+  await click(chips[0]);
+  await waitFor(() => q('.receipt-detail-body'), { label: 'full itemized receipt despite compact preference' });
+  check(!q('.receipt-detail-body')?.classList.contains('is-compact') && !qa('.receipt-detail-body .rcpt-extra[hidden]').length
+    && !!q('#rd-density [data-rd-density="full"].active'),
+    'settlement: a compact saved preference never hides rows in the inspection sheet');
   await click('#rd-close');
   await sleep(240);
 
@@ -2342,38 +2358,61 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   check(receiverNodes.length >= 1 && payerNodes.length >= 1, 'debt map: receivers and payers are both on the map');
   const edgePath = q('.debt-map-edge[data-edge="u1→u2"] path[marker-end]');
   check(!!edgePath, 'debt map: a line points from the debtor to the member who paid');
-  // v28: money labels are staggered along the lines + haloed, so they never stack
+  // Every transfer uses a distinct hue; collision-free amount boxes never stack.
   const amounts = qa('.debt-map-amount');
-  check(amounts.length >= 1, `debt map: every transfer carries its amount (${amounts.length})`);
-  const labelSpots = amounts.map(t => `${t.getAttribute('x')},${t.getAttribute('y')}`);
-  check(new Set(labelSpots).size === labelSpots.length, 'debt map: amount labels sit in different spots (no overlap)');
-  check(amounts.every(t => (t.getAttribute('class') || '').includes('debt-map-amount')), 'debt map: amounts carry the halo style class');
+  check(amounts.length === qa('.debt-map-edge').length && amounts.length >= 1,
+    `debt map: every transfer carries an amount tag (${amounts.length})`);
+  const labelBoxes = qa('.debt-map-amount-label rect').map(rect => ({
+    left: Number(rect.getAttribute('x')), top: Number(rect.getAttribute('y')),
+    right: Number(rect.getAttribute('x')) + Number(rect.getAttribute('width')),
+    bottom: Number(rect.getAttribute('y')) + Number(rect.getAttribute('height'))
+  }));
+  let labelsDoNotOverlap = true;
+  for (let i = 0; i < labelBoxes.length; i++) for (let j = i + 1; j < labelBoxes.length; j++) {
+    const a = labelBoxes[i], b = labelBoxes[j];
+    if (!(a.right + 5 <= b.left || b.right + 5 <= a.left || a.bottom + 5 <= b.top || b.bottom + 5 <= a.top)) labelsDoNotOverlap = false;
+  }
+  check(labelsDoNotOverlap, 'debt map: amount-tag boxes have guaranteed spacing (no overlap)');
+  const edgeColors = qa('.debt-map-edge').map(edge => edge.dataset.color);
+  check(new Set(edgeColors).size === edgeColors.length, 'debt map: each transfer line has a distinct colour');
+  check(amounts.every(t => (t.getAttribute('class') || '').includes('debt-map-amount')), 'debt map: amounts use the readable tag style');
   check(nodes.every(n => n.getAttribute('role') === 'button' && n.getAttribute('tabindex') === '0'), 'debt map: nodes are announced as buttons');
   check(/รับเงิน|จ่ายเงิน|GETS|PAYS/.test(q('#settlement-content')?.textContent || ''), 'debt map: labels spell out who pays / who gets');
   check(!!q('.debt-map-legend'), 'debt map: legend explains the colours');
   // v26: the payer rows open the PAYER (they used to open the receiver)
-  const payRows = qa('.debt-tx-row[data-settle-person]');
+  const payRows = qa('.debt-tx-row');
   const payRowsOk = payRows.length > 0 && payRows.every(r => {
-    const from = r.dataset.settlePerson;
-    return !!qa('.debt-map-edge').some(e => String(e.dataset.edge || '').startsWith(`${from}→`));
+    const people = [...r.querySelectorAll('[data-settle-person]')].map(btn => btn.dataset.settlePerson);
+    return people.length === 2 && people.some(from => qa('.debt-map-edge').some(e => String(e.dataset.edge || '').startsWith(`${from}→`)))
+      && people.every(id => !!q(`.debt-map-node[data-debt-person="${id}"]`));
   });
-  check(payRowsOk, `debt map: each payer row opens the payer, not the receiver (${payRows.length} rows)`);
-  if (nodes.length) {
-    // <g> is SVG: it has no .click(), dispatch the event like a real tap does
-    nodes[0].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    await waitFor(() => q('#settle-person'), { label: 'debt node → person sheet' }).catch(() => {});
-    check(!!q('#settle-person'), 'debt map: tapping a node opens the person detail');
-    await click('#sp-close');
-    await sleep(300);
-    // keyboard: Enter on a focused node behaves the same way
-    nodes[0].dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    await waitFor(() => q('#settle-person'), { label: 'debt node keyboard' }).catch(() => {});
-    check(!!q('#settle-person'), 'debt map: Enter on a focused node also opens the detail');
-    await click('#sp-close');
+  check(payRowsOk, `debt map: payer and recipient names each open their own expense list (${payRows.length} rows)`);
+  const receiverLink = payRows[0]?.querySelectorAll('[data-settle-person]')[1];
+  if (receiverLink) {
+    const receiverId = receiverLink.dataset.settlePerson;
+    await click(receiverLink);
+    await waitFor(() => q(`#receipt-detail-${receiverId}`), { label: 'debt transfer receiver → itemized receipt' }).catch(() => {});
+    check(!!q(`#receipt-detail-${receiverId}`), 'debt map: tapping a recipient name opens that recipient’s expense list');
+    await click('#rd-close');
     await sleep(300);
   }
-  const debtRows = qa('#settlement-content .debt-tx-row[data-settle-person]');
-  check(debtRows.length >= 1, `debt map: transfer rows are tappable (${debtRows.length})`);
+  if (nodes.length) {
+    // <g> is SVG: it has no .click(), dispatch the event like a real tap does.
+    nodes[0].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await waitFor(() => q('.receipt-detail-body'), { label: 'debt node → itemized receipt' }).catch(() => {});
+    check(!!q('.receipt-detail-body [data-receipt-section="deduct"]'),
+      'debt map: tapping a node opens itemized expense details directly');
+    await click('#rd-close');
+    await sleep(300);
+    // Keyboard: Enter on a focused node behaves the same way.
+    nodes[0].dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await waitFor(() => q('.receipt-detail-body'), { label: 'debt node keyboard' }).catch(() => {});
+    check(!!q('.receipt-detail-body'), 'debt map: Enter on a focused node opens the itemized receipt');
+    await click('#rd-close');
+    await sleep(300);
+  }
+  const debtRows = qa('#settlement-content .debt-tx-row [data-settle-person]');
+  check(debtRows.length >= 2, `debt map: payer and recipient names are tappable (${debtRows.length} targets)`);
 
   // Every receipt side and the transfer breakdown must retain an exact link to
   // the expense that produced the debt, and that link must open the editor.
