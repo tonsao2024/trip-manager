@@ -2373,8 +2373,17 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
     if (!(a.right + 5 <= b.left || b.right + 5 <= a.left || a.bottom + 5 <= b.top || b.bottom + 5 <= a.top)) labelsDoNotOverlap = false;
   }
   check(labelsDoNotOverlap, 'debt map: amount-tag boxes have guaranteed spacing (no overlap)');
-  const edgeColors = qa('.debt-map-edge').map(edge => edge.dataset.color);
-  check(new Set(edgeColors).size === edgeColors.length, 'debt map: each transfer line has a distinct colour');
+  // v29 contract: a line’s colour is the RECEIVER’s colour — every edge stroke
+  // must equal its receiver node’s fill (lines into the same person share it),
+  // while the people themselves keep pairwise-distinct node colours.
+  const nodeFill = new Map(qa('.debt-map-node').map(n => [n.dataset.member, n.querySelectorAll('circle')[1]?.getAttribute('fill')]));
+  const colourFollowsReceiver = qa('.debt-map-edge').every(edge => {
+    const [, to] = (edge.dataset.edge || '').split('→');
+    const stroke = edge.querySelector('path')?.getAttribute('stroke');
+    return !!stroke && stroke === nodeFill.get(to) && stroke === edge.dataset.color;
+  });
+  check(colourFollowsReceiver, 'debt map: every line uses the receiver’s colour');
+  check(new Set([...nodeFill.values()]).size === nodeFill.size, 'debt map: every person keeps a distinct node colour');
   check(amounts.every(t => (t.getAttribute('class') || '').includes('debt-map-amount')), 'debt map: amounts use the readable tag style');
   check(nodes.every(n => n.getAttribute('role') === 'button' && n.getAttribute('tabindex') === '0'), 'debt map: nodes are announced as buttons');
   check(/รับเงิน|จ่ายเงิน|GETS|PAYS/.test(q('#settlement-content')?.textContent || ''), 'debt map: labels spell out who pays / who gets');
@@ -2700,7 +2709,7 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
   // ---- 4) แถบบน: เมนูย้ายขึ้นมาอยู่ใน header + นาฬิกาเลือกเมืองได้ ----
   const shellHtml = window.document.getElementById('app-header')?.innerHTML || '';
   check(!!q('#app-header #desktop-nav') && qa('nav.desktop-nav').every(n => n.closest('#app-header')),
-    'header: the desktop menu lives inside the top bar (no second row)');
+    'header: the desktop menu lives inside the sticky top bar');
   check(qa('#app-header .menu-item').length >= 5, 'header: trip menu chips render in the bar');
   check(!!q('#clock-chip') && !!q('#clock-time') && !!q('#clock-city-label'), 'header: one compact clock chip');
   check(!q('#clock-bkk') && !q('#clock-tokyo'), 'header: the twin BKK/TYO clocks are gone');
@@ -2763,6 +2772,51 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
     await click('.modal-card--lightbox [data-lb="close"]');
     await sleep(300);
   }
+}
+
+{
+  console.log('\n▶ v29 requests: full menu row, countdown fills its card, line colour = receiver');
+  // ---- 1) แถบเมนูด้านบน: every menu visible at once on desktop ----
+  const shellHtml29 = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  check(!!q('#app-header .header-nav-row #desktop-nav'), 'header: the menu owns a row inside the sticky top bar');
+  check(qa('#desktop-nav .menu-item').length === 8, 'header: all eight trip menus render');
+  check(qa('#desktop-nav .menu-item').every(a => a.querySelector('.menu-item-label') && a.querySelector('.menu-item-label-short')),
+    'header: every chip carries a full AND a short label (never icon-only)');
+  check(!/min-width: 768px\) and \(max-width: 1439/.test(shellHtml29),
+    'header: the old icon-only collapse rule is gone');
+  check(/--header-h: 101px/.test(shellHtml29), 'header: the two-row sticky height is declared');
+  const navEl = q('#desktop-nav');
+  const chips = qa('#desktop-nav .menu-item').map(a => a.getBoundingClientRect());
+  let chipsOverlap = false;
+  for (let i = 1; i < chips.length; i++) {
+    if (chips[i].width && chips[i].top === chips[i - 1].top && chips[i].left < chips[i - 1].right - 1) chipsOverlap = true;
+  }
+  check(!chipsOverlap && (!navEl || navEl.scrollWidth <= navEl.clientWidth + 1),
+    'header: menu chips neither overlap nor hide in a scroll (geometry where measurable)');
+
+  // ---- 2) การ์ดนับถอยหลัง: the scene fills the whole card body ----
+  const cdCss = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8');
+  check(/\.dash-widget\[data-dashboard-widget="countdown"\] \.countdown-scene \{[^}]*flex: 1 1 auto/.test(cdCss),
+    'countdown: the scene stretches to fill its card');
+  await goto('#/trip/t1/dashboard');
+  await waitFor(() => q('[data-dashboard-widget="countdown"] .countdown-scene'), { timeout: 8000, label: 'countdown scene' }).catch(() => {});
+  const cdCard = q('[data-dashboard-widget="countdown"] > .card')?.getBoundingClientRect();
+  const cdScene = q('[data-dashboard-widget="countdown"] .countdown-scene')?.getBoundingClientRect();
+  const deadBand = cdCard && cdScene && cdCard.height ? Math.round(cdCard.bottom - cdScene.bottom) : null;
+  check(deadBand === null || deadBand <= 24,
+    `countdown: no dead band under the scene (${deadBand === null ? 'n/a in jsdom' : `${deadBand}px = card padding`})`);
+
+  // ---- 3) แผนที่หนี้: สีเส้นตามผู้รับเงิน ----
+  await goto('#/trip/t1/settlement');
+  await click('#settle-views [data-view="debt-map"]');
+  await waitFor(() => q('.debt-map-svg'), { timeout: 8000, label: 'debt map' }).catch(() => {});
+  const recvFill = new Map(qa('.debt-map-node').map(n => [n.dataset.member, n.querySelectorAll('circle')[1]?.getAttribute('fill')]));
+  check(qa('.debt-map-edge').length > 0 && qa('.debt-map-edge').every(e => {
+    const [, to] = (e.dataset.edge || '').split('→');
+    return e.querySelector('path')?.getAttribute('stroke') === recvFill.get(to);
+  }), 'debt map: every line is drawn in the receiver’s colour');
+  check(/สีเส้น = สีของผู้รับเงิน/.test(q('.debt-map-legend')?.textContent || ''),
+    'debt map: the legend explains the receiver colour');
 }
 
 console.log('\n▶ delete the whole trip (UI)');

@@ -1113,8 +1113,10 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
   border: 1px solid var(--border);
 }
 .cd-sky { position: absolute; inset: 0; overflow: hidden; }
+/* Sky decor uses % tops so a taller scene (stretched dashboard card) keeps the
+   clouds/sun spread across the whole sky instead of hugging the rim. */
 .cd-sun {
-  position: absolute; top: 18px; right: 8%;
+  position: absolute; top: 9%; right: 8%;
   width: 44px; height: 44px; border-radius: 50%;
   background: radial-gradient(circle, color-mix(in srgb, var(--grad-1) 55%, #fff), transparent 68%);
   animation: cdSunPulse 6s ease-in-out infinite;
@@ -1129,13 +1131,13 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
   width: 26px; height: 16px; border-radius: 999px;
   background: inherit;
 }
-.cd-cloud-1 { top: 26px; animation: cdCloudDrift 34s linear infinite; }
-.cd-cloud-2 { top: 56px; transform: scale(0.8); animation: cdCloudDrift 46s linear infinite -12s; }
-.cd-cloud-3 { top: 12px; transform: scale(0.6); animation: cdCloudDrift 58s linear infinite -28s; }
+.cd-cloud-1 { top: 15%; animation: cdCloudDrift 34s linear infinite; }
+.cd-cloud-2 { top: 32%; transform: scale(0.8); animation: cdCloudDrift 46s linear infinite -12s; }
+.cd-cloud-3 { top: 7%; transform: scale(0.6); animation: cdCloudDrift 58s linear infinite -28s; }
 .cd-star { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #fff; opacity: 0.85; animation: cdTwinkle 3.4s ease-in-out infinite; }
-.cd-star-1 { top: 22px; left: 18%; }
-.cd-star-2 { top: 40px; left: 34%; animation-delay: 0.8s; }
-.cd-star-3 { top: 16px; left: 52%; animation-delay: 1.6s; }
+.cd-star-1 { top: 12%; left: 18%; }
+.cd-star-2 { top: 23%; left: 34%; animation-delay: 0.8s; }
+.cd-star-3 { top: 9%; left: 52%; animation-delay: 1.6s; }
 [data-theme="light"] .cd-star { background: color-mix(in srgb, var(--grad-1) 60%, #fff); opacity: 0.5; }
 
 .countdown-scene.is-compact { --cd-foot: 0px; }
@@ -1238,6 +1240,20 @@ input[type="color"].input, input[type="color"] { padding: 3px; cursor: pointer; 
   .cd-fuji { width: 58%; }
   .cd-runner { width: 48px; height: 66px; }
   .cd-days { min-width: 46px; height: 46px; font-size: 20px; }
+}
+/* The dashboard grid stretches every card in a row to the tallest one (usually
+   the weather card). The runner scene used to stay 190px and leave a dead band
+   under its progress bar (owner screenshot, 11 Oct 2026) — now the scene fills
+   the whole card body, so no space is wasted. */
+.dash-widget[data-dashboard-widget="countdown"] > .card { display: flex; flex-direction: column; }
+.dash-widget[data-dashboard-widget="countdown"] > .card > #countdown-scene {
+  flex: 1 1 auto; display: flex; min-height: 0;
+}
+.dash-widget[data-dashboard-widget="countdown"] .countdown-scene {
+  flex: 1 1 auto; height: auto; min-height: 190px;
+}
+@media (max-width: 640px) {
+  .dash-widget[data-dashboard-widget="countdown"] .countdown-scene { min-height: 168px; }
 }
 
 /* Line clamp helper (Tailwind CDN may not include it) */
