@@ -67,6 +67,8 @@ fsdb.__seed('trips/t1/itineraryItems/i1', {
   title: 'ทะเลสาบคาวากุจิ', date: start, startAt: new Date(`${start}T09:00:00+09:00`),
   durationMinutes: 120, order: 0, category: 'sightseeing', status: 'planned',
   address: 'Kawaguchiko, Yamanashi', coordinates: '35.5171,138.7519',
+  // local image (the sandbox has no CDN) — exercises the v28 photo zoom target
+  imageUrl: '/public/favicon-512.png',
   estimateAmount: 2500, estimateCurrency: 'JPY', estimateCategory: 'ticket', estimatePayerId: 'u1',
   notes: 'จองเรือก่อน 1 วัน', createdAt: now
 });
@@ -114,7 +116,7 @@ exp('e4', {
 });
 
 // Ideas across place categories (v25): grouped headers, category pin colors, compact view.
-fsdb.__seed('trips/t1/ideas/k1', { title: 'ศาลเจ้าฟูชิมิ อินาริ', note: 'เดินขึ้นเขาประมาณ 2 ชม.', address: 'Kyoto', coordinates: '34.9671,135.7727', category: 'sightseeing', status: 'idea', votes: { u1: true, u2: true }, createdBy: 'u1', createdAt: now, currency: 'JPY', estimatedCostMinor: 0 });
+fsdb.__seed('trips/t1/ideas/k1', { title: 'ศาลเจ้าฟูชิมิ อินาริ', note: 'เดินขึ้นเขาประมาณ 2 ชม.', address: 'Kyoto', coordinates: '34.9671,135.7727', category: 'sightseeing', status: 'idea', votes: { u1: true, u2: true }, createdBy: 'u1', createdAt: now, currency: 'JPY', estimatedCostMinor: 0, imageUrls: [`${location.origin}/public/favicon-512.png`] });
 fsdb.__seed('trips/t1/ideas/k2', { title: 'ร้านราเมนซันโตโอ', note: 'คิวยาว มาก่อนเปิด', address: 'Shinjuku', coordinates: '35.6938,139.7034', category: 'food', status: 'idea', votes: { u2: true }, createdBy: 'u2', createdAt: now });
 fsdb.__seed('trips/t1/ideas/k3', { title: 'ตลาดของฝากโตเกียวสถานี', address: 'Tokyo Station', coordinates: '35.6812,139.7671', category: 'shopping', status: 'idea', votes: {}, createdBy: 'u3', createdAt: now });
 fsdb.__seed('trips/t1/ideas/k4', { title: 'สวนสาธารณะยาโนะ', address: 'Yanaka', category: 'sightseeing', status: 'planned', votes: { u1: true }, createdBy: 'u1', createdAt: now });

@@ -10,9 +10,9 @@
   <meta name="copyright" content="© 2024–2026 TonSkywalker. All rights reserved.">
   <meta name="theme-color" id="meta-theme-color" content="#1f6bfb">
   <!-- Build identity — source of truth: src/js/utils/buildInfo.js (a unit test keeps these in sync) -->
-  <meta name="app-version" content="23">
+  <meta name="app-version" content="28">
   <meta name="app-palette" content="Sky light">
-  <meta name="app-updated" content="2026-10-07">
+  <meta name="app-updated" content="2026-10-11">
   <meta property="og:title" content="Trip Manager by TonSkywalker">
   <meta property="og:description" content="วางแผนทริป • แบ่งค่าใช้จ่าย • เคลียร์บิล ครบในแอปเดียว โดย TonSkywalker">
   <!-- Logo ในแถบบราวเซอร์ (favicon) — ไฟล์จริงในโฟลเดอร์ public/ และแบบ inline ที่ตามธีมสี -->
@@ -37,10 +37,10 @@
   </script>
 
   <!-- Design System v21 “Vivid & Deep” (cache-busted) -->
-  <link rel="stylesheet" href="./src/css/tokens.css?v=23">
-  <link rel="stylesheet" href="./src/css/components.css?v=23">
-  <link rel="stylesheet" href="./src/css/refresh.css?v=23">
-  <link rel="stylesheet" href="./src/css/animations.css?v=23">
+  <link rel="stylesheet" href="./src/css/tokens.css?v=28">
+  <link rel="stylesheet" href="./src/css/components.css?v=28">
+  <link rel="stylesheet" href="./src/css/refresh.css?v=28">
+  <link rel="stylesheet" href="./src/css/animations.css?v=28">
 
   <!-- Lucide Icons -->
   <script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
@@ -68,22 +68,88 @@
       body { padding-bottom: 0; }
       .bottom-nav { display: none !important; }
     }
+    /* Desktop menu sits inside the header (one row, no extra bar) so the page
+       keeps the space the old sticky nav row used to eat. */
     .desktop-nav { display: none; }
     @media (min-width: 768px) {
       .desktop-nav {
         display: flex;
-        position: sticky;
-        top: var(--header-h);
-        z-index: 25;
-        background: color-mix(in srgb, var(--surface) 86%, transparent);
-        backdrop-filter: blur(18px) saturate(160%);
-        -webkit-backdrop-filter: blur(18px) saturate(160%);
-        border-bottom: 1px solid var(--border-light);
-        padding-top: 10px;
-        padding-bottom: 10px;
-        margin-bottom: 6px;
+        align-items: center;
+        gap: 6px;
+        flex: 1 1 auto;
+        min-width: 0;
+        justify-content: center;
+        overflow-x: auto;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        margin-inline: 8px;
+      }
+      .desktop-nav::-webkit-scrollbar { display: none; }
+      .desktop-nav .menu-item {
+        flex: 0 0 auto;
+        padding: 7px 11px;
+        font-size: 12px;
+        gap: 6px;
+        white-space: nowrap;
+        min-height: 34px;
       }
     }
+    /* Below lg the menu labels shrink to icons so the bar never overflows */
+    @media (min-width: 768px) and (max-width: 1119.9px) {
+      .desktop-nav .menu-item .menu-item-label { display: none; }
+      .desktop-nav .menu-item { padding: 7px 9px; }
+    }
+    /* The brand subtitle folds away once the menu shares the bar */
+    @media (min-width: 768px) {
+      #header-subtitle { display: none; }
+    }
+
+    /* ---- Compact world clock + city picker ---- */
+    .clock-chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 5px 10px; border-radius: 999px;
+      background: var(--bg-secondary);
+      border: 1.5px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 11px; font-weight: 700;
+      cursor: pointer; white-space: nowrap;
+      transition: border-color .2s ease, color .2s ease;
+    }
+    .clock-chip:hover { border-color: var(--primary-raw); color: var(--primary-strong); }
+    .clock-chip .clock-city-label { color: var(--text-tertiary); font-weight: 800; letter-spacing: .04em; }
+    .clock-chip .clock-time { font-family: var(--font-mono, monospace); font-size: 11.5px; font-weight: 800; color: var(--text-strong); }
+    .clock-chip .clock-caret { opacity: .6; transition: transform .2s ease; }
+    .clock-chip[aria-expanded="true"] .clock-caret { transform: rotate(180deg); }
+    .clock-menu {
+      position: absolute; top: calc(100% + 8px); right: 0;
+      width: 250px; max-height: min(60vh, 420px); overflow-y: auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 18px 50px rgba(0,0,0,.18);
+      padding: 6px;
+      z-index: 80;
+    }
+    .clock-menu-title {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 10px 8px;
+      font-size: 10.5px; font-weight: 800;
+      color: var(--text-tertiary);
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    .clock-menu-item {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; padding: 7px 10px; border-radius: 10px;
+      border: 0; background: transparent; cursor: pointer;
+      font-size: 12px; color: var(--text-secondary); text-align: left;
+    }
+    .clock-menu-item:hover { background: var(--primary-lighter); color: var(--primary-strong); }
+    .clock-menu-item.is-active { background: var(--gradient-primary); color: #fff; }
+    .clock-menu-item .clock-menu-label {
+      font-family: var(--font-mono, monospace); font-weight: 800; font-size: 10.5px;
+      min-width: 34px; letter-spacing: .04em;
+    }
+    .clock-menu-item .clock-menu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* Glass header */
     #app-header {
@@ -159,13 +225,24 @@
         </span>
       </a>
 
+      <!-- Desktop menu lives IN the top bar now, so pages keep their own space.
+           Chips render here (see renderDesktopNav in app.js); phones use the
+           bottom navigation instead. -->
+      <nav class="desktop-nav" id="desktop-nav" aria-label="เมนูหลัก"></nav>
+
       <div class="flex items-center gap-3">
         <div id="sync-status" class="hidden md:flex items-center gap-2 text-[11px] px-3 py-1.5 rounded-full border font-medium" style="background:var(--surface); border-color:var(--border); box-shadow: var(--shadow-xs);">
           <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span><span>Online</span>
         </div>
-        <div id="live-clocks" class="hidden lg:flex items-center gap-2 text-[11px] font-medium mr-1">
-          <span id="clock-bkk" class="px-2.5 py-1 rounded-full bg-[var(--bg-secondary)]">BKK --:--</span>
-          <span id="clock-tokyo" class="px-2.5 py-1 rounded-full bg-[var(--bg-secondary)]">TYO --:--</span>
+        <!-- Compact world clock: tap to pick the city for the time -->
+        <div id="clock-wrap" class="relative hidden md:block">
+          <button id="clock-chip" type="button" class="clock-chip" aria-haspopup="true" aria-expanded="false" title="เลือกเมืองสำหรับเวลา">
+            <i data-lucide="globe-2" class="w-3 h-3"></i>
+            <span id="clock-city-label" class="clock-city-label">BKK</span>
+            <b id="clock-time" class="clock-time">--:--</b>
+            <i data-lucide="chevron-down" class="w-3 h-3 clock-caret"></i>
+          </button>
+          <div id="clock-menu" class="clock-menu hidden" role="menu"></div>
         </div>
         <!-- Theme, Lang, Mode controls injected by app.js -->
         <button id="refresh-btn" class="btn btn-ghost btn-icon btn-press" aria-label="Refresh"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
@@ -192,8 +269,8 @@
   <!-- Offline (Firestore cache) indicator — v17 -->
   <div id="offline-strip-wrap" class="max-w-[1280px] mx-auto px-4 pt-3" hidden></div>
 
-  <!-- Desktop Nav -->
-  <nav class="desktop-nav max-w-[1280px] mx-auto px-4 py-4 gap-2 flex-wrap" id="desktop-nav"></nav>
+  <!-- Desktop Nav is inside the top bar now (see #app-header) — the row that
+       used to sit here is gone so every page gets the space back. -->
 
   <!-- Main -->
   <main id="app" class="max-w-[1280px] mx-auto px-4 py-6 min-h-[calc(100vh_-_var(--header-h)_-_var(--bottom-nav-h))] md:min-h-[calc(100vh_-_var(--header-h)_-_60px)]">
@@ -281,6 +358,6 @@
   </script>
 
   <!-- App (cache-busted) -->
-  <script type="module" src="./src/js/app.js?v=23"></script>
+  <script type="module" src="./src/js/app.js?v=28"></script>
 </body>
 </html>

@@ -68,12 +68,13 @@ export function showBottomSheet(htmlContent, { onClose } = {}) {
   return { close, sheet, backdrop };
 }
 
-export function showModal(htmlContent, { closable = true, onClose } = {}) {
+export function showModal(htmlContent, { closable = true, onClose, className = '', maxWidth = '' } = {}) {
   const backdrop = document.createElement('div');
   backdrop.className = 'modal-backdrop animate-fadeIn';
 
   const modal = document.createElement('div');
-  modal.className = 'modal-card animate-popIn';
+  modal.className = `modal-card animate-popIn${className ? ` ${className}` : ''}`;
+  if (maxWidth) modal.style.maxWidth = maxWidth;
   modal.innerHTML = htmlContent;
 
   let closed = false;
