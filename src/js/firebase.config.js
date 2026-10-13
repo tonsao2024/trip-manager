@@ -19,17 +19,11 @@ export const firebaseConfig = {
   messagingSenderId: "1022352508207",
   appId: "1:1022352508207:web:76e1cd0748c30343074dda",
   measurementId: "G-PRPNTC95YB",
-  // Web Push (FCM) — Public VAPID key.
-  // หาได้จาก Firebase Console → Project settings → Cloud Messaging →
-  // Web Push certificates → ถ้ายังไม่มีคีย์ กด "Generate key pair" ก่อน →
-  // คัดลอก "Key pair" (ยาว 87 ตัวอักษร ขึ้นต้นด้วย B เป็นคีย์สาธารณะ เปิดเผยได้)
-  // ไม่ต้องวางคีย์ตรงนี้ก็ได้ (แนะนำ): ตั้ง GitHub Actions secret ชื่อ
-  // FCM_VAPID_KEY แล้ว deploy ผ่าน .github/workflows/deploy-pages.yml —
-  // workflow จะเขียนคีย์ลง fcm-vapid.js ใน artifact ให้เอง คีย์ไม่ต้องเข้า git
-  // (window.__FCM_VAPID_KEY__ มีความสำคัญสูงสุด — ดู notifications/push.js)
-  // หรือวางตรงนี้แล้ว deploy ครั้งเดียว = ทุกคนเปิด Push ได้ทันที
-  // ถ้ายังเว้นว่าง: การแจ้งเตือนในแอป (🔔) ยังทำงานครบ แต่ Web Push จะยังปิดอยู่
-  // และผู้ดูแลสามารถวางคีย์นี้ได้ใน ตั้งค่า → การแจ้งเตือน (บันทึกในเครื่องนั้น)
+  // Web Push (FCM) — public VAPID key, available to browsers by design.
+  // Recommended for GitHub Pages: set the repository Actions secret FCM_VAPID_KEY;
+  // .github/workflows/deploy-pages.yml injects it into fcm-vapid.js at deploy time.
+  // For other deployment targets, set the same public key here or inject it in that build.
+  // Do not put a Firebase service-account private key in client config.
   fcmVapidKey: ""
 };
 export const isConfigHardcoded = true;

@@ -12,8 +12,10 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > `trips/{tripId}/notifications` (`type, date, title, body, amountMinor, currency, link, recipients,
 > readBy, createdBy`) and are pushed by `pushTripNotification` to the recipients' devices
 > (`users/{uid}/pushTokens|pushPrefs`, owner-only). Settings → **การแจ้งเตือน** holds the switches
-> (ต่ออุปกรณ์, synced to the server), the Web-Push toggle, the VAPID key box, the trip-wide summary
-> hour and a test ping. Without a VAPID key/permission/functions everything degrades to the in-app
+> (ต่ออุปกรณ์, synced to the server), the Web-Push toggle, the trip-wide summary hour and a test
+> ping. The site owner configures the public VAPID key through the GitHub Actions secret
+> `FCM_VAPID_KEY` (injected into the deployment artifact); users never paste it into the page. Without
+> a VAPID key/permission/functions everything degrades to the in-app
 > bell — nothing breaks. `firebase-messaging-sw.js` (root) draws the background messages and routes
 > the click; `manifest.webmanifest` exists for iOS (iOS 16.4+ needs “เพิ่มไปที่หน้าจอโฮม”).
 > **(2) สิทธิ์ผู้ใช้:** the audit found that the “แก้ไขแผนการเดินทาง / แก้ไขค่าใช้จ่าย / viewer”

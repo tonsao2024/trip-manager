@@ -63,7 +63,7 @@ import {
   loadTripNotifySettings, saveTripNotifySettings, saveServerPrefs
 } from './notifications/index.js';
 import {
-  pushSupport, enablePush, disablePush, pushEnabled, getVapidKey, setVapidKey, validateVapidKey,
+  pushSupport, enablePush, disablePush, pushEnabled, getVapidKey,
   notificationPermission, currentPushToken, showDeviceNotification, listenForeground
 } from './notifications/push.js';
 import { renderPageScene } from './components/scenes.js';
@@ -1168,13 +1168,14 @@ function notificationPushStripHtml() {
     return `<div class="notify-push-strip">${icon('bell-off', 'w-4 h-4')} ${escapeHtml(support.message)}</div>`;
   }
   if (!getVapidKey()) {
-    // Without a key the “เปิด Push” button could only throw the missing-key
-    // error at a place with no key box — send the user to the box instead.
+    // VAPID is configured by the site owner at deploy time, never pasted by
+    // each user. The settings page only reports whether the deployed key is
+    // available on this site.
     return `
     <div class="notify-push-strip">
       ${icon('key-round', 'w-4 h-4')}
-      <span>${th('ยังเปิด Push ไม่ได้ — ยังไม่มี VAPID key (คีย์จาก Firebase Console)', 'Push needs a VAPID key from Firebase Console first')}</span>
-      <button type="button" class="btn btn-secondary btn-sm" id="notify-goto-vapid">${icon('key-round', 'w-3.5 h-3.5')} ${th('ไปวางคีย์', 'Add the key')}</button>
+      <span>${th('Web Push ยังไม่พร้อม — ผู้ดูแลเว็บไซต์ต้องตั้งค่า FCM_VAPID_KEY ใน GitHub Actions แล้ว deploy ใหม่', 'Web Push is not configured — the site owner must set FCM_VAPID_KEY in GitHub Actions and redeploy.')}</span>
+      <button type="button" class="btn btn-secondary btn-sm" id="notify-goto-push-settings">${icon('settings-2', 'w-3.5 h-3.5')} ${th('ดูสถานะ', 'View status')}</button>
     </div>`;
   }
   return `
@@ -1278,7 +1279,7 @@ async function openNotificationsSheet() {
           : th('ไม่มีรายการใหม่', 'Nothing new'));
         return;
       }
-      if (e.target.closest('#notify-goto-vapid')) {
+      if (e.target.closest('#notify-goto-push-settings')) {
         sheet.close();
         location.hash = `#/trip/${tripId}/settings?tab=notify`;
         return;
@@ -1294,8 +1295,7 @@ async function openNotificationsSheet() {
           if (wrap) wrap.innerHTML = notificationPushStripHtml();
         } catch (err) {
           if (err?.code === 'vapid/missing') {
-            // Should not happen (the strip hides the button without a key),
-            // but if it does, take the user to the key box.
+            // Show the deployment status, not a per-device key input.
             sheet.close();
             location.hash = `#/trip/${tripId}/settings?tab=notify`;
           }
@@ -1408,27 +1408,14 @@ function notificationSettingsCardsHtml({ lang = 'th', perms = {}, tripSettings =
       <p class="text-xs text-[var(--text-secondary)]">${th('แจ้งเตือนเด้งบนมือถือ/คอมได้แม้ปิดแอปอยู่ ต้องมี Cloud Functions ของโปรเจกต์ (pushTripNotification) และคีย์ VAPID', 'Notifications reach this device even with the app closed. It needs the project’s Cloud Functions (pushTripNotification) and a VAPID key.')}</p>
       ${statusRow(support.supported, th('เบราว์เซอร์รองรับ', 'Browser support'), support.supported ? th('รองรับ', 'supported') : (support.message || th('ไม่รองรับ', 'not supported')))}
       ${statusRow(permission === 'granted', th('สิทธิ์การแจ้งเตือน', 'Notification permission'), permission)}
-      ${statusRow(Boolean(vapid), 'VAPID key', vapid ? `${String(vapid).slice(0, 10)}…` : th('ยังไม่ได้ตั้ง', 'not set'))}
+      ${statusRow(Boolean(vapid), 'VAPID key', vapid ? th('พร้อมใช้งาน', 'configured') : th('ยังไม่ได้ตั้ง — ติดต่อผู้ดูแลเว็บไซต์', 'not configured — contact the site admin'))}
       ${statusRow(Boolean(token), th('อุปกรณ์นี้ลงทะเบียนแล้ว', 'This device registered'), token ? `${String(token).slice(0, 12)}…` : th('ยังไม่ลงทะเบียน', 'not registered'))}
       <div class="btn-row">
-        <button type="button" class="btn ${isOn ? 'btn-ghost' : 'btn-primary'} btn-sm" id="notify-push-toggle" ${support.supported ? '' : 'disabled'}>
+        <button type="button" class="btn ${isOn ? 'btn-ghost' : 'btn-primary'} btn-sm" id="notify-push-toggle" ${support.supported && (isOn || Boolean(vapid)) ? '' : 'disabled'}>
           ${isOn ? `${icon('bell-off', 'w-3.5 h-3.5')} ${th('ปิด Push บนอุปกรณ์นี้', 'Turn push off here')}` : `${icon('bell-ring', 'w-3.5 h-3.5')} ${th('เปิด Push บนอุปกรณ์นี้', 'Turn push on here')}`}
         </button>
       </div>
-      <div class="input-group mb-0">
-        <label class="input-label" for="notify-vapid">${icon('key-round', 'w-3 h-3')} VAPID key</label>
-        <input id="notify-vapid" class="input text-[11px] font-mono" placeholder="B…" value="${escapeHtml(vapid)}" autocomplete="off" spellcheck="false">
-        <div class="input-hint space-y-1">
-          <p>${th('คีย์นี้สร้างเองในแอปไม่ได้ ต้องเอาจาก Firebase Console (ทำครั้งเดียว):', 'This key cannot be generated in the app — get it from Firebase Console (one-time):')}</p>
-          <ol class="list-decimal pl-4 space-y-0.5">
-            <li>${th('เปิด console.firebase.google.com → โปรเจกต์นี้ → ⚙️ Project settings → แท็บ Cloud Messaging', 'Open console.firebase.google.com → this project → ⚙️ Project settings → Cloud Messaging tab')}</li>
-            <li>${th('หัวข้อ Web Push certificates → ถ้ายังไม่มีคีย์ กด “Generate key pair”', 'Under Web Push certificates, click “Generate key pair” if there is no key yet')}</li>
-            <li>${th('คัดลอก “Key pair” (ยาว 87 ตัว ขึ้นต้นด้วย B) มาวางด้านบน แล้วกดบันทึกคีย์ → กด “เปิด Push บนอุปกรณ์นี้”', 'Copy the “Key pair” (87 characters, starts with B) above, Save, then “Turn push on here”')}</li>
-          </ol>
-          <p>${th('ใครก็วางคีย์ให้เครื่องตัวเองได้ (จำไว้เฉพาะเครื่องนี้) ส่วนวิธีถาวรสำหรับทุกคนโดยไม่ต้องเอาคีย์ลงโค้ด: ผู้ดูแลตั้ง GitHub Actions secret ชื่อ FCM_VAPID_KEY แล้ว deploy ผ่าน workflow (หรือใส่ใน src/js/firebase.config.js ช่อง fcmVapidKey ก็ได้)', 'Anyone may paste the key for their own device (remembered on this device only). The permanent fix for everyone, without putting the key in code: an admin sets the FCM_VAPID_KEY GitHub Actions secret and deploys via the workflow (or sets fcmVapidKey in src/js/firebase.config.js).')}</p>
-        </div>
-      </div>
-      <button type="button" class="btn btn-secondary btn-sm" id="notify-vapid-save">${icon('save', 'w-3.5 h-3.5')} ${th('บันทึกคีย์', 'Save key')}</button>
+      <p class="text-[10px] text-[var(--text-tertiary)]">${th('คีย์ VAPID ถูกตั้งค่าจากการ deploy เว็บไซต์ ไม่ต้องกรอกบนหน้านี้ หากยังไม่พร้อม ให้ผู้ดูแลเว็บไซต์ตั้ง GitHub Actions secret ชื่อ FCM_VAPID_KEY แล้ว deploy ผ่าน workflow', 'The site supplies its VAPID key at deploy time; there is nothing to enter here. If it is not configured, the site owner should set the FCM_VAPID_KEY GitHub Actions secret and redeploy.')}</p>
       <p class="text-[10px] text-[var(--text-tertiary)]">${th('หมายเหตุ: บน iPhone/iPad ต้อง “เพิ่มไปที่หน้าจอโฮม” ก่อน (iOS 16.4+) จึงจะรับ Web Push ได้ และต้องเปิดเว็บผ่าน https://', 'Note: on iPhone/iPad the app must be added to the Home Screen first (iOS 16.4+) and the page must be served over https://.')}</p>
     </div>
 
@@ -1512,22 +1499,6 @@ function bindNotificationSettings({ tripId, lang = 'th', perms = {}, params = nu
       toast.error(err.message || String(err));
       btn.disabled = false;
     }
-  });
-
-  bind('notify-vapid-save', 'click', () => {
-    const value = document.getElementById('notify-vapid')?.value?.trim() || '';
-    if (value) {
-      // Catch the common mistakes (Server key, half a copy, quotes/spaces)
-      // here, instead of letting FCM fail later with a cryptic error.
-      const check = validateVapidKey(value, lang);
-      if (!check.valid) { toast.error(check.reason); return; }
-    }
-    setVapidKey(value);
-    toast.success(value
-      ? th('บันทึก VAPID key แล้ว ✅ — กด “เปิด Push บนอุปกรณ์นี้” ต่อได้เลย', 'VAPID key saved ✅ — now tap “Turn push on here”')
-      : th('ลบคีย์แล้ว', 'Key cleared'));
-    // Re-render so the status row + button state reflect the saved key.
-    if (params) renderSettings(params); else router.handle();
   });
 
   bind('notify-trip-save', 'click', async () => {

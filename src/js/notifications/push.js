@@ -15,14 +15,9 @@
 // without the functions, the in-app bell keeps working.
 import { app, resolvedFirebaseConfig } from '../firebase.js';
 import { writeNotifyPrefs, registerPushToken, removePushToken, saveServerPrefs } from './index.js';
-import { validateVapidKey } from '../utils/notifications.js';
-
-export { validateVapidKey };
-
 const MESSAGING_URL = 'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js';
 const SW_FILE = 'firebase-messaging-sw.js';
 const TOKEN_KEY = 'fuji_push_token';
-const VAPID_KEY = 'fuji_fcm_vapid';
 
 export const NOTIFICATION_ICON = './public/favicon-192.png';
 
@@ -63,27 +58,18 @@ export function notificationPermission() {
 
 /* ----------------------------------------------------------- vapid key */
 
-/** The public Web-Push key (Firebase Console → Cloud Messaging → Web Push certificates). */
+/**
+ * The public Web-Push key comes from the deployment artifact (`fcm-vapid.js`),
+ * or from Firebase config for non-GitHub-Pages deployments. It is not entered
+ * or saved per device in the UI.
+ */
 export function getVapidKey() {
   try {
     const fromWindow = window.__FCM_VAPID_KEY__;
     if (typeof fromWindow === 'string' && fromWindow.trim()) return fromWindow.trim();
   } catch { /* ignore */ }
-  try {
-    const saved = localStorage.getItem(VAPID_KEY);
-    if (saved && saved.trim()) return saved.trim();
-  } catch { /* ignore */ }
   const cfg = resolvedFirebaseConfig || {};
   return (typeof cfg.fcmVapidKey === 'string' && cfg.fcmVapidKey.trim()) ? cfg.fcmVapidKey.trim() : '';
-}
-
-export function setVapidKey(key) {
-  const value = String(key || '').trim();
-  try {
-    if (value) localStorage.setItem(VAPID_KEY, value);
-    else localStorage.removeItem(VAPID_KEY);
-  } catch { /* private mode */ }
-  return value;
 }
 
 export function hasVapidKey() {
@@ -150,13 +136,12 @@ export async function enablePush({ uid, tripIds = [], lang = 'th' } = {}) {
   if (!support.supported) throw new Error(support.message);
   if (!uid) throw new Error(th('กรุณาเข้าสู่ระบบก่อน', 'Sign in first'));
   if (!getVapidKey()) {
-    // No VAPID key anywhere yet (config / this device). The key only exists in
-    // Firebase Console — it cannot be generated in the browser — so point the
-    // user at the exact place it can be pasted instead of failing vaguely.
-    // `code` lets callers route the user there instead of only showing a toast.
+    // The site owner supplies this public key during deployment; a visitor
+    // cannot read GitHub Actions secrets directly from the browser.
+    // `code` lets callers route the user to the deployment status in Settings.
     const err = new Error(th(
-      'ยังไม่มี VAPID key จึงเปิด Push ไม่ได้ — ไปที่ ตั้งค่า → การแจ้งเตือน → ช่อง “VAPID key” แล้ววางคีย์จาก Firebase Console → Project settings → Cloud Messaging → Web Push certificates → Generate key pair (ทำครั้งเดียว คีย์นี้เป็นคีย์สาธารณะ)',
-      'No VAPID key yet, so Push cannot start — go to Settings → Notifications → “VAPID key” and paste the key from Firebase Console → Project settings → Cloud Messaging → Web Push certificates → Generate key pair (one-time; it is a public key)'
+      'ยังไม่มี VAPID key บนเว็บไซต์ จึงเปิด Push ไม่ได้ — ให้ผู้ดูแลตั้ง GitHub Actions secret ชื่อ FCM_VAPID_KEY แล้ว deploy เว็บไซต์ใหม่',
+      'This site has no VAPID key, so Push cannot start. Ask the site owner to set the FCM_VAPID_KEY GitHub Actions secret and redeploy.'
     ));
     err.code = 'vapid/missing';
     throw err;

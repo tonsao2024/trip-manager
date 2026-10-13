@@ -2948,6 +2948,9 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
     'settings: ?tab=notify (the link inside the bell) opens the notification tab');
   check(!!q('#notify-toggle-expense') && !!q('#notify-push-card') && !!q('#notify-trip-card'),
     'settings: the in-app, Web Push and trip-summary cards all render');
+  check(!q('#notify-vapid') && !q('#notify-vapid-save')
+    && /FCM_VAPID_KEY/.test(q('#notify-push-card')?.textContent || ''),
+    'settings: users are not asked to enter VAPID; a missing key points the site admin to deployment config');
   q('#notify-toggle-expense').checked = false;
   q('#notify-toggle-expense').dispatchEvent(new window.Event('change', { bubbles: true }));
   await sleep(350);
@@ -2986,7 +2989,18 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
       configurable: true
     });
   } catch { window.navigator.serviceWorker = { register: async () => ({}), ready: Promise.resolve({}) }; }
-  pushMod.setVapidKey('BTestVapidKey0123456789');
+  window.__FCM_VAPID_KEY__ = '';
+  await goto('#/trip/t1/settings?tab=notify');
+  await waitFor(() => q('#notify-push-toggle'), { timeout: 8000, label: 'push setting without deployment key' }).catch(() => {});
+  check(q('#notify-push-toggle')?.disabled === true,
+    'push: device opt-in stays disabled until the deployed site supplies its VAPID key');
+  window.__FCM_VAPID_KEY__ = 'BTestVapidKey0123456789'; // mirrors the GitHub Actions deployment artifact
+  check(pushMod.getVapidKey() === 'BTestVapidKey0123456789',
+    'push: the VAPID key is read from the deployment-injected window config');
+  await goto('#/trip/t1/settings?tab=notify');
+  await waitFor(() => q('#notify-push-toggle'), { timeout: 8000, label: 'push setting with deployment key' }).catch(() => {});
+  check(q('#notify-push-toggle')?.disabled === false,
+    'push: device opt-in becomes available when the deployment key exists');
   check(pushMod.pushSupport('th').supported === true,
     'push: with service worker + Notification + PushManager + https it reports supported');
   const enabled = await pushMod.enablePush({ uid: 'u1', tripIds: ['t1'], lang: 'th' });
@@ -3083,6 +3097,8 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
   check(/<script src="\.\/fcm-vapid\.js"><\/script>/.test(shell30)
     && /window\.__FCM_VAPID_KEY__ = ''/.test(fs.readFileSync(path.join(root, 'fcm-vapid.js'), 'utf8')),
     'push: index.html loads the VAPID placeholder and the repo carries no real key');
+  check(!/notify-vapid|notify-goto-vapid|ไปวางคีย์|Add the key/.test(fs.readFileSync(path.join(root, 'src/js/app.js'), 'utf8')),
+    'push: the app has no per-user VAPID entry flow');
   const workflow30 = fs.readFileSync(path.join(root, '.github/workflows/deploy-pages.yml'), 'utf8');
   check(/secrets\.FCM_VAPID_KEY/.test(workflow30) && /fcm-vapid\.js/.test(workflow30)
     && /deploy-pages/.test(workflow30),

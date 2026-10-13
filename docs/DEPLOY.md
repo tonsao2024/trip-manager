@@ -65,23 +65,22 @@ firebase deploy --only hosting           # 3) the client (bell, settings tab, SW
    `index.html`, so the sub-path (`/trip-manager/`) works too. The worker is registered with
    `scope: './'` and receives the Firebase config as query parameters (`push.js`).
 
-**VAPID key (required for Web Push).** Firebase Console → Project settings → Cloud Messaging →
-Web Push certificates → *Generate key pair* → paste the public key either into
-Settings → การแจ้งเตือน → VAPID key (stored per device in `fuji_fcm_vapid`) or into
-`src/js/firebase.config.js` (`fcmVapidKey`). The compiled bundle ships with an empty key, so
-without this step the in-app 🔔 keeps working but no push is ever sent. The key is public
-(87 characters, starts with `B`): any signed-in user may paste it for their own device in
-Settings (the field validates the shape before saving), the bell sheet links there when no
-key exists yet, and putting it in `firebase.config.js` fixes it for everybody at once.
+**VAPID key (required for Web Push).** Generate it once in Firebase Console → Project settings →
+Cloud Messaging → Web Push certificates → *Generate key pair*. For GitHub Pages, store the public
+key as the repository Actions secret `FCM_VAPID_KEY` (Settings → Secrets and variables → Actions).
+Deploy Pages with **GitHub Actions** as the source: `.github/workflows/deploy-pages.yml` validates
+the secret and injects it into `fcm-vapid.js` in the Pages artifact as `window.__FCM_VAPID_KEY__`;
+`push.js` reads it automatically. The committed `fcm-vapid.js` remains an empty placeholder. There
+is no VAPID-key field in the app — users do not need to paste anything. After adding or rotating the
+secret, run the workflow (or push to `main`) to redeploy. If the secret is absent, the workflow warns,
+Web Push stays off, and the in-app 🔔 continues to work.
 
-**Via GitHub Secrets (no key in the repo).** Secrets are only visible to GitHub Actions, so
-the site must deploy through a workflow instead of "deploy from a branch":
-`.github/workflows/deploy-pages.yml` checks the secret's shape and writes it into
-`fcm-vapid.js` in the Pages artifact (`window.__FCM_VAPID_KEY__`, which `push.js` reads
-first; the committed `fcm-vapid.js` is an empty placeholder). One-time setup: add the
-repository secret `FCM_VAPID_KEY` (Settings → Secrets and variables → Actions), then set
-Settings → Pages → Build and deployment → Source to **GitHub Actions**. Without the secret
-the workflow still deploys (with a warning) and Web Push stays off.
+The Firebase Web Push VAPID value is a **public key** (usually 87 characters, starts with `B`) and
+has to be exposed to the browser so it can register for push. Storing it as a GitHub Secret keeps it
+out of source control; the workflow deliberately places that public key in the deployed client file.
+Never put a Firebase service-account private key or other server credential in client code. For a
+non-GitHub-Pages deployment, supply the public key through `fcmVapidKey` in `src/js/firebase.config.js`
+or add equivalent secret injection to that deployment's build workflow.
 
 **Verify after deploying**
 
@@ -128,5 +127,5 @@ But current implementation uses bcrypt without extra secret.
 - [ ] Super admin created
 - [ ] GitHub Pages enabled
 - [ ] Firebase config set in localStorage on Pages site
-- [ ] v30: rules + functions + hosting deployed, VAPID key pasted, test push received on one device
+- [ ] v30: rules + functions deployed; Pages workflow injects `FCM_VAPID_KEY`; test push received on one device
 - [ ] v30: member switches (แก้ไขแผน/ค่าใช้จ่าย/จัดการสมาชิก) reviewed in สมาชิก → แก้ไข
