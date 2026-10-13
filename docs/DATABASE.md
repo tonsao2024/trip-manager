@@ -14,6 +14,29 @@
 }
 ```
 
+#### users/{uid}/pushTokens/{tokenId}  (v30)
+One document per registered browser/device — owner-only in the rules, read by the
+`pushTripNotification` function with the Admin SDK.
+```json
+{
+  "token": "FCM registration token",
+  "platform": "web",
+  "userAgent": "…",
+  "tripIds": ["tripId"],
+  "enabled": true,
+  "updatedAt": "timestamp"
+}
+```
+
+#### users/{uid}/pushPrefs/current  (v30)
+The push-relevant part of the device switches, mirrored so the server knows what to send.
+```json
+{
+  "push": true, "enabled": true, "expense": true, "dailySummary": true,
+  "settlement": true, "member": true, "summaryHour": 20, "updatedAt": "timestamp"
+}
+```
+
 ### loginAccounts/{normalizedUsername}
 ```json
 {
@@ -250,10 +273,43 @@ overridden when a doc with the same id exists.
 Rules: members read, trip members create/update/delete (`isTripMember(tripId)`); built-ins are
 refused by the app before any write.
 
+### trips/{tripId}/notifications/{notificationId}  (v30 — the 🔔 bell + Web Push feed)
+Written by the app (`src/js/notifications/index.js` — e.g. after every expense save) and by the
+Cloud Functions. Read by every member, `readBy` is per account, delete = trip admin.
+```json
+{
+  "type": "expense|daily_summary|settlement|member|trip|test",
+  "date": "2026-10-13",
+  "title": "บันทึกค่าใช้จ่าย: มื้อเย็น",
+  "body": "สมชาย บันทึก ฿120.00 (จ่ายจริง)",
+  "amountMinor": 12000,
+  "currency": "THB",
+  "expenseId": "expenseId",
+  "link": "#/trip/{tripId}/expenses/add?id=expenseId",
+  "recipients": ["uid"],
+  "readBy": { "uid": true },
+  "createdBy": "uid",
+  "createdByName": "สมชาย",
+  "createdAt": "timestamp"
+}
+```
+* **Daily summary** — one document per trip per trip-local day, id `daily-YYYY-MM-DD`
+  (`totalThbMinor`, `count`, `topCategory`, `memberTotals[]`, `myShareThbMinor`). Written by the first
+  device that opens the trip after the summary hour, or by the hourly `dailyExpenseSummary`
+  function — both idempotent, a day without spending stays quiet.
+* `pushSent` / `pushCount` / `pushSentAt` are added by the function (Admin SDK only).
+
+### trips/{tripId}/settings/notifications  (v30)
+Trip-wide notification settings, admin-writable — `{ "dailySummary": true, "summaryHour": 20 }`.
+
 ### Other subcollections
 - `cards`, `exchangeRates`, `settings`, `activityLogs`, `imports`, `settlements`
 
 All money in minor units to avoid float errors.
 
 ## Indexes
-See `firestore.indexes.json`
+See `firestore.indexes.json`.
+
+The v30 notification feed is queried with `orderBy('createdAt','desc') limit(50)` (single collection,
+no composite index needed) and the hourly summary function with `where('date','==',day)` on
+`expenses` — covered by the existing indexes.

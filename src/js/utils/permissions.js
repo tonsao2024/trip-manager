@@ -1,5 +1,10 @@
 // Permissions — resolves what the signed-in user may do inside a trip.
+// The pure capability model lives in `capabilities.js` (unit-testable without a
+// browser); this module adds the Firestore lookup + the 60 s cache.
 import { db } from '../firebase.js';
+import { withCapabilities, isAdminRole } from './capabilities.js';
+
+export { withCapabilities, isAdminRole } from './capabilities.js';
 import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const CACHE_TTL = 60 * 1000;
@@ -8,10 +13,6 @@ const cache = new Map(); // tripId -> { data, ts }
 export function clearPermissionsCache(tripId = null) {
   if (tripId) cache.delete(tripId);
   else cache.clear();
-}
-
-export function isAdminRole(role) {
-  return role === 'trip_admin' || role === 'super_admin';
 }
 
 /**
@@ -56,7 +57,7 @@ export async function resolvePermissions(tripId, trip = null, uid = null) {
     }
   }
 
-  const data = {
+  const data = withCapabilities({
     uid,
     role,
     member,
@@ -64,7 +65,7 @@ export async function resolvePermissions(tripId, trip = null, uid = null) {
     isTripAdmin: role === 'trip_admin' || role === 'super_admin',
     isAdmin: isAdminRole(role),
     permissions
-  };
+  });
   cache.set(key, { data, ts: Date.now() });
   return data;
 }

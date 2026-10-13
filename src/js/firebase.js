@@ -53,6 +53,10 @@ try {
 }
 
 export const isFirebaseConfigured = checkConfigured(finalConfig);
+// The config actually in use (window override → hardcoded → localStorage).
+// Public values only — safe to read from other modules (Web Push needs the
+// sender id / app id to register the messaging service worker).
+export const resolvedFirebaseConfig = { ...finalConfig };
 export const firebaseConfigStatus = {
   configured: isFirebaseConfigured,
   source: configSource,

@@ -52,6 +52,20 @@ import { confirmAction, promptAction } from './components/confirm.js';
 import { mountCountdown, computeCountdown, countdownHeadline } from './components/countdown.js';
 import { initReveal, countUp, confetti, celebrateFrom, restagger } from './components/effects.js';
 import { resolvePermissions, clearPermissionsCache } from './utils/permissions.js';
+import { cacheForget } from './utils/datacache.js';
+import {
+  notificationMeta, unreadCount, visibleNotifications, groupNotifications,
+  isReadBy, notifMillis, relativeTime, dayKeyInZone
+} from './utils/notifications.js';
+import {
+  readNotifyPrefs, writeNotifyPrefs, subscribeNotifications, listNotifications, markRead, markAllRead,
+  deleteNotification, ensureDailySummary, sendTestNotification, notifyTransferRecorded, pruneNotifications,
+  loadTripNotifySettings, saveTripNotifySettings, saveServerPrefs
+} from './notifications/index.js';
+import {
+  pushSupport, enablePush, disablePush, pushEnabled, getVapidKey, setVapidKey,
+  notificationPermission, currentPushToken, showDeviceNotification, listenForeground
+} from './notifications/push.js';
 import { renderPageScene } from './components/scenes.js';
 import { listNotes, createNote, updateNote, deleteNote, NOTE_COLORS, noteColorHex, setNoteArchived, localArchivedIds } from './notes/index.js';
 import { googleMapsPlaceUrl, googleMapsDirectionsUrl, BASE_LAYERS, setMapLayer, getStoredLayerId, setStoredLayerId, refreshMapLabels, getStoredLabelsVisible, setStoredLabelsVisible } from './maps/index.js';
@@ -353,6 +367,21 @@ async function openActivitySheet(tripId, { isAdmin = false } = {}) {
 // changes and stale writes are skipped instead of throwing
 // "Cannot set properties of null (setting 'innerHTML')".
 let renderToken = 0;
+/**
+ * v30: the pages already resolve permissions; remember the last answer so the
+ * header/FAB/buttons can ask “may I?” synchronously without an extra read.
+ */
+let lastPerms = { tripId: null, uid: null, data: null };
+async function resolvePermsCached(tripId, trip = null) {
+  const uid = currentUser?.uid || null;
+  if (!tripId) return resolvePermissions(tripId, trip, uid);
+  if (lastPerms.tripId === tripId && lastPerms.uid === uid && lastPerms.data) return lastPerms.data;
+  const data = await resolvePermissions(tripId, trip || currentTrip, uid);
+  lastPerms = { tripId, uid, data };
+  return data;
+}
+export function clearLastPermissions() { lastPerms = { tripId: null, uid: null, data: null }; }
+
 function beginRender() { return ++renderToken; }
 function isStale(token) { return token !== renderToken; }
 function el(id) { return document.getElementById(id); }
@@ -834,6 +863,16 @@ function renderFAB(route) {
   if (/\/expenses\/add\/?$/.test(cleanRoute)) { fabEl.classList.add('hidden'); return; }
   if (cleanRoute.includes('/itinerary') || cleanRoute.includes('/expenses') || cleanRoute.includes('/documents')) {
     fabEl.classList.remove('hidden');
+    // 👤 v30 — the FAB follows the same permissions the rules enforce.
+    const p = (lastPerms.tripId === currentTripId && lastPerms.uid === (currentUser?.uid || null)) ? lastPerms.data : null;
+    const applyFabPerms = (perms) => {
+      if (!perms) { resolvePermsCached(currentTripId).then(applyFabPerms).catch(() => {}); return; }
+      const needs = cleanRoute.includes('/expenses') ? 'canEditExpense'
+        : cleanRoute.includes('/itinerary') ? 'canEditItinerary'
+        : (perms.isViewer ? 'viewer' : null);
+      if (needs === 'viewer' || (needs && perms[needs] === false)) fabEl.classList.add('hidden');
+    };
+    applyFabPerms(p);
     fabEl.onclick = () => {
       if (cleanRoute.includes('/itinerary')) location.hash = `#/trip/${currentTripId}/itinerary?action=add`;
       if (cleanRoute.includes('/expenses')) location.hash = `#/trip/${currentTripId}/expenses/add`;
@@ -859,6 +898,10 @@ function addHeaderControls() {
   controlsDiv.id = 'header-controls';
   controlsDiv.className = 'flex items-center gap-1';
   controlsDiv.innerHTML = `
+    <button id="notify-bell" class="btn btn-ghost btn-icon w-9 h-9 notify-bell" title="${t('notifications')}" aria-label="${t('notifications')}">
+      ${icon('bell', 'w-[17px] h-[17px]')}
+      <span id="notify-badge" class="notify-badge hidden" data-count="0">0</span>
+    </button>
     <button id="header-mode-btn" class="btn btn-ghost btn-icon w-9 h-9" title="Light / Dark / Auto">${icon('sun', 'w-[17px] h-[17px]')}</button>
   `;
 
@@ -867,6 +910,11 @@ function addHeaderControls() {
   else rightGroup.appendChild(controlsDiv);
 
   document.getElementById('header-mode-btn').onclick = cycleMode;
+  const bellBtn = document.getElementById('notify-bell');
+  if (bellBtn) {
+    bellBtn.onclick = () => openNotificationsSheet();
+    if (window.matchMedia?.('(min-width: 768px)')?.matches) bellBtn.classList.add('notify-bell-desktop');
+  }
 
   updateModeIcons();
   queueIcons();
@@ -904,6 +952,560 @@ function updateUserDisplay(user) {
       nameEl.classList.remove('md:flex');
     }
   }
+}
+
+
+/* ================================================================== *
+ * การแจ้งเตือน (v30)
+ *   • 🔔 in the header      — unread badge + the notification sheet
+ *   • trips/{tripId}/notifications — one shared list per trip
+ *   • Web Push (FCM)        — the same messages when the app is closed
+ * ================================================================== */
+
+const notifyState = {
+  tripId: null,
+  list: [],
+  unsub: null,
+  pushUnsub: null,
+  first: true,
+  seen: new Set(),
+  dailyDone: new Set(),
+  sheet: null,
+  sheetFilter: null,
+  sheetPaint: null,
+  tripSettings: {},
+  support: null
+};
+
+function bellButtonEl() { return document.getElementById('notify-bell'); }
+
+/** Unread badge + aria label of the header bell. */
+function paintBell() {
+  const uid = currentUser?.uid;
+  const prefs = readNotifyPrefs();
+  const visible = visibleNotifications(notifyState.list, uid, prefs);
+  const count = uid ? unreadCount(visible, uid) : 0;
+  const bell = bellButtonEl();
+  const badge = document.getElementById('notify-badge');
+  if (badge) {
+    badge.textContent = count > 99 ? '99+' : String(count);
+    badge.classList.toggle('hidden', count === 0);
+    badge.setAttribute('data-count', String(count));
+  }
+  if (bell) {
+    bell.classList.toggle('has-unread', count > 0);
+    const label = count
+      ? (getLang() === 'th' ? `การแจ้งเตือน — ยังไม่อ่าน ${count} รายการ` : `Notifications — ${count} unread`)
+      : (getLang() === 'th' ? 'การแจ้งเตือน' : 'Notifications');
+    bell.setAttribute('aria-label', label);
+    bell.title = label;
+  }
+}
+
+/** Fresh read of the trip's notifications (the sheet always shows current data). */
+async function reloadNotifications(tripId = currentTripId) {
+  if (!db || !tripId) return notifyState.list;
+  try {
+    cacheForget(`notifs:${tripId}`);
+    const list = await listNotifications(tripId, { max: 50 });
+    notifyState.list = list;
+    list.forEach(n => notifyState.seen.add(n.id));
+    paintBell();
+    return list;
+  } catch (e) {
+    console.warn('[Notifications] reload failed', e?.message);
+    return notifyState.list;
+  }
+}
+
+/** Toast (+ system notification when the tab is hidden) for a brand-new item. */
+function announceNotification(n) {
+  const prefs = readNotifyPrefs();
+  const meta = notificationMeta(n.type, getLang());
+  if (!visibleNotifications([n], currentUser?.uid, prefs).length) return;
+  if (n.createdBy && n.createdBy === currentUser?.uid) return;   // my own action
+  toast.info(n.body || n.title, n.title || meta.label);
+  if (typeof document !== 'undefined' && document.hidden) {
+    showDeviceNotification({ title: n.title || meta.label, body: n.body || '', url: n.link || '' })
+      .catch(() => {});
+  }
+}
+
+/**
+ * Watch the trip's notification collection: badge, toasts and the open sheet.
+ * Safe to call on every route change — it only re-subscribes when the trip
+ * actually changed.
+ */
+function startNotificationWatch(tripId) {
+  if (!tripId) { stopNotificationWatch(); return; }
+  if (notifyState.tripId === tripId && notifyState.unsub) return;
+  stopNotificationWatch();
+  notifyState.tripId = tripId;
+  notifyState.first = true;
+  notifyState.seen = new Set();
+  notifyState.list = [];
+  paintBell();
+  if (!db || !currentUser?.uid) return;
+
+  notifyState.unsub = subscribeNotifications(tripId, (list) => {
+    const fresh = list.filter(n => !notifyState.seen.has(n.id));
+    if (!notifyState.first) {
+      fresh
+        .filter(n => n.createdBy !== currentUser?.uid)
+        .sort((a, b) => notifMillis(a) - notifMillis(b))
+        .forEach(announceNotification);
+    }
+    notifyState.first = false;
+    list.forEach(n => notifyState.seen.add(n.id));
+    notifyState.list = list;
+    paintBell();
+    paintNotificationSheetIfOpen();
+  });
+
+  // First paint from the cache, then the live listener takes over.
+  listNotifications(tripId, { max: 50 })
+    .then(list => {
+      if (notifyState.tripId !== tripId) return;
+      if (!notifyState.list.length) notifyState.list = list;
+      list.forEach(n => notifyState.seen.add(n.id));
+      notifyState.first = false;
+      paintBell();
+      paintNotificationSheetIfOpen();
+    })
+    .catch(() => {});
+
+  loadTripNotifySettings(tripId).then(s => { notifyState.tripSettings = s || {}; }).catch(() => {});
+  attachForegroundPush();
+}
+
+function stopNotificationWatch() {
+  notifyState.unsub?.();
+  notifyState.unsub = null;
+  notifyState.tripId = null;
+}
+
+/** FCM while the tab is focused: show it in-app instead of silently dropping it. */
+function attachForegroundPush() {
+  if (notifyState.pushUnsub || !pushEnabled()) return;
+  listenForeground((payload) => {
+    const data = payload?.data || {};
+    const title = payload?.notification?.title || data.title || 'Trip Manager';
+    const body = payload?.notification?.body || data.body || '';
+    toast.info(body, title);
+  }).then(unsub => { notifyState.pushUnsub = unsub; }).catch(() => {});
+}
+
+/**
+ * Daily expense summary (one document per trip per day). Whichever device
+ * opens the trip first after the summary hour writes it; the Cloud Function
+ * `dailyExpenseSummary` writes the same document when nobody opens the app.
+ */
+async function maybeDailySummary(tripId = currentTripId, prefs = null) {
+  if (!db || !tripId || !currentUser?.uid) return null;
+  const day = dayKeyInZone(new Date(), currentTrip?.timezone || null);
+  const key = `${tripId}:${day}`;
+  if (notifyState.dailyDone.has(key)) return null;
+  notifyState.dailyDone.add(key);
+  try {
+    const [expenses, members] = await Promise.all([
+      fetchAllExpenses(tripId).catch(() => []),
+      listMembers(tripId).catch(() => [])
+    ]);
+    const res = await ensureDailySummary(tripId, {
+      expenses, members, trip: currentTrip || { id: tripId },
+      uid: currentUser.uid, lang: getLang(),
+      byName: currentUserDisplayName(), prefs: prefs || readNotifyPrefs()
+    });
+    if (res?.created) await reloadNotifications(tripId);
+    return res;
+  } catch (e) {
+    console.warn('[Notifications] daily summary failed', e?.message);
+    return null;
+  }
+}
+
+/* ------------------------------------------------------ the bell sheet */
+
+function notificationRowHtml(n, { uid, isAdmin }) {
+  const meta = notificationMeta(n.type, getLang());
+  const unread = !isReadBy(n, uid);
+  const delLabel = getLang() === 'th' ? 'ลบ' : 'Delete';
+  return `
+    <button type="button" class="notify-row ${unread ? 'is-unread' : ''}" data-notify="${escapeHtml(n.id)}" data-notify-type="${escapeHtml(n.type || 'trip')}">
+      <span class="notify-row-icon" style="color:${meta.color};">${icon(meta.icon, 'w-4 h-4')}</span>
+      <span class="notify-row-body">
+        <span class="notify-row-title">${escapeHtml(n.title || meta.label)}</span>
+        ${n.body ? `<span class="notify-row-text">${escapeHtml(n.body)}</span>` : ''}
+        <span class="notify-row-meta">${escapeHtml(relativeTime(n.createdAt, getLang()))}</span>
+      </span>
+      ${unread ? '<span class="notify-dot" aria-hidden="true"></span>' : ''}
+      ${isAdmin ? `<span class="notify-row-del" role="button" tabindex="0" data-notify-del="${escapeHtml(n.id)}" title="${delLabel}">${icon('x', 'w-3.5 h-3.5')}</span>` : ''}
+    </button>`;
+}
+
+function notificationFilterChipsHtml() {
+  const lang = getLang();
+  const chips = [
+    { id: '', label: lang === 'th' ? 'ทั้งหมด' : 'All', icon: 'layers' },
+    { id: 'expense', label: lang === 'th' ? 'ค่าใช้จ่าย' : 'Expenses', icon: 'wallet' },
+    { id: 'daily_summary', label: lang === 'th' ? 'สรุป / วัน' : 'Daily', icon: 'calendar-check' },
+    { id: 'settlement', label: lang === 'th' ? 'เคลียร์บิล' : 'Settlement', icon: 'hand-coins' }
+  ];
+  return chips.map(c => `
+    <button type="button" class="chip ${(notifyState.sheetFilter || '') === c.id ? 'chip-active' : ''}" data-notify-filter="${c.id}">
+      ${icon(c.icon, 'w-3.5 h-3.5')} ${escapeHtml(c.label)}
+    </button>`).join('');
+}
+
+function notificationPushStripHtml() {
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  if (pushEnabled()) {
+    return `<div class="notify-push-strip is-on">${icon('bell-ring', 'w-4 h-4')} ${th('Push เปิดอยู่บนอุปกรณ์นี้', 'Push is on for this device')}</div>`;
+  }
+  const support = notifyState.support || (notifyState.support = pushSupport(lang));
+  if (!support.supported) {
+    return `<div class="notify-push-strip">${icon('bell-off', 'w-4 h-4')} ${escapeHtml(support.message)}</div>`;
+  }
+  return `
+    <div class="notify-push-strip">
+      ${icon('bell-off', 'w-4 h-4')}
+      <span>${th('ยังไม่เปิด Web Push บนอุปกรณ์นี้', 'Web Push is off on this device')}</span>
+      <button type="button" class="btn btn-secondary btn-sm" id="notify-enable-push">${icon('bell-ring', 'w-3.5 h-3.5')} ${th('เปิด Push', 'Turn on')}</button>
+    </div>`;
+}
+
+function paintNotificationSheet() {
+  if (!notifyState.sheetPaint) return;
+  notifyState.sheetPaint();
+}
+
+function paintNotificationSheetIfOpen() {
+  if (notifyState.sheet && document.getElementById('notify-sheet')) paintNotificationSheet();
+}
+
+/** The 🔔 sheet: every notification of the trip, newest first. */
+async function openNotificationsSheet() {
+  if (!currentTripId) { toast.info(getLang() === 'th' ? 'เลือกทริปก่อน' : 'Pick a trip first'); return; }
+  if (!currentUser?.uid) { location.hash = '#/login'; return; }
+  const tripId = currentTripId;
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  notifyState.support = pushSupport(lang);
+  const perms = await resolvePermsCached(tripId, currentTrip).catch(() => ({ isAdmin: false }));
+  const isAdmin = Boolean(perms?.isAdmin);
+
+  const sheet = showBottomSheet(`
+    <div id="notify-sheet" class="notify-sheet">
+      <div class="flex items-center gap-3 mb-2">
+        <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('bell', 'w-5 h-5')}</div>
+        <div class="min-w-0 flex-1">
+          <h3 class="font-bold text-base" style="font-family: var(--font-display);">${th('การแจ้งเตือน', 'Notifications')}</h3>
+          <p class="text-[11px] text-[var(--text-tertiary)]" id="notify-subtitle">${th('กำลังโหลด...', 'Loading...')}</p>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" id="notify-read-all">${icon('check-check', 'w-3.5 h-3.5')} ${th('อ่านทั้งหมด', 'Mark all')}</button>
+      </div>
+      <div id="notify-push-strip-wrap">${notificationPushStripHtml()}</div>
+      <div class="chip-row my-2" id="notify-filters">${notificationFilterChipsHtml()}</div>
+      <div id="notify-list" class="notify-list"></div>
+      <div class="flex items-center justify-between gap-2 mt-3 flex-wrap">
+        <a class="link-btn text-[11px]" href="#/trip/${escapeHtml(tripId)}/settings?tab=notify">${icon('settings-2', 'w-3.5 h-3.5')} ${th('ตั้งค่าการแจ้งเตือน / Web Push', 'Notification & Web Push settings')}</a>
+        <span class="text-[10px] text-[var(--text-tertiary)]">${th('เก็บ 50 รายการล่าสุดของทริป', 'Newest 50 of this trip')}</span>
+      </div>
+    </div>
+  `);
+  notifyState.sheet = sheet;
+
+  const paint = () => {
+    const listEl = document.getElementById('notify-list');
+    const sub = document.getElementById('notify-subtitle');
+    if (!listEl) return;
+    const uid = currentUser?.uid;
+    const prefs = readNotifyPrefs();
+    const visible = visibleNotifications(notifyState.list, uid, prefs);
+    const filtered = notifyState.sheetFilter ? visible.filter(n => n.type === notifyState.sheetFilter) : visible;
+    const unread = unreadCount(visible, uid);
+    if (sub) sub.textContent = unread
+      ? th(`ยังไม่อ่าน ${unread} รายการ`, `${unread} unread`)
+      : th('อ่านครบทุกรายการแล้ว', 'You are all caught up');
+    const filters = document.getElementById('notify-filters');
+    if (filters) filters.innerHTML = notificationFilterChipsHtml();
+    if (!filtered.length) {
+      listEl.innerHTML = renderEmptyState({
+        icon: 'bell',
+        title: th('ยังไม่มีการแจ้งเตือน', 'No notifications yet'),
+        desc: th('ทุกครั้งที่มีคนบันทึกค่าใช้จ่าย หรือสรุปค่าใช้จ่ายรายวัน รายการจะมาโผล่ที่นี่',
+          'Every expense somebody records — and the daily summary — lands here.')
+      });
+    } else {
+      const today = dayKeyInZone(new Date(), currentTrip?.timezone || null);
+      const yesterday = dayKeyInZone(new Date(Date.now() - 86400000), currentTrip?.timezone || null);
+      listEl.innerHTML = groupNotifications(filtered, { today, yesterday, lang })
+        .map(group => `
+          <div class="notify-group">
+            <div class="notify-group-label">${escapeHtml(group.label)}</div>
+            ${group.items.map(n => notificationRowHtml(n, { uid, isAdmin })).join('')}
+          </div>`).join('');
+    }
+    queueIcons();
+  };
+  notifyState.sheetPaint = paint;
+
+  // ONE delegated listener for the whole sheet. Rows, filter chips and the push
+  // strip are re-rendered on every paint(), so per-node listeners would only
+  // work until the first reload (the smoke test taps a refreshed row).
+  const bindSheet = () => {
+    const root = document.getElementById('notify-sheet');
+    if (!root || root.dataset.notifyBound === '1') return;
+    root.dataset.notifyBound = '1';
+    root.addEventListener('click', async (e) => {
+      if (e.target.closest('#notify-read-all')) {
+        const count = await markAllRead(tripId, notifyState.list, currentUser.uid);
+        notifyState.list = notifyState.list.map(n => ({ ...n, readBy: { ...(n.readBy || {}), [currentUser.uid]: true } }));
+        paintBell(); paint();
+        toast.success(count
+          ? th(`อ่านแล้ว ${count} รายการ`, `Marked ${count} as read`)
+          : th('ไม่มีรายการใหม่', 'Nothing new'));
+        return;
+      }
+      const enableBtn = e.target.closest('#notify-enable-push');
+      if (enableBtn) {
+        enableBtn.disabled = true;
+        try {
+          await enablePush({ uid: currentUser.uid, tripIds: [tripId], lang });
+          toast.success(th('เปิด Web Push แล้ว — ปิดแอปก็ยังได้รับการแจ้งเตือน',
+            'Web Push is on — you will hear about expenses even when the app is closed'));
+          const wrap = document.getElementById('notify-push-strip-wrap');
+          if (wrap) wrap.innerHTML = notificationPushStripHtml();
+        } catch (err) {
+          toast.error(err.message || String(err));
+        } finally { enableBtn.disabled = false; }
+        return;
+      }
+      const del = e.target.closest('[data-notify-del]');
+      if (del) {
+        e.stopPropagation();
+        await deleteNotification(tripId, del.dataset.notifyDel);
+        notifyState.list = notifyState.list.filter(n => n.id !== del.dataset.notifyDel);
+        paintBell(); paint();
+        return;
+      }
+      const chip = e.target.closest('[data-notify-filter]');
+      if (chip) {
+        notifyState.sheetFilter = chip.dataset.notifyFilter || null;
+        paint();
+        return;
+      }
+      const row = e.target.closest('[data-notify]');
+      if (!row) return;
+      const id = row.dataset.notify;
+      const note = notifyState.list.find(n => n.id === id);
+      if (note && !isReadBy(note, currentUser.uid)) {
+        await markRead(tripId, note, currentUser.uid);
+        note.readBy = { ...(note.readBy || {}), [currentUser.uid]: true };
+        paintBell(); paint();
+      }
+      const link = note?.link;
+      if (link) { sheet.close(); location.hash = link; }
+    });
+  };
+
+  bindSheet();
+  paint();
+  const fresh = await reloadNotifications(tripId);
+  paint();
+  // Trip admins tidy the feed on the way in (the hourly function does it too);
+  // pruneNotifications is a no-op until the list is longer than 120 items.
+  if (isAdmin) pruneNotifications(tripId, fresh).catch(() => {});
+  if (!fresh.length) await maybeDailySummary(tripId);
+  const close = sheet.close;
+  sheet.close = () => { notifyState.sheet = null; notifyState.sheetPaint = null; close(); };
+}
+
+
+/* ---------------------------------------------- Settings → การแจ้งเตือน */
+
+/** The three cards of the “การแจ้งเตือน” settings tab. */
+function notificationSettingsCardsHtml({ lang = 'th', perms = {}, tripSettings = {}, prefs = null } = {}) {
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const p = prefs || readNotifyPrefs();
+  const support = pushSupport(lang);
+  const permission = notificationPermission();
+  const token = currentPushToken();
+  const vapid = getVapidKey();
+  const isAdmin = Boolean(perms.isAdmin);
+  const isOn = pushEnabled();
+  const hourOptions = Array.from({ length: 24 }, (_, h) => h)
+    .map(h => `<option value="${h}" ${Number(tripSettings.summaryHour ?? p.summaryHour ?? 20) === h ? 'selected' : ''}>${String(h).padStart(2, '0')}:00</option>`)
+    .join('');
+  const statusRow = (ok, label, value) => `
+    <div class="notify-status-row">
+      <span class="notify-status-dot ${ok ? 'is-ok' : 'is-off'}"></span>
+      <span class="notify-status-label">${label}</span>
+      <span class="notify-status-value">${escapeHtml(value)}</span>
+    </div>`;
+
+  return `
+    <div class="card p-5 space-y-3" id="notify-inapp-card" data-settings-section="notify">
+      <h3 class="font-bold flex items-center gap-2">${icon('bell', 'w-4 h-4')} ${th('การแจ้งเตือนในแอป', 'In-app notifications')}</h3>
+      <p class="text-xs text-[var(--text-secondary)]">${th('รายการจะโผล่ที่กระดิ่ง 🔔 บนแถบด้านบน พร้อมป๊อปอัปมุมจอเมื่อมีของใหม่', 'Items land in the 🔔 bell in the top bar, with a corner pop-up when something new arrives.')}</p>
+      <label class="settings-toggle-row" for="notify-toggle-enabled">
+        <span class="min-w-0"><b>${icon('bell-ring', 'w-3.5 h-3.5')} ${th('เปิดการแจ้งเตือน', 'Notifications on')}</b>
+          <small>${th('ปิดแล้วจะไม่มีการแจ้งเตือนใด ๆ บนอุปกรณ์นี้', 'Off hides every notification on this device')}</small></span>
+        <input type="checkbox" id="notify-toggle-enabled" class="settings-toggle" ${p.enabled ? 'checked' : ''}>
+      </label>
+      <label class="settings-toggle-row" for="notify-toggle-expense">
+        <span class="min-w-0"><b>${icon('wallet', 'w-3.5 h-3.5')} ${th('เมื่อมีคนบันทึกค่าใช้จ่าย', 'When somebody records an expense')}</b>
+          <small>${th('ใครบันทึกอะไร ยอดเท่าไร และเปิดดูรายการนั้นได้ทันที', 'Who recorded what, for how much — tap to open that bill')}</small></span>
+        <input type="checkbox" id="notify-toggle-expense" class="settings-toggle" ${p.expense ? 'checked' : ''}>
+      </label>
+      <label class="settings-toggle-row" for="notify-toggle-daily">
+        <span class="min-w-0"><b>${icon('calendar-check', 'w-3.5 h-3.5')} ${th('สรุปค่าใช้จ่ายรายวัน', 'Daily expense summary')}</b>
+          <small>${th('สรุปยอดที่ใช้ไปของวันนั้น พร้อมส่วนที่คุณต้องรับผิดชอบ', 'That day’s spending plus your own share')}</small></span>
+        <input type="checkbox" id="notify-toggle-daily" class="settings-toggle" ${p.dailySummary ? 'checked' : ''}>
+      </label>
+      <label class="settings-toggle-row" for="notify-toggle-settlement">
+        <span class="min-w-0"><b>${icon('hand-coins', 'w-3.5 h-3.5')} ${th('เคลียร์บิล / บันทึกการโอน', 'Settlement / transfers')}</b>
+          <small>${th('เมื่อมีคนกด “จ่ายแล้ว”', 'When somebody marks a transfer as paid')}</small></span>
+        <input type="checkbox" id="notify-toggle-settlement" class="settings-toggle" ${p.settlement ? 'checked' : ''}>
+      </label>
+      <label class="settings-toggle-row" for="notify-toggle-member">
+        <span class="min-w-0"><b>${icon('users', 'w-3.5 h-3.5')} ${th('ข่าวสมาชิกและทริป', 'Member & trip news')}</b>
+          <small>${th('มีคนขอเข้าร่วม/ถูกเพิ่มเขาทริป', 'Somebody asks to join or is added to the trip')}</small></span>
+        <input type="checkbox" id="notify-toggle-member" class="settings-toggle" ${p.member ? 'checked' : ''}>
+      </label>
+      <div class="btn-row pt-1">
+        <button type="button" class="btn btn-secondary btn-sm" id="notify-open-bell">${icon('inbox', 'w-3.5 h-3.5')} ${th('เปิดกล่องการแจ้งเตือน', 'Open the bell')}</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="notify-send-test">${icon('send', 'w-3.5 h-3.5')} ${th('ส่งการแจ้งเตือนทดสอบ', 'Send a test')}</button>
+      </div>
+      <p class="text-[10px] text-[var(--text-tertiary)]">${th('ค่าตั้งนี้จำไว้ต่ออุปกรณ์ และส่งขึ้นเซิร์ฟเวอร์เพื่อให้ Web Push รู้ว่าคุณอยากได้อะไร', 'These settings are remembered per device and mirrored to the server so Web Push knows what you want.')}</p>
+    </div>
+
+    <div class="card p-5 space-y-3" id="notify-push-card" data-settings-section="notify">
+      <h3 class="font-bold flex items-center gap-2">${icon('bell-ring', 'w-4 h-4')} ${th('Web Push (FCM)', 'Web Push (FCM)')}
+        <span class="badge ${isOn ? 'badge-completed' : 'badge-planned'} text-[10px]">${isOn ? th('เปิดอยู่', 'On') : th('ปิดอยู่', 'Off')}</span></h3>
+      <p class="text-xs text-[var(--text-secondary)]">${th('แจ้งเตือนเด้งบนมือถือ/คอมได้แม้ปิดแอปอยู่ ต้องมี Cloud Functions ของโปรเจกต์ (pushTripNotification) และคีย์ VAPID', 'Notifications reach this device even with the app closed. It needs the project’s Cloud Functions (pushTripNotification) and a VAPID key.')}</p>
+      ${statusRow(support.supported, th('เบราว์เซอร์รองรับ', 'Browser support'), support.supported ? th('รองรับ', 'supported') : (support.message || th('ไม่รองรับ', 'not supported')))}
+      ${statusRow(permission === 'granted', th('สิทธิ์การแจ้งเตือน', 'Notification permission'), permission)}
+      ${statusRow(Boolean(vapid), 'VAPID key', vapid ? `${String(vapid).slice(0, 10)}…` : th('ยังไม่ได้ตั้ง', 'not set'))}
+      ${statusRow(Boolean(token), th('อุปกรณ์นี้ลงทะเบียนแล้ว', 'This device registered'), token ? `${String(token).slice(0, 12)}…` : th('ยังไม่ลงทะเบียน', 'not registered'))}
+      <div class="btn-row">
+        <button type="button" class="btn ${isOn ? 'btn-ghost' : 'btn-primary'} btn-sm" id="notify-push-toggle" ${support.supported ? '' : 'disabled'}>
+          ${isOn ? `${icon('bell-off', 'w-3.5 h-3.5')} ${th('ปิด Push บนอุปกรณ์นี้', 'Turn push off here')}` : `${icon('bell-ring', 'w-3.5 h-3.5')} ${th('เปิด Push บนอุปกรณ์นี้', 'Turn push on here')}`}
+        </button>
+      </div>
+      <div class="input-group mb-0">
+        <label class="input-label" for="notify-vapid">${icon('key-round', 'w-3 h-3')} VAPID key ${isAdmin ? '' : th('(ผู้ดูแลเท่านั้น)', '(admins only)')}</label>
+        <input id="notify-vapid" class="input text-[11px] font-mono" placeholder="B…" value="${escapeHtml(vapid)}" ${isAdmin ? '' : 'disabled'}>
+        <p class="input-hint">${th('Firebase Console → Project settings → Cloud Messaging → Web Push certificates → คัดลอก “Key pair” มาวาง (คีย์สาธารณะ เผยแพร่ได้) — หรือใส่ใน src/js/firebase.config.js (fcmVapidKey) ก็ได้', 'Firebase Console → Project settings → Cloud Messaging → Web Push certificates → copy the “Key pair” (public key) here — or set fcmVapidKey in src/js/firebase.config.js.')}</p>
+      </div>
+      ${isAdmin ? `<button type="button" class="btn btn-secondary btn-sm" id="notify-vapid-save">${icon('save', 'w-3.5 h-3.5')} ${th('บันทึกคีย์', 'Save key')}</button>` : ''}
+      <p class="text-[10px] text-[var(--text-tertiary)]">${th('หมายเหตุ: บน iPhone/iPad ต้อง “เพิ่มไปที่หน้าจอโฮม” ก่อน (iOS 16.4+) จึงจะรับ Web Push ได้ และต้องเปิดเว็บผ่าน https://', 'Note: on iPhone/iPad the app must be added to the Home Screen first (iOS 16.4+) and the page must be served over https://.')}</p>
+    </div>
+
+    <div class="card p-5 space-y-3" id="notify-trip-card" data-settings-section="notify">
+      <h3 class="font-bold flex items-center gap-2">${icon('calendar-clock', 'w-4 h-4')} ${th('สรุปค่าใช้จ่ายรายวันของทริปนี้', 'Daily summary of this trip')}</h3>
+      <p class="text-xs text-[var(--text-secondary)]">${th('เวลาในเขตเวลาของทริป — เซิร์ฟเวอร์จะสร้างสรุปให้อัตโนมัติ (และเครื่องที่เปิดแอปอยู่ก็ช่วยสร้างให้)', 'Uses the trip’s timezone — the server writes the summary automatically (an open app writes it too).')}</p>
+      <label class="settings-toggle-row" for="notify-trip-daily">
+        <span class="min-w-0"><b>${icon('sparkles', 'w-3.5 h-3.5')} ${th('เปิดสรุปอัตโนมัติทุกวัน', 'Automatic daily summary')}</b>
+          <small>${th('ผู้ดูแลทริปตั้งค่าให้ทุกคนในทริปนี้', 'A trip-admin setting that applies to everybody in the trip')}</small></span>
+        <input type="checkbox" id="notify-trip-daily" class="settings-toggle" ${tripSettings.dailySummary === false ? '' : 'checked'} ${isAdmin ? '' : 'disabled'}>
+      </label>
+      <div class="input-group mb-0">
+        <label class="input-label" for="notify-trip-hour">${icon('clock', 'w-3 h-3')} ${th('เวลาส่งสรุป', 'Summary hour')}</label>
+        <select id="notify-trip-hour" class="input" ${isAdmin ? '' : 'disabled'}>${hourOptions}</select>
+      </div>
+      ${isAdmin
+        ? `<button type="button" class="btn btn-primary btn-sm" id="notify-trip-save">${icon('save', 'w-3.5 h-3.5')} ${th('บันทึกเวลาสรุป', 'Save summary time')}</button>`
+        : `<p class="text-[10px] text-[var(--text-tertiary)]">${th('แก้ไขได้เฉพาะผู้ดูแลทริป', 'Only trip admins can change this')}</p>`}
+    </div>`;
+}
+
+/** Wire every control of the notification tab. */
+function bindNotificationSettings({ tripId, lang = 'th', perms = {}, params = null } = {}) {
+  const th = (a, b) => (lang === 'th' ? a : b);
+  if (!document.getElementById('notify-inapp-card')) return;
+
+  const persist = async (patch, message) => {
+    const prefs = writeNotifyPrefs(patch);
+    paintBell();
+    if (currentUser?.uid) saveServerPrefs(currentUser.uid, prefs).catch(() => {});
+    if (message) toast.success(message);
+    return prefs;
+  };
+
+  const toggleMap = {
+    'notify-toggle-enabled': 'enabled',
+    'notify-toggle-expense': 'expense',
+    'notify-toggle-daily': 'dailySummary',
+    'notify-toggle-settlement': 'settlement',
+    'notify-toggle-member': 'member'
+  };
+  for (const [id, key] of Object.entries(toggleMap)) {
+    bind(id, 'change', (e) => persist({ [key]: e.target.checked }));
+  }
+
+  bind('notify-open-bell', 'click', () => openNotificationsSheet());
+  bind('notify-send-test', 'click', async () => {
+    if (!db || !currentUser?.uid) { toast.error(th('ต้องเข้าสู่ระบบก่อน', 'Sign in first')); return; }
+    const tLoad = toast.loading(th('กำลังส่ง...', 'Sending...'));
+    const id = await sendTestNotification(tripId, { uid: currentUser.uid, name: currentUserDisplayName(), lang });
+    tLoad.close();
+    if (!id) { toast.error(th('ส่งไม่สำเร็จ — ตรวจสิทธิ์/การเชื่อมต่อ', 'Could not send — check permissions/connection')); return; }
+    await reloadNotifications(tripId);
+    // Show it right away, so the user sees both layers working.
+    showDeviceNotification({
+      title: th('ทดสอบการแจ้งเตือน ✅', 'Test notification ✅'),
+      body: th('ถ้าเห็นข้อความนี้ การแจ้งเตือนทำงานแล้ว', 'If you can read this, notifications work.'),
+      url: `#/trip/${tripId}/dashboard`
+    }).catch(() => {});
+    toast.success(th('ส่งการแจ้งเตือนทดสอบแล้ว', 'Test notification sent'));
+    paintNotificationSheetIfOpen();
+  });
+
+  bind('notify-push-toggle', 'click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      if (pushEnabled()) {
+        await disablePush({ uid: currentUser?.uid, lang });
+        toast.success(th('ปิด Web Push บนอุปกรณ์นี้แล้ว', 'Web Push is off on this device'));
+      } else {
+        const support = pushSupport(lang);
+        if (!support.supported) throw new Error(support.message);
+        await enablePush({ uid: currentUser?.uid, tripIds: [tripId], lang });
+        toast.success(th('เปิด Web Push แล้ว 🎉', 'Web Push is on 🎉'));
+      }
+      await persist({ push: pushEnabled() });
+      if (params) renderSettings(params);
+      else router.handle();
+    } catch (err) {
+      toast.error(err.message || String(err));
+      btn.disabled = false;
+    }
+  });
+
+  bind('notify-vapid-save', 'click', () => {
+    const value = document.getElementById('notify-vapid')?.value?.trim() || '';
+    setVapidKey(value);
+    toast.success(value
+      ? th('บันทึก VAPID key แล้ว — ลองกด “เปิด Push บนอุปกรณ์นี้”', 'VAPID key saved — now tap “Turn push on here”')
+      : th('ลบคีย์แล้ว', 'Key cleared'));
+  });
+
+  bind('notify-trip-save', 'click', async () => {
+    if (!perms.isAdmin) { toast.warning(th('เฉพาะผู้ดูแลทริป', 'Admins only')); return; }
+    const dailySummary = document.getElementById('notify-trip-daily')?.checked !== false;
+    const summaryHour = Number(document.getElementById('notify-trip-hour')?.value ?? 20);
+    try {
+      await saveTripNotifySettings(tripId, { dailySummary, summaryHour });
+      notifyState.tripSettings = { ...notifyState.tripSettings, dailySummary, summaryHour };
+      toast.success(th(`บันทึกแล้ว — สรุปทุกวันเวลา ${String(summaryHour).padStart(2, '0')}:00 (เวลาทริป)`,
+        `Saved — daily summary at ${String(summaryHour).padStart(2, '0')}:00 (trip time)`));
+    } catch (err) {
+      toast.error(err.message || String(err));
+    }
+  });
 }
 
 // --- Password/PIN toggle helper ---
@@ -997,6 +1599,7 @@ let authReady = false;
 let pendingAuthRoute = null;
 
 async function doLogout() {
+  try { stopNotificationWatch(); paintBell(); } catch { /* ignore */ }
   clearMemberSession();
   // Centralized logout: always clears state and returns to the login screen,
   // even if Firebase signOut() has a network hiccup.
@@ -1618,6 +2221,11 @@ router.beforeEach = (matched) => {
   try { document.dispatchEvent(new CustomEvent('routechange')); } catch {}
   if (matched.params?.tripId) {
     setTrip(matched.params.tripId);
+    // 🔔 start watching this trip's notifications (badge + toasts), then let the
+    // daily summary catch up in the background.
+    startNotificationWatch(matched.params.tripId);
+    setTimeout(() => { maybeDailySummary(matched.params.tripId).catch(() => {}); }, 2500);
+    setTimeout(() => { paintBell(); }, 300);
   }
   renderDesktopNav();
   updateBottomNav();
@@ -3924,7 +4532,7 @@ async function renderItinerary(params) {
   // Trip groups feed the "estimated cost" select in the add/edit sheet, so load
   // them together with the permissions (one round trip, cached afterwards).
   const [perms, , itineraryExpenses, itineraryGroups] = await Promise.all([
-    resolvePermissions(tripId, trip, currentUser.uid),
+    resolvePermsCached(tripId, trip),
     loadTripCategories(tripId).catch(e => console.warn(e)),
     fetchAllExpenses(tripId).catch(() => []),
     // Sub-groups (ทีม) are picked per place — “สถานที่นี้มีทีมไหนไปบ้าง”.
@@ -3955,8 +4563,10 @@ async function renderItinerary(params) {
           <button id="export-excel-btn" class="btn btn-secondary btn-sm">${icon('file-spreadsheet', 'w-4 h-4')} Excel</button>
           <!-- v18.2: the Excel *import* tool only exists while edit mode is on -->
           <span id="itin-import-slot" class="contents"></span>` : ''}
+          ${perms.canEditItinerary ? `
           <button id="edit-mode-btn" class="btn btn-secondary btn-sm">${icon('list-ordered', 'w-4 h-4')} ${t('editMode')}</button>
-          <button id="add-itinerary-btn" class="btn btn-primary btn-sm">${icon('plus', 'w-4 h-4')} ${t('addPlace')}</button>
+          <button id="add-itinerary-btn" class="btn btn-primary btn-sm">${icon('plus', 'w-4 h-4')} ${t('addPlace')}</button>`
+          : `<span class="ro-chip" title="${th('ผู้ดูแลทริปให้สิทธิ์คุณดูได้อย่างเดียว','The trip admin gave you read-only access')}">${icon('lock', 'w-3.5 h-3.5')} ${th('ดูอย่างเดียว','Read only')}</span>`}
         </div>
       </div>
 
@@ -3971,7 +4581,7 @@ async function renderItinerary(params) {
           </h3>
           <div class="btn-row">
             <button id="notes-toggle-btn" class="btn btn-ghost btn-sm hidden" title="${th('ย่อ/ขยาย','Collapse / expand')}">${icon('chevron-up', 'w-4 h-4')}</button>
-            <button id="add-note-btn" class="btn btn-secondary btn-sm">${icon('plus', 'w-4 h-4')} ${th('เพิ่มโน้ต','Add note')}</button>
+            ${perms.canEditItinerary ? `<button id="add-note-btn" class="btn btn-secondary btn-sm">${icon('plus', 'w-4 h-4')} ${th('เพิ่มโน้ต','Add note')}</button>` : ''}
           </div>
         </div>
         <!-- No notes yet → the whole section stays folded into one slim line. -->
@@ -5920,7 +6530,7 @@ async function renderExpenses(params) {
   // round trip. ORDER MATTERS: the destructuring below reads this array by
   // position, so groups must come before the plan here.
   const [perms, , membersRes, commentsRes, groupsRes, planRes] = await Promise.all([
-    resolvePermissions(tripId, trip, currentUser.uid),
+    resolvePermsCached(tripId, trip),
     loadTripCategories(tripId).catch(e => console.warn(e)),
     listMembers(tripId).catch(e => { console.warn(e); return []; }),
     listComments(tripId).catch(e => { console.warn(e); return []; }),
@@ -5954,7 +6564,9 @@ async function renderExpenses(params) {
           <button id="exp-excel-btn" class="btn btn-secondary btn-sm">${icon('file-spreadsheet', 'w-4 h-4')} Excel</button>
           <button id="exp-import-btn" class="btn btn-secondary btn-sm">${icon('upload', 'w-4 h-4')} Import</button>` : ''}
           <button id="export-expenses" class="btn btn-secondary btn-sm">${icon('file-json', 'w-4 h-4')} JSON</button>
-          <button id="add-expense-btn" class="btn btn-primary btn-sm">${icon('plus', 'w-4 h-4')} ${t('addExpense')}</button>
+          ${perms.canEditExpense
+            ? `<button id="add-expense-btn" class="btn btn-primary btn-sm">${icon('plus', 'w-4 h-4')} ${t('addExpense')}</button>`
+            : `<span class="ro-chip" title="${th('ผู้ดูแลทริปให้สิทธิ์คุณดูได้อย่างเดียว','The trip admin gave you read-only access')}">${icon('lock', 'w-3.5 h-3.5')} ${th('ดูอย่างเดียว','Read only')}</span>`}
         </div>
         <!-- exp-top-actions: on a phone the row wraps instead of scrolling so the
              primary “เพิ่มค่าใช้จ่าย” CTA is never half-cut at the screen edge -->
@@ -5985,7 +6597,7 @@ async function renderExpenses(params) {
         <div class="btn-row">
           <button id="exp-density-btn" class="btn btn-ghost btn-sm text-[11px]" type="button" aria-pressed="false">${icon('rows-3', 'w-3.5 h-3.5')} <span data-density-label>${th('มุมมองกระทัดรัด','Compact view')}</span></button>
           <button id="activity-btn" class="link-btn text-[11px]">${icon('history', 'w-3.5 h-3.5')} ${th('ประวัติการแก้ไข','Activity log')}</button>
-          <button id="manage-cats-btn" class="link-btn text-[11px]">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage expense groups')}</button>
+          ${perms.canEditExpense ? `<button id="manage-cats-btn" class="link-btn text-[11px]">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage expense groups')}</button>` : ''}
         </div>
       </div>
       <div class="chip-row mb-4" id="cat-filters">
@@ -6190,8 +6802,9 @@ async function renderExpenses(params) {
         </div>
         <div class="expense-actions">
           ${commentButton(e.id)}
+          ${perms.canEditExpense ? `
           <button class="icon-btn" data-act="edit" data-id="${e.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
-          <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${e.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
+          <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${e.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>` : ''}
         </div>
       </div>`;
   }
@@ -6240,7 +6853,7 @@ async function renderExpenses(params) {
         icon: 'wallet',
         title: activeFilter === 'all' && !catFilter ? th('ยังไม่มีค่าใช้จ่าย','No expenses') : th('ไม่พบรายการตามตัวกรอง','No items match the filter'),
         desc: activeFilter === 'all' && !catFilter ? th('เพิ่มรายการแรกเพื่อเริ่มติดตามงบประมาณ','Add your first expense to start tracking') : '',
-        actionHtml: activeFilter === 'all' && !catFilter ? `<button id="empty-exp-add" class="btn btn-primary btn-sm mt-3">${icon('plus', 'w-4 h-4')} ${t('addExpense')}</button>` : ''
+        actionHtml: perms.canEditExpense && activeFilter === 'all' && !catFilter ? `<button id="empty-exp-add" class="btn btn-primary btn-sm mt-3">${icon('plus', 'w-4 h-4')} ${t('addExpense')}</button>` : ''
       });
       bind('empty-exp-add', 'click', () => { location.hash = `#/trip/${tripId}/expenses/add`; });
       queueIcons();
@@ -8292,6 +8905,13 @@ async function renderSettlement(params) {
         tLoad.close();
         sheet.close();
         toast.success(th('บันทึกการโอนแล้ว', 'Transfer recorded'));
+        // 🔔 tell the two people involved (web push included when it is on)
+        notifyTransferRecorded(tripId, {
+          transfer: { fromId, toId, amountMinor: amount },
+          memberNameOf: (id) => state.membersMap[id]?.displayName || id,
+          author: { id: currentUser?.uid, name: currentUserDisplayName() },
+          lang
+        }).catch(() => {});
         load();
       } catch (e) { tLoad.close(); toast.error(e.message || String(e)); }
     });
@@ -9508,7 +10128,7 @@ function openCardManager(tripId, { members = [], onSaved = null } = {}) {
 
 const ROLE_ICONS = { super_admin: 'crown', trip_admin: 'shield-check', member: 'user', viewer: 'eye' };
 
-function openMemberForm(tripId, member = null, { onSaved } = {}) {
+function openMemberForm(tripId, member = null, { onSaved, canSetRoles = true } = {}) {
   const lang = getLang();
   const th = (a, b) => (lang === 'th' ? a : b);
   const isEdit = !!member;
@@ -9533,7 +10153,7 @@ function openMemberForm(tripId, member = null, { onSaved } = {}) {
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div class="input-group"><label class="input-label">${icon('shield', 'w-3.5 h-3.5')} ${th('บทบาท','Role')}</label>
-            <select id="m-role" class="input">
+            <select id="m-role" class="input" ${canSetRoles ? '' : 'disabled'}>
               ${MEMBER_ROLES.map(r => `<option value="${r.id}" ${(m.role || 'member') === r.id ? 'selected' : ''}>${lang==='th'?r.th:r.en}</option>`).join('')}
             </select>
           </div>
@@ -9552,6 +10172,7 @@ function openMemberForm(tripId, member = null, { onSaved } = {}) {
           <label class="flex items-center gap-2 text-xs cursor-pointer"><input id="m-perm-itinerary" type="checkbox" class="accent-[var(--primary)] w-4 h-4" ${(m.permissions?.canEditItinerary ?? true) ? 'checked' : ''}> ${th('แก้ไขแผนการเดินทาง','Edit itinerary')}</label>
           <label class="flex items-center gap-2 text-xs cursor-pointer"><input id="m-perm-expense" type="checkbox" class="accent-[var(--primary)] w-4 h-4" ${(m.permissions?.canEditExpense ?? true) ? 'checked' : ''}> ${th('แก้ไขค่าใช้จ่าย','Edit expenses')}</label>
           <label class="flex items-center gap-2 text-xs cursor-pointer"><input id="m-perm-manage" type="checkbox" class="accent-[var(--primary)] w-4 h-4" ${m.permissions?.canManageMembers ? 'checked' : ''}> ${th('จัดการสมาชิก','Manage members')}</label>
+          ${canSetRoles ? '' : `<p class="text-[10px] text-[var(--text-tertiary)]">${th('บทบาทและสิทธิ์แก้ได้เฉพาะผู้ดูแลทริป — คุณแก้ชื่อ/รูป/สถานะได้','Only a trip admin can change the role and the permissions — you can still edit the name, photo and status.')}</p>`}
         </div>
         <div class="flex gap-2">
           <button type="submit" id="m-submit" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${isEdit ? t('save') : t('add')}</button>
@@ -9569,6 +10190,12 @@ function openMemberForm(tripId, member = null, { onSaved } = {}) {
   `);
   queueIcons();
 
+  if (!canSetRoles) {
+    ['m-role', 'm-perm-itinerary', 'm-perm-expense', 'm-perm-manage'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = true;
+    });
+  }
   document.getElementById('member-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const btn = document.getElementById('m-submit');
@@ -9657,11 +10284,14 @@ async function renderMembers(params) {
   const trip = currentTrip;
 
   let perms = { isAdmin: false, role: 'member' };
-  try { perms = await resolvePermissions(tripId, trip, currentUser.uid); } catch {}
+  try { perms = await resolvePermsCached(tripId, trip); } catch {}
   if (isStale(token)) return;
 
   // Declared before the page markup: the groups card only renders the “เพิ่มกลุ่ม”
   // button for people who may manage members.
+  // v30: only the trip admin (or a member the admin trusted with
+  // “จัดการสมาชิก”) may add people or approve join requests — the same rule the
+  // Firestore rules enforce.
   const canApprove = perms.isAdmin || perms.canManageMembers || perms.role === 'trip_admin';
   const canManageGroups = canApprove;
   // v18.2 — กลุ่มย่อย: a long trip splits into gangs (some fly home early), so
@@ -9676,7 +10306,9 @@ async function renderMembers(params) {
           ${renderPageScene('members', { lang, title: `${icon('users', 'w-5 h-5')} ${t('members')}`,
             subtitle: `${th('บทบาทของคุณ','Your role')}: <b>${escapeHtml(perms.role)}</b> • ${th('สมาชิกล็อกอินด้วย Google/อีเมล แล้วขอเข้าร่วมทริปได้','members sign in with Google/email and request to join')}` })}
         </div>
-        <button id="add-member-btn" class="btn btn-primary btn-sm">${icon('user-plus', 'w-4 h-4')} ${th('เพิ่มสมาชิก','Add member')}</button>
+        ${canApprove
+          ? `<button id="add-member-btn" class="btn btn-primary btn-sm">${icon('user-plus', 'w-4 h-4')} ${th('เพิ่มสมาชิก','Add member')}</button>`
+          : `<span class="ro-chip" title="${th('เฉพาะผู้ดูแลทริปหรือผู้ที่ได้สิทธิ์จัดการสมาชิก','Trip admins (or members granted “manage members”) only')}">${icon('lock', 'w-3.5 h-3.5')} ${th('ดูรายชื่อได้อย่างเดียว','View only')}</span>`}
       </div>
 
       <div class="card p-5 space-y-3 mb-5" id="account-members-card">
@@ -9837,7 +10469,7 @@ async function renderMembers(params) {
           desc: th('เพิ่มสมาชิกเพื่อเริ่มหารค่าใช้จ่าย','Add members to start splitting expenses'),
           actionHtml: `<button id="empty-add-member" class="btn btn-primary btn-sm mt-3">${icon('user-plus', 'w-4 h-4')} ${th('เพิ่มสมาชิก','Add member')}</button>`
         });
-        bind('empty-add-member', 'click', () => openMemberForm(tripId, null, { onSaved: loadMembersList }));
+        bind('empty-add-member', 'click', () => openMemberForm(tripId, null, { onSaved: loadMembersList, canSetRoles: perms.isAdmin }));
         queueIcons();
         return;
       }
@@ -9892,7 +10524,7 @@ async function renderMembers(params) {
     }
   }
 
-  bind('add-member-btn', 'click', () => openMemberForm(tripId, null, { onSaved: loadMembersList }));
+  bind('add-member-btn', 'click', () => openMemberForm(tripId, null, { onSaved: loadMembersList, canSetRoles: perms.isAdmin }));
   if (canManageGroups) bind('add-group-btn', 'click', () => openGroupForm(null));
 
   /**
@@ -10348,7 +10980,7 @@ async function renderImportExport(params) {
   if (isStale(token)) return;
   const trip = currentTrip;
 
-  const perms = await resolvePermissions(tripId, trip, currentUser.uid);
+  const perms = await resolvePermsCached(tripId, trip);
   if (isStale(token)) return;
   const isAdmin = perms.isAdmin;
 
@@ -10657,7 +11289,8 @@ async function renderSettings(params) {
   let settingMembers = [];
   await Promise.all([
     loadTripCategories(tripId).catch(e => console.warn(e)),
-    resolvePermissions(tripId, trip, currentUser.uid).then(p => { perms = p; }).catch(() => {}),
+    resolvePermsCached(tripId, trip).then(p => { perms = p; }).catch(() => {}),
+    loadTripNotifySettings(tripId).then(s => { notifyState.tripSettings = s || {}; }).catch(() => {}),
     listMembers(tripId).then(m => { settingMembers = m || []; }).catch(() => {})
   ]);
   if (isStale(token)) return;
@@ -10693,6 +11326,7 @@ async function renderSettings(params) {
       <div class="settings-tabs" id="settings-tabs">
         <button class="settings-tab active" data-settings-tab="trip">${icon('compass', 'w-3.5 h-3.5')} ${th('ข้อมูลทริป','Trip')}</button>
         <button class="settings-tab" data-settings-tab="appearance">${icon('palette', 'w-3.5 h-3.5')} ${th('การแสดงผล','Appearance')}</button>
+        <button class="settings-tab" data-settings-tab="notify">${icon('bell', 'w-3.5 h-3.5')} ${th('การแจ้งเตือน','Notifications')}</button>
         <button class="settings-tab" data-settings-tab="system">${icon('database', 'w-3.5 h-3.5')} ${th('ระบบ','System')}</button>
         <button class="settings-tab" data-settings-tab="advanced">${icon('settings-2', 'w-3.5 h-3.5')} ${th('เพิ่มเติม','Advanced')}</button>
       </div>
@@ -10861,6 +11495,8 @@ async function renderSettings(params) {
         <div id="diag-results" class="space-y-2"></div>
       </div>
 
+      ${notificationSettingsCardsHtml({ lang, perms, tripSettings: notifyState.tripSettings, prefs: readNotifyPrefs() })}
+
       <div class="card p-5 space-y-3" style="border-color: color-mix(in srgb, var(--danger) 35%, var(--border));" data-settings-section="advanced">
         <h3 class="font-bold flex items-center gap-2" style="color:var(--danger);">${icon('alert-triangle', 'w-4 h-4')} ${th('เขตอันตราย','Danger zone')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('ลบทริปจะลบแผนการเดินทาง ค่าใช้จ่าย สมาชิก และเอกสารทั้งหมดอย่างถาวร','Deleting a trip removes its itinerary, expenses, members and documents permanently.')}</p>
@@ -10913,7 +11549,9 @@ async function renderSettings(params) {
     settingsTabBar.querySelectorAll('.settings-tab').forEach(tab => {
       tab.addEventListener('click', () => applySettingsTab(tab.dataset.settingsTab));
     });
-    applySettingsTab('trip');
+    // ?tab=notify (the 🔔 sheet links here) opens the notification tab directly
+    const wanted = new URLSearchParams(location.hash.split('?')[1] || '').get('tab');
+    applySettingsTab(['trip', 'appearance', 'notify', 'system', 'advanced'].includes(wanted) ? wanted : 'trip');
   }
 
   const colorInput = document.getElementById('s-color');
@@ -11285,6 +11923,8 @@ async function renderSettings(params) {
     }
   });
   updateModeIcons();
+
+  bindNotificationSettings({ tripId, lang, perms, params });
 
   bind('account-edit', 'click', () => openUserSheet(currentUser));
   bind('account-appearance', 'click', () => showAppearanceSheet());

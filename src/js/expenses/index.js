@@ -5,6 +5,7 @@ import { toThbMinor, calculateNetTotal, getCurrencyDecimals, toMinor } from '../
 import { validateAllocations } from '../utils/split.js';
 import { normalizeCategory } from '../utils/categories.js';
 import { cachedRead, cacheInvalidate, cacheForget, cacheSet, persistSet } from '../utils/datacache.js';
+import { notifyExpenseCreated } from '../notifications/index.js';
 
 export function subscribeExpenses(tripId, cb) {
   if (!db) return () => {};
@@ -193,6 +194,12 @@ export async function addExpense(tripId, data, userId, by = null) {
     }
   }
   invalidateExpenses(tripId);
+  // 🔔 “บันทึกค่าใช้จ่ายแล้ว” — tell the rest of the trip (in-app bell + Web Push).
+  // Fire-and-forget: a notification problem must never fail the save.
+  notifyExpenseCreated(tripId, {
+    expense: { id: ref.id, ...payload, netTotalMinor: net },
+    author: { id: userId, name: authorName }
+  }).catch(() => {});
   return ref.id;
 }
 

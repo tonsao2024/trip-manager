@@ -10,7 +10,9 @@ export const firebaseConfigTemplate = {
   projectId: "YOUR_PROJECT_ID",
   storageBucket: "YOUR_PROJECT.appspot.com",
   messagingSenderId: "1234567890",
-  appId: "1:1234567890:web:abcdef"
+  appId: "1:1234567890:web:abcdef",
+  // Public VAPID key for Web Push (Firebase Console → Cloud Messaging → Web Push certificates)
+  fcmVapidKey: ""
 };
 
 // สำหรับ GitHub Pages: เปิด Console แล้วรัน:

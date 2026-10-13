@@ -18,6 +18,12 @@ export const firebaseConfig = {
   storageBucket: "trip-manager-93b22.firebasestorage.app",
   messagingSenderId: "1022352508207",
   appId: "1:1022352508207:web:76e1cd0748c30343074dda",
-  measurementId: "G-PRPNTC95YB"
+  measurementId: "G-PRPNTC95YB",
+  // Web Push (FCM) — Public VAPID key.
+  // หาได้จาก Firebase Console → Project settings → Cloud Messaging →
+  // Web Push certificates → "Key pair" (เป็นคีย์สาธารณะ เปิดเผยได้)
+  // ถ้ายังเว้นว่าง: การแจ้งเตือนในแอป (🔔) ยังทำงานครบ แต่ Web Push จะยังปิดอยู่
+  // และผู้ดูแลสามารถวางคีย์นี้ได้ใน ตั้งค่า → การแจ้งเตือน (บันทึกในเครื่องนั้น)
+  fcmVapidKey: ""
 };
 export const isConfigHardcoded = true;

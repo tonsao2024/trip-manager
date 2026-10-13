@@ -16,6 +16,7 @@ const CDN_TO_STUB = {
   [`${FIREBASE}firebase-firestore.js`]: 'firebase-firestore.mjs',
   [`${FIREBASE}firebase-storage.js`]: 'firebase-storage.mjs',
   [`${FIREBASE}firebase-functions.js`]: 'firebase-functions.mjs',
+  [`${FIREBASE}firebase-messaging.js`]: 'firebase-messaging.mjs',
   'https://esm.sh/leaflet@1.9.4': 'leaflet.mjs',
   'https://esm.sh/sortablejs@1.15.3': 'sortable.mjs',
   'https://esm.sh/html2canvas@1.4.1': 'html2canvas.mjs',

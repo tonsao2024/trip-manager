@@ -396,7 +396,9 @@ const TRIP_SUBCOLLECTIONS = [
   'checklists', 'ideas', 'reservations',
   // v19: sub-groups (ทีม) live in their own collection — deleting the trip has to
   // take them with it, or orphan team docs would pile up in Firestore.
-  'memberGroups'
+  'memberGroups',
+  // v30: the 🔔 notification feed of the trip
+  'notifications'
 ];
 
 /**

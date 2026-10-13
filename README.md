@@ -2,6 +2,34 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
+> **v30 — 13 Oct 2026, การแจ้งเตือน 🔔 + Web Push + ตรวจสิทธิ์ผู้ใช้.** Two owner requests.
+> **(1) การแจ้งเตือน:** every trip now has a **🔔 bell in the top bar** with an unread badge, a
+> notification sheet (grouped วันนี้/เมื่อวาน/ก่อนหน้านี้ + type filters + “อ่านทั้งหมด”) and
+> **Web Push** through FCM — the daily expense summary (สรุปค่าใช้จ่ายรายวัน, one document per trip
+> per trip-local day, written by the first device that opens the app after the summary hour and by
+> the hourly `dailyExpenseSummary` function when nobody does) and a ping **when somebody records an
+> expense** (who, how much, tap to open that bill). Notifications live in
+> `trips/{tripId}/notifications` (`type, date, title, body, amountMinor, currency, link, recipients,
+> readBy, createdBy`) and are pushed by `pushTripNotification` to the recipients' devices
+> (`users/{uid}/pushTokens|pushPrefs`, owner-only). Settings → **การแจ้งเตือน** holds the switches
+> (ต่ออุปกรณ์, synced to the server), the Web-Push toggle, the VAPID key box, the trip-wide summary
+> hour and a test ping. Without a VAPID key/permission/functions everything degrades to the in-app
+> bell — nothing breaks. `firebase-messaging-sw.js` (root) draws the background messages and routes
+> the click; `manifest.webmanifest` exists for iOS (iOS 16.4+ needs “เพิ่มไปที่หน้าจอโฮม”).
+> **(2) สิทธิ์ผู้ใช้:** the audit found that the “แก้ไขแผนการเดินทาง / แก้ไขค่าใช้จ่าย / viewer”
+> switches were **UI-only** — the published rules let any member write the plan, the money, the
+> documents, the groups, even the invite code. v30 rewrites `firestore.rules` so the member
+> document's `permissions{}` map is enforced (`canEditItinerary`, `canEditExpense`,
+> `canManageMembers` co-admins), `viewer` is read-only everywhere, a member may edit **only their own
+> profile** (role/permissions/status frozen — no self-escalation), rotating the invite code /
+> changing `memberUids`/`createdBy` is trip-admin-only, `users/{uid}/push*` is owner-only and
+> notifications can only have the caller's own key added to `readBy`. Missing switches keep working
+> (old member docs are not locked out). The design is documented in
+> [`docs/PERMISSIONS.md`](docs/PERMISSIONS.md), the UI hides what the rules deny (`.ro-chip`
+> “ดูอย่างเดียว”), and the whole thing is covered by the new `tests/unit/notifications.test.js` + `tests/unit/permissions.test.js` +
+> a 65-check smoke block (bell → expense ping → filters → mark read → daily summary → settings →
+> push enable/disable → member/viewer gates). Tests: unit 167 pass, smoke ✅.
+
 > **v29 — 11 Oct 2026, เมนูบนเห็นครบ + การ์ดนับถอยหลังเต็มใบ + สีเส้นตามผู้รับ.** Three owner
 > requests from the desktop screenshot review. **(1) การ์ดนับถอยหลัง:** the runner scene used to stay
 > 190px tall inside a card the dashboard grid stretches to the tallest neighbour (the weather card),
@@ -133,7 +161,9 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 
 **Stack:** HTML5, CSS3, ES Modules, Tailwind CDN, Firebase (Auth, Firestore, Storage, Functions), Leaflet, Chart.js, Day.js, html2canvas+jsPDF (lazy), SheetJS (lazy), Lucide Icons.
 
-**No PWA:** No manifest, no service worker. Only Firestore offline persistence for resilience.
+**PWA-less, but push-capable (v30):** `manifest.webmanifest` + one service worker
+(`firebase-messaging-sw.js`, FCM background messages) exist **only** for Web Push — there is still no
+offline cache/app-shell; Firestore offline persistence remains the resilience layer.
 
 ---
 
@@ -141,7 +171,8 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 
 - **Frontend:** Static SPA with hash routing (`#/login`, `#/trips`, `#/trip/:id/dashboard` etc). No build step required; deploy `index.html` + `src/` directly to GitHub Pages.
 - **Backend:** Firebase Firestore (data), Auth (admin email/pass + member username/PIN via custom token), Storage (receipts, avatars), Functions (auth verification, settlement, scheduling).
-- **Security:** Rules enforce trip isolation via `tripId`, role checks, no PIN hash readable client-side, audit logs for sensitive actions, step-up PIN verification with short session (10 min).
+- **Security:** Rules enforce trip isolation via `tripId`, role checks, no PIN hash readable client-side, audit logs for sensitive actions, step-up PIN verification with short session (10 min). Since v30 the member document's `permissions{}` map is enforced by the rules too (`canEditItinerary`, `canEditExpense`, `canManageMembers`, `viewer`) — see [`docs/PERMISSIONS.md`](docs/PERMISSIONS.md).
+- **Notifications:** `trips/{tripId}/notifications` (bell + Web Push feed) with per-account `readBy`; FCM tokens in `users/{uid}/pushTokens`; `firebase-messaging-sw.js` + `manifest.webmanifest` for Web Push only.
 - **Design:** Modern minimal + soft depth, bento-grid dashboard, CSS variables for light/dark, Fuji gradient accent, Inter + Noto Sans Thai, transform/opacity animations only.
 
 ## Database Schema
@@ -378,7 +409,8 @@ firebase emulators:start --only firestore,auth,functions,storage
 - [ ] `serverTimestamp()` for critical times
 - [ ] Allocation sum validation both client+server
 - [ ] Audit logs for sensitive actions
-- [ ] No manifest/service worker (check no PWA files)
+- [x] Web Push only: `firebase-messaging-sw.js` + `manifest.webmanifest` (no app-shell/offline cache)
+- [x] Notifications: member read/create, `readBy` self-only, delete = trip admin; push tokens owner-only
 - [ ] Money stored as minor units
 
 ## Acceptance Checklist
@@ -413,7 +445,9 @@ firebase emulators:start --only firestore,auth,functions,storage
   `#f5f8fc` surfaces (v17 repaint; the v16 blue/yellow “True tone” values are gone). The old ชุดสี
   picker (12 themes + gradients, per-trip colours) no longer exists, so every screen shares one look
 - Security rules block cross-trip access
-- No PWA elements
+- **สิทธิ์ตามที่ออกแบบไว้ถูกบังคับจริง (v30):** `viewer` อ่านอย่างเดียว, สวิตช์ แก้ไขแผน/ค่าใช้จ่าย และ
+  “จัดการสมาชิก” ถูกบังคับที่ Firestore Rules ไม่ใช่แค่ซ่อนปุ่ม — ดู [`docs/PERMISSIONS.md`](docs/PERMISSIONS.md)
+- Manifest + service worker exist for **Web Push only** (no offline app shell)
 - **Prep checklists** (packing + to-do, ready-made templates, per-item assignee, shared progress)
 - **Ideas board** — anyone suggests a place, everyone votes, winners are added to the day plan in one tap
 - **Booking tracker** — flights / hotels / trains / restaurants / cars with confirmation codes, seats,

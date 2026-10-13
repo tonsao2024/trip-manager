@@ -26,7 +26,9 @@ Fuji Trip Planner is a static SPA hosted on GitHub Pages, backed entirely by Fir
   builders, `scheduling.js`, `settlement.js`, `route.js`, `ics.js`, `weather.js`).
 - **UI screenshots**: `docs/preview/index.html` contains the public before/after page and historical
   screenshots; it is documentation only and is not an interactive app build.
-- **Offline**: Firestore IndexedDB persistence enabled, but no PWA manifest/SW.
+- **Offline**: Firestore IndexedDB persistence enabled. Since v30 there is a
+  `manifest.webmanifest` and one service worker (`firebase-messaging-sw.js`) — they exist **for Web Push
+  only** (FCM background messages + click routing); there is no offline app shell/cache.
 
 ## Firebase Services
 - **Auth**: Email/Password for admins, Custom Token for members (username+PIN verified server-side via bcrypt).
@@ -34,8 +36,27 @@ Fuji Trip Planner is a static SPA hosted on GitHub Pages, backed entirely by Fir
 - **Storage**: Receipts, avatars, covers, place images, settlement proofs, segregated by trip.
 - **Functions**: Region `asia-southeast1`, Node 20, 10 max instances. See `functions/src/index.js`.
 
+## Notifications (v30)
+- **Feed**: `trips/{tripId}/notifications/{id}` (`type` = `expense|daily_summary|settlement|member|trip|test`,
+  `date` in the trip timezone, `recipients[]`, `readBy{}`, `link`). Written by `src/js/notifications/index.js`
+  (module `expenses/index.js` calls `notifyExpenseCreated` after every save) and by the Cloud Functions.
+- **Daily summary**: one document per trip per trip-local day, id `daily-YYYY-MM-DD` — written by the first
+  device that opens the trip after the summary hour (`ensureDailySummary`) **or** by the hourly
+  `dailyExpenseSummary` function; both are idempotent, a day without spending stays quiet.
+- **Web Push**: `src/js/notifications/push.js` registers `firebase-messaging-sw.js` (root, config passed as
+  query params), stores the FCM token in `users/{uid}/pushTokens/{tokenId}` and mirrors the account switches
+  to `users/{uid}/pushPrefs/current`. `pushTripNotification` (onDocumentCreated) sends data-only messages to
+  every recipient's devices and drops dead tokens. VAPID key: Settings → การแจ้งเตือน or
+  `fcmVapidKey` in `firebase.config.js`.
+- **UI**: 🔔 in the header (`addHeaderControls`), the sheet (`openNotificationsSheet`), Settings →
+  การแจ้งเตือน (`notificationSettingsCardsHtml` / `bindNotificationSettings`). See `docs/PERMISSIONS.md`
+  for the notification + push security rules.
+
 ## Security
 - Rules check `memberUids` array and `members` subcollection.
+- Since v30 the member document's `permissions{}` map (`canEditItinerary`, `canEditExpense`,
+  `canManageMembers`, or the read-only `viewer` role) is enforced by `firestore.rules` — the UI hides what
+  the rules deny. Full audit + known risks: `docs/PERMISSIONS.md`.
 - No client can read `loginAccounts`.
 - Step-up PIN session stored server-side, expiry 10 min, checked before sensitive actions.
 - Audit logs written via function, read only by trip admin / super admin.

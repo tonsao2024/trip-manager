@@ -10,9 +10,9 @@
   <meta name="copyright" content="© 2024–2026 TonSkywalker. All rights reserved.">
   <meta name="theme-color" id="meta-theme-color" content="#1f6bfb">
   <!-- Build identity — source of truth: src/js/utils/buildInfo.js (a unit test keeps these in sync) -->
-  <meta name="app-version" content="29">
+  <meta name="app-version" content="30">
   <meta name="app-palette" content="Sky light">
-  <meta name="app-updated" content="2026-10-11">
+  <meta name="app-updated" content="2026-10-13">
   <meta property="og:title" content="Trip Manager by TonSkywalker">
   <meta property="og:description" content="วางแผนทริป • แบ่งค่าใช้จ่าย • เคลียร์บิล ครบในแอปเดียว โดย TonSkywalker">
   <!-- Logo ในแถบบราวเซอร์ (favicon) — ไฟล์จริงในโฟลเดอร์ public/ และแบบ inline ที่ตามธีมสี -->
@@ -20,7 +20,9 @@
   <link rel="shortcut icon" href="./public/favicon.svg">
   <link rel="apple-touch-icon" href="./public/apple-touch-icon.png">
   <link rel="mask-icon" href="./public/favicon.svg" color="#1f6bfb">
-  <!-- No PWA -->
+  <!-- Web Push (v30): a service worker + FCM, but still no offline cache.
+       firebase-messaging-sw.js must stay in the root so it can control the app. -->
+  <link rel="manifest" href="./manifest.webmanifest">
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -37,10 +39,10 @@
   </script>
 
   <!-- Design System v21 “Vivid & Deep” (cache-busted) -->
-  <link rel="stylesheet" href="./src/css/tokens.css?v=29">
-  <link rel="stylesheet" href="./src/css/components.css?v=29">
-  <link rel="stylesheet" href="./src/css/refresh.css?v=29">
-  <link rel="stylesheet" href="./src/css/animations.css?v=29">
+  <link rel="stylesheet" href="./src/css/tokens.css?v=30">
+  <link rel="stylesheet" href="./src/css/components.css?v=30">
+  <link rel="stylesheet" href="./src/css/refresh.css?v=30">
+  <link rel="stylesheet" href="./src/css/animations.css?v=30">
 
   <!-- Lucide Icons -->
   <script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
@@ -395,6 +397,6 @@
   </script>
 
   <!-- App (cache-busted) -->
-  <script type="module" src="./src/js/app.js?v=29"></script>
+  <script type="module" src="./src/js/app.js?v=30"></script>
 </body>
 </html>

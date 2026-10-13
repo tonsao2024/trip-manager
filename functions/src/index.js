@@ -2,6 +2,9 @@ import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onDocumentCreated } from 'firebase-functions/v2/firestore';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { getMessaging } from 'firebase-admin/messaging';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import bcrypt from 'bcryptjs';
 import dayjs from 'dayjs';
@@ -412,3 +415,237 @@ export const writeAuditLog = onCall(async (request) => {
   });
   return { success: true };
 });
+
+/* ==================================================================== *
+ * Notifications (v30) — in-app bell + Web Push (FCM)
+ *   • pushTripNotification : a document in trips/{tripId}/notifications
+ *                            → send it to every recipient's devices
+ *   • dailyExpenseSummary  : hourly tick — write the trip-local daily
+ *                            summary once per day, which the trigger above
+ *                            then pushes
+ * ==================================================================== */
+
+const NOTIFICATION_TYPES_WITH_FLAG = {
+  expense: 'expense',
+  daily_summary: 'dailySummary',
+  settlement: 'settlement',
+  member: 'member',
+  trip: 'member'
+};
+
+/** “2026-10-13 21:00” in the trip's own timezone, without extra dependencies. */
+function zonedParts(date, timeZone) {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', hour12: false
+    });
+    const parts = Object.fromEntries(fmt.formatToParts(date).map(p => [p.type, p.value]));
+    return {
+      date: `${parts.year}-${parts.month}-${parts.day}`,
+      hour: Number(parts.hour) % 24
+    };
+  } catch {
+    const d = date;
+    const pad = (n) => String(n).padStart(2, '0');
+    return { date: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`, hour: d.getUTCHours() };
+  }
+}
+
+/** Every account of the trip: member docs + memberUids + the creator. */
+async function tripMemberIds(tripId, tripData = null) {
+  const ids = new Set();
+  const trip = tripData || (await db.doc(`trips/${tripId}`).get()).data() || {};
+  (trip.memberUids || []).forEach(uid => uid && ids.add(uid));
+  if (trip.createdBy) ids.add(trip.createdBy);
+  const membersSnap = await db.collection(`trips/${tripId}/members`).get();
+  membersSnap.docs.forEach(d => {
+    const m = d.data() || {};
+    if (m.status === 'inactive') return;
+    ids.add(d.id);
+    if (m.uid) ids.add(m.uid);
+  });
+  return [...ids];
+}
+
+/** Tokens of one account, honouring its own push preferences. */
+async function tokensForAccount(uid, { tripId, type }) {
+  if (!uid) return [];
+  const [prefsSnap, tokensSnap] = await Promise.all([
+    db.doc(`users/${uid}/pushPrefs/current`).get(),
+    db.collection(`users/${uid}/pushTokens`).get()
+  ]);
+  const prefs = prefsSnap.exists ? prefsSnap.data() : null;
+  if (prefs) {
+    if (prefs.push === false || prefs.enabled === false) return [];
+    const flag = NOTIFICATION_TYPES_WITH_FLAG[type];
+    if (flag && prefs[flag] === false) return [];
+  }
+  const tokens = [];
+  tokensSnap.docs.forEach(d => {
+    const data = d.data() || {};
+    if (!data.token || data.enabled === false) return;
+    if (Array.isArray(data.tripIds) && data.tripIds.length && !data.tripIds.includes(tripId)) return;
+    tokens.push({ id: d.id, token: data.token });
+  });
+  return tokens;
+}
+
+async function dropDeadTokens(uid, ids = []) {
+  await Promise.all(ids.map(id => db.doc(`users/${uid}/pushTokens/${id}`).delete().catch(() => {})));
+}
+
+/**
+ * Push a notification document to the devices of every recipient.
+ * Data-only messages: the service worker (firebase-messaging-sw.js) draws them,
+ * so the click can route to the exact expense.
+ */
+export const pushTripNotification = onDocumentCreated('trips/{tripId}/notifications/{notificationId}', async (event) => {
+  const snap = event.data;
+  if (!snap) return;
+  const { tripId, notificationId } = event.params;
+  const note = snap.data() || {};
+  const type = String(note.type || 'trip');
+
+  let recipients = Array.isArray(note.recipients) && note.recipients.length
+    ? note.recipients
+    : await tripMemberIds(tripId);
+  recipients = [...new Set(recipients.filter(Boolean))];
+  // Never ping the author about their own action (the test ping is the exception).
+  if (type !== 'test' && note.createdBy) recipients = recipients.filter(uid => uid !== note.createdBy);
+  if (!recipients.length) return;
+
+  const title = String(note.title || 'Trip Manager').slice(0, 120);
+  const body = String(note.body || '').slice(0, 240);
+  const link = String(note.link || `#/trip/${tripId}/dashboard`);
+
+  const perAccount = await Promise.all(recipients.map(async (uid) => ({
+    uid,
+    tokens: await tokensForAccount(uid, { tripId, type }).catch(() => [])
+  })));
+
+  const messaging = getMessaging();
+  let sent = 0;
+  for (const { uid, tokens } of perAccount) {
+    if (!tokens.length) continue;
+    const dead = [];
+    for (let i = 0; i < tokens.length; i += 500) {
+      const chunk = tokens.slice(i, i + 500);
+      const res = await messaging.sendEachForMulticast({
+        tokens: chunk.map(t => t.token),
+        data: { title, body, url: link, tag: notificationId, notificationId, type },
+        android: { priority: 'high' },
+        webpush: { headers: { Urgency: 'high' } }
+      }).catch((e) => {
+        console.warn('pushTripNotification: send failed', e.message);
+        return null;
+      });
+      if (!res) continue;
+      sent += res.successCount || 0;
+      (res.responses || []).forEach((r, idx) => {
+        const code = r.error?.code || '';
+        if (/registration-token-not-registered|invalid-argument|invalid-registration-token/.test(code)) {
+          dead.push(chunk[idx]?.id);
+        }
+      });
+    }
+    if (dead.length) await dropDeadTokens(uid, dead.filter(Boolean));
+  }
+
+  await snap.ref.set({ pushSent: true, pushCount: sent, pushSentAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
+});
+
+const money = (minor) => `฿${((Number(minor) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/**
+ * Keep the bell list bounded: the newest 120 documents of a trip stay, the rest
+ * are deleted on the hourly tick. Daily summaries are the trip's history and are
+ * never pruned.
+ */
+async function pruneOldNotifications(tripId) {
+  const snap = await db.collection(`trips/${tripId}/notifications`)
+    .orderBy('createdAt', 'desc').limit(400).get().catch(() => null);
+  if (!snap || snap.size <= 120) return 0;
+  const doomed = snap.docs.slice(120).filter(d => !/^daily-\d{4}-\d{2}-\d{2}$/.test(d.id));
+  if (!doomed.length) return 0;
+  const batch = db.batch();
+  doomed.forEach(d => batch.delete(d.ref));
+  await batch.commit().catch(() => {});
+  return doomed.length;
+}
+
+/**
+ * Daily expense summary — runs on the hour, writes at most ONE document per
+ * trip per (trip-local) day. The create trigger above turns it into a push, so
+ * members who never open the app still learn what the trip spent today.
+ */
+export const dailyExpenseSummary = onSchedule(
+  { schedule: 'every 60 minutes', timeZone: 'UTC', maxInstances: 3 },
+  async () => {
+    const now = new Date();
+    const tripsSnap = await db.collection('trips').limit(400).get();
+
+    for (const tripDoc of tripsSnap.docs) {
+      const tripId = tripDoc.id;
+      const trip = tripDoc.data() || {};
+      if (trip.status === 'archived') continue;
+      try {
+        const settingsSnap = await db.doc(`trips/${tripId}/settings/notifications`).get();
+        const settings = settingsSnap.exists ? settingsSnap.data() : {};
+        if (settings.dailySummary === false) continue;
+        const summaryHour = Number.isFinite(Number(settings.summaryHour)) ? Number(settings.summaryHour) : 20;
+
+        const { date: localDate, hour: localHour } = zonedParts(now, trip.timezone || 'Asia/Bangkok');
+        if (localHour < summaryHour) continue;
+
+        const summaryRef = db.doc(`trips/${tripId}/notifications/daily-${localDate}`);
+        if ((await summaryRef.get()).exists) continue;
+
+        const expensesSnap = await db.collection(`trips/${tripId}/expenses`)
+          .where('date', '==', localDate).limit(300).get();
+        const rows = expensesSnap.docs.map(d => d.data()).filter(e => e && e.status !== 'voided');
+        if (!rows.length) continue;   // nothing was spent → stay quiet
+
+        // thbMinor is written by the app on every save; the fallback covers
+        // rows written by an older build or by the Excel import.
+        const totalThbMinor = rows.reduce((sum, e) => {
+          const stored = Number(e.thbMinor);
+          if (Number.isFinite(stored) && stored !== 0) return sum + stored;
+          const minor = Number(e.netTotalMinor) || 0;
+          const rate = Number(e.thbRate) || 0;
+          const thb = (e.currency || 'THB') === 'THB' ? minor : Math.round(minor * (rate > 0 ? rate : 1));
+          return sum + thb;
+        }, 0);
+
+        const byCategory = new Map();
+        rows.forEach(e => {
+          const key = e.category || 'other';
+          byCategory.set(key, (byCategory.get(key) || 0) + (Number(e.thbMinor) || 0));
+        });
+        const top = [...byCategory.entries()].sort((a, b) => b[1] - a[1])[0];
+
+        await summaryRef.set({
+          type: 'daily_summary',
+          date: localDate,
+          title: `สรุปค่าใช้จ่าย ${localDate}`,
+          body: `วันนี้ทั้งทริปใช้จ่าย ${money(totalThbMinor)} จาก ${rows.length} รายการ`
+            + (top ? ` • หมวดที่ใช้มากสุด: ${top[0]} (${money(top[1])})` : ''),
+          amountMinor: totalThbMinor,
+          currency: 'THB',
+          count: rows.length,
+          topCategory: top ? { category: top[0], amountThbMinor: top[1] } : null,
+          link: `#/trip/${tripId}/expenses`,
+          recipients: await tripMemberIds(tripId, trip),
+          readBy: {},
+          createdBy: 'system',
+          createdByName: 'Trip Manager',
+          system: true,
+          createdAt: FieldValue.serverTimestamp()
+        }, { merge: true });
+      } catch (e) {
+        console.warn(`dailyExpenseSummary: trip ${tripId} failed — ${e.message}`);
+      }
+      await pruneOldNotifications(tripId).catch(() => {});
+    }
+  }
+);
