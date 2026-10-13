@@ -1,18 +1,27 @@
 name: Deploy GitHub Pages
 
-# Deploys the static site through GitHub Actions (instead of "deploy from a
-# branch") so the Firebase Web Push VAPID key can be supplied from a GitHub
-# Actions secret and never committed to the repository.
+# Publishes the static site through GitHub Actions (instead of "deploy from a
+# branch") so the Firebase Web Push VAPID key can come from a GitHub Actions
+# secret and never be committed to the repository.
 #
-# One-time setup (repository owner):
-#   1. Settings → Secrets and variables → Actions → New repository secret
+# One-time setup (repository owner) — step 1 is the one that is easy to miss:
+#   1. Settings → Pages → Build and deployment → Source: **GitHub Actions**
+#      While Pages still says "Deploy from a branch", GitHub builds `main` with
+#      Jekyll and serves *that*; the artifact produced below (with the key
+#      injected) is never published and the site keeps showing
+#      “Web Push ยังไม่พร้อม”. This workflow now checks the setting up front and
+#      fails with the exact fix instead of deploying silently.
+#   2. Settings → Secrets and variables → Actions → New repository secret
 #        Name:  FCM_VAPID_KEY
-#        Value: the "Key pair" from Firebase Console → Project settings →
-#               Cloud Messaging → Web Push certificates (87 chars, starts "B")
-#   2. Settings → Pages → Build and deployment → Source: GitHub Actions
+#        Value: Firebase Console → Project settings → Cloud Messaging →
+#               Web Push certificates → "Key pair" (87 chars, starts with "B")
+#      An Actions *variable* with the same name works too: the VAPID key is a
+#      public Web Push key, it lives outside the repo only so it can be rotated
+#      in one place (secrets are read first, variables are the fallback).
+#   3. Push to `main` (or run this workflow manually) to publish.
 #
-# The key is a PUBLIC Web Push key, but keeping it in a secret means it can
-# be rotated in one place without a code change.
+# A repository- or environment-level secret/variable both work; the job runs in
+# the `github-pages` environment.
 
 on:
   push:
@@ -39,20 +48,78 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Inject VAPID key from secret
+      # Guard rail: with Pages on "Deploy from a branch" this workflow can run,
+      # pass, and still change nothing on the live site. Fail loudly instead.
+      - name: Check that Pages deploys from GitHub Actions
         env:
-          FCM_VAPID_KEY: ${{ secrets.FCM_VAPID_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          if [ -z "$FCM_VAPID_KEY" ]; then
-            echo "::warning::Secret FCM_VAPID_KEY is not set — deploying without a VAPID key (Web Push stays off, the in-app bell still works). Add it under Settings → Secrets and variables → Actions."
+          set -uo pipefail
+          pages_json=$(curl -fsS -m 30 \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages" || true)
+          build_type=$(printf '%s' "$pages_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{process.stdout.write(String(JSON.parse(s).build_type||'unknown'))}catch{process.stdout.write('unknown')}})")
+          echo "GitHub Pages build_type: ${build_type}"
+
+          case "$build_type" in
+            workflow)
+              echo "::notice::Pages is set to GitHub Actions — the artifact built below is what the browser gets."
+              ;;
+            legacy)
+              {
+                echo "### ❌ GitHub Pages ยังตั้งเป็น “Deploy from a branch” (build_type=legacy)"
+                echo ""
+                echo "เว็บที่ผู้ใช้เห็นถูกสร้างจาก branch \`main\` ด้วย Jekyll — ไฟล์ \`fcm-vapid.js\` ที่ workflow นี้ inject"
+                echo "จะไม่ถูกนำขึ้นเว็บจริง เพราะฉะนั้นหน้าเว็บจะยังขึ้น “Web Push ยังไม่พร้อม” แม้ secret จะตั้งไว้แล้ว"
+                echo ""
+                echo "**วิธีแก้ (ทำครั้งเดียว):** repo → **Settings → Pages → Build and deployment → Source: GitHub Actions**"
+                echo "แล้วรัน workflow นี้อีกครั้ง (Actions → Deploy GitHub Pages → *Re-run all jobs*) หรือ push เข้า \`main\` ใหม่"
+                echo ""
+                echo "**Fix (one time):** set *Settings → Pages → Build and deployment → Source* to **GitHub Actions**,"
+                echo "then re-run this workflow (Actions → Deploy GitHub Pages → *Re-run all jobs*) or push to \`main\`."
+              } >> "$GITHUB_STEP_SUMMARY"
+              echo "::error title=Pages is still set to 'Deploy from a branch'::Set Settings → Pages → Build and deployment → Source: GitHub Actions, then re-run this workflow. Until that is done, the injected VAPID key cannot reach the browser."
+              exit 1
+              ;;
+            *)
+              echo "::warning::Could not read the Pages configuration (build_type=${build_type:-unknown}); continuing. If Web Push stays off on the live site, check Settings → Pages → Source first."
+              ;;
+          esac
+
+      - name: Inject VAPID key from secret
+        id: vapid
+        env:
+          FCM_VAPID_KEY: ${{ secrets.FCM_VAPID_KEY || vars.FCM_VAPID_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${FCM_VAPID_KEY:-}" ]; then
+            key_present=false
+            echo "::warning title=Web Push stays off::No FCM_VAPID_KEY secret/variable is set. The site deploys without a VAPID key — the in-app 🔔 still works. Add it under Settings → Secrets and variables → Actions (Firebase Console → Project settings → Cloud Messaging → Web Push certificates → Key pair) and re-run this workflow."
+            {
+              echo "### ⚠️ Web Push ปิดอยู่ — ยังไม่ได้ตั้งค่า \`FCM_VAPID_KEY\`"
+              echo ""
+              echo "เพิ่มที่ **Settings → Secrets and variables → Actions → New repository secret** (ชื่อ \`FCM_VAPID_KEY\`"
+              echo "ค่า = *Key pair* จาก Firebase Console → Project settings → Cloud Messaging → Web Push certificates)"
+              echo "แล้วรัน workflow นี้อีกครั้ง · The in-app bell keeps working either way."
+            } >> "$GITHUB_STEP_SUMMARY"
           elif ! printf '%s' "$FCM_VAPID_KEY" | grep -Eq '^B[A-Za-z0-9_-]{79,94}$'; then
-            echo "::error::Secret FCM_VAPID_KEY does not look like a Web Push key (expected 87 characters starting with 'B', from Cloud Messaging → Web Push certificates → Key pair)."
+            key_present=false
+            {
+              echo "### ❌ \`FCM_VAPID_KEY\` ไม่ใช่ Web Push key ที่ถูกต้อง"
+              echo ""
+              echo "ค่าต้องเป็น *Key pair* จาก Firebase Console → Project settings → Cloud Messaging → Web Push certificates"
+              echo "(ยาว ~87 ตัวอักษร ขึ้นต้นด้วย \`B\`) ไม่ใช่ server key / VAPID **private** key — ไม่ต้องมีเครื่องหมายคำพูดหรือช่องว่าง"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error title=Bad FCM_VAPID_KEY value::The secret does not look like a Web Push key (expected 87 characters starting with 'B', from Cloud Messaging → Web Push certificates → Key pair)."
             exit 1
           else
+            key_present=true
             # Write via Node so the value is escaped safely, whatever it holds.
-            node -e "require('fs').writeFileSync('fcm-vapid.js', 'window.__FCM_VAPID_KEY__ = ' + JSON.stringify(process.env.FCM_VAPID_KEY) + ';\n')"
-            echo "VAPID key injected into fcm-vapid.js (value not printed)."
+            node -e "require('fs').writeFileSync('fcm-vapid.js', 'window.__FCM_VAPID_KEY__ = ' + JSON.stringify(process.env.FCM_VAPID_KEY) + ';\\n')"
+            echo "::notice::Web Push key injected into fcm-vapid.js (value not printed, ${#FCM_VAPID_KEY} chars)."
           fi
+          echo "key_present=$key_present" >> "$GITHUB_OUTPUT"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -65,3 +132,46 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      # After the deploy, read the file back from the live site (cache-busted)
+      # so a stale/absent key is reported here instead of by the users.
+      - name: Verify the live site serves the VAPID key
+        if: steps.vapid.outputs.key_present == 'true' && steps.deployment.outputs.page_url != ''
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -uo pipefail
+          url="${PAGE_URL%/}/fcm-vapid.js?cb=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "Checking $url"
+          ok=false
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            body=$(curl -fsS -m 20 "$url" || true)
+            if printf '%s' "$body" | grep -Eq "__FCM_VAPID_KEY__ *= *[\"']B[A-Za-z0-9_-]{79,94}[\"']"; then
+              ok=true
+              echo "::notice::Verified: the live site serves the injected VAPID key (attempt ${attempt})."
+              break
+            fi
+            echo "attempt ${attempt}: key not visible yet — retrying in 15s"
+            sleep 15
+          done
+
+          if [ "$ok" = true ]; then
+            {
+              echo "### ✅ Web Push พร้อมใช้งาน"
+              echo ""
+              echo "\`${PAGE_URL%/}/fcm-vapid.js\` on the live site carries the injected VAPID key, so the"
+              echo "“เปิด Push บนอุปกรณ์นี้” button in Settings → การแจ้งเตือน can register the device."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### ❌ Deploy เสร็จ แต่เว็บจริงยังไม่มี VAPID key"
+              echo ""
+              echo "อ่าน \`${url}\` แล้วไม่พบ key หลังลอง 10 ครั้ง (~2.5 นาที) ตรวจตามลำดับนี้:"
+              echo ""
+              echo "1. **Settings → Pages → Build and deployment → Source = GitHub Actions** (ถ้าเป็น *Deploy from a branch* ไฟล์ที่ inject จะไม่ถูกเสิร์ฟ)"
+              echo "2. ค่า secret/\`variable\` \`FCM_VAPID_KEY\` ต้องเป็น *Key pair* จาก Cloud Messaging → Web Push certificates (~87 ตัวอักษร ขึ้นต้นด้วย \`B\`)"
+              echo "3. รอ CDN สักครู่แล้ว \`Re-run all jobs\` อีกครั้ง"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error title=Live site has no VAPID key::The deployed fcm-vapid.js does not carry a key. Check Settings → Pages → Source = GitHub Actions, then the FCM_VAPID_KEY value, then re-run this workflow."
+            exit 1
+          fi
