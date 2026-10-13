@@ -11,7 +11,7 @@ export const firebaseConfigTemplate = {
   storageBucket: "YOUR_PROJECT.appspot.com",
   messagingSenderId: "1234567890",
   appId: "1:1234567890:web:abcdef",
-  // Public VAPID key for Web Push (Firebase Console → Cloud Messaging → Web Push certificates)
+  // Public Web Push VAPID key (GitHub Pages: configure Actions secret FCM_VAPID_KEY instead)
   fcmVapidKey: ""
 };
 

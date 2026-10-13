@@ -46,8 +46,9 @@ Fuji Trip Planner is a static SPA hosted on GitHub Pages, backed entirely by Fir
 - **Web Push**: `src/js/notifications/push.js` registers `firebase-messaging-sw.js` (root, config passed as
   query params), stores the FCM token in `users/{uid}/pushTokens/{tokenId}` and mirrors the account switches
   to `users/{uid}/pushPrefs/current`. `pushTripNotification` (onDocumentCreated) sends data-only messages to
-  every recipient's devices and drops dead tokens. VAPID key: Settings → การแจ้งเตือน or
-  `fcmVapidKey` in `firebase.config.js`.
+  every recipient's devices and drops dead tokens. The site deployment injects the public VAPID key
+  from the GitHub Actions secret `FCM_VAPID_KEY` into `fcm-vapid.js`; users do not enter it in Settings.
+  Non-GitHub-Pages deployments may supply `fcmVapidKey` in `firebase.config.js`.
 - **UI**: 🔔 in the header (`addHeaderControls`), the sheet (`openNotificationsSheet`), Settings →
   การแจ้งเตือน (`notificationSettingsCardsHtml` / `bindNotificationSettings`). See `docs/PERMISSIONS.md`
   for the notification + push security rules.
