@@ -2819,6 +2819,276 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
     'debt map: the legend explains the receiver colour');
 }
 
+{
+  console.log('\n▶ v30: การแจ้งเตือน (🔔 + Web Push) และสิทธิ์ตามที่ออกแบบไว้');
+  localStorage.removeItem('fuji_notify_prefs');
+  const outFile = (rel) => pathToFileURL(path.join(outDir, rel)).href;
+  const notifUtils = await import(outFile('utils/notifications.js'));
+  const notifDb = await import(outFile('notifications/index.js'));
+  const pushMod = await import(outFile('notifications/push.js'));
+  const expMod = await import(outFile('expenses/index.js'));
+  const permsMod = await import(outFile('utils/permissions.js'));
+  const appMod = await import(outFile('app.js'));
+  const notifyKeys = () => [...fsdb.__store.keys()].filter(k => k.startsWith('trips/t1/notifications/'));
+  const input = (selector, value) => {
+    const el = q(selector);
+    el.value = value;
+    el.dispatchEvent(new window.Event('input', { bubbles: true }));
+  };
+  const restorePerms = () => { try { appMod.clearLastPermissions(); } catch { /* older build */ } permsMod.clearPermissionsCache(); };
+
+  authStub.__emitAuth({ uid: 'u1', email: 'admin@example.com', displayName: 'สมชาย', photoURL: null });
+  await sleep(100);
+
+  // ---- 1) กระดิ่งอยู่บนแถบด้านบน
+  await goto('#/trip/t1/dashboard');
+  await waitFor(() => q('#notify-bell'), { timeout: 8000, label: 'header bell' }).catch(() => {});
+  check(!!q('#notify-bell'), 'notifications: 🔔 อยู่บนแถบด้านบนของทุกหน้า');
+  check(!!q('#notify-badge'), 'notifications: the bell carries an unread badge');
+
+  // ---- 2) บันทึกค่าใช้จ่าย (ผ่านฟอร์มจริง) → เขียนการแจ้งเตือนถึงคนอื่นในทริป
+  const notifyBefore = new Set(notifyKeys());
+  await goto('#/trip/t1/expenses/add');
+  await waitFor(() => q('#expense-form'), { timeout: 8000, label: 'expense form (v30)' });
+  q('#ex-currency').value = 'THB';
+  q('#ex-currency').dispatchEvent(new window.Event('change', { bubbles: true }));
+  input('#ex-title', 'มื้อเย็นทดสอบกระดิ่ง');
+  input('#ex-subtotal', '1200');
+  submit(q('#expense-form'));
+  await waitFor(() => notifyKeys().some(k => /มื้อเย็นทดสอบกระดิ่ง/.test(fsdb.__store.get(k)?.title || '')),
+    { timeout: 8000, label: 'expense notification' });
+  const pingEntry = [...fsdb.__store.entries()]
+    .find(([k, v]) => k.startsWith('trips/t1/notifications/') && /มื้อเย็นทดสอบกระดิ่ง/.test(v?.title || ''));
+  const ping = pingEntry[1];
+  const pingId = pingEntry[0].split('/').pop();
+  check(!notifyBefore.has(pingEntry[0]), 'notifications: saving an expense writes into trips/{id}/notifications');
+  check(ping.type === 'expense' && /สมชาย/.test(ping.body || '') && /฿/.test(ping.body || ''),
+    'notifications: the message says who recorded it and for how much');
+  check(Array.isArray(ping.recipients) && ping.recipients.includes('u2') && !ping.recipients.includes('u1'),
+    'notifications: everybody but the author is a recipient');
+  check(ping.readBy && Object.keys(ping.readBy).length === 0, 'notifications: nothing is marked read yet');
+  check(!!ping.expenseId && String(ping.link).includes('expenses/add?id=' + ping.expenseId),
+    'notifications: the row links straight to that bill');
+  check(/^\d{4}-\d{2}-\d{2}$/.test(String(ping.date || '')), `notifications: the day is stored with it (${ping.date})`);
+
+  // ---- 3) เปิดกระดิ่ง → เห็นรายการ → ปุ่มกรอง → กดแล้วอ่าน
+  await goto('#/trip/t1/dashboard');
+  await sleep(150);
+  await click('#notify-bell');
+  await waitFor(() => q('#notify-sheet'), { timeout: 8000, label: 'bell sheet' }).catch(() => {});
+  check(!!q('#notify-sheet'), 'notifications: the bell opens the sheet');
+  await waitFor(() => /มื้อเย็นทดสอบกระดิ่ง/.test(q('#notify-sheet')?.textContent || ''),
+    { timeout: 8000, label: 'the new row in the sheet' });
+  const unreadNow = notifyKeys().map(k => fsdb.__store.get(k)).filter(n => !n.readBy?.u1).length;
+  check(Number(q('#notify-badge')?.textContent || 0) === unreadNow,
+    `notifications: the badge counts exactly the unread items for me (${unreadNow})`);
+  check(qa('#notify-filters [data-notify-filter]').length === 4, 'notifications: type filters are offered');
+  const pingRow = q(`#notify-sheet .notify-row[data-notify="${pingId}"]`);
+  check(!!pingRow && pingRow.classList.contains('is-unread'), 'notifications: the new row is marked unread');
+  await click('#notify-sheet [data-notify-filter="settlement"]');
+  check(!qa('#notify-sheet .notify-row').some(r => r.dataset.notifyType === 'expense'),
+    'notifications: a filter chip narrows the list');
+  await click('#notify-sheet [data-notify-filter=""]');
+  await sleep(150);
+  await click(q(`#notify-sheet .notify-row[data-notify="${pingId}"]`));
+  await sleep(300);
+  const pingAfter = fsdb.__dump(pingEntry[0]);
+  check(pingAfter?.readBy?.u1 === true, 'notifications: tapping a row marks it read for me');
+  check(pingAfter?.readBy?.u2 !== true, 'notifications: …and only for me, not for the other member');
+
+  // ---- 4) “อ่านทั้งหมด” เคลียร์ป้าย
+  await goto('#/trip/t1/dashboard');
+  await sleep(150);
+  await click('#notify-bell');
+  await waitFor(() => q('#notify-read-all'), { timeout: 8000, label: 'mark-all button' });
+  await sleep(400);
+  await click('#notify-read-all');
+  await sleep(400);
+  const stillUnread = notifyKeys().map(k => fsdb.__store.get(k)).filter(n => !n.readBy?.u1);
+  check(stillUnread.length === 0, `notifications: “อ่านทั้งหมด” clears every unread item (${stillUnread.length} left)`);
+  check(q('#notify-badge').classList.contains('hidden'), 'notifications: the badge disappears when all is read');
+
+  // ---- 5) สรุปค่าใช้จ่ายรายวัน (หนึ่งเอกสารต่อทริปต่อวัน)
+  const tzDay = notifUtils.dayKeyInZone(new Date(), 'Asia/Tokyo');
+  const summaryId = notifUtils.dailySummaryId(tzDay);
+  const summaryPath = `trips/t1/notifications/${summaryId}`;
+  fsdb.__seed('trips/t1/settings/notifications', { summaryHour: 0, dailySummary: true });
+  fsdb.__seed('trips/t1/expenses/today30', {
+    title: 'ค่ารถไฟวันนี้', date: tzDay, category: 'transport', currency: 'THB', baseCurrency: 'THB',
+    subtotalMinor: 250000, discountMinor: 0, serviceMinor: 0, taxMinor: 0, cardFeeMinor: 0, netTotalMinor: 250000,
+    thbMinor: 250000, payerId: 'u1', status: 'active', createdBy: 'u1',
+    allocations: [{ memberId: 'u1', amountMinor: 125000 }, { memberId: 'u2', amountMinor: 125000 }], createdAt: now
+  });
+  fsdb.__store.delete(summaryPath);
+  const dayExpenses = await expMod.fetchAllExpenses('t1', { fresh: true });
+  const summaryArgs = {
+    expenses: dayExpenses, members: [{ id: 'u1', displayName: 'สมชาย' }, { id: 'u2', displayName: 'นุ่น' }],
+    trip: { id: 't1', timezone: 'Asia/Tokyo' }, uid: 'u1', lang: 'th', byName: 'สมชาย'
+  };
+  await notifDb.ensureDailySummary('t1', summaryArgs);
+  await waitFor(() => fsdb.__dump(summaryPath), { timeout: 8000, label: 'daily summary document' }).catch(() => {});
+  const daily = fsdb.__dump(summaryPath);
+  check(!!daily && daily.type === 'daily_summary', 'daily summary: written to trips/{id}/notifications/daily-YYYY-MM-DD');
+  check((daily?.totalThbMinor || 0) >= 250000, `daily summary: totals the day in THB (${daily?.totalThbMinor} satang)`);
+  check(/฿/.test(daily?.body || '') && /รายการ/.test(daily?.body || ''),
+    `daily summary: the body is a readable sentence (${String(daily?.body || '').slice(0, 64)}…)`);
+  check((daily?.count || 0) >= 1 && Array.isArray(daily?.memberTotals) && daily.memberTotals.length > 0,
+    'daily summary: item count and per-member shares are stored');
+  const second = await notifDb.ensureDailySummary('t1', summaryArgs);
+  check(second === null || second.created === false, 'daily summary: the same trip-local day is never summarised twice');
+  check(notifyKeys().filter(k => k.endsWith(summaryId)).length === 1, 'daily summary: exactly one document per day');
+  check(notifUtils.dailySummary({
+    expenses: dayExpenses.filter(e => e.date !== tzDay), members: [], day: tzDay, trip: { id: 't1' }, myId: 'u1'
+  }) === null, 'daily summary: a day without spending stays quiet');
+
+  // ---- 6) หน้าตั้งค่า: แท็บ “การแจ้งเตือน”, สวิตช์ต่ออุปกรณ์, เวลาสรุปของทริป
+  await goto('#/trip/t1/settings?tab=notify');
+  await waitFor(() => q('#notify-inapp-card'), { timeout: 8000, label: 'notification settings cards' }).catch(() => {});
+  check(q('[data-settings-tab="notify"]')?.classList.contains('active'),
+    'settings: ?tab=notify (the link inside the bell) opens the notification tab');
+  check(!!q('#notify-toggle-expense') && !!q('#notify-push-card') && !!q('#notify-trip-card'),
+    'settings: the in-app, Web Push and trip-summary cards all render');
+  q('#notify-toggle-expense').checked = false;
+  q('#notify-toggle-expense').dispatchEvent(new window.Event('change', { bubbles: true }));
+  await sleep(350);
+  check(JSON.parse(localStorage.getItem('fuji_notify_prefs') || '{}').expense === false,
+    'settings: the switch is remembered on this device');
+  check(notifUtils.visibleNotifications(
+    [{ id: 'x', type: 'expense', date: tzDay, createdAt: Date.now() }], 'u1', notifDb.readNotifyPrefs()).length === 0,
+    'settings: switching “เมื่อมีคนบันทึกค่าใช้จ่าย” off hides those rows from the bell');
+  check([...fsdb.__store.keys()].some(k => k.startsWith('users/u1/pushPrefs/')),
+    'settings: the account preference is mirrored for the Cloud Functions');
+  q('#notify-toggle-expense').checked = true;
+  q('#notify-toggle-expense').dispatchEvent(new window.Event('change', { bubbles: true }));
+  await sleep(150);
+  check(!q('#notify-trip-hour')?.disabled && !q('#notify-trip-daily')?.disabled,
+    'settings: a trip admin may change the trip’s summary time');
+  q('#notify-trip-hour').value = '19';
+  await click('#notify-trip-save');
+  await sleep(300);
+  check(fsdb.__dump('trips/t1/settings/notifications')?.summaryHour === 19,
+    'settings: the summary hour is saved trip-wide (settings/notifications)');
+
+  // ---- 7) Web Push: บอกเหตุผลเมื่อทำไม่ได้ / ขอ token + เก็บถาวรเมื่อทำได้
+  check(/ไม่รองรับ|https/.test(q('#notify-push-card')?.textContent || ''),
+    'push: this browser is told why Web Push is impossible instead of failing silently');
+  check(q('#notify-push-toggle')?.disabled === true, 'push: the button is disabled while unsupported');
+  const FakeNotification = class {
+    static permission = 'granted';
+    static requestPermission() { return Promise.resolve('granted'); }
+  };
+  define('Notification', FakeNotification);
+  window.Notification = FakeNotification;
+  window.PushManager = class {};
+  try {
+    Object.defineProperty(window.navigator, 'serviceWorker', {
+      value: { register: async () => ({}), ready: Promise.resolve({}), getRegistration: async () => null },
+      configurable: true
+    });
+  } catch { window.navigator.serviceWorker = { register: async () => ({}), ready: Promise.resolve({}) }; }
+  pushMod.setVapidKey('BTestVapidKey0123456789');
+  check(pushMod.pushSupport('th').supported === true,
+    'push: with service worker + Notification + PushManager + https it reports supported');
+  const enabled = await pushMod.enablePush({ uid: 'u1', tripIds: ['t1'], lang: 'th' });
+  check(enabled?.token === 'smoke-fcm-token', 'push: a device token is obtained from FCM');
+  check([...fsdb.__store.keys()].some(k => k.startsWith('users/u1/pushTokens/')),
+    'push: the token is stored under users/{uid}/pushTokens for the Cloud Function');
+  check(fsdb.__dump('users/u1/pushPrefs/current')?.push === true,
+    'push: the account-level preference is mirrored so the server knows what to send');
+  check(pushMod.pushEnabled() === true, 'push: pushEnabled() reflects token + permission');
+  await goto('#/trip/t1/settings?tab=notify');
+  await waitFor(() => q('#notify-push-card'), { timeout: 8000, label: 'push card after enabling' }).catch(() => {});
+  check(/เปิดอยู่/.test(q('#notify-push-card')?.textContent || ''),
+    'push: the card shows that this device is registered');
+  await pushMod.disablePush({ uid: 'u1', lang: 'th' });
+  check(![...fsdb.__store.keys()].some(k => k.startsWith('users/u1/pushTokens/')),
+    'push: turning it off removes the token from Firestore');
+
+  // ---- 8) สิทธิ์: สมาชิกที่ถูกปิด “แก้ไขค่าใช้จ่าย” เพิ่มรายการไม่ได้ แต่ยังแก้แผนได้
+  const memberU2 = { ...(fsdb.__dump('trips/t1/members/u2') || {}) };
+  const member30 = { ...memberU2, role: 'member', permissions: { canEditItinerary: true, canEditExpense: false, canManageMembers: false } };
+  fsdb.__seed('trips/t1/members/u2', member30);
+  restorePerms();
+  authStub.__emitAuth({ uid: 'u2', email: 'nun@test.com', displayName: 'นุ่น', photoURL: null });
+  await sleep(120);
+  await goto('#/trip/t1/expenses');
+  await waitFor(() => q('#expense-list'), { timeout: 8000, label: 'expense list as member' }).catch(() => {});
+  await sleep(250);
+  check(!q('#add-expense-btn'), 'permissions: no “เพิ่มค่าใช้จ่าย” when the admin switched that right off');
+  check(/ดูอย่างเดียว/.test(text$()) && !!q('.ro-chip'), 'permissions: a read-only chip explains why the button is gone');
+  check(!q('#manage-cats-btn'), 'permissions: the expense-group manager is hidden too');
+  check(q('#fab')?.classList.contains('hidden'), 'permissions: the ＋ FAB stays hidden on the expenses page');
+  await goto('#/trip/t1/itinerary');
+  await waitFor(() => q('#itin-layout'), { timeout: 8000, label: 'itinerary as member' }).catch(() => {});
+  await sleep(300);
+  check(!!q('#edit-mode-btn') && !!q('#add-itinerary-btn'),
+    'permissions: the same member may still edit the plan (canEditItinerary = true)');
+
+  // ---- 9) viewer = อ่านอย่างเดียวทุกที่
+  fsdb.__seed('trips/t1/members/u2', {
+    ...member30, role: 'viewer',
+    permissions: { canEditItinerary: false, canEditExpense: false, canManageMembers: false }
+  });
+  restorePerms();
+  await goto('#/trip/t1/itinerary');
+  await sleep(500);
+  check(!q('#add-itinerary-btn') && !q('#edit-mode-btn'), 'permissions: a viewer has no plan controls at all');
+  check(!q('#add-note-btn'), 'permissions: a viewer cannot add sticky notes');
+  check(q('#fab')?.classList.contains('hidden'), 'permissions: the add FAB stays hidden for a viewer');
+  const viewerPerms = await permsMod.resolvePermissions('t1', fsdb.__dump('trips/t1'), 'u2');
+  check(viewerPerms.isViewer && viewerPerms.readOnly && !viewerPerms.canEditExpense
+    && !viewerPerms.canEditItinerary && !viewerPerms.canManageMembers,
+    'permissions: viewer → read only (แก้แผน/ค่าใช้จ่าย/สมาชิก = false)');
+  const coAdmin = permsMod.withCapabilities({
+    role: 'member', permissions: { canEditItinerary: false, canEditExpense: false, canManageMembers: true }
+  });
+  check(coAdmin.canManageMembers && !coAdmin.canEditExpense && !coAdmin.canEditItinerary && coAdmin.readOnly,
+    'permissions: “จัดการสมาชิก” alone → co-admin for people, still read-only for money and the plan');
+
+  // ---- 10) กฎความปลอดภัยจริงรองรับฟีเจอร์ใหม่ + เอกสารสิทธิ์
+  const rules30 = fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8');
+  check(/match \/notifications\/\{notificationId\}/.test(rules30), 'rules: trips/{id}/notifications is covered');
+  check(/affectedKeys\(\)\.hasOnly\(\['readBy'\]\)/.test(rules30), 'rules: an update may only touch readBy');
+  check(/addedKeys\(\)\.hasOnly\(\[request\.auth\.uid\]\)/.test(rules30), 'rules: and only the caller’s own key');
+  check(/match \/pushTokens\/\{tokenId\} \{[\s\S]{0,140}request\.auth\.uid == uid/.test(rules30),
+    'rules: push tokens are readable only by their owner');
+  check(/match \/expenses\/\{expenseId\} \{\s*allow read: if isTripMember\(tripId\);\s*allow create, update, delete: if canEditExpense\(tripId\)/.test(rules30),
+    'rules: expense writes require สิทธิ์ “แก้ไขค่าใช้จ่าย”');
+  check(/match \/itineraryItems\/\{itemId\} \{\s*allow read: if isTripMember\(tripId\);\s*allow create, update, delete: if canEditItinerary\(tripId\)/.test(rules30),
+    'rules: plan writes require สิทธิ์ “แก้ไขแผนการเดินทาง”');
+  check(/request\.resource\.data\.get\('permissions', \{\}\) == resource\.data\.get\('permissions', \{\}\)/.test(rules30),
+    'rules: a member cannot grant themselves rights (self-update is profile-only)');
+  check(/request\.resource\.data\.get\('inviteCode', ''\) == resource\.data\.get\('inviteCode', ''\)/.test(rules30),
+    'rules: rotating the invite code stays admin-only');
+  check(/function sameRoleAndPermissions/.test(rules30), 'rules: a co-admin cannot change roles or the switches');
+  const audit = fs.readFileSync(path.join(root, 'docs/PERMISSIONS.md'), 'utf8');
+  check(/viewer/.test(audit) && /canEditExpense/.test(audit) && /inviteCode/.test(audit),
+    'docs/PERMISSIONS.md documents the member-vs-admin design (สิทธิ์ผู้ใช้)');
+
+  // ---- 11) ชิ้นส่วนการติดตั้ง: manifest + service worker + เวอร์ชัน
+  const shell30 = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  check(/<link rel="manifest" href="\.\/manifest\.webmanifest">/.test(shell30),
+    'pwa: index.html links the manifest (iOS Web Push needs “เพิ่มไปที่หน้าจอโฮม”)');
+  const manifest30 = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));
+  check(manifest30.icons.every(i => fs.existsSync(path.join(root, i.src))),
+    'pwa: every icon the manifest declares exists on disk');
+  const sw30 = fs.readFileSync(path.join(root, 'firebase-messaging-sw.js'), 'utf8');
+  check(/onBackgroundMessage/.test(sw30) && /notificationclick/.test(sw30),
+    'push: the root service worker draws background messages and routes the tap');
+  check(/firebase-messaging-sw\.js/.test(fs.readFileSync(path.join(root, 'src/js/notifications/push.js'), 'utf8')),
+    'push: the client registers that exact worker file');
+  check(/app-version" content="30"/.test(shell30)
+    && /APP_VERSION = '30'/.test(fs.readFileSync(path.join(root, 'src/js/utils/buildInfo.js'), 'utf8')),
+    'build: index.html and buildInfo.js agree on v30');
+
+  // restore state for the following blocks
+  fsdb.__seed('trips/t1/members/u2', memberU2);
+  restorePerms();
+  localStorage.removeItem('fuji_notify_prefs');
+  authStub.__emitAuth({ uid: 'u1', email: 'admin@test.com', displayName: 'สมชาย', photoURL: null });
+  await sleep(120);
+}
+
 console.log('\n▶ delete the whole trip (UI)');
 // leave the member session so the admin flow runs with a "logged out" auth state
 window.localStorage.removeItem('fuji_member_session');

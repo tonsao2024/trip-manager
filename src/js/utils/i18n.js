@@ -24,6 +24,7 @@ const translations = {
     members: "สมาชิก",
     importExport: "นำเข้า / ส่งออก",
     settings: "ตั้งค่า",
+    notifications: "การแจ้งเตือน",
     more: "เพิ่มเติม",
     totalExpense: "ค่าใช้จ่ายรวม",
     myBalance: "ยอดของคุณ",

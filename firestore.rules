@@ -32,15 +32,93 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
     }
 
+    // --- v30 permission helpers -------------------------------------------------
+    // The member document carries the role (`trip_admin` | `member` | `viewer`) and
+    // three switches the admin sets in สมาชิก → แก้ไข:
+    //   canEditItinerary, canEditExpense, canManageMembers
+    // A *missing* switch keeps the historical behaviour (members may edit); only an
+    // explicit `false` — or the read-only `viewer` role — blocks a write. That way
+    // member documents written before v30 keep working after the rules are published.
+
+    function memberData(tripId) {
+      return get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data;
+    }
+
+    function memberRole(tripId) {
+      return memberData(tripId).get('role', 'member');
+    }
+
+    function memberPermissions(tripId) {
+      return memberData(tripId).get('permissions', {});
+    }
+
+    function permissionOn(tripId, perm) {
+      return !(
+        memberPermissions(tripId).keys().hasAny([perm])
+        && memberPermissions(tripId)[perm] == false
+      );
+    }
+
     function isTripAdmin(tripId) {
       return isSuperAdmin()
         || (isAuthenticated() && exists(/databases/$(database)/documents/trips/$(tripId))
             && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid)
-        || (isTripMember(tripId) && hasMemberDoc(tripId) && getMemberRole(tripId) in ['trip_admin', 'super_admin']);
+        || (isTripMember(tripId) && hasMemberDoc(tripId) && memberRole(tripId) in ['trip_admin', 'super_admin']);
     }
 
+    /** Kept for compatibility: the old `hasPermission(perm)` helper. */
     function hasPermission(tripId, perm) {
-      return isTripAdmin(tripId) || (isTripMember(tripId) && hasMemberDoc(tripId) && get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.permissions[perm] == true);
+      return isTripAdmin(tripId) || (isTripMember(tripId) && hasMemberDoc(tripId) && permissionOn(tripId, perm));
+    }
+
+    /** May this account write ANY trip content? (viewer = read-only everywhere) */
+    function canWriteContent(tripId) {
+      return isTripAdmin(tripId)
+        || (isTripMember(tripId) && (!hasMemberDoc(tripId) || memberRole(tripId) != 'viewer'));
+    }
+
+    /** May this account edit the itinerary? (plan, days, sticky notes) */
+    function canEditItinerary(tripId) {
+      return canWriteContent(tripId)
+        && (isTripAdmin(tripId) || !hasMemberDoc(tripId) || permissionOn(tripId, 'canEditItinerary'));
+    }
+
+    /** May this account edit money? (expenses, cards, groups, transfers) */
+    function canEditExpense(tripId) {
+      return canWriteContent(tripId)
+        && (isTripAdmin(tripId) || !hasMemberDoc(tripId) || permissionOn(tripId, 'canEditExpense'));
+    }
+
+    /** A member the admin trusted with สิทธิ์ “จัดการสมาชิก” (co-admin for people). */
+    function canManageMembers(tripId) {
+      return isTripAdmin(tripId)
+        || (isTripMember(tripId) && hasMemberDoc(tripId)
+            && memberRole(tripId) != 'viewer'
+            && permissionOn(tripId, 'canManageMembers')
+            && memberPermissions(tripId).keys().hasAny(['canManageMembers'])
+            && memberPermissions(tripId)['canManageMembers'] == true);
+    }
+
+    /** Only a real trip admin may touch another admin's member document. */
+    function protectsAdminDoc(tripId) {
+      return !(resource.data.get('role', 'member') in ['trip_admin', 'super_admin']) || isTripAdmin(tripId);
+    }
+
+    /** A co-admin keeps the role and the switches exactly as they are. */
+    function sameRoleAndPermissions() {
+      return request.resource.data.get('role', 'member') == resource.data.get('role', 'member')
+        && request.resource.data.get('permissions', {}) == resource.data.get('permissions', {});
+    }
+
+    /** Legitimate self-service edits of a member document (profile only). */
+    function memberSelfUpdateOnlyProfile(tripId, memberId) {
+      return isTripMember(tripId)
+        && request.auth.uid == memberId
+        && request.resource.data.get('role', 'member') == resource.data.get('role', 'member')
+        && request.resource.data.get('permissions', {}) == resource.data.get('permissions', {})
+        && request.resource.data.get('status', 'active') == resource.data.get('status', 'active')
+        && request.resource.data.get('uid', memberId) == resource.data.get('uid', memberId)
+        && request.resource.data.get('username', '') == resource.data.get('username', '');
     }
 
     // Users collection - only self or super admin
@@ -58,6 +136,16 @@ service cloud.firestore {
       match /joinRequests/{tripId} {
         allow read, write: if isAuthenticated() && request.auth.uid == uid;
       }
+
+      // Web Push devices + what this account wants pushed (v30). Only the owner
+      // may read or write them; the Cloud Functions use the Admin SDK.
+      match /pushTokens/{tokenId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == uid;
+      }
+
+      match /pushPrefs/{docId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == uid;
+      }
     }
 
     // Public directory: name / email / photo only, so a trip admin can find the
@@ -72,16 +160,19 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Separated member PIN hashes (never enumerable via list; only writable by trip admin)
+    // Separated member PIN hashes (never enumerable via list; only writable by trip admin).
+    // ⚠️ `get` is open to signed-in accounts because the member login page reads it
+    // before the PIN is verified; see docs/PERMISSIONS.md → “known risks” (deploy the
+    // Cloud Function `loginWithUsernamePin` and the account never needs this read).
     match /memberSecrets/{secretId} {
       allow get: if isAuthenticated();
       allow list: if false;
       allow create, update: if isAuthenticated()
         && request.resource.data.tripId is string
-        && isTripAdmin(request.resource.data.tripId);
+        && canManageMembers(request.resource.data.tripId);
       allow delete: if isAuthenticated()
         && resource.data.tripId is string
-        && isTripAdmin(resource.data.tripId);
+        && canManageMembers(resource.data.tripId);
     }
 
     // Public username → trip/member lookup used by the login page.
@@ -91,10 +182,10 @@ service cloud.firestore {
       allow list: if false;
       allow create, update: if isAuthenticated()
         && request.resource.data.tripId is string
-        && isTripAdmin(request.resource.data.tripId);
+        && canManageMembers(request.resource.data.tripId);
       allow delete: if isAuthenticated()
         && resource.data.tripId is string
-        && isTripAdmin(resource.data.tripId);
+        && canManageMembers(resource.data.tripId);
     }
 
     // Trips - isolated to trip members, creator, or super admin
@@ -117,10 +208,13 @@ service cloud.firestore {
       allow update: if isAuthenticated() && (
         isSuperAdmin() ||
         isTripAdmin(tripId) ||
-        resource.data.createdBy == request.auth.uid ||
         (isTripMember(tripId)
           && request.resource.data.createdBy == resource.data.createdBy
-          && request.resource.data.memberUids == resource.data.memberUids)
+          && request.resource.data.memberUids == resource.data.memberUids
+          // Rotating the invite code / closing the trip to new members is a
+          // trip-admin action (v30 — it used to be possible for any member).
+          && request.resource.data.get('inviteCode', '') == resource.data.get('inviteCode', '')
+          && request.resource.data.get('inviteEnabled', true) == resource.data.get('inviteEnabled', true))
       );
       // Creator, super admin or a trip admin may delete the trip
       allow delete: if isSuperAdmin()
@@ -130,77 +224,93 @@ service cloud.firestore {
       // Join requests: anybody signed in may ask (they are not a member yet),
       // only trip admins may read the queue or approve/reject.
       match /joinRequests/{uid} {
-        allow get: if isAuthenticated() && (request.auth.uid == uid || isTripAdmin(tripId));
-        allow list: if isAuthenticated() && isTripAdmin(tripId);
+        allow get: if isAuthenticated() && (request.auth.uid == uid || canManageMembers(tripId));
+        allow list: if isAuthenticated() && canManageMembers(tripId);
         allow create: if isAuthenticated() && request.auth.uid == uid;
-        allow update, delete: if isAuthenticated() && (request.auth.uid == uid || isTripAdmin(tripId));
+        allow update, delete: if isAuthenticated() && (request.auth.uid == uid || canManageMembers(tripId));
       }
 
-      // Members - isolated to trip members; role escalation prevented
+      // Members - isolated to trip members; role escalation prevented (v30: a
+      // member may edit their own profile, but NEVER their role, permissions or
+      // status — those stay admin-only).
       match /members/{memberId} {
         allow read: if isTripMember(tripId);
-        allow create: if isTripAdmin(tripId)
+        allow create: if canManageMembers(tripId)
           || (isAuthenticated() && request.auth.uid == memberId
               && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid);
-        allow update: if isTripAdmin(tripId)
-          || (isTripMember(tripId) && request.auth.uid == memberId
-              && request.resource.data.role == resource.data.role);
-        allow delete: if isTripAdmin(tripId);
+        // A trip admin may change anything on a member (except another admin's
+        // doc); a *co-admin* (`canManageMembers`) may edit profiles but not the
+        // role or the three switches — granting rights stays a trip-admin action.
+        allow update: if (canManageMembers(tripId) && protectsAdminDoc(tripId)
+            && (isTripAdmin(tripId) || sameRoleAndPermissions()))
+          || memberSelfUpdateOnlyProfile(tripId, memberId);
+        allow delete: if canManageMembers(tripId) && protectsAdminDoc(tripId);
       }
 
       // Days
       match /days/{dayId} {
-        allow read, write: if isTripMember(tripId);
+        allow read: if isTripMember(tripId);
+        allow write: if canEditItinerary(tripId);
       }
 
-      // Itinerary Items
+      // Itinerary Items - the plan editor follows สิทธิ์ “แก้ไขแผนการเดินทาง”
       match /itineraryItems/{itemId} {
-        allow read, create, update, delete: if isTripMember(tripId);
+        allow read: if isTripMember(tripId);
+        allow create, update, delete: if canEditItinerary(tripId);
       }
 
-      // Expenses
+      // Expenses - the money editor follows สิทธิ์ “แก้ไขค่าใช้จ่าย”
       match /expenses/{expenseId} {
-        allow read, create, update, delete: if isTripMember(tripId);
+        allow read: if isTripMember(tripId);
+        allow create, update, delete: if canEditExpense(tripId);
 
         match /lineItems/{lineItemId} {
-          allow read, write: if isTripMember(tripId);
+          allow read: if isTripMember(tripId);
+          allow write: if canEditExpense(tripId);
         }
       }
 
       // Settlements
       match /settlements/{settlementId} {
-        allow read, create, update, delete: if isTripMember(tripId);
+        allow read: if isTripMember(tripId);
+        allow create, update, delete: if canEditExpense(tripId);
 
         match /payments/{paymentId} {
-          allow read, create, update, delete: if isTripMember(tripId);
+          allow read: if isTripMember(tripId);
+          allow create, update, delete: if canEditExpense(tripId);
         }
       }
 
-      // Expense groups (categories)
+      // Expense groups (categories) - feeding the expense form, so money rights
       match /categories/{categoryId} {
-        allow read, create, update, delete: if isTripMember(tripId);
+        allow read: if isTripMember(tripId);
+        allow create, update, delete: if canEditExpense(tripId);
       }
 
-      // Cards
+      // Cards - same: only the people who may record money manage the cards
       match /cards/{cardId} {
-        allow read, write: if isTripMember(tripId);
+        allow read: if isTripMember(tripId);
+        allow write: if canEditExpense(tripId);
       }
 
-      // Exchange Rates
+      // Exchange Rates - used by every expense calculation
       match /exchangeRates/{rateId} {
-        allow read, write: if isTripMember(tripId);
+        allow read: if isTripMember(tripId);
+        allow write: if canEditExpense(tripId);
       }
 
-      // Settings
+      // Settings - trip-wide configuration stays admin-only (the daily-summary
+      // hour of the notification feature lives here too)
       match /settings/{settingId} {
         allow read: if isTripMember(tripId);
         allow write: if isTripAdmin(tripId);
       }
 
-      // Activity Logs
+      // Activity Logs - every member can read the history and append to it;
+      // only admins may remove entries.
       match /activityLogs/{logId} {
         allow read, create: if isTripMember(tripId);
-        allow update, delete: if false;
+        allow update, delete: if isTripAdmin(tripId);
       }
 
       // Imports
@@ -210,42 +320,48 @@ service cloud.firestore {
 
       // Documents
       match /documents/{docId} {
-        allow read, create, update, delete: if isTripMember(tripId);
+        allow read: if isTripMember(tripId);
+        allow create, update, delete: if canWriteContent(tripId);
       }
 
-      // Sticky notes
+      // Sticky notes - part of the plan, so the itinerary right applies
       match /notes/{noteId} {
-        allow read, create, update, delete: if isTripMember(tripId);
+        allow read: if isTripMember(tripId);
+        allow create, update, delete: if canEditItinerary(tripId);
       }
 
       // Prep checklists
       match /checklists/{checklistId} {
-        allow read, create, update: if isTripMember(tripId);
-        allow delete: if isTripMember(tripId) && (
+        allow read: if isTripMember(tripId);
+        allow create, update: if canWriteContent(tripId);
+        allow delete: if canWriteContent(tripId) && (
           isTripAdmin(tripId) || !('createdBy' in resource.data) || resource.data.createdBy == request.auth.uid
         );
       }
 
       // Ideas board
       match /ideas/{ideaId} {
-        allow read, create, update: if isTripMember(tripId);
-        allow delete: if isTripMember(tripId) && (
+        allow read: if isTripMember(tripId);
+        allow create, update: if canWriteContent(tripId);
+        allow delete: if canWriteContent(tripId) && (
           !('createdBy' in resource.data) || resource.data.createdBy == request.auth.uid || isTripAdmin(tripId)
         );
       }
 
       // Trip sub-groups
       match /memberGroups/{groupId} {
-        allow read, create, update: if isTripMember(tripId);
-        allow delete: if isTripMember(tripId) && (
+        allow read: if isTripMember(tripId);
+        allow create, update: if canWriteContent(tripId);
+        allow delete: if canWriteContent(tripId) && (
           !('createdBy' in resource.data) || resource.data.createdBy == request.auth.uid || isTripAdmin(tripId)
         );
       }
 
       // Reservations
       match /reservations/{reservationId} {
-        allow read, create, update: if isTripMember(tripId);
-        allow delete: if isTripMember(tripId) && (
+        allow read: if isTripMember(tripId);
+        allow create, update: if canWriteContent(tripId);
+        allow delete: if canWriteContent(tripId) && (
           isTripAdmin(tripId) || !('createdBy' in resource.data) || resource.data.createdBy == request.auth.uid
         );
       }
@@ -253,26 +369,49 @@ service cloud.firestore {
       // Money sent between members to settle up (“จ่ายแล้ว”). A record is written
       // once and can be undone, never edited, so the settlement history stays honest.
       match /transfers/{transferId} {
-        allow read, delete: if isTripMember(tripId);
-        allow create: if isTripMember(tripId)
+        allow read: if isTripMember(tripId);
+        allow create: if canEditExpense(tripId)
           && request.resource.data.amountMinor is int && request.resource.data.amountMinor > 0
           && request.resource.data.fromId != request.resource.data.toId;
+        allow delete: if canEditExpense(tripId);
         allow update: if false;
       }
 
       // Comments attached to an expense
       match /comments/{commentId} {
-        allow read, create: if isTripMember(tripId);
-        allow update, delete: if isTripMember(tripId) && (
+        allow read: if isTripMember(tripId);
+        allow create: if canWriteContent(tripId);
+        allow update, delete: if canWriteContent(tripId) && (
           isTripAdmin(tripId) || !('uid' in resource.data) || resource.data.uid == request.auth.uid
         );
       }
 
       // Activity log
       match /activity/{entryId} {
-        allow read, create: if isTripMember(tripId);
+        allow read: if isTripMember(tripId);
+        allow create: if canWriteContent(tripId);
         allow delete: if isTripAdmin(tripId);
         allow update: if false;
+      }
+
+      // Notifications (v30) — the 🔔 bell + Web Push feed of the trip.
+      // Any member may add one (that is how “บันทึกค่าใช้จ่าย” pings the others),
+      // but nobody can rewrite somebody else's notification: an update may only
+      // add/remove the caller's OWN key in `readBy`.
+      match /notifications/{notificationId} {
+        allow read: if isTripMember(tripId);
+        allow create: if isTripMember(tripId)
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.type is string
+          && request.resource.data.title is string
+          && request.resource.data.title.size() <= 200
+          && (!('body' in request.resource.data) || request.resource.data.body.size() <= 600);
+        allow update: if isTripMember(tripId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy'])
+          && request.resource.data.readBy.diff(resource.data.readBy).addedKeys().hasOnly([request.auth.uid])
+          && request.resource.data.readBy.diff(resource.data.readBy).removedKeys().hasOnly([request.auth.uid])
+          && request.resource.data.readBy.diff(resource.data.readBy).changedKeys().hasOnly([request.auth.uid]);
+        allow delete: if isTripAdmin(tripId);
       }
     }
   }

@@ -1,4 +1,5 @@
 import { db, serverTimestamp } from '../firebase.js';
+import { notifyExpenseCreated } from '../notifications/index.js';
 import { cachedRead, cacheInvalidate, cacheForget } from '../utils/datacache.js';
 import { invalidateExpensesCache } from '../expenses/index.js';
 import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, writeBatch, query, where, orderBy, limit, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -225,6 +226,12 @@ async function syncItineraryExpenseInner(tripId, item, options = {}) {
     updatedAt: serverTimestamp()
   });
   await writePlanPayers(tripId, item.id, payload);
+  // 🔔 a place with an estimated cost creates a real (estimated) expense row —
+  // the trip hears about it like any other expense.
+  notifyExpenseCreated(tripId, {
+    expense: { id: ref.id, ...payload, date: payload.date || item.date },
+    author: { id: userId, name: '' }
+  }).catch(() => {});
   return ref.id;
 }
 
