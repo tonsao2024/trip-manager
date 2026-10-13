@@ -1,0 +1,67 @@
+name: Deploy GitHub Pages
+
+# Deploys the static site through GitHub Actions (instead of "deploy from a
+# branch") so the Firebase Web Push VAPID key can be supplied from a GitHub
+# Actions secret and never committed to the repository.
+#
+# One-time setup (repository owner):
+#   1. Settings → Secrets and variables → Actions → New repository secret
+#        Name:  FCM_VAPID_KEY
+#        Value: the "Key pair" from Firebase Console → Project settings →
+#               Cloud Messaging → Web Push certificates (87 chars, starts "B")
+#   2. Settings → Pages → Build and deployment → Source: GitHub Actions
+#
+# The key is a PUBLIC Web Push key, but keeping it in a secret means it can
+# be rotated in one place without a code change.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; let an in-progress production deploy finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Inject VAPID key from secret
+        env:
+          FCM_VAPID_KEY: ${{ secrets.FCM_VAPID_KEY }}
+        run: |
+          if [ -z "$FCM_VAPID_KEY" ]; then
+            echo "::warning::Secret FCM_VAPID_KEY is not set — deploying without a VAPID key (Web Push stays off, the in-app bell still works). Add it under Settings → Secrets and variables → Actions."
+          elif ! printf '%s' "$FCM_VAPID_KEY" | grep -Eq '^B[A-Za-z0-9_-]{79,94}$'; then
+            echo "::error::Secret FCM_VAPID_KEY does not look like a Web Push key (expected 87 characters starting with 'B', from Cloud Messaging → Web Push certificates → Key pair)."
+            exit 1
+          else
+            # Write via Node so the value is escaped safely, whatever it holds.
+            node -e "require('fs').writeFileSync('fcm-vapid.js', 'window.__FCM_VAPID_KEY__ = ' + JSON.stringify(process.env.FCM_VAPID_KEY) + ';\n')"
+            echo "VAPID key injected into fcm-vapid.js (value not printed)."
+          fi
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

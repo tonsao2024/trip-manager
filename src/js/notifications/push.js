@@ -15,6 +15,9 @@
 // without the functions, the in-app bell keeps working.
 import { app, resolvedFirebaseConfig } from '../firebase.js';
 import { writeNotifyPrefs, registerPushToken, removePushToken, saveServerPrefs } from './index.js';
+import { validateVapidKey } from '../utils/notifications.js';
+
+export { validateVapidKey };
 
 const MESSAGING_URL = 'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js';
 const SW_FILE = 'firebase-messaging-sw.js';
@@ -147,10 +150,16 @@ export async function enablePush({ uid, tripIds = [], lang = 'th' } = {}) {
   if (!support.supported) throw new Error(support.message);
   if (!uid) throw new Error(th('กรุณาเข้าสู่ระบบก่อน', 'Sign in first'));
   if (!getVapidKey()) {
-    throw new Error(th(
-      'ยังไม่มี VAPID key — ไปที่ Firebase Console → Project settings → Cloud Messaging → Web Push certificates แล้ววางคีย์ในช่องด้านล่าง',
-      'No VAPID key yet — open Firebase Console → Project settings → Cloud Messaging → Web Push certificates and paste the key below'
+    // No VAPID key anywhere yet (config / this device). The key only exists in
+    // Firebase Console — it cannot be generated in the browser — so point the
+    // user at the exact place it can be pasted instead of failing vaguely.
+    // `code` lets callers route the user there instead of only showing a toast.
+    const err = new Error(th(
+      'ยังไม่มี VAPID key จึงเปิด Push ไม่ได้ — ไปที่ ตั้งค่า → การแจ้งเตือน → ช่อง “VAPID key” แล้ววางคีย์จาก Firebase Console → Project settings → Cloud Messaging → Web Push certificates → Generate key pair (ทำครั้งเดียว คีย์นี้เป็นคีย์สาธารณะ)',
+      'No VAPID key yet, so Push cannot start — go to Settings → Notifications → “VAPID key” and paste the key from Firebase Console → Project settings → Cloud Messaging → Web Push certificates → Generate key pair (one-time; it is a public key)'
     ));
+    err.code = 'vapid/missing';
+    throw err;
   }
 
   const permission = await Notification.requestPermission();

@@ -69,7 +69,19 @@ firebase deploy --only hosting           # 3) the client (bell, settings tab, SW
 Web Push certificates → *Generate key pair* → paste the public key either into
 Settings → การแจ้งเตือน → VAPID key (stored per device in `fuji_fcm_vapid`) or into
 `src/js/firebase.config.js` (`fcmVapidKey`). The compiled bundle ships with an empty key, so
-without this step the in-app 🔔 keeps working but no push is ever sent.
+without this step the in-app 🔔 keeps working but no push is ever sent. The key is public
+(87 characters, starts with `B`): any signed-in user may paste it for their own device in
+Settings (the field validates the shape before saving), the bell sheet links there when no
+key exists yet, and putting it in `firebase.config.js` fixes it for everybody at once.
+
+**Via GitHub Secrets (no key in the repo).** Secrets are only visible to GitHub Actions, so
+the site must deploy through a workflow instead of "deploy from a branch":
+`.github/workflows/deploy-pages.yml` checks the secret's shape and writes it into
+`fcm-vapid.js` in the Pages artifact (`window.__FCM_VAPID_KEY__`, which `push.js` reads
+first; the committed `fcm-vapid.js` is an empty placeholder). One-time setup: add the
+repository secret `FCM_VAPID_KEY` (Settings → Secrets and variables → Actions), then set
+Settings → Pages → Build and deployment → Source to **GitHub Actions**. Without the secret
+the workflow still deploys (with a warning) and Web Push stays off.
 
 **Verify after deploying**
 

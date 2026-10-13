@@ -3080,6 +3080,13 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
   check(/app-version" content="30"/.test(shell30)
     && /APP_VERSION = '30'/.test(fs.readFileSync(path.join(root, 'src/js/utils/buildInfo.js'), 'utf8')),
     'build: index.html and buildInfo.js agree on v30');
+  check(/<script src="\.\/fcm-vapid\.js"><\/script>/.test(shell30)
+    && /window\.__FCM_VAPID_KEY__ = ''/.test(fs.readFileSync(path.join(root, 'fcm-vapid.js'), 'utf8')),
+    'push: index.html loads the VAPID placeholder and the repo carries no real key');
+  const workflow30 = fs.readFileSync(path.join(root, '.github/workflows/deploy-pages.yml'), 'utf8');
+  check(/secrets\.FCM_VAPID_KEY/.test(workflow30) && /fcm-vapid\.js/.test(workflow30)
+    && /deploy-pages/.test(workflow30),
+    'push: the Pages workflow injects the FCM_VAPID_KEY secret at deploy time');
 
   // restore state for the following blocks
   fsdb.__seed('trips/t1/members/u2', memberU2);
