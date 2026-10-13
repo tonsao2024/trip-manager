@@ -7,7 +7,7 @@ import {
   dayKeyInZone, hourInZone, dailySummaryId, isDailySummaryId,
   expenseShareInThb, expenseThb,
   expenseNotificationPayload, dailySummary, dailySummaryMemberLine,
-  normalizePrefs, NOTIFY_PREFS_DEFAULTS, allowsType,
+  normalizePrefs, NOTIFY_PREFS_DEFAULTS, allowsType, validateVapidKey,
   sortNotifications, isReadBy, unreadFor, unreadCount, visibleNotifications, filterNotifications,
   groupNotifications, notificationDayGroup, relativeTime, shouldWriteDailySummary, amountText
 } from '../../src/js/utils/notifications.js';
@@ -229,4 +229,19 @@ export function testRulesProtectNotificationsAndPermissions() {
     'rotating the invite code stays admin-only');
   assert(!/match \/loginAccounts\/[\s\S]{0,80}allow read, write: if isAuthenticated/.test(compact),
     'loginAccounts is still unreadable by clients');
+}
+
+/* -------------------------------------------------------------- VAPID key */
+
+export function testValidateVapidKey() {
+  const real = 'B' + 'A'.repeat(86); // 87 chars — shape of a Firebase Web Push key pair
+  assert(validateVapidKey(real).valid, 'a real-shaped key passes');
+  assert(validateVapidKey(`  ${real}  `).valid, 'surrounding whitespace is trimmed');
+  assert(!validateVapidKey('').valid, 'empty is rejected');
+  assert(!validateVapidKey('BTestVapidKey0123456789').valid, 'a short placeholder is rejected');
+  assert(!validateVapidKey('A' + 'A'.repeat(86)).valid, 'must start with B');
+  assert(!validateVapidKey(real + ' "').valid, 'quotes/spaces inside are rejected');
+  assert(!validateVapidKey('AAAA-BBBB_server_key').valid, 'a server-key-shaped value is rejected');
+  assert(validateVapidKey(real, 'en').valid && validateVapidKey('', 'en').reason.length > 0,
+    'English reasons are available');
 }

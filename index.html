@@ -396,6 +396,10 @@
     } catch (e) { console.warn('Config load failed', e); }
   </script>
 
+  <!-- Web Push VAPID key (public) — overwritten by the deploy workflow with
+       the FCM_VAPID_KEY GitHub Actions secret; empty in the repo. -->
+  <script src="./fcm-vapid.js"></script>
+
   <!-- App (cache-busted) -->
   <script type="module" src="./src/js/app.js?v=30"></script>
 </body>

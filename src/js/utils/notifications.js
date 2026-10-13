@@ -196,6 +196,28 @@ export function dailySummaryMemberLine(row, lang = 'th') {
   return lang === 'th' ? `${row.name} — ${amount}` : `${row.name} — ${amount}`;
 }
 
+/* ------------------------------------------------------------ VAPID key */
+
+/**
+ * Check a Web Push (VAPID) public key before it is saved.
+ * A real key from Firebase Console → Cloud Messaging → Web Push certificates
+ * is the base64url encoding of a 65-byte uncompressed P-256 point: 87
+ * characters, starting with "B". It is a PUBLIC key — safe to share/store.
+ * @returns {{valid:boolean, reason:string}} reason is '' when valid.
+ */
+export function validateVapidKey(key, lang = 'th') {
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const value = String(key || '').trim();
+  if (!value) return { valid: false, reason: th('ยังไม่ได้วางคีย์', 'No key pasted yet') };
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) {
+    return { valid: false, reason: th('คีย์มีตัวอักษรที่ใช้ไม่ได้ — ต้องเป็นตัวอักษร/ตัวเลขและ - _ เท่านั้น (คัดลอกเฉพาะตัวคีย์ ไม่เอาช่องว่างหรือเครื่องหมายคำพูด)', 'The key contains invalid characters — copy the key text only, no spaces or quotes') };
+  }
+  if (!value.startsWith('B') || value.length < 80 || value.length > 95) {
+    return { valid: false, reason: th('คีย์สั้น/ยาวผิดปกติ — คีย์จริงยาว 87 ตัวอักษรและขึ้นต้นด้วย B (ตรวจว่าคัดลอกจากช่อง “Key pair” ใน Web Push certificates ไม่ใช่ Server key)', 'This does not look like a Web Push key — a real one is 87 characters starting with B (copy the “Key pair” under Web Push certificates, not the Server key)') };
+  }
+  return { valid: true, reason: '' };
+}
+
 /* --------------------------------------------------------------- prefs */
 
 export const NOTIFY_PREFS_KEY = 'fuji_notify_prefs';
