@@ -14,7 +14,8 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > (`users/{uid}/pushTokens|pushPrefs`, owner-only). Settings → **การแจ้งเตือน** holds the switches
 > (ต่ออุปกรณ์, synced to the server), the Web-Push toggle, the trip-wide summary hour and a test
 > ping. The site owner configures the public VAPID key through the GitHub Actions secret
-> `FCM_VAPID_KEY` (injected into the deployment artifact); users never paste it into the page. Without
+> `FCM_VAPID_KEY` (injected into the deployment artifact by the Pages workflow, which requires
+> Settings → Pages → Source = **GitHub Actions**); users never paste it into the page. Without
 > a VAPID key/permission/functions everything degrades to the in-app
 > bell — nothing breaks. `firebase-messaging-sw.js` (root) draws the background messages and routes
 > the click; `manifest.webmanifest` exists for iOS (iOS 16.4+ needs “เพิ่มไปที่หน้าจอโฮม”).
@@ -373,9 +374,16 @@ Firestore Rules ได้ทันที จึงเป็นวิธีที
 
 ## Deploy GitHub Pages
 
-- Push this repo to GitHub, enable Pages: Settings > Pages > Source: main branch / root
-- No build step needed. `index.html` is entry.
-- First load will show config screen if no Firebase config — paste JSON and reload.
+- Push this repo to GitHub, then **Settings → Pages → Build and deployment → Source: GitHub Actions**
+  (⚠️ *not* “Deploy from a branch”: a branch deploy is built by Jekyll and never picks up the
+  `FCM_VAPID_KEY` injection, so the live site keeps saying “Web Push ยังไม่พร้อม”).
+- Add the Actions secret `FCM_VAPID_KEY` (Firebase Console → Project settings → Cloud Messaging →
+  Web Push certificates → *Key pair*) so Web Push works; without it everything else still works.
+- Push to `main` → the `Deploy GitHub Pages` workflow injects the key, deploys, and verifies the key
+  is really on the live site. No build step needed. `index.html` is the entry.
+- First load will show the config screen if no Firebase config — paste JSON and reload.
+- Troubleshooting: `docs/DEPLOY.md` → *Web Push troubleshooting* (and the workflow fails with the
+  setting to change when Pages is still serving a branch).
 
 ## Deploy Functions
 

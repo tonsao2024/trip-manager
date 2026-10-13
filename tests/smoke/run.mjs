@@ -2877,6 +2877,11 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
   await click('#notify-bell');
   await waitFor(() => q('#notify-sheet'), { timeout: 8000, label: 'bell sheet' }).catch(() => {});
   check(!!q('#notify-sheet'), 'notifications: the bell opens the sheet');
+  // The strip itself only renders the missing-key wording when the page is
+  // push-capable (jsdom here is http://, so it shows the https warning instead) —
+  // assert the wording in the source.
+  check(/Web Push ยังไม่พร้อม[\s\S]{0,240}Pages → Source/.test(fs.readFileSync(path.join(root, 'src/js/app.js'), 'utf8')),
+    'notifications: the “Web Push ยังไม่พร้อม” strip tells the owner to set the Pages source (a branch deploy never gets the key)');
   await waitFor(() => /มื้อเย็นทดสอบกระดิ่ง/.test(q('#notify-sheet')?.textContent || ''),
     { timeout: 8000, label: 'the new row in the sheet' });
   const unreadNow = notifyKeys().map(k => fsdb.__store.get(k)).filter(n => !n.readBy?.u1).length;
@@ -2951,6 +2956,8 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
   check(!q('#notify-vapid') && !q('#notify-vapid-save')
     && /FCM_VAPID_KEY/.test(q('#notify-push-card')?.textContent || ''),
     'settings: users are not asked to enter VAPID; a missing key points the site admin to deployment config');
+  check(/Pages → Source/.test(q('#notify-push-card')?.textContent || ''),
+    'settings: the admin note names the Pages source setting too (a branch deploy ignores the injected key)');
   q('#notify-toggle-expense').checked = false;
   q('#notify-toggle-expense').dispatchEvent(new window.Event('change', { bubbles: true }));
   await sleep(350);
@@ -3103,6 +3110,12 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
   check(/secrets\.FCM_VAPID_KEY/.test(workflow30) && /fcm-vapid\.js/.test(workflow30)
     && /deploy-pages/.test(workflow30),
     'push: the Pages workflow injects the FCM_VAPID_KEY secret at deploy time');
+  check(/vars\.FCM_VAPID_KEY/.test(workflow30),
+    'push: an Actions variable named FCM_VAPID_KEY also works (the key is public, rotation stays in one place)');
+  check(/build_type/.test(workflow30) && /Deploy from a branch/.test(workflow30) && /Settings → Pages/.test(workflow30),
+    'push: the Pages workflow stops with the fix when Pages still serves a branch (the injected key would never go live)');
+  check(/fcm-vapid\.js\?cb=/.test(workflow30) && /key_present/.test(workflow30),
+    'push: after deploying, the workflow re-reads the live cache-busted fcm-vapid.js and fails when the key is missing');
 
   // restore state for the following blocks
   fsdb.__seed('trips/t1/members/u2', memberU2);

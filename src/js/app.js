@@ -1174,7 +1174,7 @@ function notificationPushStripHtml() {
     return `
     <div class="notify-push-strip">
       ${icon('key-round', 'w-4 h-4')}
-      <span>${th('Web Push ยังไม่พร้อม — ผู้ดูแลเว็บไซต์ต้องตั้งค่า FCM_VAPID_KEY ใน GitHub Actions แล้ว deploy ใหม่', 'Web Push is not configured — the site owner must set FCM_VAPID_KEY in GitHub Actions and redeploy.')}</span>
+      <span>${th('Web Push ยังไม่พร้อม — ผู้ดูแลเว็บไซต์ต้องตั้งค่า FCM_VAPID_KEY ใน GitHub Actions, ตั้ง Pages → Source เป็น “GitHub Actions” แล้ว deploy ใหม่', 'Web Push is not configured — the site owner must set FCM_VAPID_KEY in GitHub Actions, set Pages → Source to “GitHub Actions”, then redeploy.')}</span>
       <button type="button" class="btn btn-secondary btn-sm" id="notify-goto-push-settings">${icon('settings-2', 'w-3.5 h-3.5')} ${th('ดูสถานะ', 'View status')}</button>
     </div>`;
   }
@@ -1415,7 +1415,7 @@ function notificationSettingsCardsHtml({ lang = 'th', perms = {}, tripSettings =
           ${isOn ? `${icon('bell-off', 'w-3.5 h-3.5')} ${th('ปิด Push บนอุปกรณ์นี้', 'Turn push off here')}` : `${icon('bell-ring', 'w-3.5 h-3.5')} ${th('เปิด Push บนอุปกรณ์นี้', 'Turn push on here')}`}
         </button>
       </div>
-      <p class="text-[10px] text-[var(--text-tertiary)]">${th('คีย์ VAPID ถูกตั้งค่าจากการ deploy เว็บไซต์ ไม่ต้องกรอกบนหน้านี้ หากยังไม่พร้อม ให้ผู้ดูแลเว็บไซต์ตั้ง GitHub Actions secret ชื่อ FCM_VAPID_KEY แล้ว deploy ผ่าน workflow', 'The site supplies its VAPID key at deploy time; there is nothing to enter here. If it is not configured, the site owner should set the FCM_VAPID_KEY GitHub Actions secret and redeploy.')}</p>
+      <p class="text-[10px] text-[var(--text-tertiary)]">${th('คีย์ VAPID ถูกตั้งค่าจากการ deploy เว็บไซต์ ไม่ต้องกรอกบนหน้านี้ หากยังไม่พร้อม ให้ผู้ดูแลเว็บไซต์ตั้ง GitHub Actions secret ชื่อ FCM_VAPID_KEY และตั้ง Settings → Pages → Source เป็น “GitHub Actions” แล้ว deploy ผ่าน workflow', 'The site supplies its VAPID key at deploy time; there is nothing to enter here. If it is not configured, the site owner should set the FCM_VAPID_KEY GitHub Actions secret, set Settings → Pages → Source to “GitHub Actions”, and redeploy through the workflow.')}</p>
       <p class="text-[10px] text-[var(--text-tertiary)]">${th('หมายเหตุ: บน iPhone/iPad ต้อง “เพิ่มไปที่หน้าจอโฮม” ก่อน (iOS 16.4+) จึงจะรับ Web Push ได้ และต้องเปิดเว็บผ่าน https://', 'Note: on iPhone/iPad the app must be added to the Home Screen first (iOS 16.4+) and the page must be served over https://.')}</p>
     </div>
 
