@@ -64,7 +64,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          node <<'NODE'
+          cat > "${RUNNER_TEMP}/pages-source.cjs" <<'NODE'
           const fs = require('fs');
           const token = process.env.GITHUB_TOKEN;
           const repo = process.env.GITHUB_REPOSITORY;
@@ -84,6 +84,7 @@ jobs:
             return { status: r.status, buildType: body.build_type || '', body };
           }
 
+          async function main() {
           let state = 'unknown';
           try {
             let { status, buildType } = await getPages();
@@ -126,7 +127,14 @@ jobs:
           } else {
             console.log('::warning::Could not confirm the Pages source (build_type unknown); continuing. If Web Push stays off on the live site, check Settings → Pages → Source first.');
           }
+          }
+          main().catch((e) => {
+            console.log(`::error title=Pages source check crashed::${e && e.message ? e.message : e}`);
+            try { fs.appendFileSync(process.env.GITHUB_OUTPUT, 'build_type=unknown\n'); } catch { /* ignore */ }
+            process.exit(1);
+          });
           NODE
+          node "${RUNNER_TEMP}/pages-source.cjs"
 
       - name: Inject VAPID key from secret
         id: vapid
@@ -134,7 +142,7 @@ jobs:
           FCM_VAPID_KEY: ${{ secrets.FCM_VAPID_KEY || vars.FCM_VAPID_KEY }}
           GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
-          node <<'NODE'
+          cat > "${RUNNER_TEMP}/inject-vapid.cjs" <<'NODE'
           const fs = require('fs');
           const out = (k, v) => fs.appendFileSync(process.env.GITHUB_OUTPUT, `${k}=${v}\n`);
           const summary = (t) => fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, t + '\n');
@@ -181,6 +189,7 @@ jobs:
           } catch { /* the un-stamped tag still works, just cache-slower */ }
           console.log(`::notice::Web Push key injected into fcm-vapid.js (value not printed, ${key.length} chars).`);
           NODE
+          node "${RUNNER_TEMP}/inject-vapid.cjs"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
