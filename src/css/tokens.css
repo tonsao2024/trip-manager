@@ -61,6 +61,8 @@
   --surface: #ffffff;
   --surface-2: color-mix(in srgb, var(--primary-raw) 7%, #ffffff);
   --surface-3: color-mix(in srgb, var(--primary-raw) 14%, #e6efff);
+  /* Opaque color shared by the mobile header, iOS safe area and browser chrome. */
+  --app-chrome-color: color-mix(in srgb, var(--surface) 80%, var(--bg));
   --card: #ffffff;
   --card-hover: #ffffff;
   --text: #101d33;
@@ -201,6 +203,7 @@
   --surface: color-mix(in srgb, var(--primary-raw) 16%, #0f1730);
   --surface-2: color-mix(in srgb, var(--primary-raw) 21%, #151f3a);
   --surface-3: color-mix(in srgb, var(--primary-raw) 27%, #1c2947);
+  --app-chrome-color: color-mix(in srgb, var(--surface) 80%, var(--bg));
   --card: color-mix(in srgb, var(--primary-raw) 16%, #0f1730);
   --card-hover: color-mix(in srgb, var(--primary-raw) 22%, #182441);
   --text: #f2f7ff;
