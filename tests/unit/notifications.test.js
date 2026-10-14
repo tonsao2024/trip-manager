@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  notificationMeta, isNotificationType,
+  notificationMeta, isNotificationType, classifyNotifyError, NOTIFY_ERROR_LAYERS,
   dayKeyInZone, hourInZone, dailySummaryId, isDailySummaryId,
   expenseShareInThb, expenseThb,
   expenseNotificationPayload, dailySummary, dailySummaryMemberLine,
@@ -244,4 +244,56 @@ export function testValidateVapidKey() {
   assert(!validateVapidKey('AAAA-BBBB_server_key').valid, 'a server-key-shaped value is rejected');
   assert(validateVapidKey(real, 'en').valid && validateVapidKey('', 'en').reason.length > 0,
     'English reasons are available');
+}
+
+/* ------------------------------------------------- notification failures */
+
+/**
+ * The 🔔 used to fail into `console.warn` only: “ไม่มีข้อความเลย” with no reason.
+ * These are the strings the toast / bell banner / System check show now, so a
+ * regression here means users are back to guessing.
+ */
+export function testNotificationFailureClassifiers() {
+  const denied = () => Object.assign(new Error('Missing or insufficient permissions.'), { code: 'firestore/permission-denied' });
+
+  const rules = classifyNotifyError(denied(), 'th');
+  eq(rules.layer, 'rules', 'a denied read/write is the published rules');
+  assert(/permission-denied/.test(rules.title), 'the title names the Firestore error');
+  assert(/firestore:rules/.test(rules.fix), 'the fix is the publish command');
+  assert(rules.retryable === true, 'publishing the rules is worth a retry');
+
+  const signature = classifyNotifyError(denied(), 'th', { memberSession: true });
+  eq(signature.layer, 'auth', 'a PIN member session is an auth problem, not a rules problem');
+  assert(/Google/.test(signature.fix), '…and it says to sign in with Google/email');
+
+  const fnMissing = classifyNotifyError({ code: 'functions/not-found', message: 'not found' }, 'en');
+  eq(fnMissing.layer, 'functions', 'a missing callable is a functions problem');
+  assert(/firebase deploy --only functions/.test(fnMissing.fix), 'the functions message carries the deploy command');
+
+  const index = classifyNotifyError({ code: 'firestore/failed-precondition', message: 'The query requires an index. You can create it here: https://console.firebase.google.com/…' }, 'th');
+  eq(index.layer, 'index', 'a missing composite index is its own layer');
+  assert(/console\.firebase\.google\.com/.test(index.fix), '…and the console link survives');
+
+  const vapid = classifyNotifyError(Object.assign(new Error('no key'), { code: 'vapid/missing' }), 'th');
+  eq(vapid.layer, 'push', 'a missing VAPID key is the push layer');
+  assert(/FCM_VAPID_KEY/.test(vapid.fix), '…and it names the deploy secret');
+
+  const store = classifyNotifyError(Object.assign(new Error('granted, but the write was refused'), { code: 'push/store-failed' }), 'th');
+  eq(store.layer, 'rules', 'a device token Firestore refused is a rules problem');
+  assert(/firestore:rules/.test(store.fix), '…with the publish command, not “try again later”');
+  assert(store.retryable === true, '…and is worth retrying after the deploy');
+
+  const offline = classifyNotifyError({ code: 'unavailable', message: 'Failed to fetch' }, 'th');
+  eq(offline.layer, 'network', 'a transport failure is the network layer');
+  assert(offline.retryable === true, '…which is always worth retrying');
+
+  const mystery = classifyNotifyError(new Error('boom'), 'th');
+  eq(mystery.layer, 'unknown', 'anything else stays “unknown” instead of throwing');
+  assert(/ตรวจสอบระบบ/.test(mystery.fix), '…and points at the System check');
+
+  for (const layer of ['rules', 'auth', 'functions', 'push', 'index', 'network', 'unknown']) {
+    assert(NOTIFY_ERROR_LAYERS.includes(layer), `${layer} is part of the documented layer list`);
+    const info = classifyNotifyError(denied(), 'en', { memberSession: layer === 'auth' });
+    assert(info.title && info.message && info.fix, `${layer} comes with title/message/fix in English too`);
+  }
 }

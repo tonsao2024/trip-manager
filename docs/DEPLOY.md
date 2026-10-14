@@ -125,6 +125,45 @@ Then, on the live site: Settings → การแจ้งเตือน → �
 On iPhone/iPad the app must be added to the Home Screen first (iOS 16.4+) and the page served over
 `https://`, otherwise Web Push is impossible (the card says so).
 
+### Deploy rules & functions from GitHub Actions (v32)
+
+The notification system has two halves that used to drift apart: the client is
+published automatically by GitHub Pages, while `firestore.rules` and the Cloud
+Functions only ever reached the Firebase project when somebody ran
+`firebase deploy` locally. A project where that never happened produces the
+report “ระบบแจ้งเตือนไม่ทำงานทั้งระบบ”: Firestore denies every read/write on
+`trips/{tripId}/notifications` (the collection is simply absent from the
+published rules) and Web Push has no sender.
+
+`.github/workflows/deploy-firebase.yml` closes that gap. One-time setup, either:
+
+- **Recommended** — Settings → Secrets and variables → Actions → *New repository
+  secret* named `FIREBASE_SERVICE_ACCOUNT`, value = the JSON key of a service
+  account with the roles *Firebase Rules Admin*, *Cloud Functions Admin* and
+  *Service Usage Viewer*; or
+- run `firebase login:ci` locally and store the printed value as `FIREBASE_TOKEN`.
+
+After that, every push to `main` that touches `firestore.rules`,
+`firestore.indexes.json`, `storage.rules` or `functions/**` publishes rules +
+indexes + functions, and the workflow re-reads the published ruleset through the
+Rules API to prove that the `match /notifications/{notificationId}` block is live.
+Without a credential the workflow still succeeds but says (job summary + a
+warning) that nothing could be published — the app shows the same diagnosis to
+its users, so a broken half-deploy can never be silent again.
+
+#### “ไม่มีการแจ้งเตือนเลย” — ตรวจตามนี้
+
+| อาการ | ชั้นที่เป็นปัญหา | วิธีแก้ |
+| --- | --- | --- |
+| 🔔 ขึ้น “Firestore Rules ปฏิเสธการแจ้งเตือน (permission-denied)” | กฎที่ publish ยังไม่มีคอลเลกชัน `notifications` | `firebase deploy --only firestore:rules` หรือรัน workflow นี้ — หรือตามข้อ 1 ในหน้าตรวจสอบระบบ |
+| 🔔 ขึ้น “เซสชันสมาชิก (PIN) …” | อุปกรณ์ล็อกอินแบบชื่อผู้ใช้ + PIN (ไม่มี Firebase Auth) — โหมดนี้ Firestore มองเป็น guest | ออกจากระบบแล้วเข้าสู่ระบบด้วยบัญชี Google/อีเมล หรือให้ผู้ดูแล deploy `loginWithUsernamePin` |
+| 🔔 มีข้อความแต่เครื่องไม่เด้งเตือน | ยังไม่ได้กด “เปิด Push บนอุปกรณ์นี้” / ไม่มีคีย์ VAPID / ยังไม่ deploy ฟังก์ชัน | ตั้ง secret `FCM_VAPID_KEY` แล้ว deploy (`deploy-pages.yml`) และ deploy ฟังก์ชัน (`firebase deploy --only functions`) |
+| กระดิ่งมีจุดสีเหลืองเล็ก ๆ แต่ไม่มีข้อความ | มีข้อผิดพลาดที่หน้าอ่านรายการ — แตะกระดิ่งเพื่ออ่านแถบสีเหลืองพร้อมปุ่ม “วิธีแก้” | กด “วิธีแก้” ในแถบนั้น (มีทั้งคัดลอกกฎและเปิดคอนโซล) |
+| หลังบันทึกค่าใช้จ่ายขึ้น “การแจ้งเตือนล้มเหลว …” | เขียนรายการแจ้งเตือนไม่ผ่าน (ส่วนใหญ่คือ rules) | deploy กฎ แล้วกด “ลองใหม่” |
+
+ตั้งแต่ v32 ทุกความล้มเหลวของการแจ้งเตือนจะขึ้นเป็นข้อความ (toast + แถบใต้กระดิ่ง 🔔 + แถวใน Settings →
+ตรวจสอบระบบ) พร้อมชื่อชั้นที่พังและคำสั่งที่ต้องรัน — ไม่มีการกลืน error ด้วย `console.warn` อีก
+
 ### Create Super Admin
 1. Firebase Console > Auth > Add user email/pass
 2. Firestore > users/{uid} doc:

@@ -99,3 +99,103 @@ export async function testDiagnosticsRun() {
   assert(report.includes('firebase deploy --only functions'), 'report carries the fix command');
   console.log('✓ diagnostics run');
 }
+
+export async function testNotificationDiagnostics() {
+  console.log('Testing the notification layer of the system check...');
+
+  const base = {
+    isFirebaseConfigured: true,
+    isStorageAvailable: true,
+    auth: { currentUser: { uid: 'u1', email: 'admin@example.com' } },
+    functions: { __functions: true },
+    httpsCallable: () => async () => ({ data: { ok: true } }),
+    getMemberSession: () => null,
+    db: { __db: true },
+    doc: (_db, ...p) => ({ path: p.join('/') }),
+    getDoc: async (ref) => (ref.path.startsWith('loginAccounts')
+      ? Promise.reject(fnErr('firestore/permission-denied', 'denied'))
+      : { exists: () => true, data: () => ({ name: 'ทริปฟูจิ' }) }),
+    collection: (_db, ...p) => ({ path: p.join('/') }),
+    query: (ref) => ref,
+    limit: (n) => ({ n }),
+    getDocs: async () => ({ docs: [] }),
+    vapidKey: 'B' + 'A'.repeat(86)
+  };
+
+  // 1) Firestore denies the feed and the write probe → both rows fail loudly,
+  //    each carrying the command that fixes the deploy.
+  const deniedProbe = async () => ({
+    read: { ok: false, code: 'firestore/permission-denied', message: 'Missing or insufficient permissions.' },
+    write: { ok: false, code: 'firestore/permission-denied', message: 'Missing or insufficient permissions.' },
+    cleaned: true
+  });
+  const denied = await runSystemDiagnostics({
+    tripId: 't1', lang: 'th', isTripAdmin: true,
+    deps: { ...base, probeNotifications: deniedProbe }
+  });
+  const rows = Object.fromEntries(denied.results.map(r => [r.id, r]));
+  eq(rows['notify-read'].status, 'fail', 'a denied feed fails the system check');
+  assert(/firestore:rules/.test(rows['notify-read'].fix || ''), '…with the publish command');
+  eq(rows['notify-write'].status, 'fail', 'a denied write probe fails too');
+  eq(rows['notify-push'].status, 'ok', 'a usable VAPID key is reported as ok');
+  eq(denied.ok, false, 'the overall verdict is “problems found”');
+
+  // 2) Healthy project → both rows pass, no failures anywhere.
+  const healthy = await runSystemDiagnostics({
+    tripId: 't1', lang: 'th', isTripAdmin: true,
+    deps: {
+      ...base,
+      probeNotifications: async () => ({ read: { ok: true, code: '', message: '' }, write: { ok: true, code: '', message: '' }, cleaned: true })
+    }
+  });
+  const healthyRows = Object.fromEntries(healthy.results.map(r => [r.id, r]));
+  eq(healthyRows['notify-read'].status, 'ok', 'a readable feed passes');
+  eq(healthyRows['notify-write'].status, 'ok', 'a removable probe document passes');
+  assert(healthy.results.every(r => r.status !== 'fail'), 'no row fails on the healthy path');
+
+  // 3) Members cannot delete their probe → the write check is skipped, not failed.
+  let askedCanDelete = null;
+  const member = await runSystemDiagnostics({
+    tripId: 't1', lang: 'th', isTripAdmin: false,
+    deps: {
+      ...base,
+      probeNotifications: async (_tripId, { canDelete } = {}) => {
+        askedCanDelete = canDelete;
+        return { read: { ok: true, code: '', message: '' }, write: null, cleaned: true };
+      }
+    }
+  });
+  const memberRows = Object.fromEntries(member.results.map(r => [r.id, r]));
+  eq(askedCanDelete, false, 'the probe is told this caller may not delete');
+  eq(memberRows['notify-write'].status, 'warn', 'a skipped write probe is a warning, not a failure');
+  assert(member.results.every(r => r.status !== 'fail'), 'a member session stays “ok” when only the write probe is skipped');
+
+  // 4) A local PIN session cannot reach Firestore at all → explained, not decoded.
+  const pinDeps = {
+    ...base,
+    auth: { currentUser: null },
+    getMemberSession: () => ({ memberId: 'u2', username: 'nun', tripId: 't1' }),
+    getDoc: async () => { throw fnErr('firestore/permission-denied', 'denied'); },
+    getDocs: async () => { throw fnErr('firestore/permission-denied', 'denied'); },
+    probeNotifications: async () => ({
+      read: { ok: false, code: 'firestore/permission-denied', message: 'Missing or insufficient permissions.' },
+      write: null, cleaned: true
+    })
+  };
+  const pin = await runSystemDiagnostics({ tripId: 't1', lang: 'th', isTripAdmin: false, deps: pinDeps });
+  const pinRow = pin.results.find(r => r.id === 'notify-read');
+  eq(pinRow.status, 'fail', 'the PIN session row fails');
+  assert(/PIN|สมาชิก/.test(pinRow.detail), '…and says the PIN session is the reason');
+  assert(/loginWithUsernamePin|Google/.test(pinRow.fix || ''), '…with both ways out');
+
+  // 5) No VAPID key on the site → push is a warning (Web Push is optional, the
+  //    in-app bell is not).
+  const noVapid = await runSystemDiagnostics({
+    tripId: 't1', lang: 'th',
+    deps: { ...base, vapidKey: '', probeNotifications: async () => ({ read: { ok: true, code: '', message: '' }, write: null, cleaned: true }) }
+  });
+  const pushRow = noVapid.results.find(r => r.id === 'notify-push');
+  eq(pushRow.status, 'warn', 'a missing VAPID key warns');
+  assert(/FCM_VAPID_KEY/.test(pushRow.fix || ''), '…and names the secret to add');
+  console.log('✓ notification diagnostics');
+}

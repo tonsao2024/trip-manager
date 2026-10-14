@@ -5,7 +5,10 @@
 //   users/{uid}/pushTokens/{token}      this device's Web-Push registration
 //
 // Writes are best-effort: a failed notification must NEVER break the action the
-// user was doing (saving an expense, recording a transfer, …).
+// user was doing (saving an expense, recording a transfer, …). They are *not*
+// silent, though: every failure is pushed to `onNotifyHealth` listeners so the
+// UI can say which layer is broken (rules / auth / functions / push / network)
+// and how to fix it — see utils/notifications.js → classifyNotifyError.
 import { db, serverTimestamp } from '../firebase.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, writeBatch,
@@ -22,6 +25,46 @@ export { NOTIFY_PREFS_DEFAULTS, normalizePrefs } from '../utils/notifications.js
 
 const COLLECTION = 'notifications';
 const MAX_KEPT = 120;   // per trip — the bell shows the newest 50
+
+/* ------------------------------------------------------- health reporting */
+
+/**
+ * One channel for “did a read/write work?”, so the UI can *say* something when
+ * the answer is no.
+ *
+ * The user report that made this necessary: “ไม่มีข้อความเลย” — an empty bell
+ * with no reason. Every read/write below is still best-effort (a failed
+ * notification must never break saving an expense) but the failure is now
+ * surfaced to whoever listens instead of only reaching `console.warn`.
+ *
+ * @param {(event:{ok:boolean, op:string, kind:'read'|'write', tripId:string|null, error:any})=>void} listener
+ * @returns {() => void} unsubscribe
+ */
+const healthListeners = new Set();
+
+export function onNotifyHealth(listener) {
+  if (typeof listener !== 'function') return () => {};
+  healthListeners.add(listener);
+  return () => { healthListeners.delete(listener); };
+}
+
+function emitHealth(event) {
+  for (const listener of [...healthListeners]) {
+    try { listener(event); } catch { /* a broken listener must never break the caller */ }
+  }
+}
+
+/** Report a failed operation (`kind` tells reads and writes apart for the UI). */
+function notifyFailed(error, op, kind, tripId = null) {
+  if (error) console.warn(`[Notifications] ${op} failed`, error?.code || error?.message || error);
+  emitHealth({ ok: false, op, kind, tripId, error });
+  return null;
+}
+
+function notifyOk(op, kind, tripId = null) {
+  emitHealth({ ok: true, op, kind, tripId, error: null });
+  return null;
+}
 
 /* ------------------------------------------------------------------ prefs */
 
@@ -55,7 +98,7 @@ export async function saveServerPrefs(uid, prefs = {}) {
     }, { merge: true });
     return true;
   } catch (e) {
-    console.warn('[Notifications] saving push prefs failed', e?.code || e?.message);
+    notifyFailed(e, 'save-prefs', 'write');
     return false;
   }
 }
@@ -66,7 +109,7 @@ export async function loadServerPrefs(uid) {
     const snap = await getDoc(doc(db, `users/${uid}/pushPrefs/current`));
     return snap.exists() ? snap.data() : null;
   } catch (e) {
-    console.warn('[Notifications] reading push prefs failed', e?.code || e?.message);
+    notifyFailed(e, 'load-prefs', 'read');
     return null;
   }
 }
@@ -88,7 +131,7 @@ export async function registerPushToken(uid, token, meta = {}) {
     }, { merge: true });
     return true;
   } catch (e) {
-    console.warn('[Notifications] saving the push token failed', e?.code || e?.message);
+    notifyFailed(e, 'push-token', 'write');
     return false;
   }
 }
@@ -100,7 +143,7 @@ export async function removePushToken(uid, token) {
     await deleteDoc(doc(db, `users/${uid}/pushTokens/${id}`));
     return true;
   } catch (e) {
-    console.warn('[Notifications] removing the push token failed', e?.code || e?.message);
+    notifyFailed(e, 'push-token', 'write');
     return false;
   }
 }
@@ -114,10 +157,17 @@ function notificationsCol(tripId) {
 export async function listNotifications(tripId, { max = 50 } = {}) {
   if (!db || !tripId) return [];
   const key = `notifs:${tripId}`;
-  return cachedRead(key, async () => {
-    const snap = await getDocs(query(notificationsCol(tripId), orderBy('createdAt', 'desc'), limit(max)));
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  }, { maxAgeMs: 60 * 1000 });
+  try {
+    const list = await cachedRead(key, async () => {
+      const snap = await getDocs(query(notificationsCol(tripId), orderBy('createdAt', 'desc'), limit(max)));
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }, { maxAgeMs: 60 * 1000 });
+    notifyOk('list', 'read', tripId);
+    return list;
+  } catch (e) {
+    notifyFailed(e, 'list', 'read', tripId);
+    throw e;   // callers keep their own fallback; the failure is reported either way
+  }
 }
 
 /** Live list — the bell updates the moment somebody records an expense. */
@@ -130,14 +180,15 @@ export function subscribeNotifications(tripId, onNext, { onError = null } = {}) 
       if (stopped) return;
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       cacheForget(`notifs:${tripId}`);
+      notifyOk('subscribe', 'read', tripId);
       onNext(list);
     }, (err) => {
-      console.warn('[Notifications] live listener failed', err?.code || err?.message);
+      notifyFailed(err, 'subscribe', 'read', tripId);
       onError?.(err);
     });
     return () => { stopped = true; try { unsub(); } catch { /* already gone */ } };
   } catch (e) {
-    console.warn('[Notifications] could not subscribe', e?.message);
+    notifyFailed(e, 'subscribe', 'read', tripId);
     return () => {};
   }
 }
@@ -154,14 +205,15 @@ export async function publishNotification(tripId, payload, { id = null } = {}) {
     if (id) {
       await setDoc(doc(db, `trips/${tripId}/${COLLECTION}/${id}`), body, { merge: true });
       cacheForget(`notifs:${tripId}`);
+      notifyOk('publish', 'write', tripId);
       return id;
     }
     const ref = await addDoc(notificationsCol(tripId), body);
     cacheForget(`notifs:${tripId}`);
+    notifyOk('publish', 'write', tripId);
     return ref.id;
   } catch (e) {
-    console.warn('[Notifications] write failed', e?.code || e?.message);
-    return null;
+    return notifyFailed(e, 'publish', 'write', tripId);
   }
 }
 
@@ -174,7 +226,7 @@ export async function markRead(tripId, notification, uid) {
     cacheForget(`notifs:${tripId}`);
     return true;
   } catch (e) {
-    console.warn('[Notifications] mark read failed', e?.code || e?.message);
+    notifyFailed(e, 'mark-read', 'write', tripId);
     return false;
   }
 }
@@ -193,7 +245,7 @@ export async function markAllRead(tripId, list = [], uid) {
     cacheForget(`notifs:${tripId}`);
     return unread.length;
   } catch (e) {
-    console.warn('[Notifications] mark-all-read failed', e?.code || e?.message);
+    notifyFailed(e, 'mark-all-read', 'write', tripId);
     return 0;
   }
 }
@@ -206,7 +258,7 @@ export async function deleteNotification(tripId, id) {
     cacheForget(`notifs:${tripId}`);
     return true;
   } catch (e) {
-    console.warn('[Notifications] delete failed', e?.code || e?.message);
+    notifyFailed(e, 'delete', 'write', tripId);
     return false;
   }
 }
@@ -235,7 +287,7 @@ export async function loadTripNotifySettings(tripId) {
     const snap = await getDoc(doc(db, `trips/${tripId}/settings/notifications`));
     return snap.exists() ? snap.data() : {};
   } catch (e) {
-    console.warn('[Notifications] reading trip settings failed', e?.code || e?.message);
+    notifyFailed(e, 'trip-settings', 'read', tripId);
     return {};
   }
 }
@@ -264,7 +316,7 @@ export async function recipientIds(tripId, { exclude = [] } = {}) {
     exclude.filter(Boolean).forEach(id => ids.delete(id));
     return [...ids];
   } catch (e) {
-    console.warn('[Notifications] recipient lookup failed', e?.code || e?.message);
+    notifyFailed(e, 'recipients', 'read', tripId);
     return [];
   }
 }
@@ -291,8 +343,7 @@ export async function notifyExpenseCreated(tripId, { expense, author = {}, membe
     if (!payload) return null;
     return await publishNotification(tripId, { ...payload, createdBy: author.id || expense.createdBy || null });
   } catch (e) {
-    console.warn('[Notifications] expense ping failed', e?.message);
-    return null;
+    return notifyFailed(e, 'expense-ping', 'write', tripId);
   }
 }
 
@@ -314,7 +365,8 @@ export async function ensureDailySummary(tripId, { expenses = [], members = [], 
   if (hourInZone(new Date(), timeZone) < summaryHour) return null;
 
   const id = dailySummaryId(today);
-  const existing = await getDoc(doc(db, `trips/${tripId}/${COLLECTION}/${id}`)).catch(() => null);
+  const existing = await getDoc(doc(db, `trips/${tripId}/${COLLECTION}/${id}`))
+    .catch((e) => { notifyFailed(e, 'daily-summary', 'read', tripId); return null; });
   if (existing?.exists?.()) return { id, created: false };
 
   const summary = dailySummary({ expenses, members, day: today, trip, myId: uid, lang, byName });
@@ -347,8 +399,7 @@ export async function notifyTransferRecorded(tripId, { transfer, memberNameOf = 
       createdByName: author.name || ''
     });
   } catch (e) {
-    console.warn('[Notifications] transfer ping failed', e?.message);
-    return null;
+    return notifyFailed(e, 'transfer-ping', 'write', tripId);
   }
 }
 
@@ -368,4 +419,61 @@ export async function sendTestNotification(tripId, { uid, name = '', lang = 'th'
     createdBy: uid,
     createdByName: name
   });
+}
+
+/* --------------------------------------------------------------- self test */
+
+/**
+ * Write → read → delete probe used by Settings → ตรวจสอบระบบ.
+ *
+ * Answers *which* layer is dead instead of a bare true/false:
+ *   read  — the exact query the bell uses (`orderBy createdAt desc`), so a
+ *           `permission-denied` here means the published rules have no
+ *           `trips/{tripId}/notifications` block (or the session has no auth).
+ *   write — one temporary document; only trip admins may delete it, so the
+ *           write probe is skipped (`write: null`) for everybody else.
+ *
+ * @returns {Promise<{read:{ok:boolean,code:string,message:string}, write:null|{ok:boolean,code:string,message:string}, cleaned:boolean}>}
+ */
+export async function probeNotifications(tripId, { uid = '', canDelete = false, lang = 'th' } = {}) {
+  const out = { read: { ok: false, code: '', message: '' }, write: null, cleaned: true };
+  if (!db || !tripId) {
+    out.read.message = lang === 'th' ? 'ยังไม่มีฐานข้อมูล/ทริปให้ตรวจ' : 'No database/trip to check';
+    return out;
+  }
+
+  try {
+    await getDocs(query(notificationsCol(tripId), orderBy('createdAt', 'desc'), limit(1)));
+    out.read = { ok: true, code: '', message: '' };
+  } catch (e) {
+    out.read = { ok: false, code: String(e?.code || ''), message: String(e?.message || e || '') };
+  }
+
+  if (!canDelete) return out;   // the probe document must stay removable
+
+  try {
+    const ref = await addDoc(notificationsCol(tripId), {
+      type: 'diagnostic',
+      date: dayKeyInZone(),
+      title: lang === 'th' ? 'ตรวจสอบระบบ: ทดสอบการแจ้งเตือน (ลบอัตโนมัติ)' : 'System check: notification test (auto-deleted)',
+      body: lang === 'th'
+        ? 'ข้อความนี้ถูกสร้างโดยหน้าตรวจสอบระบบ และจะถูกลบทันที — ถ้าคุณเห็นค้างอยู่ แสดงว่าการลบไม่ผ่านสิทธิ์'
+        : 'This document was created by the System check and is deleted immediately — if you can still see it, deleting failed.',
+      recipients: [],
+      readBy: {},
+      createdBy: uid || null,
+      createdAt: serverTimestamp()
+    });
+    out.write = { ok: true, code: '', message: '' };
+    try {
+      await deleteDoc(ref);
+      cacheForget(`notifs:${tripId}`);
+    } catch (e) {
+      out.cleaned = false;
+      out.write.message = String(e?.message || e || '');
+    }
+  } catch (e) {
+    out.write = { ok: false, code: String(e?.code || ''), message: String(e?.message || e || '') };
+  }
+  return out;
 }

@@ -14,12 +14,16 @@
  * tested in Node without network access.
  */
 
+import { validateVapidKey } from './notifications.js';
+
 export const DIAG = { ok: 'ok', warn: 'warn', fail: 'fail' };
 
 export const FIX = {
   deployFunctions: 'firebase deploy --only functions   (โปรเจกต์ต้องอยู่แผน Blaze ก่อน)',
   runInvoker: 'gcloud run services add-iam-policy-binding loginwithusernamepin --region=asia-southeast1 --member=allUsers --role=roles/run.invoker',
   deployRules: 'firebase deploy --only firestore:rules   (หรือเปิด Firebase Console > Firestore Database > Rules วางไฟล์ firestore.rules แล้วกด Publish)',
+  deployWorkflow: 'push ขึ้น main (หรือ Actions > “Deploy Firestore rules & Cloud Functions” > Run workflow) หลังตั้ง secret ชื่อ FIREBASE_SERVICE_ACCOUNT หรือ FIREBASE_TOKEN หนึ่งครั้ง',
+  setVapid: 'ตั้ง GitHub Actions secret ชื่อ FCM_VAPID_KEY = “Key pair” (Firebase Console → Project settings → Cloud Messaging → Web Push certificates) แล้ว deploy ใหม่',
   setMemberPin: 'แชร์รหัสเชิญ (หน้าตั้งค่า) ให้สมาชิกกดขอเข้าร่วม แล้วอนุมัติที่หน้าสมาชิก — หรือเพิ่ม/แก้ไขสมาชิกแล้วตั้งชื่อผู้ใช้ + PIN'
 };
 
@@ -134,6 +138,8 @@ async function loadDeps() {
   const fb = await import('../firebase.js');
   const fs = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
   const memberAuth = await import('../auth/memberAuth.js');
+  const push = await import('../notifications/push.js');
+  const notifications = await import('../notifications/index.js');
   return {
     isFirebaseConfigured: fb.isFirebaseConfigured,
     isStorageAvailable: fb.isStorageAvailable,
@@ -142,6 +148,15 @@ async function loadDeps() {
     functions: fb.functions,
     httpsCallable: fb.httpsCallable,
     getMemberSession: memberAuth.getMemberSession,
+    // 🔔 the bell + Web Push: which layer is dead (rules / auth / write rights)
+    probeNotifications: notifications.probeNotifications,
+    vapidKey: (() => {
+      try { return window.__FCM_VAPID_KEY__ || fb.resolvedFirebaseConfig?.fcmVapidKey || ''; }
+      catch { return fb.resolvedFirebaseConfig?.fcmVapidKey || ''; }
+    })(),
+    pushEnabled: push.pushEnabled,
+    pushToken: push.currentPushToken,
+    pushPermission: push.notificationPermission,
     ...fs
   };
 }
@@ -205,7 +220,7 @@ async function probeFunctions(deps, { timeoutMs, lang }) {
  * Run every check. `deps` can be injected for tests.
  * @returns {Promise<{ok:boolean, results:Array<{id,label,status,detail,fix}>}>}
  */
-export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeoutMs = 9000, deps = null } = {}) {
+export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeoutMs = 9000, deps = null, isTripAdmin = false } = {}) {
   const d = deps || await loadDeps();
   const results = [];
   const add = (id, label, status, detail, fix = null) => results.push({ id, label, status, detail, fix });
@@ -398,6 +413,79 @@ export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeout
     d.isStorageAvailable === false
       ? pick(lang, 'ไม่พร้อมใช้งาน — รูปภาพจะถูกเก็บเป็นลิงก์แทน', 'Unavailable — images are stored as links instead')
       : pick(lang, 'พร้อมใช้งาน', 'Available'));
+
+  // 10. 🔔 การแจ้งเตือน — the exact question the user report left open:
+  //     “ไม่มีข้อความเลย” can come from the published rules, from the caller's
+  //     auth context or from a write that the rules refuse. The probe below
+  //     runs the SAME query the bell uses, so it names the broken layer.
+  const memberSession = !d.auth?.currentUser && Boolean(d.getMemberSession?.());
+  if (tripId && d.db && typeof d.probeNotifications === 'function') {
+    try {
+      const probe = await withTimeout(
+        d.probeNotifications(tripId, { uid: user?.uid || '', canDelete: Boolean(isTripAdmin), lang }),
+        timeoutMs, 'notifications'
+      );
+
+      if (probe.read.ok) {
+        add('notify-read', pick(lang, 'อ่านรายการแจ้งเตือน (🔔)', 'Notification feed (🔔)'), DIAG.ok,
+          pick(lang, 'อ่านรายการของทริปนี้ได้ — กระดิ่งจะแสดงข้อความ', 'This trip’s feed is readable — the bell will show messages'));
+      } else {
+        const info = classifyFirestoreError(probe.read, pick(lang, 'รายการแจ้งเตือน', 'the notification feed'), lang);
+        add('notify-read', pick(lang, 'อ่านรายการแจ้งเตือน (🔔)', 'Notification feed (🔔)'), DIAG.fail,
+          memberSession
+            ? pick(lang, 'เซสชันสมาชิก (PIN) อ่านการแจ้งเตือนไม่ได้ เพราะไม่มีการล็อกอิน Firebase',
+                'A PIN member session cannot read the feed — there is no Firebase sign-in')
+            : info.text,
+          memberSession
+            ? pick(lang, 'ให้ผู้ดูแล deploy ฟังก์ชัน loginWithUsernamePin แล้วล็อกอินใหม่ หรือเข้าสู่ระบบด้วยบัญชี Google/อีเมล',
+                'Ask the owner to deploy loginWithUsernamePin and sign in again, or sign in with Google/email')
+            : info.fix);
+      }
+
+      if (probe.write) {
+        add('notify-write', pick(lang, 'เขียนการแจ้งเตือน (ทดสอบ)', 'Writing a notification (test)'),
+          probe.write.ok ? DIAG.ok : DIAG.fail,
+          probe.write.ok
+            ? (probe.cleaned
+              ? pick(lang, 'เขียนแล้วลบรายการทดสอบได้ปกติ — แจ้งเตือนของคนอื่นจะถูกสร้างได้',
+                  'The probe was written and removed — notifications for other members can be created')
+              : pick(lang, 'เขียนได้ แต่ลบไม่ได้ (เฉพาะผู้ดูแลทริปลบได้)',
+                  'Written, but removing it needs a trip admin'))
+            : `${classifyFirestoreError(probe.write, pick(lang, 'การแจ้งเตือน', 'the notification'), lang).text}`,
+          probe.write.ok ? null : FIX.deployRules);
+      } else {
+        add('notify-write', pick(lang, 'เขียนการแจ้งเตือน (ทดสอบ)', 'Writing a notification (test)'), DIAG.warn,
+          pick(lang, 'ข้ามการทดสอบการเขียน — ทำได้เฉพาะผู้ดูแลทริป (ผู้ทดสอบต้องลบรายการทดสอบได้)',
+            'Write probe skipped — only a trip admin can run it (the probe must be removable)'));
+      }
+    } catch (e) {
+      add('notify-read', pick(lang, 'อ่านรายการแจ้งเตือน (🔔)', 'Notification feed (🔔)'), DIAG.warn,
+        pick(lang, `ตรวจสอบไม่สำเร็จ: ${e.message}`, `Check failed: ${e.message}`));
+    }
+  } else if (tripId && d.db) {
+    add('notify-read', pick(lang, 'อ่านรายการแจ้งเตือน (🔔)', 'Notification feed (🔔)'), DIAG.warn,
+      pick(lang, 'ข้ามการทดสอบ (ไม่มีตัวตรวจการแจ้งเตือน)', 'Skipped (no notification probe available)'));
+  }
+
+  // 11. Web Push readiness — this device + the deployed VAPID key.
+  const vapid = validateVapidKey(d.vapidKey || '', lang);
+  const permission = (() => { try { return d.pushPermission?.() || 'default'; } catch { return 'unknown'; } })();
+  const pushOn = (() => { try { return Boolean(d.pushEnabled?.()); } catch { return false; } })();
+  const token = (() => { try { return d.pushToken?.() || ''; } catch { return ''; } })();
+  const pushDetail = [
+    vapid.valid
+      ? pick(lang, 'เว็บนี้มีคีย์ VAPID', 'This site serves a VAPID key')
+      : vapid.reason,
+    pick(lang, `สิทธิ์การแจ้งเตือน: ${permission}`, `Notification permission: ${permission}`),
+    pushOn && token
+      ? pick(lang, 'อุปกรณ์นี้ลงทะเบียน Push แล้ว', 'This device is registered for Push')
+      : pick(lang, 'อุปกรณ์นี้ยังไม่เปิด Push', 'Push is not enabled on this device')
+  ].join(' · ');
+  add('notify-push', pick(lang, 'Web Push (FCM)', 'Web Push (FCM)'),
+    vapid.valid ? DIAG.ok : DIAG.warn,
+    pushDetail,
+    vapid.valid ? null : pick(lang, FIX.setVapid,
+      'Set the FCM_VAPID_KEY GitHub Actions secret (= “Key pair” from Firebase Console → Project settings → Cloud Messaging → Web Push certificates) and redeploy'));
 
   return { ok: !results.some(r => r.status === DIAG.fail), results };
 }

@@ -2,6 +2,15 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
+> **v32 — 14 Oct 2026, การแจ้งเตือนต้องไม่มีวันเงียบ + จัดการครึ่งที่ Pages ไม่เคย deploy.** The 🔔 no longer
+> fails into `console.warn`: every denied read/write is turned into a named layer (Firestore rules /
+> auth / Cloud Functions / VAPID / network) with the exact command that fixes it — a toast, a banner
+> in the bell sheet (“วิธีแก้” + “ลองใหม่”), a warning dot on the bell and two new rows in
+> Settings → ตรวจสอบระบบ (a write→read→delete probe). Behind it, `.github/workflows/deploy-firebase.yml`
+> now publishes `firestore.rules`, the indexes and the Cloud Functions on every push to `main`, so the
+> half of the notification system that used to be missing (the `trips/{tripId}/notifications` rules +
+> `pushTripNotification`) can never drift out of the deployed project again. See `docs/DEPLOY.md`.
+
 > **v31 — 14 Oct 2026, แถบบนมือถือกลมกลืนและกะทัดรัด.** The mobile header now absorbs the iPhone safe area into its theme-matched surface, and the browser/status-bar color follows that surface instead of showing a separate bright brand strip. The toolbar row is 56px, its trip subtitle stays available in a compact style, and the content starts closer to the header; the two-row desktop navigation is unchanged.
 
 > **v30 — 13 Oct 2026, การแจ้งเตือน 🔔 + Web Push + ตรวจสิทธิ์ผู้ใช้.** Two owner requests.

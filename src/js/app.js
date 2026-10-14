@@ -5,7 +5,7 @@ import { attachMapExpand } from './maps/index.js';
 import { expenseUpdateForCost } from './utils/reservations.js';
 import { expensePayments, initialExpensePayerIds, findMemberForAccount, paymentMethodOf, validatePayments, planPayerFields, planPayerIds } from './utils/payments.js';
 import { groupIdeasByCategory } from './utils/ideas.js';
-import { auth, db, isFirebaseConfigured, onAuthStateChanged, syncState } from './firebase.js';
+import { app, auth, db, isFirebaseConfigured, onAuthStateChanged, syncState } from './firebase.js';
 import { Router } from './router.js';
 import { toast } from './components/toast.js';
 import { renderFujiMascot, renderEmptyState } from './components/fuji.js';
@@ -55,12 +55,12 @@ import { resolvePermissions, clearPermissionsCache } from './utils/permissions.j
 import { cacheForget } from './utils/datacache.js';
 import {
   notificationMeta, unreadCount, visibleNotifications, groupNotifications,
-  isReadBy, notifMillis, relativeTime, dayKeyInZone
+  isReadBy, notifMillis, relativeTime, dayKeyInZone, classifyNotifyError
 } from './utils/notifications.js';
 import {
   readNotifyPrefs, writeNotifyPrefs, subscribeNotifications, listNotifications, markRead, markAllRead,
   deleteNotification, ensureDailySummary, sendTestNotification, notifyTransferRecorded, pruneNotifications,
-  loadTripNotifySettings, saveTripNotifySettings, saveServerPrefs
+  loadTripNotifySettings, saveTripNotifySettings, saveServerPrefs, onNotifyHealth
 } from './notifications/index.js';
 import {
   pushSupport, enablePush, disablePush, pushEnabled, getVapidKey,
@@ -984,6 +984,200 @@ const notifyState = {
   support: null
 };
 
+/* ------------- notification failures are loud, never swallowed ------------- */
+
+/**
+ * The 🔔 depends on three things the app cannot publish by itself (the Firestore
+ * rules, the Cloud Functions, the Web Push VAPID key). Until v32 every failure
+ * ended in `console.warn`, so the user saw an empty bell with no reason — the
+ * exact report this fixes: “ไม่มีข้อความเลย”.
+ *
+ * One health event (from notifications/index.js) in → one throttled message out
+ * plus a banner in the bell sheet that stays until the pipeline works again.
+ */
+const notifyProblems = { last: null, reported: new Set() };
+
+function paintNotifyProblem() {
+  const bell = bellButtonEl();
+  const problem = notifyProblems.last;
+  if (bell) {
+    bell.classList.toggle('has-notify-error', Boolean(problem));
+    if (problem) {
+      bell.title = `${t('notifications')} — ${problem.title}`;
+      bell.setAttribute('aria-label', bell.title);
+    } else if (!bell.classList.contains('has-unread')) {
+      bell.title = t('notifications');
+      bell.setAttribute('aria-label', t('notifications'));
+    }
+  }
+  paintNotificationSheetIfOpen();
+}
+
+/** Health events from the notification layer (reads *and* writes). */
+function handleNotifyHealth(event) {
+  if (!event) return;
+  const tripId = event.tripId || null;
+  // A late event from a trip we already left must not paint on this screen.
+  if (tripId && notifyState.tripId && tripId !== notifyState.tripId) return;
+
+  if (event.ok) {
+    // A recovered read clears a read warning, a recovered write clears a write
+    // warning — so the banner disappears on its own once the fix is deployed.
+    if (notifyProblems.last && notifyProblems.last.kind === event.kind) {
+      notifyProblems.last = null;
+      paintNotifyProblem();
+    }
+    return;
+  }
+
+  const info = classifyNotifyError(event.error, getLang(), {
+    memberSession: Boolean(currentUser?.isMemberSession),
+    op: event.op
+  });
+  notifyProblems.last = { ...info, op: event.op, kind: event.kind, tripId, at: Date.now() };
+  paintNotifyProblem();
+
+  // One message per broken layer per session — a denied feed fires on every
+  // snapshot and must not turn into a toast storm.
+  const key = `${info.layer}:${event.kind}`;
+  if (notifyProblems.reported.has(key)) return;
+  notifyProblems.reported.add(key);
+  toast.error(
+    info.fix ? `${info.message} — ${info.fix}` : info.message,
+    info.title,
+    () => { notifyProblems.reported.delete(key); showNotifyHelpSheet(); },
+    getLang() === 'th' ? 'ดูวิธีแก้' : 'How to fix'
+  );
+}
+
+onNotifyHealth(handleNotifyHealth);
+
+/** The banner at the top of the 🔔 sheet: what broke and how to fix it. */
+function notifyProblemHtml() {
+  const p = notifyProblems.last;
+  if (!p) return '';
+  const th = (a, b) => (getLang() === 'th' ? a : b);
+  return `
+    <div class="notify-problem" id="notify-problem">
+      <div class="notify-problem-head">${icon('alert-triangle', 'w-4 h-4')} <b>${escapeHtml(p.title)}</b></div>
+      <p class="notify-problem-text">${escapeHtml(p.message)}</p>
+      ${p.fix ? `<code class="notify-problem-fix">${escapeHtml(p.fix)}</code>` : ''}
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary btn-sm" id="notify-problem-help">${icon('life-buoy', 'w-3.5 h-3.5')} ${th('วิธีแก้', 'How to fix')}</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="notify-problem-retry">${icon('refresh-cw', 'w-3.5 h-3.5')} ${th('ลองใหม่', 'Retry')}</button>
+      </div>
+    </div>`;
+}
+
+/** Retry after the owner published the rules / functions / VAPID key. */
+async function retryNotifications() {
+  const tripId = notifyState.tripId || currentTripId;
+  notifyProblems.last = null;
+  notifyProblems.reported.clear();
+  paintNotifyProblem();
+  if (!tripId) return;
+  try {
+    stopNotificationWatch();
+    startNotificationWatch(tripId);
+    await reloadNotifications(tripId);
+    toast.success(getLang() === 'th' ? 'โหลดการแจ้งเตือนใหม่แล้ว' : 'Notifications reloaded');
+  } catch (e) {
+    handleNotifyHealth({ ok: false, op: 'reload', kind: 'read', tripId, error: e });
+  }
+}
+
+/**
+ * “Why is my 🔔 quiet?” — the failing layer, the steps and the two buttons that
+ * actually fix it (copy all rules / open the Firebase console).
+ */
+async function showNotifyHelpSheet() {
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const problem = notifyProblems.last || classifyNotifyError(null, lang);
+  const projectId = (() => { try { return app?.options?.projectId || null; } catch { return null; } })();
+  const tripId = notifyState.tripId || currentTripId || '';
+
+  const steps = {
+    rules: [
+      th('กด “คัดลอกกฎทั้งหมด” ด้านล่าง', 'Press “Copy all rules” below'),
+      th('เปิด Firebase Console → Firestore Database → Rules (บัญชีเจ้าของโปรเจกต์)', 'Open Firebase Console → Firestore Database → Rules (project owner account)'),
+      th('วางทับของเดิมแล้วกด Publish', 'Paste over the existing rules and press Publish'),
+      th('กลับมาที่แอป กด “ลองใหม่” ที่แถบการแจ้งเตือน (หรือรีเฟรชหน้าเว็บ)', 'Come back and press “Retry” on the notification banner (or reload the page)')
+    ],
+    auth: [
+      th('เปิดเมนูมุมขวาบน → ออกจากระบบ', 'Open the top-right menu → Sign out'),
+      th('เข้าสู่ระบบด้วยบัญชี Google/อีเมลของตัวเองอีกครั้ง', 'Sign in again with your own Google/email account'),
+      th('สมาชิกที่ใช้ชื่อผู้ใช้ + PIN ต้องให้ผู้ดูแล deploy ฟังก์ชัน loginWithUsernamePin ก่อน จึงจะมีการแจ้งเตือน', 'Members on username + PIN need the owner to deploy loginWithUsernamePin before notifications can work')
+    ],
+    functions: [
+      th('เปิด terminal ในโฟลเดอร์โปรเจกต์ แล้วรัน: firebase deploy --only functions', 'In a terminal inside the project folder run: firebase deploy --only functions'),
+      th('ต้องอัปเกรดโปรเจกต์เป็นแผน Blaze ก่อน (ฟรีสปาร์คใช้ Cloud Functions ไม่ได้)', 'The project must be on the Blaze plan (Cloud Functions need it)'),
+      th('รอ 1–2 นาที แล้วกด “ลองใหม่” — การแจ้งเตือนในแอปทำงานได้แม้ไม่มีฟังก์ชัน', 'Wait 1–2 minutes, then press “Retry” — the in-app bell works even without the functions')
+    ],
+    push: [
+      th('ให้ผู้ดูแลตั้ง GitHub Actions secret ชื่อ FCM_VAPID_KEY = “Key pair” จาก Firebase Console → Project settings → Cloud Messaging → Web Push certificates', 'Ask the owner to set the FCM_VAPID_KEY GitHub Actions secret = “Key pair” from Firebase Console → Project settings → Cloud Messaging → Web Push certificates'),
+      th('บน iPhone/iPad ต้อง “เพิ่มไปที่หน้าจอโฮม” ก่อน (iOS 16.4+)', 'On iPhone/iPad the app must be added to the Home Screen first (iOS 16.4+)'),
+      th('เปิดแอปใหม่ → การตั้งค่า → การแจ้งเตือน → “เปิด Push บนอุปกรณ์นี้”', 'Reopen the app → Settings → Notifications → “Turn push on here”')
+    ],
+    index: [
+      th('ข้อความ error ด้านล่างมีลิงก์ “สร้าง index” ของ Firebase Console — เปิดลิงก์นั้น', 'The raw error below carries a Firebase Console “create index” link — open it'),
+      th('กด Create index แล้วรอ 1–2 นาที', 'Press Create index and wait 1–2 minutes'),
+      th('กด “ลองใหม่”', 'Press “Retry”')
+    ],
+    network: [
+      th('ตรวจอินเทอร์เน็ต / Wi-Fi แล้วกด “ลองใหม่”', 'Check the internet / Wi-Fi and press “Retry”'),
+      th('ถ้าใช้ VPN หรือเน็ตที่บล็อก Google ให้ลองปิดก่อน', 'If a VPN or a network that blocks Google is in use, turn it off first')
+    ],
+    unknown: [
+      th('กด “ตรวจสอบระบบ” ด้านล่างเพื่อดูว่าชั้นไหนพัง (rules / functions / push)', 'Press “System check” below to see which layer is broken (rules / functions / push)')
+    ]
+  }[problem.layer] || [];
+
+  const sheet = showBottomSheet(`
+    <div class="space-y-4" id="notify-help-sheet">
+      <div class="flex items-center gap-3">
+        <div class="row-icon" style="width:44px;height:44px;border-radius:14px;background:var(--danger-bg);color:var(--danger);">${icon('bell-off', 'w-5 h-5')}</div>
+        <div class="min-w-0">
+          <h3 class="font-bold text-base" style="font-family: var(--font-display);">${th('การแจ้งเตือนไม่ทำงาน — วิธีแก้', 'Notifications are down — how to fix')}</h3>
+          <p class="text-[11px] text-[var(--text-tertiary)]">${escapeHtml(problem.title)}</p>
+        </div>
+      </div>
+      <p class="text-xs text-[var(--text-secondary)] leading-relaxed">${escapeHtml(problem.message)}</p>
+      <ol class="text-xs space-y-2 list-decimal pl-5 text-[var(--text-secondary)]">
+        ${steps.map(s => `<li>${escapeHtml(s)}</li>`).join('')}
+      </ol>
+      ${problem.fix ? `<div class="p-3 rounded-xl text-[11px] font-mono break-words" style="background:var(--bg-secondary); border:1px solid var(--border);">${escapeHtml(problem.fix)}</div>` : ''}
+      <div class="btn-row">
+        <button id="notify-help-copy-rules" class="btn btn-primary btn-sm">${icon('clipboard-copy', 'w-4 h-4')} ${th('คัดลอกกฎทั้งหมด', 'Copy all rules')}</button>
+        <button id="notify-help-console" class="btn btn-secondary btn-sm">${icon('external-link', 'w-4 h-4')} ${th('เปิด Firebase Console', 'Open Firebase Console')}</button>
+      </div>
+      <div class="btn-row">
+        <button id="notify-help-system" class="btn btn-ghost btn-sm">${icon('stethoscope', 'w-4 h-4')} ${th('ตรวจสอบระบบ', 'System check')}</button>
+        <button id="notify-help-retry" class="btn btn-ghost btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่', 'Retry')}</button>
+      </div>
+      <div id="notify-help-status" class="text-[11px] text-[var(--text-tertiary)]"></div>
+    </div>
+  `);
+  queueIcons();
+
+  const status = (msg) => { const el = sheet.sheet.querySelector('#notify-help-status'); if (el) el.textContent = msg; };
+  bind('notify-help-copy-rules', 'click', async () => {
+    status(th('กำลังดึงไฟล์กฎ...', 'Fetching the rules…'));
+    const text = await fetchRulesText().catch(() => null);
+    if (!text) { status(th('ดึงไฟล์กฎไม่สำเร็จ — เปิด GitHub แล้วคัดลอก firestore.rules เอง', 'Could not fetch the rules — copy firestore.rules from GitHub instead')); return; }
+    const done = navigator.clipboard?.writeText?.(text);
+    if (done?.then) done.then(() => status(th('✅ คัดลอกกฎแล้ว — วางใน Firebase Console → Firestore → Rules', '✅ Rules copied — paste them in Firebase Console → Firestore → Rules')))
+      .catch(() => status(text.slice(0, 60)));
+    else status(text.slice(0, 60));
+  });
+  bind('notify-help-console', 'click', () => { window.open(consoleRulesUrl(projectId), '_blank', 'noopener'); });
+  bind('notify-help-system', 'click', () => {
+    sheet.close();
+    location.hash = tripId ? `#/trip/${tripId}/settings?tab=system` : '#/trips';
+  });
+  bind('notify-help-retry', 'click', async () => { await retryNotifications(); status(th('ลองใหม่แล้ว — ถ้ายังขึ้นเตือนอยู่ ต้อง deploy ก่อน', 'Retried — if the warning is still there, the deploy has not happened yet')); });
+}
+
 function bellButtonEl() { return document.getElementById('notify-bell'); }
 
 /** Unread badge + aria label of the header bell. */
@@ -1223,6 +1417,7 @@ async function openNotificationsSheet() {
         </div>
         <button type="button" class="btn btn-ghost btn-sm" id="notify-read-all">${icon('check-check', 'w-3.5 h-3.5')} ${th('อ่านทั้งหมด', 'Mark all')}</button>
       </div>
+      <div id="notify-problem-wrap"></div>
       <div id="notify-push-strip-wrap">${notificationPushStripHtml()}</div>
       <div class="chip-row my-2" id="notify-filters">${notificationFilterChipsHtml()}</div>
       <div id="notify-list" class="notify-list"></div>
@@ -1248,12 +1443,17 @@ async function openNotificationsSheet() {
       : th('อ่านครบทุกรายการแล้ว', 'You are all caught up');
     const filters = document.getElementById('notify-filters');
     if (filters) filters.innerHTML = notificationFilterChipsHtml();
+    const problemWrap = document.getElementById('notify-problem-wrap');
+    if (problemWrap) problemWrap.innerHTML = notifyProblemHtml();
     if (!filtered.length) {
       listEl.innerHTML = renderEmptyState({
         icon: 'bell',
-        title: th('ยังไม่มีการแจ้งเตือน', 'No notifications yet'),
-        desc: th('ทุกครั้งที่มีคนบันทึกค่าใช้จ่าย หรือสรุปค่าใช้จ่ายรายวัน รายการจะมาโผล่ที่นี่',
-          'Every expense somebody records — and the daily summary — lands here.')
+        title: notifyProblems.last ? th('ยังอ่านรายการไม่ได้', 'The feed cannot be read') : th('ยังไม่มีการแจ้งเตือน', 'No notifications yet'),
+        desc: notifyProblems.last
+          ? th('สาเหตุอยู่ในแถบเตือนด้านบน — กด “วิธีแก้” เพื่อปลดล็อก',
+              'The reason is in the warning above — press “How to fix”')
+          : th('ทุกครั้งที่มีคนบันทึกค่าใช้จ่าย หรือสรุปค่าใช้จ่ายรายวัน รายการจะมาโผล่ที่นี่',
+              'Every expense somebody records — and the daily summary — lands here.')
       });
     } else {
       const today = dayKeyInZone(new Date(), currentTrip?.timezone || null);
@@ -1291,6 +1491,10 @@ async function openNotificationsSheet() {
         location.hash = `#/trip/${tripId}/settings?tab=notify`;
         return;
       }
+      // v32 — the notification pipeline itself is broken: offer the fix, then
+      // let the user retry once the owner has published rules/functions.
+      if (e.target.closest('#notify-problem-help')) { await showNotifyHelpSheet(); return; }
+      if (e.target.closest('#notify-problem-retry')) { await retryNotifications(); paint(); return; }
       const enableBtn = e.target.closest('#notify-enable-push');
       if (enableBtn) {
         enableBtn.disabled = true;
@@ -1503,7 +1707,13 @@ function bindNotificationSettings({ tripId, lang = 'th', perms = {}, params = nu
       if (params) renderSettings(params);
       else router.handle();
     } catch (err) {
-      toast.error(err.message || String(err));
+      // Same contract as the 🔔 sheet: never a bare error — say which layer
+      // failed and offer the fix (a denied pushTokens write is the silent
+      // killer of “เปิด Push แล้วแต่ไม่มีอะไรเข้า”).
+      const info = classifyNotifyError(err, lang, { memberSession: !auth.currentUser });
+      toast.error(info.message, info.title, info.retryable
+        ? () => document.getElementById('notify-push-toggle')?.click()
+        : null, th('ลองใหม่', 'Retry'));
       btn.disabled = false;
     }
   });
@@ -1808,7 +2018,10 @@ function renderMemberSessionNotice(on) {
 // same report as Settings > ตรวจสอบระบบ (System check).
 if (typeof window !== 'undefined') {
   window.fujiDiagnose = async () => {
-    const result = await runSystemDiagnostics({ tripId: currentTripId, lang: getLang() });
+    const perms = await resolvePermsCached(currentTripId, currentTrip).catch(() => null);
+    const result = await runSystemDiagnostics({
+      tripId: currentTripId, lang: getLang(), isTripAdmin: Boolean(perms?.isAdmin)
+    });
     if (typeof console.table === 'function') {
       console.table(result.results.map(x => ({ check: x.label, status: x.status, detail: x.detail })));
     }
@@ -1829,6 +2042,7 @@ async function notifyWriteDenied(e, { action = 'save', fallback = '' } = {}) {
     await showRulesHelpSheet({ lang: getLang(), action });
     return true;
   } catch {
+    const th = (a, b) => (getLang() === 'th' ? a : b);
     toast.error(fallback || th('ไม่มีสิทธิ์บันทึก (Firestore rules)', 'Missing or insufficient permissions'));
     return true;
   }
@@ -12025,7 +12239,7 @@ async function renderSettings(params) {
     btn.disabled = true;
     box.innerHTML = `<div class="diag-row"><span class="diag-dot"></span><span>${th('กำลังตรวจสอบ...','Running checks...')}</span></div>`;
     try {
-      const report = await runSystemDiagnostics({ tripId, lang });
+      const report = await runSystemDiagnostics({ tripId, lang, isTripAdmin: Boolean(perms?.isAdmin) });
       const color = { ok: 'var(--success)', warn: '#d97706', fail: 'var(--danger)' };
       const glyph = { ok: 'check-circle-2', warn: 'alert-circle', fail: 'x-circle' };
       box.innerHTML = report.results.map(r => `

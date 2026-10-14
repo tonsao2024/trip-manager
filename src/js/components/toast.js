@@ -31,7 +31,7 @@ const ICON_COLORS = {
   info: 'var(--info)'
 };
 
-function createToast({ type = 'success', title, message, duration = 4000, retryFn }) {
+function createToast({ type = 'success', title, message, duration = 4000, retryFn, retryLabel = 'ลองอีกครั้ง' }) {
   const c = ensureContainer();
   const el = document.createElement('div');
   el.className = `toast toast-${type}`;
@@ -43,7 +43,7 @@ function createToast({ type = 'success', title, message, duration = 4000, retryF
     <div style="flex:1;min-width:0;">
       ${title ? `<div style="font-weight:700;font-size:13px;margin-bottom:1px;color:var(--text);">${escapeHtml(title)}</div>` : ''}
       <div style="font-size:13px;color:var(--text-secondary);line-height:1.45;word-break:break-word;">${escapeHtml(message || '')}</div>
-      ${retryFn ? `<button class="btn btn-sm btn-secondary" style="margin-top:8px;min-height:30px;" data-retry>ลองอีกครั้ง</button>` : ''}
+      ${retryFn ? `<button class="btn btn-sm btn-secondary" style="margin-top:8px;min-height:30px;" data-retry>${escapeHtml(retryLabel)}</button>` : ''}
     </div>
     <button class="toast-close" aria-label="Close">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="15" height="15"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -68,7 +68,7 @@ function createToast({ type = 'success', title, message, duration = 4000, retryF
 
 export const toast = {
   success(msg, title = 'สำเร็จ') { return createToast({ type: 'success', title, message: msg }); },
-  error(msg, title = 'เกิดข้อผิดพลาด', retryFn) { return createToast({ type: 'error', title, message: msg, duration: 6000, retryFn }); },
+  error(msg, title = 'เกิดข้อผิดพลาด', retryFn, retryLabel = 'ลองอีกครั้ง') { return createToast({ type: 'error', title, message: msg, duration: 6000, retryFn, retryLabel }); },
   warning(msg, title = 'คำเตือน') { return createToast({ type: 'warning', title, message: msg, duration: 5000 }); },
   loading(msg, title = 'กำลังโหลด') { return createToast({ type: 'loading', title, message: msg, duration: 0 }); },
   info(msg, title = 'แจ้งเตือน') { return createToast({ type: 'info', title, message: msg }); }

@@ -165,9 +165,22 @@ export async function enablePush({ uid, tripIds = [], lang = 'th' } = {}) {
   if (!token) throw new Error(th('ขอ token สำหรับ Push ไม่สำเร็จ', 'Could not get a push token'));
 
   rememberToken(token);
-  await registerPushToken(uid, token, { platform: 'web', userAgent: navigator.userAgent, tripIds });
+  // A false success is the worst outcome here: the device would look registered
+  // while `users/{uid}/pushTokens` stayed empty and the Cloud Function had
+  // nothing to send to (the “push ไม่ทำงาน” report). Fail loudly instead.
+  const stored = await registerPushToken(uid, token, { platform: 'web', userAgent: navigator.userAgent, tripIds });
+  if (!stored) {
+    const err = new Error(th(
+      'ได้รับสิทธิ์แจ้งเตือนแล้ว แต่บันทึกอุปกรณ์นี้ไม่สำเร็จ — Firestore ปฏิเสธการเขียน users/{uid}/pushTokens (มักเกิดจากกฎที่เผยแพร่ยังเก่ากว่าแอป) ให้ publish firestore.rules ก่อนแล้วลองใหม่',
+      'Permission granted, but this device could not be saved — Firestore refused the write to users/{uid}/pushTokens (usually because the published rules are older than the app). Publish firestore.rules and retry.'
+    ));
+    err.code = 'push/store-failed';
+    rememberToken('');
+    throw err;
+  }
   const prefs = writeNotifyPrefs({ push: true });
-  await saveServerPrefs(uid, prefs);
+  const serverPrefs = await saveServerPrefs(uid, prefs);
+  if (!serverPrefs) console.warn('[Push] account preferences were not mirrored — the trip settings still decide what is pushed');
   return { token };
 }
 
