@@ -8,11 +8,25 @@
   <meta name="application-name" content="Trip Manager">
   <meta name="author" content="TonSkywalker">
   <meta name="copyright" content="© 2024–2026 TonSkywalker. All rights reserved.">
-  <meta name="theme-color" id="meta-theme-color" content="#1f6bfb">
+  <meta name="theme-color" id="meta-theme-color" content="#f7fbff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" id="meta-apple-status-bar-style" content="default">
+  <!-- Set iOS status-bar contrast before first paint when a dark mode is saved. -->
+  <script>
+    try {
+      const savedMode = localStorage.getItem('fuji_theme');
+      const darkMode = savedMode === 'dark' || (savedMode !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      if (darkMode) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('meta-theme-color').setAttribute('content', '#0f1a46');
+        document.getElementById('meta-apple-status-bar-style').setAttribute('content', 'black-translucent');
+      }
+    } catch {}
+  </script>
   <!-- Build identity — source of truth: src/js/utils/buildInfo.js (a unit test keeps these in sync) -->
-  <meta name="app-version" content="30">
+  <meta name="app-version" content="31">
   <meta name="app-palette" content="Sky light">
-  <meta name="app-updated" content="2026-10-13">
+  <meta name="app-updated" content="2026-10-14">
   <meta property="og:title" content="Trip Manager by TonSkywalker">
   <meta property="og:description" content="วางแผนทริป • แบ่งค่าใช้จ่าย • เคลียร์บิล ครบในแอปเดียว โดย TonSkywalker">
   <!-- Logo ในแถบบราวเซอร์ (favicon) — ไฟล์จริงในโฟลเดอร์ public/ และแบบ inline ที่ตามธีมสี -->
@@ -39,10 +53,10 @@
   </script>
 
   <!-- Design System v21 “Vivid & Deep” (cache-busted) -->
-  <link rel="stylesheet" href="./src/css/tokens.css?v=30">
-  <link rel="stylesheet" href="./src/css/components.css?v=30">
-  <link rel="stylesheet" href="./src/css/refresh.css?v=30">
-  <link rel="stylesheet" href="./src/css/animations.css?v=30">
+  <link rel="stylesheet" href="./src/css/tokens.css?v=31">
+  <link rel="stylesheet" href="./src/css/components.css?v=31">
+  <link rel="stylesheet" href="./src/css/refresh.css?v=31">
+  <link rel="stylesheet" href="./src/css/animations.css?v=31">
 
   <!-- Lucide Icons -->
   <script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
@@ -187,6 +201,29 @@
     }
     /* Page transition base */
     #app { transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+
+    /*
+     * Phones: make the iOS status-bar safe area part of the header surface,
+     * then place the compact toolbar below the system icons. --header-h includes
+     * that inset so sticky page controls line up with the real header edge.
+     */
+    @media (max-width: 767px) {
+      :root { --header-h: calc(56px + env(safe-area-inset-top, 0px)); }
+      #app-header {
+        height: auto;
+        padding-top: env(safe-area-inset-top, 0px);
+        background: var(--app-chrome-color, #f7fbff);
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+      }
+      #app-header .header-row {
+        height: 56px;
+        padding-left: max(16px, env(safe-area-inset-left, 0px));
+        padding-right: max(16px, env(safe-area-inset-right, 0px));
+      }
+      #header-subtitle { margin-top: 1px; font-size: 10px; }
+      #app { padding-top: 14px; }
+    }
 
     /* Ambient animated background blobs (theme-tinted, no emoji, no images) */
     #bg-decor { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
@@ -401,6 +438,6 @@
   <script src="./fcm-vapid.js"></script>
 
   <!-- App (cache-busted) -->
-  <script type="module" src="./src/js/app.js?v=30"></script>
+  <script type="module" src="./src/js/app.js?v=31"></script>
 </body>
 </html>

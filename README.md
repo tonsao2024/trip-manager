@@ -2,6 +2,8 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
+> **v31 — 14 Oct 2026, แถบบนมือถือกลมกลืนและกะทัดรัด.** The mobile header now absorbs the iPhone safe area into its theme-matched surface, and the browser/status-bar color follows that surface instead of showing a separate bright brand strip. The toolbar row is 56px, its trip subtitle stays available in a compact style, and the content starts closer to the header; the two-row desktop navigation is unchanged.
+
 > **v30 — 13 Oct 2026, การแจ้งเตือน 🔔 + Web Push + ตรวจสิทธิ์ผู้ใช้.** Two owner requests.
 > **(1) การแจ้งเตือน:** every trip now has a **🔔 bell in the top bar** with an unread badge, a
 > notification sheet (grouped วันนี้/เมื่อวาน/ก่อนหน้านี้ + type filters + “อ่านทั้งหมด”) and

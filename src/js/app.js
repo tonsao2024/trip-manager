@@ -691,8 +691,15 @@ function paintAppFooter() {
 function updateMetaThemeColor() {
   const meta = document.getElementById('meta-theme-color');
   if (!meta) return;
-  const raw = (brandPalette().blue) || getComputedStyle(document.documentElement).getPropertyValue('--primary-raw').trim();
-  meta.setAttribute('content', raw || BRAND_PRIMARY);
+  // Match the browser/status-bar strip to the actual mobile header surface,
+  // rather than painting a saturated brand-blue band above a light header.
+  const chromeColor = getComputedStyle(document.documentElement)
+    .getPropertyValue('--app-chrome-color').trim();
+  meta.setAttribute('content', chromeColor || '#f7fbff');
+  // iOS home-screen apps use this setting for status-bar glyph contrast; its
+  // translucent dark mode lets the safe-area extension show through behind it.
+  const appleStatusBar = document.getElementById('meta-apple-status-bar-style');
+  if (appleStatusBar) appleStatusBar.setAttribute('content', effectiveTheme() === 'dark' ? 'black-translucent' : 'default');
   // Keep the browser-tab icon colour in sync with the theme (inline SVG favicon).
   const tint = document.getElementById('favicon-tint');
   if (tint) {

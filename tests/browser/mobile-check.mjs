@@ -153,6 +153,22 @@ async function main() {
     }
     await page.waitForFunction(() => window.__mobile?.ready, { timeout: 30000 });
 
+    const shell = await page.evaluate(() => {
+      const header = document.getElementById('app-header');
+      const row = header?.querySelector('.header-row');
+      return {
+        headerHeight: Math.round(header?.getBoundingClientRect().height || 0),
+        rowHeight: Math.round(row?.getBoundingClientRect().height || 0),
+        appTop: Math.round(parseFloat(getComputedStyle(document.getElementById('app')).paddingTop) || 0),
+        themeColor: document.getElementById('meta-theme-color')?.content || '',
+        chromeColor: getComputedStyle(document.documentElement).getPropertyValue('--app-chrome-color').trim()
+      };
+    });
+    const shellOk = shell.rowHeight === 56 && shell.headerHeight >= shell.rowHeight
+      && shell.appTop === 14 && shell.themeColor === shell.chromeColor;
+    console.log(`  ${shellOk ? '✓' : '✗'} compact top bar — row:${shell.rowHeight}px header:${shell.headerHeight}px content gap:${shell.appTop}px theme matches:${shell.themeColor === shell.chromeColor}`);
+    if (!shellOk) problems.push(`${device.id}: mobile top bar is not compact or browser chrome does not match the header (${JSON.stringify(shell)})`);
+
     console.log(`\n— ${device.id} (${device.width}×${device.height})${FORCE_MODE ? ` · ${FORCE_MODE} mode` : ''} —`);
     for (const [name, hash, tap, scrollTo] of ROUTES) {
       await page.evaluate((h) => window.__mobile.goto(h), hash);

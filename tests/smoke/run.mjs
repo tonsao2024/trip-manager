@@ -3098,9 +3098,9 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
     'push: the root service worker draws background messages and routes the tap');
   check(/firebase-messaging-sw\.js/.test(fs.readFileSync(path.join(root, 'src/js/notifications/push.js'), 'utf8')),
     'push: the client registers that exact worker file');
-  check(/app-version" content="30"/.test(shell30)
-    && /APP_VERSION = '30'/.test(fs.readFileSync(path.join(root, 'src/js/utils/buildInfo.js'), 'utf8')),
-    'build: index.html and buildInfo.js agree on v30');
+  check(/app-version" content="31"/.test(shell30)
+    && /APP_VERSION = '31'/.test(fs.readFileSync(path.join(root, 'src/js/utils/buildInfo.js'), 'utf8')),
+    'build: index.html and buildInfo.js agree on v31');
   check(/<script src="\.\/fcm-vapid\.js"><\/script>/.test(shell30)
     && /window\.__FCM_VAPID_KEY__ = ''/.test(fs.readFileSync(path.join(root, 'fcm-vapid.js'), 'utf8')),
     'push: index.html loads the VAPID placeholder and the repo carries no real key');
