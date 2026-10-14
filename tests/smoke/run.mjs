@@ -2913,6 +2913,33 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
   check(stillUnread.length === 0, `notifications: “อ่านทั้งหมด” clears every unread item (${stillUnread.length} left)`);
   check(q('#notify-badge').classList.contains('hidden'), 'notifications: the badge disappears when all is read');
 
+  // ---- 4.5) 🔔 ของ “user อื่น”: a notification written by ANOTHER device while
+  // this member has the app open must light the badge and pop a toast. This is
+  // the scenario of the owner report (“user อื่นไม่ได้รับการแจ้งเตือน”).
+  await goto('#/trip/t1/dashboard');
+  await sleep(200);
+  const badgeCount = () => Number(q('#notify-badge')?.dataset?.count || 0);
+  check(badgeCount() === 0, 'notifications: the badge starts clean for the receiving member');
+  fsdb.__write('trips/t1/notifications/other-device-1', {
+    type: 'expense', date: notifUtils.dayKeyInZone(new Date(), 'Asia/Tokyo'),
+    title: 'บันทึกค่าใช้จ่าย: ราเมงฮาจิบัง',
+    body: 'นุ่น บันทึก ฿220.00 (จ่ายจริง)', amountMinor: 22000, currency: 'THB',
+    link: '#/trip/t1/expenses', recipients: ['u1'], readBy: {}, createdBy: 'u2',
+    createdByName: 'นุ่น', createdAt: now
+  });
+  await waitFor(() => badgeCount() >= 1, { timeout: 6000, label: 'badge from another device' }).catch(() => {});
+  check(badgeCount() >= 1, `notifications: a ping from another device raises the badge for me (${badgeCount()})`);
+  check(/ราเมงฮาจิบัง/.test(html$() + (q('#toast-container')?.textContent || '')),
+    'notifications: …and the pop-up names what happened');
+  await click('#notify-bell');
+  await sleep(250);
+  check(/ราเมงฮาจิบัง/.test(q('#notify-sheet')?.textContent || ''),
+    'notifications: the row from the other device is in the bell list');
+  await click('#notify-sheet [data-notify-filter=""]').catch(() => {});
+  const sheetClose45 = q('#notify-sheet .modal-close, #notify-sheet [data-sheet-close]');
+  if (sheetClose45) await click(sheetClose45);
+  else { await sleep(100); }
+
   // ---- 5) สรุปค่าใช้จ่ายรายวัน (หนึ่งเอกสารต่อทริปต่อวัน)
   const tzDay = notifUtils.dayKeyInZone(new Date(), 'Asia/Tokyo');
   const summaryId = notifUtils.dailySummaryId(tzDay);
@@ -3098,9 +3125,9 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
     'push: the root service worker draws background messages and routes the tap');
   check(/firebase-messaging-sw\.js/.test(fs.readFileSync(path.join(root, 'src/js/notifications/push.js'), 'utf8')),
     'push: the client registers that exact worker file');
-  check(/app-version" content="31"/.test(shell30)
-    && /APP_VERSION = '31'/.test(fs.readFileSync(path.join(root, 'src/js/utils/buildInfo.js'), 'utf8')),
-    'build: index.html and buildInfo.js agree on v31');
+  check(/app-version" content="32"/.test(shell30)
+    && /APP_VERSION = '32'/.test(fs.readFileSync(path.join(root, 'src/js/utils/buildInfo.js'), 'utf8')),
+    'build: index.html and buildInfo.js agree on v32');
   check(/<script src="\.\/fcm-vapid\.js"><\/script>/.test(shell30)
     && /window\.__FCM_VAPID_KEY__ = ''/.test(fs.readFileSync(path.join(root, 'fcm-vapid.js'), 'utf8')),
     'push: index.html loads the VAPID placeholder and the repo carries no real key');
@@ -3123,6 +3150,115 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
   localStorage.removeItem('fuji_notify_prefs');
   authStub.__emitAuth({ uid: 'u1', email: 'admin@test.com', displayName: 'สมชาย', photoURL: null });
   await sleep(120);
+
+  // ---- 12) v32: a broken notification pipeline must be LOUD, not silent
+  // (the owner report “ไม่มีข้อความเลย” came with no explanation at all).
+  console.log('  … v32: fail-loud notification pipeline');
+  const notifUtils32 = await import(outFile('utils/notifications.js'));
+  const clearToasts = () => { const c = q('#toast-container'); if (c) c.innerHTML = ''; };
+  const topSheetHandle = () => {
+    const sheets = qa('.bottom-sheet');
+    return sheets.length ? sheets[sheets.length - 1].querySelector('.bottom-sheet-handle') : null;
+  };
+  const deniedError = Object.assign(new Error('Missing or insufficient permissions.'), { code: 'firestore/permission-denied' });
+  const rulesInfo = notifUtils32.classifyNotifyError(deniedError, 'th');
+  check(rulesInfo.layer === 'rules' && /permission-denied/.test(rulesInfo.title),
+    'v32: a denied feed is reported as a Firestore-rules problem');
+  check(/firestore:rules/.test(rulesInfo.fix), 'v32: …and the message carries the exact deploy command');
+  const memberInfo = notifUtils32.classifyNotifyError(deniedError, 'th', { memberSession: true });
+  check(memberInfo.layer === 'auth' && /Google/.test(memberInfo.fix),
+    'v32: a PIN member session is told to sign in with Google instead');
+  const fnInfo = notifUtils32.classifyNotifyError({ code: 'functions/not-found', message: 'not found' }, 'en');
+  check(fnInfo.layer === 'functions' && /deploy/.test(fnInfo.fix),
+    'v32: a missing Cloud Function points at the deploy command');
+  const netInfo = notifUtils32.classifyNotifyError({ code: 'unavailable', message: 'offline' }, 'th');
+  check(netInfo.layer === 'network' && netInfo.retryable === true, 'v32: a network hiccup stays retryable');
+  const vapidInfo = notifUtils32.classifyNotifyError(Object.assign(new Error('no key'), { code: 'vapid/missing' }), 'th');
+  check(vapidInfo.layer === 'push' && /FCM_VAPID_KEY/.test(vapidInfo.fix),
+    'v32: a missing VAPID key points at the deploy secret');
+
+  // Firestore denies the feed → banner + toast + a warning dot on the 🔔
+  await goto('#/trip/t1/dashboard');
+  await waitFor(() => q('#notify-bell'), { timeout: 8000, label: 'bell (v32)' });
+  clearToasts();
+  fsdb.__deny('trips/t1/notifications');
+  await click('#notify-bell');
+  await waitFor(() => q('#notify-problem'), { timeout: 8000, label: 'notification problem banner' }).catch(() => {});
+  const problemBanner = q('#notify-problem');
+  check(!!problemBanner, 'v32: a denied feed shows a warning banner inside the 🔔 sheet');
+  check(/Firestore Rules/.test(problemBanner?.textContent || ''),
+    'v32: …naming the Firestore rules as the cause');
+  check(!!q('#notify-problem-help') && !!q('#notify-problem-retry'), 'v32: …with “วิธีแก้” and “ลองใหม่” buttons');
+  check(q('#notify-bell')?.classList.contains('has-notify-error'), 'v32: the header bell carries a warning dot');
+  const toastText32 = q('#toast-container')?.textContent || '';
+  check(/Firestore Rules ปฏิเสธ/.test(toastText32), 'v32: a toast announces the failure (no console.warn only)');
+  check(/firestore:rules/.test(toastText32), 'v32: …and it says what to run');
+  check(/firestore:rules/.test(problemBanner?.textContent || ''),
+    'v32: the banner spells out the command that fixes it');
+
+  // “วิธีแก้” → the help sheet with the copy-rules + console buttons
+  await click('#notify-problem-help');
+  await waitFor(() => q('#notify-help-copy-rules'), { timeout: 8000, label: 'notification help sheet' }).catch(() => {});
+  check(!!q('#notify-help-copy-rules') && !!q('#notify-help-console'),
+    'v32: the help sheet offers “คัดลอกกฎทั้งหมด” + “เปิด Firebase Console”');
+  check(/firestore:rules/.test(q('#notify-help-sheet')?.textContent || ''),
+    'v32: …and repeats the one command that fixes it');
+  await click(topSheetHandle());
+  await sleep(300);
+
+  // the rules are published → “ลองใหม่” clears the warning by itself
+  fsdb.__allow('trips/t1/notifications');
+  await click('#notify-problem-retry');
+  await waitFor(() => !q('#notify-problem'), { timeout: 8000, label: 'banner cleared after retry' }).catch(() => {});
+  check(!q('#notify-problem'), 'v32: retrying after the fix clears the banner');
+  check(!q('#notify-bell')?.classList.contains('has-notify-error'), 'v32: …and the bell loses its warning dot');
+  await click(topSheetHandle());
+  await sleep(300);
+
+  // Settings → ตรวจสอบระบบ reports WHICH layer is dead, with the fix
+  fsdb.__deny('trips/t1/notifications');
+  await goto('#/trip/t1/settings?tab=system');
+  await waitFor(() => q('#run-diagnostics'), { timeout: 8000, label: 'system check button (v32)' });
+  await click('#run-diagnostics');
+  await waitFor(() => q('[data-diag="notify-read"]'), { timeout: 30000, label: 'notify-read row' }).catch(() => {});
+  const readRow = q('[data-diag="notify-read"]');
+  check(!!readRow && readRow.dataset.status === 'fail',
+    `v32: the System check flags the notification feed (${readRow?.dataset.status || 'missing'})`);
+  check(/firestore:rules/.test(readRow?.textContent || ''), 'v32: …and prints the command that fixes it');
+  check(!!q('[data-diag="notify-push"]'), 'v32: Web Push readiness is reported as its own row');
+  fsdb.__allowAll();
+
+  // A granted permission must never be reported as success when the token could
+  // not be stored — that is how “push ไม่ทำงาน” stayed invisible.
+  const pushMod32 = await import(outFile('notifications/push.js'));
+  fsdb.__deny('users/u1/pushTokens');
+  let pushStoreError = null;
+  try {
+    await pushMod32.enablePush({ uid: 'u1', tripIds: ['t1'], lang: 'th' });
+  } catch (e) { pushStoreError = e; }
+  check(pushStoreError?.code === 'push/store-failed',
+    'v32: enabling Push fails loudly when the device token cannot be stored');
+  check(/firestore\.rules/.test(pushStoreError?.message || ''),
+    'v32: …and tells the owner to publish the rules');
+  check(![...fsdb.__store.keys()].some(k => k.startsWith('users/u1/pushTokens/')),
+    'v32: no token is pretended to exist in Firestore');
+  fsdb.__allow('users/u1/pushTokens');
+  try { await pushMod32.disablePush({ uid: 'u1', lang: 'th' }); } catch { /* nothing stored */ }
+
+  // the other half of the system now has a deploy path of its own
+  const rulesWorkflow = fs.readFileSync(path.join(root, '.github/workflows/deploy-firebase.yml'), 'utf8');
+  check(/deploy --only firestore:rules,firestore:indexes,functions/.test(rulesWorkflow),
+    'v32: a workflow publishes firestore rules + indexes + functions (what Pages never deployed)');
+  check(/FIREBASE_SERVICE_ACCOUNT/.test(rulesWorkflow) && /FIREBASE_TOKEN/.test(rulesWorkflow),
+    'v32: …with a documented credential (service account or CI token)');
+  check(/firebaserules\.googleapis\.com/.test(rulesWorkflow),
+    'v32: …and it re-reads the published ruleset to prove the notifications block is live');
+
+  // restore state for the following blocks
+  fsdb.__allowAll();
+  localStorage.removeItem('fuji_notify_prefs');
+  authStub.__emitAuth({ uid: 'u1', email: 'admin@test.com', displayName: 'สมชาย', photoURL: null });
+  await sleep(150);
 }
 
 console.log('\n▶ delete the whole trip (UI)');

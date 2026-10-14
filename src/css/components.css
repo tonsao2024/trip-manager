@@ -3780,6 +3780,35 @@ body.map-expanded-open { overflow: hidden; }
 }
 .notify-bell.has-unread { color: var(--primary-strong); }
 .notify-bell.has-unread i { animation: bellSwing 1.6s ease-in-out 1; }
+/* v32 — the feed itself is broken (rules/functions/push). A quiet 🔔 must not
+   look identical to a working one, so it carries a small amber dot. */
+.notify-bell.has-notify-error::after {
+  content: ''; position: absolute; top: 2px; right: 2px;
+  width: 7px; height: 7px; border-radius: 999px;
+  background: var(--warning, #d97706);
+  box-shadow: 0 0 0 2px var(--surface);
+  pointer-events: none;
+}
+.notify-bell.has-notify-error { color: var(--warning, #d97706); }
+.notify-bell.has-notify-error .notify-badge { top: -1px; right: -1px; }
+.notify-bell.has-notify-error.has-unread .notify-badge { top: 1px; right: 1px; }
+
+.notify-problem {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px; margin-bottom: 10px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--warning, #d97706) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning, #d97706) 40%, var(--border));
+  color: var(--text);
+}
+.notify-problem-head { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--warning, #d97706); }
+.notify-problem-text { font-size: 11.5px; line-height: 1.5; color: var(--text-secondary); margin: 0; }
+.notify-problem-fix {
+  display: block; font-size: 10.5px; line-height: 1.5; word-break: break-word;
+  padding: 6px 8px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
 @keyframes bellSwing {
   0%, 100% { transform: rotate(0deg); }
   15% { transform: rotate(12deg); }

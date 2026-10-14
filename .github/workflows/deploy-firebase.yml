@@ -1,0 +1,184 @@
+name: Deploy Firestore rules & Cloud Functions
+
+# The client (bell, settings tab, service worker) is published by GitHub Pages.
+# The other half of the notification system — the Firestore rules that allow
+# `trips/{tripId}/notifications` and the Cloud Function `pushTripNotification` —
+# lives in *this repository* and used to have no deploy path at all. On a project
+# where nobody ran `firebase deploy` by hand, every notification read/write is
+# denied and Web Push has no sender: the app looks like “ระบบแจ้งเตือนไม่ทำงานทั้งระบบ”.
+#
+# This workflow closes that gap. One-time setup (repository owner), either one:
+#   A) Recommended — Settings → Secrets and variables → Actions → New repository
+#      secret named FIREBASE_SERVICE_ACCOUNT, value = the JSON key of a service
+#      account with the roles: Firebase Rules Admin, Cloud Functions Admin,
+#      Service Usage Viewer.
+#   B) Quick — run `firebase login:ci` locally and store the printed token as the
+#      secret FIREBASE_TOKEN.
+# Without either credential the workflow cannot publish anything; it writes a
+# summary with this text and exits successfully (a missing credential is a
+# configuration choice, not a broken build). The app itself tells every user the
+# same thing: 🔔 → “วิธีแก้”, and Settings → ตรวจสอบระบบ.
+#
+# Project id: the repository has no .firebaserc, so it is passed explicitly.
+# Override it with a repository *variable* named FIREBASE_PROJECT_ID if the
+# Firebase project is ever renamed.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - 'storage.rules'
+      - 'functions/**'
+      - '.github/workflows/deploy-firebase.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebase-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Which credential is available?
+        id: creds
+        env:
+          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          CI_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          if [ -n "${SA_JSON}" ]; then
+            echo "mode=service-account" >> "$GITHUB_OUTPUT"
+          elif [ -n "${CI_TOKEN}" ]; then
+            echo "mode=token" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=none" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Explain the missing credential
+        if: steps.creds.outputs.mode == 'none'
+        run: |
+          {
+            echo "### ⚠️ ยังไม่ได้ publish Firestore rules & Cloud Functions"
+            echo ""
+            echo "workflow นี้ยังไม่มีบัญชีสำหรับ deploy โปรเจกต์ Firebase จึงยังไม่ได้อัปเดตกฎและฟังก์ชัน"
+            echo "ผลที่ผู้ใช้เห็น: **🔔 ไม่มีข้อความ และ Web Push ไม่เด้ง** เพราะ Firestore ปฏิเสธทุกการอ่าน/เขียน"
+            echo "คอลเลกชัน \`trips/{tripId}/notifications\` (กฎต้องเป็นรุ่น v30 ขึ้นไป)"
+            echo ""
+            echo "**ตั้งค่าครั้งเดียว (เลือกอย่างใดอย่างหนึ่ง):**"
+            echo ""
+            echo "1. *แนะนำ* — Settings → Secrets and variables → Actions → **New repository secret**"
+            echo "   ชื่อ \`FIREBASE_SERVICE_ACCOUNT\` ค่า = JSON key ของ service account ที่มีสิทธิ์"
+            echo "   *Firebase Rules Admin* + *Cloud Functions Admin* + *Service Usage Viewer*"
+            echo "2. หรือรัน \`firebase login:ci\` ในเครื่อง แล้วเก็บค่าที่ได้เป็น secret ชื่อ \`FIREBASE_TOKEN\`"
+            echo ""
+            echo "จากนั้นกลับมารัน workflow นี้อีกครั้ง (Actions → **Deploy Firestore rules & Cloud Functions** → *Run workflow*)"
+            echo "หรือ push เข้า \`main\` อีกครั้ง — รายละเอียดอยู่ใน \`docs/DEPLOY.md\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning title=Firestore rules & Cloud Functions were NOT deployed::No FIREBASE_SERVICE_ACCOUNT / FIREBASE_TOKEN secret is set, so the 🔔 rules and the push functions cannot be published. See docs/DEPLOY.md → 'Deploy rules & functions from GitHub Actions'."
+
+      - name: Authenticate with the service account
+        if: steps.creds.outputs.mode == 'service-account'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Install firebase-tools
+        if: steps.creds.outputs.mode != 'none'
+        run: npm install --global firebase-tools@13
+
+      - name: Install the Cloud Functions dependencies
+        if: steps.creds.outputs.mode != 'none'
+        working-directory: functions
+        run: npm install --no-audit --no-fund
+
+      # The rules and the functions are what the notification system needs; the
+      # indexes and the storage rules ride along because they ship together.
+      - name: Deploy rules, indexes and functions
+        if: steps.creds.outputs.mode != 'none'
+        env:
+          PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID || 'trip-manager-93b22' }}
+          CI_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          MODE: ${{ steps.creds.outputs.mode }}
+        run: |
+          set -euo pipefail
+          args=(--project "$PROJECT_ID" --non-interactive)
+          if [ "$MODE" = "token" ]; then args+=(--token "$CI_TOKEN"); fi
+          firebase deploy --only firestore:rules,firestore:indexes,functions "${args[@]}"
+
+      # Read the published rule set back through the Rules API, so a green run
+      # really means “the live project allows the notification feed now”.
+      - name: Verify the live rules contain the notification block
+        if: steps.creds.outputs.mode == 'service-account'
+        env:
+          PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID || 'trip-manager-93b22' }}
+        run: |
+          cat > "${RUNNER_TEMP}/verify-notify.cjs" <<'NODE'
+          const fs = require('fs');
+          const summary = (t) => fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, t + '\n');
+          const project = process.env.PROJECT_ID;
+
+          async function liveRules() {
+            const { GoogleAuth } = require('google-auth-library');
+            const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
+            const client = await auth.getClient();
+            const got = await client.getAccessToken();
+            const token = got?.token || got;
+            const headers = { Authorization: `Bearer ${token}` };
+            const releasesRes = await fetch(`https://firebaserules.googleapis.com/v1/projects/${project}/releases`, { headers });
+            const releases = await releasesRes.json();
+            const release = (releases.releases || []).find(r => (r.name || '').endsWith('/cloud.firestore'))
+              || (releases.releases || [])[0];
+            if (!release?.rulesetName) throw new Error('no Firestore ruleset release found');
+            const rulesetRes = await fetch(`https://firebaserules.googleapis.com/v1/${release.rulesetName}`, { headers });
+            const ruleset = await rulesetRes.json();
+            return (ruleset.source?.files || []).map(f => f.content || '').join('\n');
+          }
+
+          liveRules().then((text) => {
+            if (/match\s+\/notifications\/\{notificationId\}/.test(text)) {
+              summary('### ✅ Firestore rules บนโปรเจกต์มีคอลเลกชัน `notifications` แล้ว');
+              summary('');
+              summary('🔔 ในแอปจะแสดงข้อความทันที และ Web Push จะส่งได้เมื่อผู้ใช้กด “เปิด Push บนอุปกรณ์นี้”');
+              console.log('::notice::The live rules contain the notifications block — the bell can read and write the feed.');
+              return;
+            }
+            summary('### ❌ กฎที่ publish แล้วยังไม่มีบล็อก `notifications`');
+            summary('');
+            summary('ตรวจว่า deploy ไปที่โปรเจกต์ที่ถูกต้อง (`FIREBASE_PROJECT_ID`) แล้วรัน workflow ใหม่');
+            console.log("::error title=Live rules have no notifications block::The published Firestore rules do not match /notifications/{notificationId}. Check the project id and re-run.");
+            process.exit(1);
+          }).catch((e) => {
+            summary(`### ⚠️ ตรวจสอบกฎอัตโนมัติไม่สำเร็จ: ${e.message}`);
+            summary('ไม่กระทบการ deploy ที่สำเร็จแล้ว — เปิด Firebase Console → Firestore → Rules เพื่อดูด้วยตาได้');
+            console.log(`::warning title=Could not verify the published rules::${e.message}`);
+          });
+          NODE
+          NODE_PATH="$(npm root -g)" node "${RUNNER_TEMP}/verify-notify.cjs"
+
+      - name: Note that the automatic rules check was skipped
+        if: steps.creds.outputs.mode == 'token'
+        run: echo "::notice title=Rules check skipped::The FIREBASE_TOKEN mode cannot read the Rules API here, so the published ruleset is not re-checked automatically. Open Firebase Console → Firestore → Rules to confirm the notifications block is live."
+
+      - name: Summarize what was deployed
+        if: always() && steps.creds.outputs.mode != 'none'
+        run: |
+          {
+            echo "### สรุปการ deploy ครึ่งหลังของระบบแจ้งเตือน"
+            echo ""
+            echo "| ส่วน | ผล |"
+            echo "| --- | --- |"
+            echo "| Firestore rules (\`firestore.rules\`) | deploy พร้อมกับ workflow นี้ |"
+            echo "| Firestore indexes | deploy พร้อมกับ workflow นี้ |"
+            echo "| Cloud Functions (\`pushTripNotification\`, \`dailyExpenseSummary\`, \`loginWithUsernamePin\`) | deploy พร้อมกับ workflow นี้ |"
+            echo ""
+            echo "ถ้า step ไหนล้มเหลว ข้อความ error ด้านบนบอกสาเหตุตรง ๆ (ส่วนใหญ่คือโปรเจกต์ยังไม่ใช่แผน Blaze ซึ่ง Cloud Functions ต้องใช้)"
+            echo "ถ้ากฎถูก publish แล้วแต่ในแอปยังขึ้นเตือน 'ยังอ่านรายการไม่ได้' ให้กด “ลองใหม่” ที่แถบใต้กระดิ่ง 🔔"
+          } >> "$GITHUB_STEP_SUMMARY"

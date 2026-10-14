@@ -222,6 +222,7 @@ export async function setDoc(ref, data, opts = {}) {
   denyCheck(ref.path);
   const existing = store.get(ref.path);
   store.set(ref.path, mergeData(existing, data, opts.merge));
+  if (!opts.silent) emitWrites(ref.path);
 }
 
 export async function addDoc(coll, data) {
@@ -229,6 +230,7 @@ export async function addDoc(coll, data) {
   const id = `auto-${Math.random().toString(36).slice(2, 10)}`;
   const path = `${coll.path}/${id}`;
   store.set(path, mergeData(null, data, false));
+  emitWrites(path);
   return { id, path, __type: 'doc' };
 }
 
@@ -237,9 +239,10 @@ export async function updateDoc(ref, data) {
   const existing = store.get(ref.path);
   if (!existing) throw new Error(`[stub] updateDoc missing doc ${ref.path}`);
   store.set(ref.path, mergeData(existing, data, true));
+  emitWrites(ref.path);
 }
 
-export async function deleteDoc(ref) { denyCheck(ref.path); store.delete(ref.path); }
+export async function deleteDoc(ref) { denyCheck(ref.path); store.delete(ref.path); emitWrites(ref.path); }
 
 export function writeBatch() {
   const ops = [];
@@ -251,10 +254,39 @@ export function writeBatch() {
   };
 }
 
+/**
+ * Live listeners. A real Firestore re-emits `onSnapshot` after EVERY write — no
+ * matter which device made it — which is exactly how “user อื่นได้รับการแจ้งเตือน”
+ * works. The stub used to fire once and never again, so a broken live path
+ * (badge/toast on the other member's device) could not be caught; writes now
+ * notify every listener that watches the written path.
+ */
+const listeners = new Set();   // { path, alsoTrips, emit }
+
+export function __listenerCount() { return listeners.size; }
+
+/** Emit every listener whose target subtree contains `path`. */
+function emitWrites(path) {
+  for (const l of [...listeners]) {
+    if (path === l.path || path.startsWith(`${l.path}/`)) Promise.resolve().then(l.emit);
+  }
+}
+
+/** Server-side write from ANOTHER device (fires listeners, no local latency). */
+export function __write(path, data, { merge = false } = {}) {
+  denyCheck(path);
+  const existing = store.get(path);
+  store.set(path, mergeData(existing, data, merge));
+  emitWrites(path);
+  return path;
+}
+/** Server-side delete from another device. */
+export function __remove(path) { store.delete(path); emitWrites(path); }
+
 export function onSnapshot(target, onNext, onError) {
+  const path = resolveCollectionPath(target);
   const emit = async () => {
     try {
-      const path = resolveCollectionPath(target);
       if (target && target.__type === 'doc') {
         const data = store.get(path);
         onNext({ id: path.split('/').pop(), exists: () => !!data, data: () => ({ ...(data || {}) }) });
@@ -264,8 +296,10 @@ export function onSnapshot(target, onNext, onError) {
       onNext(snap);
     } catch (e) { if (onError) onError(e); }
   };
+  const listener = { path, emit };
+  listeners.add(listener);
   setTimeout(emit, 0);
-  return () => {};
+  return () => { listeners.delete(listener); };
 }
 
 export async function getCountFromServer(target) {
