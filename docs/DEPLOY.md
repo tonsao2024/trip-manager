@@ -98,10 +98,10 @@ run summary says which of the guards fired and how to fix it.
 
 | Symptom | Cause & fix |
 | --- | --- |
-| Workflow is red at *Check that Pages deploys from GitHub Actions* | Pages is still *Deploy from a branch*. Settings → Pages → Build and deployment → **Source: GitHub Actions**, then *Re-run all jobs*. |
-| Workflow green but the site shows the old (empty) `fcm-vapid.js` | Same as above — a branch build is being served, so nothing this workflow uploads is live. |
+| Workflow is red at *Ensure Pages deploys from GitHub Actions* | Pages is still *Deploy from a branch* and the workflow token could not switch it via the API. Settings → Pages → Build and deployment → **Source: GitHub Actions**, then *Re-run all jobs*. |
+| Workflow green but the site shows the old (empty) `fcm-vapid.js` | No deploy has landed since the source was fixed (the last run failed at the source check, so its deploy never happened) — *Re-run all jobs* / push to `main`. One hard refresh may still be needed for a browser that cached the empty file. |
 | *Inject VAPID key* step warns “No `FCM_VAPID_KEY` secret/variable is set” | Add the secret (or variable) with exactly that name, then re-run the workflow. Users’ devices keep the in-app 🔔 meanwhile. |
-| *Inject VAPID key* step fails with “does not look like a Web Push key” | The value is not the *Key pair* (87 chars, starts with `B`) — it is probably the server key or the VAPID **private** key. Paste the key-pair value with no quotes/spaces. |
+| *Inject VAPID key* step errors “does not look like a Web Push key” (deploy continues without Push) | The value is not the *Key pair* (87 chars, starts with `B`) — it is probably the server key or the VAPID **private** key. Whitespace/quotes are stripped automatically, so just paste the correct key-pair value. |
 | *Verify the live site serves the VAPID key* fails | The deploy landed but the browser-visible file has no key: check the secret value, then re-run; the Pages CDN needs a minute after a fresh deploy. |
 | Everything green, one device still shows the strip | Per-device: the user must press “เปิด Push บนอุปกรณ์นี้”; on iPhone/iPad the app must be added to the Home Screen (iOS 16.4+) and the page opened over `https://`. |
 
