@@ -22,7 +22,7 @@ export const FIX = {
   deployFunctions: 'firebase deploy --only functions   (โปรเจกต์ต้องอยู่แผน Blaze ก่อน)',
   runInvoker: 'gcloud run services add-iam-policy-binding loginwithusernamepin --region=asia-southeast1 --member=allUsers --role=roles/run.invoker',
   deployRules: 'firebase deploy --only firestore:rules   (หรือเปิด Firebase Console > Firestore Database > Rules วางไฟล์ firestore.rules แล้วกด Publish)',
-  deployWorkflow: 'push ขึ้น main (หรือ Actions > “Deploy Firestore rules & Cloud Functions” > Run workflow) หลังตั้ง secret ชื่อ FIREBASE_SERVICE_ACCOUNT หรือ FIREBASE_TOKEN หนึ่งครั้ง',
+  deployWorkflow: 'push ขึ้น main (หรือ Actions > “Deploy Firestore rules & indexes (Spark)” > Run workflow) หลังตั้ง secret ชื่อ FIREBASE_SERVICE_ACCOUNT หรือ FIREBASE_TOKEN หนึ่งครั้ง',
   setVapid: 'ตั้ง GitHub Actions secret ชื่อ FCM_VAPID_KEY = “Key pair” (Firebase Console → Project settings → Cloud Messaging → Web Push certificates) แล้ว deploy ใหม่',
   setMemberPin: 'แชร์รหัสเชิญ (หน้าตั้งค่า) ให้สมาชิกกดขอเข้าร่วม แล้วอนุมัติที่หน้าสมาชิก — หรือเพิ่ม/แก้ไขสมาชิกแล้วตั้งชื่อผู้ใช้ + PIN'
 };
@@ -145,6 +145,7 @@ async function loadDeps() {
     isStorageAvailable: fb.isStorageAvailable,
     auth: fb.auth,
     db: fb.db,
+    freePlan: true,
     functions: fb.functions,
     httpsCallable: fb.httpsCallable,
     getMemberSession: memberAuth.getMemberSession,
@@ -246,14 +247,17 @@ export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeout
     add('session', pick(lang, 'เซสชันผู้ใช้', 'User session'), DIAG.warn,
       pick(lang, `ล็อกอินเป็นสมาชิก "${session.username || session.memberId}" แบบไม่ใช้ Cloud Functions`,
                 `Signed in as member "${session.username || session.memberId}" without Cloud Functions`),
-      pick(lang, 'ถ้าต้องการซิงก์ข้อมูล ให้ deploy functions ตามข้อมูลด้านล่าง', 'Deploy the functions below for full sync'));
+      pick(lang, 'เข้าสู่ระบบด้วย Google/อีเมลเพื่อซิงก์และส่ง Push บนแผนฟรี', 'Sign in with Google/email for sync and Push on the free plan'));
   } else {
     add('session', pick(lang, 'เซสชันผู้ใช้', 'User session'), DIAG.warn,
       pick(lang, 'ยังไม่ได้ล็อกอิน', 'Not signed in'));
   }
 
   // 3. Cloud Functions
-  if (!d.functions) {
+  if (d.freePlan) {
+    add('functions', 'Cloud Functions', DIAG.ok,
+      pick(lang, 'ไม่ใช้ในแผน Spark — Push ส่งเป็นรอบด้วย GitHub Actions', 'Not used on Spark — GitHub Actions sends queued Push'));
+  } else if (!d.functions) {
     add('functions', 'Cloud Functions', DIAG.fail,
       pick(lang, 'ยังไม่ได้ตั้งค่า Firebase Functions', 'Firebase Functions is not initialised'),
       FIX.deployFunctions);
@@ -465,6 +469,13 @@ export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeout
   } else if (tripId && d.db) {
     add('notify-read', pick(lang, 'อ่านรายการแจ้งเตือน (🔔)', 'Notification feed (🔔)'), DIAG.warn,
       pick(lang, 'ข้ามการทดสอบ (ไม่มีตัวตรวจการแจ้งเตือน)', 'Skipped (no notification probe available)'));
+  }
+
+  if (d.freePlan) {
+    add('push-sender', 'GitHub Actions Push sender', DIAG.warn,
+      pick(lang, 'เว็บตรวจ Secrets/สถานะ Actions ไม่ได้ — ผู้ดูแลต้องเปิด workflow Send FCM Push (Spark); ปกติทุก 30 นาทีและอาจล่าช้า',
+        'The browser cannot inspect Actions secrets/status. Enable Send FCM Push (Spark); normally every 30 minutes, possibly delayed'),
+      'Set FIREBASE_PUSH_SERVICE_ACCOUNT and PUSH_ACTIONS_ENABLED=true in GitHub Actions — docs/PUSH-ACTIONS.md');
   }
 
   // 11. Web Push readiness — this device + the deployed VAPID key.

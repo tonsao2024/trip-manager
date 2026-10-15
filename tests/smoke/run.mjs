@@ -739,8 +739,9 @@ await waitFor(() => qa('#diag-results [data-diag]').length >= 5, { timeout: 8000
 const diagRows = qa('#diag-results [data-diag]');
 check(diagRows.length >= 5, `system check: ran every probe (${diagRows.length} rows)`);
 const fnRow = q('[data-diag="functions"]');
-check(!!fnRow && fnRow.dataset.status === 'fail', 'system check: broken Cloud Functions flagged');
-check(!!fnRow && /deploy/i.test(fnRow.textContent), 'system check: shows the firebase deploy command');
+check(!!fnRow && fnRow.dataset.status === 'ok', 'system check: Spark does not require Cloud Functions');
+check(!!fnRow && /Spark|GitHub Actions/.test(fnRow.textContent), 'system check: explains the free Actions sender');
+check(q('[data-diag="push-sender"]')?.dataset.status === 'warn', 'system check: Actions setup must be verified by the owner');
 check(!!q('[data-diag="security-pins"]'), 'system check: verifies PIN documents stay private');
 check(!!q('#diag-copy'), 'system check: report can be copied');
 check(typeof window.fujiDiagnose === 'function', 'system check: fujiDiagnose() console helper exposed');
@@ -2994,7 +2995,7 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
     [{ id: 'x', type: 'expense', date: tzDay, createdAt: Date.now() }], 'u1', notifDb.readNotifyPrefs()).length === 0,
     'settings: switching “เมื่อมีคนบันทึกค่าใช้จ่าย” off hides those rows from the bell');
   check([...fsdb.__store.keys()].some(k => k.startsWith('users/u1/pushPrefs/')),
-    'settings: the account preference is mirrored for the Cloud Functions');
+    'settings: the account preference is mirrored for the Actions sender');
   q('#notify-toggle-expense').checked = true;
   q('#notify-toggle-expense').dispatchEvent(new window.Event('change', { bubbles: true }));
   await sleep(150);
@@ -3040,7 +3041,7 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
   const enabled = await pushMod.enablePush({ uid: 'u1', tripIds: ['t1'], lang: 'th' });
   check(enabled?.token === 'smoke-fcm-token', 'push: a device token is obtained from FCM');
   check([...fsdb.__store.keys()].some(k => k.startsWith('users/u1/pushTokens/')),
-    'push: the token is stored under users/{uid}/pushTokens for the Cloud Function');
+    'push: the token is stored under users/{uid}/pushTokens for the Actions sender');
   check(fsdb.__dump('users/u1/pushPrefs/current')?.push === true,
     'push: the account-level preference is mirrored so the server knows what to send');
   check(pushMod.pushEnabled() === true, 'push: pushEnabled() reflects token + permission');
@@ -3247,12 +3248,30 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
 
   // the other half of the system now has a deploy path of its own
   const rulesWorkflow = fs.readFileSync(path.join(root, '.github/workflows/deploy-firebase.yml'), 'utf8');
-  check(/deploy --only firestore:rules,firestore:indexes,functions/.test(rulesWorkflow),
-    'v32: a workflow publishes firestore rules + indexes + functions (what Pages never deployed)');
+  check(/deploy --only firestore:rules,firestore:indexes "\$\{args/.test(rulesWorkflow) && !/deploy --only[^\n]*functions/.test(rulesWorkflow),
+    'Spark: Firebase workflow deploys rules + indexes, never Functions');
   check(/FIREBASE_SERVICE_ACCOUNT/.test(rulesWorkflow) && /FIREBASE_TOKEN/.test(rulesWorkflow),
     'v32: …with a documented credential (service account or CI token)');
   check(/firebaserules\.googleapis\.com/.test(rulesWorkflow),
     'v32: …and it re-reads the published ruleset to prove the notifications block is live');
+
+  // Queue-based transport never contacts a public sender endpoint or GitHub
+  // from the browser. Firestore remains the source of truth if Actions is off.
+  const originalFetch = globalThis.fetch;
+  let browserSends = 0;
+  globalThis.fetch = async () => { browserSends++; throw new Error('Browser must not call a Push server'); };
+  try {
+    const id = await notifDb.sendTestNotification('t1', { uid: 'u1' });
+    const queued = fsdb.__dump(`trips/t1/notifications/${id}`);
+    check(Boolean(id) && queued?.pushDelivery?.state === 'pending',
+      'Actions sender: test notification is persisted as pending');
+    check(Object.keys(queued.pushDelivery).join(',') === 'state',
+      'Actions sender: client does not forge delivery receipts');
+    check(browserSends === 0, 'Actions sender: no endpoint, URL or GitHub token is needed by the browser');
+    await notifDb.markRead('t1', { id, ...queued }, 'u1');
+    check(fsdb.__dump(`trips/t1/notifications/${id}`)?.pushDelivery?.state === 'pending',
+      'Actions sender: reading the bell does not remove the queued Push');
+  } finally { globalThis.fetch = originalFetch; }
 
   // restore state for the following blocks
   fsdb.__allowAll();

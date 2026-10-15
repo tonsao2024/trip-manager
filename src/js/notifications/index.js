@@ -37,7 +37,7 @@ const MAX_KEPT = 120;   // per trip — the bell shows the newest 50
  * notification must never break saving an expense) but the failure is now
  * surfaced to whoever listens instead of only reaching `console.warn`.
  *
- * @param {(event:{ok:boolean, op:string, kind:'read'|'write', tripId:string|null, error:any})=>void} listener
+ * @param {(event:{ok:boolean, op:string, kind:'read'|'write'|'push', tripId:string|null, error:any})=>void} listener
  * @returns {() => void} unsubscribe
  */
 const healthListeners = new Set();
@@ -200,18 +200,21 @@ export async function publishNotification(tripId, payload, { id = null } = {}) {
     const body = {
       ...payload,
       readBy: payload.readBy || {},
-      createdAt: serverTimestamp()
+      createdAt: serverTimestamp(),
+      // The trusted scheduled sender claims this queue entry in Firestore.
+      // No browser-to-server endpoint or GitHub credential is needed.
+      pushDelivery: { state: 'pending' }
     };
+    let notificationId = id;
     if (id) {
       await setDoc(doc(db, `trips/${tripId}/${COLLECTION}/${id}`), body, { merge: true });
-      cacheForget(`notifs:${tripId}`);
-      notifyOk('publish', 'write', tripId);
-      return id;
+    } else {
+      const ref = await addDoc(notificationsCol(tripId), body);
+      notificationId = ref.id;
     }
-    const ref = await addDoc(notificationsCol(tripId), body);
     cacheForget(`notifs:${tripId}`);
     notifyOk('publish', 'write', tripId);
-    return ref.id;
+    return notificationId;
   } catch (e) {
     return notifyFailed(e, 'publish', 'write', tripId);
   }
@@ -349,8 +352,8 @@ export async function notifyExpenseCreated(tripId, { expense, author = {}, membe
 
 /**
  * Daily expense summary — one document per trip per day, written by whichever
- * client opens the trip first after the summary hour (Cloud Functions write the
- * same document when the app stays closed).
+ * client opens the trip first after the summary hour. GitHub Actions sends it, but
+ * does not generate summaries while everyone is offline.
  */
 export async function ensureDailySummary(tripId, { expenses = [], members = [], trip = null, uid = '', lang = 'th', byName = '', prefs = null } = {}) {
   if (!db || !tripId || !uid) return null;

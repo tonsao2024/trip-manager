@@ -191,13 +191,20 @@ jobs:
           NODE
           node "${RUNNER_TEMP}/inject-vapid.cjs"
 
+      # Publish only browser assets, never server tools or credentials.
+      - name: Stage static website
+        run: |
+          mkdir -p "${RUNNER_TEMP}/trip-site"
+          cp index.html login.html manifest.webmanifest firebase-messaging-sw.js fcm-vapid.js firestore.rules "${RUNNER_TEMP}/trip-site/"
+          cp -R src public "${RUNNER_TEMP}/trip-site/"
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '.'
+          path: ${{ runner.temp }}/trip-site
 
       - name: Deploy to GitHub Pages
         id: deployment
@@ -227,7 +234,7 @@ jobs:
 
           if [ "$ok" = true ]; then
             {
-              echo "### ✅ Web Push พร้อมใช้งาน"
+              echo "### ✅ VAPID key เผยแพร่แล้ว (ยังต้องเปิดตัวส่ง GitHub Actions)"
               echo ""
               echo "\`${PAGE_URL%/}/fcm-vapid.js\` on the live site carries the injected VAPID key, so the"
               echo "“เปิด Push บนอุปกรณ์นี้” button in Settings → การแจ้งเตือน can register the device."
@@ -273,6 +280,6 @@ jobs:
             elif [ "${KEY_PRESENT:-}" != "true" ]; then
               echo "**ขั้นต่อไป:** Settings → Secrets and variables → Actions → New repository secret ชื่อ \`FCM_VAPID_KEY\` (ค่า = *Key pair* จาก Firebase Console → Project settings → Cloud Messaging → Web Push certificates) แล้ว *Re-run all jobs*"
             else
-              echo "ไม่ต้องทำอะไรเพิ่ม — เปิดเว็บ (hard refresh ครั้งหนึ่งถ้ายังเห็นแถบเดิม) แล้วไปที่ Settings → การแจ้งเตือน → **เปิด Push บนอุปกรณ์นี้**"
+              echo "ตรวจว่าเปิด workflow Send FCM Push (Spark) และตั้ง Secrets แล้ว — เปิดเว็บ (hard refresh ครั้งหนึ่งถ้ายังเห็นแถบเดิม) แล้วไปที่ Settings → การแจ้งเตือน → **เปิด Push บนอุปกรณ์นี้**"
             fi
           } >> "$GITHUB_STEP_SUMMARY"

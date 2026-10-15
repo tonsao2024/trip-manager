@@ -8,9 +8,8 @@
  * src/js/firebase.config.js and is public by design), so nothing has to be
  * duplicated by hand.
  *
- * Messages are sent by the Cloud Functions in functions/src/index.js:
- *  • “pushTripNotification” — a new expense / settlement / test ping
- *  • “dailyExpenseSummary”  — the daily expense summary at the chosen hour
+ * Messages are sent by the GitHub Actions job in tools/push-actions/ after
+ * the app queues a Firestore notification. Data-only FCM messages avoid duplicate system alerts.
  */
 /* eslint-env serviceworker */
 

@@ -2,6 +2,14 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
+> **Spark / แผนฟรีเท่านั้น (ปัจจุบัน):** Firebase deploy เฉพาะ Firestore rules และ indexes;
+> เว็บใช้ GitHub Pages หรือ static Hosting ไม่ deploy Cloud Functions / Cloud Storage
+> ไม่ต้องอัปเกรด Blaze หรือเปิด Artifact Registry กระดิ่งในแอปยังใช้ Firestore ได้
+> Push ใช้ **FCM + GitHub Actions** แทน Functions — ดู [ตั้งค่า Push](docs/PUSH-ACTIONS.md)
+> Push ส่งคิวปกติทุก 30 นาทีและอาจล่าช้า; สรุปรายวันยังสร้างเมื่อมีคนเปิดแอป
+> คำแนะนำ Functions/Push ในบันทึกเวอร์ชันเก่าด้านล่างไม่ใช่ขั้นตอน deploy ปัจจุบัน
+> ดูขั้นตอนล่าสุดที่ [Deploy Guide](docs/DEPLOY.md)
+
 > **v32 — 14 Oct 2026, การแจ้งเตือนต้องไม่มีวันเงียบ + จัดการครึ่งที่ Pages ไม่เคย deploy.** The 🔔 no longer
 > fails into `console.warn`: every denied read/write is turned into a named layer (Firestore rules /
 > auth / Cloud Functions / VAPID / network) with the exact command that fixes it — a toast, a banner
@@ -236,7 +244,7 @@ See `firestore.indexes.json` — composite for itinerary by date+order, expenses
 - `firestore.rules`: Auth required, trip membership check via `memberUids` array + subcollection, role escalation prevented, version increment required for itinerary, amount validation, no PIN hash readable.
 - `storage.rules`: Auth required, trip member check via Firestore, size limits (2-5MB), content-type checks.
 
-## Cloud Functions (asia-southeast1)
+## Legacy Cloud Functions (reference only — not deployed on Spark)
 
 - `createMemberAccount`: Admin only, bcrypt hash PIN, create auth user + loginAccounts + member doc, audit log.
 - `loginWithUsernamePin`: Rate limited, bcrypt compare, check active, return custom token.
@@ -377,8 +385,8 @@ Firestore Rules ได้ทันที จึงเป็นวิธีที
 2. Enable:
    - Auth: Email/Password
    - Firestore: Start in production mode, deploy `firestore.rules` + `firestore.indexes.json`
-   - Storage: Deploy `storage.rules`
-   - Functions: `asia-southeast1`, Node 20, `firebase deploy --only functions`
+   - Do not enable/deploy Storage or Functions for this free-plan setup
+   - For Push: configure the [Actions sender](docs/PUSH-ACTIONS.md)
 3. Get Web config: Project Settings > Your apps > Web > Config
 4. For local dev: create `src/js/firebase.local.js` or set `localStorage.setItem('fuji_firebase_config', JSON.stringify(config))` then reload
 5. For GitHub Pages: same localStorage method OR edit `src/js/firebase.js` placeholder and commit (not recommended for public repo, use localStorage)
@@ -389,22 +397,25 @@ Firestore Rules ได้ทันที จึงเป็นวิธีที
   (⚠️ *not* “Deploy from a branch”: a branch deploy is built by Jekyll and never picks up the
   `FCM_VAPID_KEY` injection, so the live site keeps saying “Web Push ยังไม่พร้อม”).
 - Add the Actions secret `FCM_VAPID_KEY` (Firebase Console → Project settings → Cloud Messaging →
-  Web Push certificates → *Key pair*) so Web Push works; without it everything else still works.
+  Web Push certificates → *Key pair*) and configure the
+  [Actions sender](docs/PUSH-ACTIONS.md). It sends the queue normally every 30 minutes (not instantly).
 - Push to `main` → the `Deploy GitHub Pages` workflow injects the key, deploys, and verifies the key
   is really on the live site. No build step needed. `index.html` is the entry.
 - First load will show the config screen if no Firebase config — paste JSON and reload.
-- Troubleshooting: `docs/DEPLOY.md` → *Web Push troubleshooting* (and the workflow fails with the
+- Troubleshooting: `docs/PUSH-ACTIONS.md` → *Troubleshooting* (and the workflow fails with the
   setting to change when Pages is still serving a branch).
 
-## Deploy Functions
+## Deploy (Spark + free Push)
 
 ```bash
-cd functions
-npm install
-firebase login
-firebase use YOUR_PROJECT
-firebase deploy --only functions,firestore,storage
+firebase deploy --project trip-manager-93b22 --only firestore:rules,firestore:indexes
+cd tools/push-actions
+npm ci
+npm test
 ```
+
+Set the dedicated Actions secret and enable the sender workflow — see [PUSH-ACTIONS.md](docs/PUSH-ACTIONS.md).
+The website is deployed separately through GitHub Pages.
 
 ## Emulator Guide
 

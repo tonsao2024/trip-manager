@@ -1,18 +1,9 @@
 // Web Push (Firebase Cloud Messaging) for the Trip Manager PWA-less app.
 //
-// Why FCM: the app has no server of its own — the Cloud Functions in
-// `functions/src/index.js` are the only place that can sign a Web Push message,
-// and FCM hands the browser a standard Web Push endpoint + VAPID key.
-//
-// The user-facing flow:
-//   1. Settings → การแจ้งเตือน → เปิดการแจ้งเตือนแบบ Push
-//   2. browser asks for permission, we register `firebase-messaging-sw.js`
-//   3. the device token is stored in `users/{uid}/pushTokens/{token}`
-//   4. `notifications` documents trigger the `pushTripNotification` function,
-//      which sends the message to every recipient's devices.
-//
-// Everything degrades gracefully: without a VAPID key, without permission or
-// without the functions, the in-app bell keeps working.
+// FCM delivers messages queued in Firestore by publishNotification. A trusted
+// GitHub Actions schedule sends them in batches, normally every 30 minutes.
+// No Cloud Functions, Cloudflare URL or server credential is needed in the web
+// app. Configure the Actions sender separately: docs/PUSH-ACTIONS.md.
 import { app, resolvedFirebaseConfig } from '../firebase.js';
 import { writeNotifyPrefs, registerPushToken, removePushToken, saveServerPrefs } from './index.js';
 const MESSAGING_URL = 'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js';
@@ -166,7 +157,7 @@ export async function enablePush({ uid, tripIds = [], lang = 'th' } = {}) {
 
   rememberToken(token);
   // A false success is the worst outcome here: the device would look registered
-  // while `users/{uid}/pushTokens` stayed empty and the Cloud Function had
+  // while `users/{uid}/pushTokens` stayed empty and the Actions sender had
   // nothing to send to (the “push ไม่ทำงาน” report). Fail loudly instead.
   const stored = await registerPushToken(uid, token, { platform: 'web', userAgent: navigator.userAgent, tripIds });
   if (!stored) {
