@@ -284,8 +284,8 @@ export function classifyNotifyError(error, lang = 'th', context = {}) {
       layer: 'rules',
       code: code || 'push/store-failed',
       title: th('บันทึกอุปกรณ์ Push ไม่สำเร็จ (Firestore ปฏิเสธ)', 'Could not save this Push device (Firestore refused)'),
-      message: th('เบราว์เซอร์อนุญาตการแจ้งเตือนแล้ว แต่เขียน users/{uid}/pushTokens ไม่ได้ — กฎที่เผยแพร่อยู่จึงยังเก่ากว่าแอป ทำให้ Cloud Function ไม่มีปลายทางให้ส่ง Web Push',
-        'The browser granted the permission, but the write to users/{uid}/pushTokens was refused — the published rules are older than the app, so the Cloud Function has nowhere to send the Web Push.'),
+      message: th('เบราว์เซอร์อนุญาตการแจ้งเตือนแล้ว แต่เขียน users/{uid}/pushTokens ไม่ได้ — กฎที่เผยแพร่อยู่จึงยังเก่ากว่าแอป ทำให้ ตัวส่ง Push ไม่มีปลายทางให้ส่ง Web Push',
+        'The browser granted the permission, but the write to users/{uid}/pushTokens was refused — the published rules are older than the app, so the Push sender has nowhere to send the Web Push.'),
       fix: th('Publish กฎรุ่นล่าสุด: firebase deploy --only firestore:rules แล้วกด “เปิด Push บนอุปกรณ์นี้” อีกครั้ง',
         'Publish the current rules: firebase deploy --only firestore:rules, then press “Turn push on here” again'),
       retryable: true
@@ -361,7 +361,7 @@ export const NOTIFY_PREFS_DEFAULTS = {
   dailySummary: true,   // daily expense summary
   settlement: true,     // transfers / clear-the-bill events
   member: true,         // members joining or leaving
-  push: false,          // Web Push (needs the Cloud Functions + a VAPID key)
+  push: false,          // Web Push (GitHub Actions sender + a VAPID key)
   summaryHour: 20,      // 20:00 in the trip timezone
   hidden: []            // notification ids dismissed on this device
 };

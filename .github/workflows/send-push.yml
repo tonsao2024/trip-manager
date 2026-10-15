@@ -1,0 +1,35 @@
+name: Send FCM Push (Spark)
+
+on:
+  schedule:
+    # Twice an hour, off the busy hour boundary. GitHub may delay/skip schedules.
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fcm-push-sender
+  cancel-in-progress: false
+
+jobs:
+  send:
+    # Explicit opt-in avoids consuming Actions minutes before setup is complete.
+    if: vars.PUSH_ACTIONS_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tools/push-actions/package-lock.json
+      - run: npm ci --prefix tools/push-actions --no-audit --no-fund
+      - name: Send pending Firestore notifications through FCM
+        env:
+          FIREBASE_PUSH_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_PUSH_SERVICE_ACCOUNT }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID || 'trip-manager-93b22' }}
+          PUSH_APP_URL: ${{ vars.PUSH_APP_URL || 'https://tonsao2024.github.io/trip-manager/' }}
+        run: npm run send --prefix tools/push-actions

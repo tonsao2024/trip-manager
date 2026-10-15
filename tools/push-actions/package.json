@@ -1,0 +1,11 @@
+{
+  "name": "trip-manager-push-actions",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "send": "node run.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": { "node": ">=22" },
+  "dependencies": { "firebase-admin": "^13.0.0" }
+}

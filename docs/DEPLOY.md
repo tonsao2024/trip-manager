@@ -13,32 +13,41 @@
 5. First visit shows the Firebase config screen if no config is in localStorage.
 6. Open the browser console: `localStorage.setItem('fuji_firebase_config', JSON.stringify({apiKey:"...",authDomain:"...",projectId:"...",storageBucket:"...",messagingSenderId:"...",appId:"..."}))` then reload.
 
-No build step. `.github/workflows/deploy-pages.yml` only injects the VAPID key into
-`fcm-vapid.js` and uploads the repo as-is; `index.html` + `src/` are served directly.
+No application build step. `.github/workflows/deploy-pages.yml` injects the public VAPID key, then stages only browser assets (not server tooling).
+`index.html` + `src/` are served directly. For background Push, deploy the
+[GitHub Actions sender](PUSH-ACTIONS.md) with its dedicated secret and enable flag.
 
 > **Source must be “GitHub Actions”.** With *Deploy from a branch* GitHub runs its own Jekyll build
 > on `main` and serves that, so the artifact this workflow produces — including the injected
 > `fcm-vapid.js` — never reaches the browser. The symptom is a live site that still shows
 > **“Web Push ยังไม่พร้อม — ผู้ดูแลเว็บไซต์ต้องตั้งค่า FCM_VAPID_KEY…”** even though the secret is set
 > and every workflow run is green. The workflow now checks `build_type` up front and fails with the
-> exact setting to change instead of deploying silently (see *Web Push troubleshooting* below).
+> exact setting to change instead of deploying silently (see [Actions Push troubleshooting](PUSH-ACTIONS.md#troubleshooting)).
 
-## Firebase
+## Firebase — Spark (free plan only)
+
+โปรเจกต์นี้ใช้ **Spark เสมอ** ไม่ต้องผูก billing หรืออัปเกรดเป็น Blaze
+`artifactregistry.googleapis.com` ถูกเรียกโดยการ deploy Cloud Functions ไม่ใช่ Firestore rules
+จึงแก้ด้วยการไม่ deploy Functions ไม่ใช่เปิด API หรือเพิ่มสิทธิ์ billing
 
 ```bash
-npm install -g firebase-tools
+npm install -g firebase-tools@13
 firebase login
-firebase use --add  # select project
-firebase deploy --only firestore:rules
-firebase deploy --only firestore:indexes
-firebase deploy --only storage
-cd functions
-npm install
-firebase deploy --only functions
+firebase deploy --project trip-manager-93b22 --only firestore:rules,firestore:indexes
 ```
 
-### Enable APIs
-- Firestore, Auth, Storage, Functions, Secret Manager (for step-up secrets if used)
+`firebase.json` มีเฉพาะ Firestore และ static Hosting ไม่มี Functions หรือ Storage
+เพื่อไม่ให้คำสั่ง deploy ปกติพยายามเปิดบริการที่ต้องใช้ Blaze
+ใช้ GitHub Pages สำหรับเว็บตามขั้นตอนข้างบน หรือ Firebase static Hosting:
+
+```bash
+firebase deploy --project trip-manager-93b22 --only hosting
+```
+
+เปิด Firestore Database และ Authentication (Google / Email+Password) ใน Firebase Console
+และเพิ่มโดเมนเว็บใน Authentication → Settings → Authorized domains
+ไม่ต้องเปิด Artifact Registry, Cloud Build, Cloud Functions, Secret Manager หรือ Cloud Storage
+Firestore/Hosting/Auth ยังมีโควตาและข้อจำกัดของแผนฟรี ไม่ใช่ใช้งานไม่จำกัด
 
 ### Publishing rules matters for the app (v18.2)
 `firebase deploy --only firestore:rules` is **not** optional bookkeeping: when the
@@ -52,117 +61,52 @@ the rules below are live:
   delete stays with the author or a trip admin)
 - `trips/{tripId}/memberGroups/{id}` — trip sub-groups (“กลุ่ม A”, “กลับก่อน”)
 
-### Notifications + Web Push (v30)
+### Notifications on Spark
 
-Three deploys, in this order:
+- กระดิ่ง 🔔 และรายการแจ้งเตือนในแอปใช้ Firestore; ต้อง publish กฎล่าสุดและเข้าสู่ระบบ
+  ด้วย Google/Email ที่เป็นสมาชิกทริป ไม่ต้องมี Cloud Functions
+- สรุปค่าใช้จ่ายรายวันสร้างโดยอุปกรณ์แรกที่เปิดทริปหลังเวลาสรุป ไม่ใช่ scheduled job
+  หากไม่มีใครเปิดแอป ก็ไม่มีงานทำงานเบื้องหลัง
+- **Push ตอนปิดเว็บใช้ FCM + GitHub Actions** แอปเพิ่มคิว `pushDelivery.state=pending`
+  ใน Firestore แล้ว workflow ส่งปกติทุก 30 นาที (GitHub อาจเริ่มช้าหรือข้ามรอบ)
+  ทำตาม [PUSH-ACTIONS.md](PUSH-ACTIONS.md) ไม่ต้องใช้ Cloudflare หรือ Blaze
+  ต้องมี VAPID key, Secret สำหรับ sender, enable flag และการอนุญาตของอุปกรณ์
+  หากยังไม่เปิด workflow จะมีเฉพาะกระดิ่งในแอป; VAPID key อย่างเดียวไม่ได้สร้างตัวส่ง
+- โค้ดเก่าใน `functions/` เก็บไว้เป็นอ้างอิงเท่านั้น ไม่อยู่ใน config หรือ workflow deploy
+- Cloud Storage ไม่อยู่ในเส้นทาง deploy ฟรี ใช้ fallback รูปแบบ inline ของฟีเจอร์ที่รองรับ
+  แทนการรับประกันว่าการอัปโหลดไฟล์ทุกชนิดจะใช้ได้
 
-```bash
-firebase deploy --only firestore:rules   # 1) the permission switches + the notification feed
-firebase deploy --only functions         # 2) pushTripNotification + dailyExpenseSummary
-firebase deploy --only hosting           # 3) the client (bell, settings tab, SW, manifest)
-```
+### Deploy rules & indexes from GitHub Actions
 
-1. **Rules** — the member document's `permissions{}` map (`canEditItinerary`, `canEditExpense`,
-   `canManageMembers`) and the `viewer` role are enforced by `firestore.rules`; the new
-   `trips/{tripId}/notifications` collection and `users/{uid}/pushTokens|pushPrefs` are covered.
-   Old member documents (no `permissions` map) keep their historical rights, so publishing the
-   rules first cannot lock anybody out. See [`PERMISSIONS.md`](PERMISSIONS.md).
-2. **Functions** — `pushTripNotification` (onDocumentCreated: pushes every new notification to the
-   recipients' devices, drops dead tokens) and `dailyExpenseSummary` (hourly tick: writes the
-   trip-local daily summary once per day and prunes the feed to the newest 120 items).
-   `cd functions && npm install` before the first deploy. Both run in `asia-southeast1` with the
-   project's `runtime: nodejs20`.
-3. **Hosting / Pages** — `firebase-messaging-sw.js` and `manifest.webmanifest` must be served from
-   the **app root**. Firebase Hosting serves real files before the `**` → `/index.html` rewrite, so
-   the deploy needs no extra config; on GitHub Pages the two files sit in the repo root next to
-   `index.html`, so the sub-path (`/trip-manager/`) works too. The worker is registered with
-   `scope: './'` and receives the Firebase config as query parameters (`push.js`).
+Workflow: **Deploy Firestore rules & indexes (Spark)** (`.github/workflows/deploy-firebase.yml`)
 
-**VAPID key (required for Web Push).** Generate it once in Firebase Console → Project settings →
-Cloud Messaging → Web Push certificates → *Generate key pair*. For GitHub Pages, store the public
-key as the repository Actions secret `FCM_VAPID_KEY` (Settings → Secrets and variables → Actions).
-**Pages must be set to “Deploy from **GitHub Actions**” as the source.** `.github/workflows/deploy-pages.yml`
-validates the secret and injects it into `fcm-vapid.js` in the Pages artifact as
-`window.__FCM_VAPID_KEY__`; `push.js` reads it automatically. The committed `fcm-vapid.js` remains an
-empty placeholder. There is no VAPID-key field in the app — users do not need to paste anything.
-After adding or rotating the secret, run the workflow (or push to `main`) to redeploy. If the secret
-is absent, the workflow warns, Web Push stays off, and the in-app 🔔 continues to work.
+ตั้งค่าครั้งเดียวใน Settings → Secrets and variables → Actions (เลือกอย่างใดอย่างหนึ่ง):
 
-The workflow also accepts an Actions **variable** named `FCM_VAPID_KEY` (secret wins when both
-exist), and it runs two guard rails: it fails when Pages is still on *Deploy from a branch* (the key
-could not reach the site) and, after deploying, it re-reads the live
-`fcm-vapid.js` with a cache-busting query string and fails when the key is not actually served. The
-run summary says which of the guards fired and how to fix it.
+- `FIREBASE_SERVICE_ACCOUNT`: JSON ของ service account ที่มี Firebase Rules Admin,
+  Cloud Datastore Index Admin และ Service Usage Viewer; หรือ
+- `FIREBASE_TOKEN`: ค่าจาก `firebase login:ci` (เป็นวิธีเก่า แนะนำ service account)
 
-**Web Push troubleshooting** — live site shows “Web Push ยังไม่พร้อม” (admin-side causes only):
+ห้ามใส่ credentials เหล่านี้ใน client code หรือ commit ลง repository
+ตัวแปร `FIREBASE_PROJECT_ID` ใช้เปลี่ยน project ได้; ค่าเริ่มต้นคือ `trip-manager-93b22`
 
-| Symptom | Cause & fix |
-| --- | --- |
-| Workflow is red at *Ensure Pages deploys from GitHub Actions* | Pages is still *Deploy from a branch* and the workflow token could not switch it via the API. Settings → Pages → Build and deployment → **Source: GitHub Actions**, then *Re-run all jobs*. |
-| Workflow green but the site shows the old (empty) `fcm-vapid.js` | No deploy has landed since the source was fixed (the last run failed at the source check, so its deploy never happened) — *Re-run all jobs* / push to `main`. One hard refresh may still be needed for a browser that cached the empty file. |
-| *Inject VAPID key* step warns “No `FCM_VAPID_KEY` secret/variable is set” | Add the secret (or variable) with exactly that name, then re-run the workflow. Users’ devices keep the in-app 🔔 meanwhile. |
-| *Inject VAPID key* step errors “does not look like a Web Push key” (deploy continues without Push) | The value is not the *Key pair* (87 chars, starts with `B`) — it is probably the server key or the VAPID **private** key. Whitespace/quotes are stripped automatically, so just paste the correct key-pair value. |
-| *Verify the live site serves the VAPID key* fails | The deploy landed but the browser-visible file has no key: check the secret value, then re-run; the Pages CDN needs a minute after a fresh deploy. |
-| Everything green, one device still shows the strip | Per-device: the user must press “เปิด Push บนอุปกรณ์นี้”; on iPhone/iPad the app must be added to the Home Screen (iOS 16.4+) and the page opened over `https://`. |
+เมื่อ push เข้า `main` ที่แก้ rules/indexes/config/workflow จะ deploy **เฉพาะ rules และ indexes**
+ไม่ติดตั้ง dependencies ใน `functions/` และไม่ deploy Functions หรือ Storage
+สำหรับโค้ดชุดนี้ ให้ใช้ **Run workflow หลังการเปลี่ยนแปลงเข้า main แล้ว** หรือ push เข้า main
+การกด Re-run ของ run เก่าอาจยังใช้ workflow เก่าที่ deploy Functions
+หากไม่มี credential จะข้าม deploy พร้อมคำเตือน; summary แสดงผล deploy จริง ไม่อ้างว่าสำเร็จเมื่อ step ล้มเหลว
+ในโหมด service account จะพยายามอ่านกฎที่ publish แล้วกลับมาตรวจบล็อก notifications ด้วย
 
-The Firebase Web Push VAPID value is a **public key** (usually 87 characters, starts with `B`) and
-has to be exposed to the browser so it can register for push. Storing it as a GitHub Secret keeps it
-out of source control; the workflow deliberately places that public key in the deployed client file.
-Never put a Firebase service-account private key or other server credential in client code. For a
-non-GitHub-Pages deployment, supply the public key through `fcmVapidKey` in `src/js/firebase.config.js`
-or add equivalent secret injection to that deployment's build workflow.
+เว็บยังเผยแพร่แยกด้วย **Deploy GitHub Pages** การสำเร็จของ Pages ไม่ได้แปลว่า rules ถูก publish แล้ว
 
-**Verify after deploying**
+### Verify
 
 ```bash
-node tests/node-runner.mjs                 # 167 unit tests (notification logic + permission model)
-npm i --no-save jsdom dayjs xlsx
-node tests/smoke/run.mjs                   # whole app in jsdom, incl. the v30 notification block
+node --test tests/deploy-spark.test.mjs
+node tests/node-runner.mjs
 ```
 
-Then, on the live site: Settings → การแจ้งเตือน → “ส่งการแจ้งเตือนทดสอบ” (the in-app layer) and
-“เปิด Push บนอุปกรณ์นี้” (asks for permission, registers the device — the card shows the token).
-On iPhone/iPad the app must be added to the Home Screen first (iOS 16.4+) and the page served over
-`https://`, otherwise Web Push is impossible (the card says so).
-
-### Deploy rules & functions from GitHub Actions (v32)
-
-The notification system has two halves that used to drift apart: the client is
-published automatically by GitHub Pages, while `firestore.rules` and the Cloud
-Functions only ever reached the Firebase project when somebody ran
-`firebase deploy` locally. A project where that never happened produces the
-report “ระบบแจ้งเตือนไม่ทำงานทั้งระบบ”: Firestore denies every read/write on
-`trips/{tripId}/notifications` (the collection is simply absent from the
-published rules) and Web Push has no sender.
-
-`.github/workflows/deploy-firebase.yml` closes that gap. One-time setup, either:
-
-- **Recommended** — Settings → Secrets and variables → Actions → *New repository
-  secret* named `FIREBASE_SERVICE_ACCOUNT`, value = the JSON key of a service
-  account with the roles *Firebase Rules Admin*, *Cloud Functions Admin* and
-  *Service Usage Viewer*; or
-- run `firebase login:ci` locally and store the printed value as `FIREBASE_TOKEN`.
-
-After that, every push to `main` that touches `firestore.rules`,
-`firestore.indexes.json`, `storage.rules` or `functions/**` publishes rules +
-indexes + functions, and the workflow re-reads the published ruleset through the
-Rules API to prove that the `match /notifications/{notificationId}` block is live.
-Without a credential the workflow still succeeds but says (job summary + a
-warning) that nothing could be published — the app shows the same diagnosis to
-its users, so a broken half-deploy can never be silent again.
-
-#### “ไม่มีการแจ้งเตือนเลย” — ตรวจตามนี้
-
-| อาการ | ชั้นที่เป็นปัญหา | วิธีแก้ |
-| --- | --- | --- |
-| 🔔 ขึ้น “Firestore Rules ปฏิเสธการแจ้งเตือน (permission-denied)” | กฎที่ publish ยังไม่มีคอลเลกชัน `notifications` | `firebase deploy --only firestore:rules` หรือรัน workflow นี้ — หรือตามข้อ 1 ในหน้าตรวจสอบระบบ |
-| 🔔 ขึ้น “เซสชันสมาชิก (PIN) …” | อุปกรณ์ล็อกอินแบบชื่อผู้ใช้ + PIN (ไม่มี Firebase Auth) — โหมดนี้ Firestore มองเป็น guest | ออกจากระบบแล้วเข้าสู่ระบบด้วยบัญชี Google/อีเมล หรือให้ผู้ดูแล deploy `loginWithUsernamePin` |
-| 🔔 มีข้อความแต่เครื่องไม่เด้งเตือน | ยังไม่ได้กด “เปิด Push บนอุปกรณ์นี้” / ไม่มีคีย์ VAPID / ยังไม่ deploy ฟังก์ชัน | ตั้ง secret `FCM_VAPID_KEY` แล้ว deploy (`deploy-pages.yml`) และ deploy ฟังก์ชัน (`firebase deploy --only functions`) |
-| กระดิ่งมีจุดสีเหลืองเล็ก ๆ แต่ไม่มีข้อความ | มีข้อผิดพลาดที่หน้าอ่านรายการ — แตะกระดิ่งเพื่ออ่านแถบสีเหลืองพร้อมปุ่ม “วิธีแก้” | กด “วิธีแก้” ในแถบนั้น (มีทั้งคัดลอกกฎและเปิดคอนโซล) |
-| หลังบันทึกค่าใช้จ่ายขึ้น “การแจ้งเตือนล้มเหลว …” | เขียนรายการแจ้งเตือนไม่ผ่าน (ส่วนใหญ่คือ rules) | deploy กฎ แล้วกด “ลองใหม่” |
-
-ตั้งแต่ v32 ทุกความล้มเหลวของการแจ้งเตือนจะขึ้นเป็นข้อความ (toast + แถบใต้กระดิ่ง 🔔 + แถวใน Settings →
-ตรวจสอบระบบ) พร้อมชื่อชั้นที่พังและคำสั่งที่ต้องรัน — ไม่มีการกลืน error ด้วย `console.warn` อีก
+บนเว็บจริง: เข้าสู่ระบบ Google/Email → เปิดทริป → ทดสอบกระดิ่งใน Settings → การแจ้งเตือน
+ถ้าขึ้น `permission-denied` ให้ตรวจ membership และกฎ Firestore ไม่ใช่อัปเกรดเป็น Blaze
 
 ### Create Super Admin
 1. Firebase Console > Auth > Add user email/pass
@@ -182,20 +126,13 @@ firebase emulators:start --only firestore,auth,storage
 firebase emulators:exec --only firestore "npm run test:rules"
 ```
 
-## Cloud Functions Env
-If using secrets, set via:
-```bash
-firebase functions:secrets:set STEPUP_SECRET
-```
-But current implementation uses bcrypt without extra secret.
-
-## Checklist
-- [ ] Rules deployed
-- [ ] Indexes deployed
-- [ ] Functions deployed in asia-southeast1
-- [ ] Super admin created
-- [ ] GitHub Pages enabled
-- [ ] Pages **Source = GitHub Actions** (not *Deploy from a branch* — the branch build never gets the injected key)
-- [ ] Firebase config set in localStorage on Pages site
-- [ ] v30: rules + functions deployed; Pages workflow injects `FCM_VAPID_KEY` and verifies it on the live site; test push received on one device
-- [ ] v30: member switches (แก้ไขแผน/ค่าใช้จ่าย/จัดการสมาชิก) reviewed in สมาชิก → แก้ไข
+## Checklist (Spark)
+- [ ] Firebase plan remains Spark; no billing account required
+- [ ] Firestore rules and indexes deployed to the correct project
+- [ ] Google / Email+Password enabled and the site domain authorized
+- [ ] Super admin created if needed
+- [ ] GitHub Pages enabled, Source = GitHub Actions
+- [ ] In-app notification tested with a Firebase-authenticated trip member
+- [ ] FIREBASE_PUSH_SERVICE_ACCOUNT and PUSH_ACTIONS_ENABLED configured; Actions quota reviewed
+- [ ] Queue rules/index deployed; Send FCM Push (Spark) manually tested with two devices
+- [ ] Users understand there is Push is delayed/best-effort and daily summaries still need an open client

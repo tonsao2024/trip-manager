@@ -1115,6 +1115,8 @@ async function showNotifyHelpSheet() {
       th('รอ 1–2 นาที แล้วกด “ลองใหม่” — การแจ้งเตือนในแอปทำงานได้แม้ไม่มีฟังก์ชัน', 'Wait 1–2 minutes, then press “Retry” — the in-app bell works even without the functions')
     ],
     push: [
+      th('ให้ผู้ดูแลตั้ง FIREBASE_PUSH_SERVICE_ACCOUNT และ PUSH_ACTIONS_ENABLED=true แล้วตรวจ workflow Send FCM Push (Spark) — docs/PUSH-ACTIONS.md', 'Set FIREBASE_PUSH_SERVICE_ACCOUNT and PUSH_ACTIONS_ENABLED=true, then check Send FCM Push (Spark) — docs/PUSH-ACTIONS.md'),
+      th('รอรอบส่งปกติทุก 30 นาที (GitHub อาจเริ่มช้า); การโหลดกระดิ่งไม่ส่ง Push ซ้ำ', 'Wait for the normal 30-minute schedule (GitHub may start late); reloading the bell does not resend Push'),
       th('ให้ผู้ดูแลตั้ง GitHub Actions secret ชื่อ FCM_VAPID_KEY = “Key pair” จาก Firebase Console → Project settings → Cloud Messaging → Web Push certificates', 'Ask the owner to set the FCM_VAPID_KEY GitHub Actions secret = “Key pair” from Firebase Console → Project settings → Cloud Messaging → Web Push certificates'),
       th('บน iPhone/iPad ต้อง “เพิ่มไปที่หน้าจอโฮม” ก่อน (iOS 16.4+)', 'On iPhone/iPad the app must be added to the Home Screen first (iOS 16.4+)'),
       th('เปิดแอปใหม่ → การตั้งค่า → การแจ้งเตือน → “เปิด Push บนอุปกรณ์นี้”', 'Reopen the app → Settings → Notifications → “Turn push on here”')
@@ -1298,8 +1300,8 @@ function attachForegroundPush() {
 
 /**
  * Daily expense summary (one document per trip per day). Whichever device
- * opens the trip first after the summary hour writes it; the Cloud Function
- * `dailyExpenseSummary` writes the same document when nobody opens the app.
+ * opens the trip first after the summary hour writes it; GitHub Actions sends queued Push.
+ * There is no scheduled summary when nobody opens the app.
  */
 async function maybeDailySummary(tripId = currentTripId, prefs = null) {
   if (!db || !tripId || !currentUser?.uid) return null;
@@ -1500,8 +1502,8 @@ async function openNotificationsSheet() {
         enableBtn.disabled = true;
         try {
           await enablePush({ uid: currentUser.uid, tripIds: [tripId], lang });
-          toast.success(th('เปิด Web Push แล้ว — ปิดแอปก็ยังได้รับการแจ้งเตือน',
-            'Web Push is on — you will hear about expenses even when the app is closed'));
+          toast.success(th('ลงทะเบียน Push แล้ว — ข้อความจะส่งตามรอบ GitHub Actions เมื่อผู้ดูแลเปิดตัวส่ง',
+            'Push registered — messages wait for scheduled GitHub Actions runs once the owner enables the sender'));
           const wrap = document.getElementById('notify-push-strip-wrap');
           if (wrap) wrap.innerHTML = notificationPushStripHtml();
         } catch (err) {
@@ -1616,7 +1618,7 @@ function notificationSettingsCardsHtml({ lang = 'th', perms = {}, tripSettings =
     <div class="card p-5 space-y-3" id="notify-push-card" data-settings-section="notify">
       <h3 class="font-bold flex items-center gap-2">${icon('bell-ring', 'w-4 h-4')} ${th('Web Push (FCM)', 'Web Push (FCM)')}
         <span class="badge ${isOn ? 'badge-completed' : 'badge-planned'} text-[10px]">${isOn ? th('เปิดอยู่', 'On') : th('ปิดอยู่', 'Off')}</span></h3>
-      <p class="text-xs text-[var(--text-secondary)]">${th('แจ้งเตือนเด้งบนมือถือ/คอมได้แม้ปิดแอปอยู่ ต้องมี Cloud Functions ของโปรเจกต์ (pushTripNotification) และคีย์ VAPID', 'Notifications reach this device even with the app closed. It needs the project’s Cloud Functions (pushTripNotification) and a VAPID key.')}</p>
+      <p class="text-xs text-[var(--text-secondary)]">${th('แจ้งเตือนผ่าน FCM ได้แม้ปิดแอป โดย GitHub Actions ส่งคิวปกติทุก 30 นาที (อาจล่าช้า) — Firebase ยังเป็น Spark', 'FCM can reach this device with the app closed. GitHub Actions sends the queue normally every 30 minutes (possibly delayed). Firebase stays on Spark.')}</p>
       ${statusRow(support.supported, th('เบราว์เซอร์รองรับ', 'Browser support'), support.supported ? th('รองรับ', 'supported') : (support.message || th('ไม่รองรับ', 'not supported')))}
       ${statusRow(permission === 'granted', th('สิทธิ์การแจ้งเตือน', 'Notification permission'), permission)}
       ${statusRow(Boolean(vapid), 'VAPID key', vapid ? th('พร้อมใช้งาน', 'configured') : th('ยังไม่ได้ตั้ง — ติดต่อผู้ดูแลเว็บไซต์', 'not configured — contact the site admin'))}
@@ -1632,7 +1634,7 @@ function notificationSettingsCardsHtml({ lang = 'th', perms = {}, tripSettings =
 
     <div class="card p-5 space-y-3" id="notify-trip-card" data-settings-section="notify">
       <h3 class="font-bold flex items-center gap-2">${icon('calendar-clock', 'w-4 h-4')} ${th('สรุปค่าใช้จ่ายรายวันของทริปนี้', 'Daily summary of this trip')}</h3>
-      <p class="text-xs text-[var(--text-secondary)]">${th('เวลาในเขตเวลาของทริป — เซิร์ฟเวอร์จะสร้างสรุปให้อัตโนมัติ (และเครื่องที่เปิดแอปอยู่ก็ช่วยสร้างให้)', 'Uses the trip’s timezone — the server writes the summary automatically (an open app writes it too).')}</p>
+      <p class="text-xs text-[var(--text-secondary)]">${th('เวลาในเขตเวลาของทริป — สรุปสร้างเมื่อมีคนเปิดทริปหลังเวลาที่กำหนด แล้ว GitHub Actions ส่ง Push เป็นรอบ (ไม่มีงานสร้างสรุปฝั่งเซิร์ฟเวอร์)', 'Uses the trip timezone. A client creates the summary after the chosen hour, then GitHub Actions sends queued Push. There is no scheduled summary generator.')}</p>
       <label class="settings-toggle-row" for="notify-trip-daily">
         <span class="min-w-0"><b>${icon('sparkles', 'w-3.5 h-3.5')} ${th('เปิดสรุปอัตโนมัติทุกวัน', 'Automatic daily summary')}</b>
           <small>${th('ผู้ดูแลทริปตั้งค่าให้ทุกคนในทริปนี้', 'A trip-admin setting that applies to everybody in the trip')}</small></span>
@@ -1680,13 +1682,9 @@ function bindNotificationSettings({ tripId, lang = 'th', perms = {}, params = nu
     tLoad.close();
     if (!id) { toast.error(th('ส่งไม่สำเร็จ — ตรวจสิทธิ์/การเชื่อมต่อ', 'Could not send — check permissions/connection')); return; }
     await reloadNotifications(tripId);
-    // Show it right away, so the user sees both layers working.
-    showDeviceNotification({
-      title: th('ทดสอบการแจ้งเตือน ✅', 'Test notification ✅'),
-      body: th('ถ้าเห็นข้อความนี้ การแจ้งเตือนทำงานแล้ว', 'If you can read this, notifications work.'),
-      url: `#/trip/${tripId}/dashboard`
-    }).catch(() => {});
-    toast.success(th('ส่งการแจ้งเตือนทดสอบแล้ว', 'Test notification sent'));
+    // A local system popup would falsely look like a successful remote send.
+    toast.success(th('เพิ่มคิวทดสอบแล้ว — รอ GitHub Actions รอบถัดไป (ปกติทุก 30 นาทีและอาจล่าช้า)',
+      'Test queued — wait for the next GitHub Actions run (normally every 30 minutes, possibly delayed)'));
     paintNotificationSheetIfOpen();
   });
 
@@ -1701,7 +1699,7 @@ function bindNotificationSettings({ tripId, lang = 'th', perms = {}, params = nu
         const support = pushSupport(lang);
         if (!support.supported) throw new Error(support.message);
         await enablePush({ uid: currentUser?.uid, tripIds: [tripId], lang });
-        toast.success(th('เปิด Web Push แล้ว 🎉', 'Web Push is on 🎉'));
+        toast.success(th('ลงทะเบียน Push แล้ว — รอรอบส่ง GitHub Actions', 'Push registered — waiting for scheduled GitHub Actions delivery'));
       }
       await persist({ push: pushEnabled() });
       if (params) renderSettings(params);

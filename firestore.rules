@@ -405,7 +405,13 @@ service cloud.firestore {
           && request.resource.data.type is string
           && request.resource.data.title is string
           && request.resource.data.title.size() <= 200
-          && (!('body' in request.resource.data) || request.resource.data.body.size() <= 600);
+          && (!('body' in request.resource.data) || request.resource.data.body.size() <= 600)
+          && (!('pushDelivery' in request.resource.data) || (
+            request.resource.data.pushDelivery is map
+            && request.resource.data.pushDelivery.keys().hasOnly(['state'])
+            && request.resource.data.pushDelivery.state == 'pending'
+            && request.resource.data.createdAt == request.time
+          ));
         allow update: if isTripMember(tripId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy'])
           && request.resource.data.readBy.diff(resource.data.readBy).addedKeys().hasOnly([request.auth.uid])

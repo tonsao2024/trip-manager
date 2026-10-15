@@ -1,0 +1,43 @@
+name: Test Actions Push sender
+
+on:
+  push:
+    paths:
+      - 'tools/push-actions/**'
+      - 'src/js/notifications/**'
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - 'tests/deploy-spark.test.mjs'
+      - '.github/workflows/*push*.yml'
+      - '.github/workflows/deploy-pages.yml'
+      - 'firebase.json'
+      - 'index.html'
+  pull_request:
+    paths:
+      - 'tools/push-actions/**'
+      - 'src/js/notifications/**'
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - 'tests/deploy-spark.test.mjs'
+      - '.github/workflows/*push*.yml'
+      - '.github/workflows/deploy-pages.yml'
+      - 'firebase.json'
+      - 'index.html'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tools/push-actions/package-lock.json
+      - run: npm ci --prefix tools/push-actions --no-audit --no-fund
+      - run: npm test --prefix tools/push-actions
+      - run: node --test tests/deploy-spark.test.mjs
