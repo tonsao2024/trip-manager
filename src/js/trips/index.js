@@ -94,22 +94,7 @@ export async function listTrips(userId, isSuperAdmin = false, { maxAgeMs = 2 * 6
     if (age > maxAgeMs) refreshTripsInBackground(userId, isSuperAdmin);
     return cached;
   }
-  
-  const tryQuery = async (q, label) => {
-    try {
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error(`Timeout ${label} - check Firestore rules & indexes`)), 10000)
-      );
-      const snap = await Promise.race([getDocs(q), timeoutPromise]);
-      const trips = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (trips.length) setCachedTrips(trips, userId);
-      return trips;
-    } catch (e) {
-      console.warn(`listTrips ${label} failed:`, e.message, e.code);
-      throw e;
-    }
-  };
-  
+
   return fetchTripsFromServer(userId, isSuperAdmin);
 }
 

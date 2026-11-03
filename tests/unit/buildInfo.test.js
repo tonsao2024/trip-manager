@@ -23,8 +23,8 @@ export function testLabels() {
   const en = appUpdatedShort('en');
   assert(/\d/.test(th) && /\d/.test(en), 'dates have day + year numbers');
   assert(th !== en, 'Thai and English render differently');
-  assert(en.includes('Oct') && en.includes('2026'), `English label (got ${en})`);
-  assert(th.includes('ต.ค.') && th.includes('2569'), `Thai label uses the Buddhist year (got ${th})`);
+  assert(en.includes('Nov') && en.includes('2026'), `English label (got ${en})`);
+  assert(th.includes('พ.ย.') && th.includes('2569'), `Thai label uses the Buddhist year (got ${th})`);
   assert(appUpdatedLabel('th').startsWith('อัปเดตล่าสุด'), 'Thai wording');
   assert(appUpdatedLabel('en').startsWith('Updated'), 'English wording');
   const build = appBuildLabel('en');

@@ -1177,3 +1177,8 @@ select.input { border-radius: var(--radius); }
   #settle-overview { padding: 13px !important; }
   .settle-overview-toggle { font-size: 9px; padding: 6px 9px; }
 }
+
+/* v33 — manual refresh: honest in-progress feedback (the button now awaits the
+   real re-read before reporting success). */
+#refresh-btn.is-refreshing svg { animation: spinFast 0.8s linear infinite; }
+#refresh-btn:disabled { opacity: 0.6; cursor: default; }

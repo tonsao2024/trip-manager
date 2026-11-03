@@ -10,6 +10,25 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > คำแนะนำ Functions/Push ในบันทึกเวอร์ชันเก่าด้านล่างไม่ใช่ขั้นตอน deploy ปัจจุบัน
 > ดูขั้นตอนล่าสุดที่ [Deploy Guide](docs/DEPLOY.md)
 
+> **v33 — 3 Nov 2026, เร็วขึ้นจริง: ตัด runtime compiler + ไอคอนทั้งชุด ออกจากหน้าแรก.** Performance pass that
+> removes work from first paint instead of decorating the loader. The Tailwind **Play CDN** (a runtime JIT
+> compiler downloaded on every cold load) is replaced by a committed, minified `src/css/tailwind.css` (~18 kB),
+> and the **full Lucide** icon bundle (~550 kB) by a committed subset of the 291 icons the app actually uses
+> (~114 kB) — both built by `tools/build-assets.mjs` and shipped as static files (Pages has no build step).
+> Five heavy, rarely-first-seen modules now load **on demand** instead of in the initial bundle: the Excel
+> exporter, the destination/explore library, the system-diagnostics panel, the booking-import parser and the
+> ICS calendar writer. The router now awaits page handlers with a stale-navigation guard (fast tab-switching
+> can no longer let an old page overwrite a new one) and precompiles its route patterns; the Refresh button
+> disables itself and only reports success after the real re-read finishes. The animated background blobs are
+> now static (no infinite GPU animation; blur disabled on phones), every `<img>` decodes async, and the web-font
+> stylesheet loads non-blocking. Two wasted-work fixes round it out: the desktop/bottom navigation no longer
+> rebuilds its markup and re-renders its icons on every in-trip tap (it just moves the active highlight), and the
+> read cache gained an invalidation epoch so a read that was in flight before a save can no longer re-cache its
+> stale result and hide the change you just made. Verified: 179 unit tests (7 new cover the cache race), the full
+> jsdom smoke test (which clicks through the lazy diagnostics/ICS/explore/booking-import paths and asserts the nav
+> highlight follows the route without rebuilding), and headless-Chromium layout checks at desktop 1024/1280/1440
+> and iPhone SE 375px — all green. Dev dependencies are now pinned in a root `package.json`.
+>
 > **v32 — 14 Oct 2026, การแจ้งเตือนต้องไม่มีวันเงียบ + จัดการครึ่งที่ Pages ไม่เคย deploy.** The 🔔 no longer
 > fails into `console.warn`: every denied read/write is turned into a named layer (Firestore rules /
 > auth / Cloud Functions / VAPID / network) with the exact command that fixes it — a toast, a banner
