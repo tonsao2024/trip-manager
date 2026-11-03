@@ -15,8 +15,19 @@
 
 const store = new Map();     // key -> { value, ts }
 const inflight = new Map();  // key -> Promise (dedupe concurrent reads)
+const epochs = new Map();    // key -> invalidation generation (see run())
 
 const DEFAULT_MAX_AGE = 5 * 60 * 1000;   // v22: 5 min — faster menu switching, less Firestore churn
+
+function epochOf(key) { return epochs.get(key) || 0; }
+// Bump the generation of every known key matching a prefix. A read that was in
+// flight before the bump must not write its (now-stale) result back afterwards.
+function bumpEpochs(prefix) {
+  const keys = new Set([...store.keys(), ...inflight.keys(), ...epochs.keys()]);
+  for (const key of keys) {
+    if (key === prefix || key.startsWith(prefix)) epochs.set(key, epochOf(key) + 1);
+  }
+}
 
 export function cachePeek(key) {
   const hit = store.get(key);
@@ -30,8 +41,14 @@ export function cacheSet(key, value) {
 
 export function cacheInvalidate(prefix) {
   if (!prefix) return;
+  bumpEpochs(prefix);
   for (const key of [...store.keys()]) {
     if (key === prefix || key.startsWith(prefix)) store.delete(key);
+  }
+  // Drop the dedupe entry too, so a read started AFTER a write fetches fresh
+  // data instead of being handed the stale in-flight promise from before it.
+  for (const key of [...inflight.keys()]) {
+    if (key === prefix || key.startsWith(prefix)) inflight.delete(key);
   }
 }
 
@@ -55,6 +72,11 @@ export function cacheForget(prefix) {
 }
 
 export function cacheClear() {
+  // Invalidate every known generation so reads abandoned by this clear cannot
+  // repopulate the cache (or the persisted mirror) when they finally resolve.
+  for (const key of new Set([...store.keys(), ...inflight.keys(), ...epochs.keys()])) {
+    epochs.set(key, epochOf(key) + 1);
+  }
   store.clear();
   inflight.clear();
   // persisted mirrors too — "Refresh" must really go back to the server
@@ -112,15 +134,24 @@ export function cacheStats() {
 function run(key, loader) {
   const pending = inflight.get(key);
   if (pending) return pending;
+  const startEpoch = epochOf(key);
   const promise = Promise.resolve()
     .then(loader)
     .then((value) => {
-      store.set(key, { value, ts: Date.now() });
-      inflight.delete(key);
+      // Only clear the slot if it still holds THIS promise — an invalidation may
+      // have replaced it with a newer read in the meantime.
+      if (inflight.get(key) === promise) inflight.delete(key);
+      // If the key was invalidated while we were reading, the result predates the
+      // write that invalidated it: return it to this one caller, but do NOT cache
+      // or persist it, or the stale value would shadow the fresh data.
+      if (epochOf(key) === startEpoch) {
+        store.set(key, { value, ts: Date.now() });
+        try { persistSet(key, value); } catch { /* quota / private mode */ }
+      }
       return value;
     })
     .catch((e) => {
-      inflight.delete(key);
+      if (inflight.get(key) === promise) inflight.delete(key);
       throw e;
     });
   inflight.set(key, promise);
@@ -145,7 +176,9 @@ export async function cachedRead(key, loader, { maxAgeMs = DEFAULT_MAX_AGE, back
     const age = Date.now() - hit.ts;
     if (age <= maxAgeMs) return hit.value;
     if (background) {
-      run(key, loader).then(v => { try { persistSet(key, v); } catch {} }).catch((e) => console.warn(`[cache] refresh failed for ${key}`, e?.message || e));
+      // run() persists the fresh value itself (only if the key wasn't invalidated
+      // mid-read), so there is nothing to do here but swallow refresh errors.
+      run(key, loader).catch((e) => console.warn(`[cache] refresh failed for ${key}`, e?.message || e));
       return hit.value;
     }
   }
@@ -156,14 +189,12 @@ export async function cachedRead(key, loader, { maxAgeMs = DEFAULT_MAX_AGE, back
       cacheSet(key, persisted);
       cacheStale(key);
       if (background) {
-        run(key, loader).then(v => { try { persistSet(key, v); } catch {} }).catch(()=>{});
+        run(key, loader).catch(()=>{});
       }
       return persisted;
     }
   }
-  const val = await run(key, loader);
-  try { persistSet(key, val); } catch {}
-  return val;
+  return await run(key, loader);
 }
 
 /** Force the next read of `key` to hit the server (keeps serving the old value). */

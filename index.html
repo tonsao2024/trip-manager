@@ -24,9 +24,9 @@
     } catch {}
   </script>
   <!-- Build identity — source of truth: src/js/utils/buildInfo.js (a unit test keeps these in sync) -->
-  <meta name="app-version" content="32">
+  <meta name="app-version" content="33">
   <meta name="app-palette" content="Sky light">
-  <meta name="app-updated" content="2026-10-14">
+  <meta name="app-updated" content="2026-11-03">
   <meta property="og:title" content="Trip Manager by TonSkywalker">
   <meta property="og:description" content="วางแผนทริป • แบ่งค่าใช้จ่าย • เคลียร์บิล ครบในแอปเดียว โดย TonSkywalker">
   <!-- Logo ในแถบบราวเซอร์ (favicon) — ไฟล์จริงในโฟลเดอร์ public/ และแบบ inline ที่ตามธีมสี -->
@@ -41,25 +41,26 @@
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
-
-  <!-- Tailwind CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: ['class', '[data-theme="dark"]'],
-      theme: { extend: { fontFamily: { display: ['Outfit','Plus Jakarta Sans','Noto Sans Thai','sans-serif'], sans: ['Plus Jakarta Sans','Noto Sans Thai','sans-serif'] } } }
-    }
-  </script>
+  <!-- Web fonts: loaded non-blocking so first paint never waits on an external
+       round-trip. display=swap shows the system fallback immediately, then swaps
+       in the web font when it arrives. noscript keeps it working without JS. -->
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
 
   <!-- Design System v21 “Vivid & Deep” (cache-busted) -->
-  <link rel="stylesheet" href="./src/css/tokens.css?v=32">
-  <link rel="stylesheet" href="./src/css/components.css?v=32">
-  <link rel="stylesheet" href="./src/css/refresh.css?v=32">
-  <link rel="stylesheet" href="./src/css/animations.css?v=32">
+  <link rel="stylesheet" href="./src/css/tokens.css?v=33">
+  <link rel="stylesheet" href="./src/css/components.css?v=33">
+  <link rel="stylesheet" href="./src/css/refresh.css?v=33">
+  <link rel="stylesheet" href="./src/css/animations.css?v=33">
+  <!-- Tailwind: precompiled static utilities (tools/build-assets.mjs).
+       Replaces the Play CDN runtime compiler. Loaded AFTER the app stylesheets
+       to keep the same cascade order the CDN's injected <style> used to have. -->
+  <link rel="stylesheet" href="./src/css/tailwind.css?v=33">
 
-  <!-- Lucide Icons -->
-  <script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <!-- Lucide icons: local subset (291 icons) instead of the full ~1500-icon CDN
+       bundle. Deferred so it never blocks first paint; runs before app.js. -->
+  <script src="./src/js/vendor/lucide.js?v=33" defer></script>
 
   <!-- Import Map -->
   <script type="importmap">
@@ -225,13 +226,22 @@
       #app { padding-top: 14px; }
     }
 
-    /* Ambient animated background blobs (theme-tinted, no emoji, no images) */
+    /* Ambient background wash (theme-tinted, no emoji, no images).
+       Static on purpose: the old version ran three infinite transform animations
+       on 74px-blurred, will-change layers, which kept the GPU compositing every
+       frame even while idle — a real battery/jank cost on phones. The radial
+       gradients are already soft, so the look is preserved at near-zero cost. */
     #bg-decor { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
-    #bg-decor .blob { position: absolute; border-radius: 9999px; filter: blur(74px); opacity: 0.55; will-change: transform; }
-    #bg-decor .blob-1 { width: 44vmax; height: 44vmax; top: -15vmax; left: -11vmax; background: radial-gradient(circle, color-mix(in srgb, var(--grad-1) 24%, transparent), transparent 66%); animation: blobDrift1 26s ease-in-out infinite; }
-    #bg-decor .blob-2 { width: 38vmax; height: 38vmax; bottom: -13vmax; right: -9vmax; background: radial-gradient(circle, color-mix(in srgb, var(--brand-mist-raw) 38%, transparent), transparent 66%); animation: blobDrift2 32s ease-in-out infinite; }
-    #bg-decor .blob-3 { width: 26vmax; height: 26vmax; top: 36%; left: 56%; background: radial-gradient(circle, color-mix(in srgb, var(--brand-yellow-raw) 20%, transparent), transparent 66%); animation: blobDrift3 22s ease-in-out infinite; }
-    [data-theme="dark"] #bg-decor .blob { opacity: 0.34; }
+    #bg-decor .blob { position: absolute; border-radius: 9999px; filter: blur(48px); opacity: 0.5; }
+    #bg-decor .blob-1 { width: 44vmax; height: 44vmax; top: -15vmax; left: -11vmax; background: radial-gradient(circle, color-mix(in srgb, var(--grad-1) 24%, transparent), transparent 66%); }
+    #bg-decor .blob-2 { width: 38vmax; height: 38vmax; bottom: -13vmax; right: -9vmax; background: radial-gradient(circle, color-mix(in srgb, var(--brand-mist-raw) 38%, transparent), transparent 66%); }
+    #bg-decor .blob-3 { width: 26vmax; height: 26vmax; top: 36%; left: 56%; background: radial-gradient(circle, color-mix(in srgb, var(--brand-yellow-raw) 20%, transparent), transparent 66%); }
+    [data-theme="dark"] #bg-decor .blob { opacity: 0.32; }
+    /* Phones: the gradients are soft enough without a blur pass at all. */
+    @media (max-width: 767px) {
+      #bg-decor .blob { filter: none; opacity: 0.42; }
+      #bg-decor .blob-3 { display: none; }
+    }
 
     /* Logo link */
     #logo-link { text-decoration: none; color: inherit; border-radius: var(--radius-full); transition: transform 0.2s ease; }
@@ -438,6 +448,6 @@
   <script src="./fcm-vapid.js"></script>
 
   <!-- App (cache-busted) -->
-  <script type="module" src="./src/js/app.js?v=32"></script>
+  <script type="module" src="./src/js/app.js?v=33"></script>
 </body>
 </html>

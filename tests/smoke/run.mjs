@@ -223,6 +223,23 @@ check(!!q('#recent-expenses .expense-row'), 'dashboard: recent expenses');
 check(!!q('#upnext-list .step-num, #upnext-list .empty-state'), 'dashboard: up-next list');
 check(!errors.some(e => e.includes("Cannot set properties of null")), 'dashboard: no innerHTML-on-null errors');
 
+console.log('\n▶ nav active-state follows the route without needless rebuilds (v33)');
+{
+  const navActive = (sel) => qa(sel).filter(a => a.classList.contains('active')).map(a => a.getAttribute('data-nav') || a.getAttribute('data-full-route'));
+  check(navActive('#desktop-nav a[data-nav]').some(p => p.endsWith('/dashboard')), 'nav: dashboard highlighted on the desktop menu');
+  const firstAnchor = q('#desktop-nav a[data-nav]');
+  await goto('#/trip/t1/expenses');
+  await waitFor(() => q('#expense-list, #expenses-view, .expense-row'), { label: 'expenses page' }).catch(() => {});
+  check(navActive('#desktop-nav a[data-nav]').some(p => p.endsWith('/expenses')), 'nav: expenses highlighted after navigating');
+  check(!navActive('#desktop-nav a[data-nav]').some(p => p.endsWith('/dashboard')), 'nav: dashboard no longer highlighted');
+  check(q('#desktop-nav a[data-nav]') === firstAnchor, 'nav: desktop menu reuses the same anchors (no rebuild on in-trip nav)');
+  check(qa('#bottom-nav .bottom-nav-item.active').length === 1
+    && q('#bottom-nav .bottom-nav-item.active')?.getAttribute('data-full-route')?.endsWith('/expenses'), 'nav: bottom bar highlights expenses');
+  await goto('#/trip/t1/dashboard');
+  await waitFor(() => q('#countdown-scene .cd-runner'), { label: 'back to dashboard' });
+  check(navActive('#desktop-nav a[data-nav]').some(p => p.endsWith('/dashboard')), 'nav: dashboard highlighted again on return');
+}
+
 console.log('\n▶ itinerary (map, 16:9 image, edit/delete, estimate → expense)');
 await goto('#/trip/t1/itinerary');
 try {
@@ -3126,9 +3143,10 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
     'push: the root service worker draws background messages and routes the tap');
   check(/firebase-messaging-sw\.js/.test(fs.readFileSync(path.join(root, 'src/js/notifications/push.js'), 'utf8')),
     'push: the client registers that exact worker file');
-  check(/app-version" content="32"/.test(shell30)
-    && /APP_VERSION = '32'/.test(fs.readFileSync(path.join(root, 'src/js/utils/buildInfo.js'), 'utf8')),
-    'build: index.html and buildInfo.js agree on v32');
+  const versionMatch = shell30.match(/app-version" content="(\d+)"/);
+  const buildInfoSrc = fs.readFileSync(path.join(root, 'src/js/utils/buildInfo.js'), 'utf8');
+  check(versionMatch && buildInfoSrc.includes(`APP_VERSION = '${versionMatch[1]}'`),
+    'build: index.html and buildInfo.js agree on the version');
   check(/<script src="\.\/fcm-vapid\.js"><\/script>/.test(shell30)
     && /window\.__FCM_VAPID_KEY__ = ''/.test(fs.readFileSync(path.join(root, 'fcm-vapid.js'), 'utf8')),
     'push: index.html loads the VAPID placeholder and the repo carries no real key');

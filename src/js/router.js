@@ -1,4 +1,11 @@
-// Lightweight hash router
+// Lightweight hash router.
+//
+// v33: handle() now awaits the route handler and returns its promise, so callers
+// (Refresh button, post-save redirects) can await a real completion instead of
+// firing-and-forgetting. A navigation token drops stale work: if the user taps a
+// second menu while the first is still reading Firestore, the first render is
+// abandoned once its async guard resumes. The dead "fallback re-match" branch
+// (it re-matched the exact path that had just failed) was removed.
 export class Router {
   constructor(routes, defaultRoute = '#/login') {
     this.routes = routes;
@@ -6,11 +13,19 @@ export class Router {
     this.current = null;
     this.params = {};
     this.beforeEach = null;
+    this._navToken = 0;
+    // Pre-compile each route pattern once instead of rebuilding a RegExp on
+    // every navigation.
+    this._compiled = this.routes.map(route => {
+      const paramNames = [];
+      const pattern = route.path.replace(/:([^/]+)/g, (_, name) => { paramNames.push(name); return '([^/]+)'; });
+      return { route, paramNames, regex: new RegExp(`^${pattern}$`) };
+    });
   }
 
   init() {
     window.addEventListener('hashchange', () => this.handle());
-    this.handle();
+    return this.handle();
   }
 
   /**
@@ -29,61 +44,44 @@ export class Router {
   }
 
   async handle() {
+    const token = ++this._navToken;
     let hash = location.hash || this.defaultRoute;
     if (!hash.startsWith('#')) hash = '#' + hash;
-    let path = hash.slice(1);
-    const queryIndex = path.indexOf('?');
-    const pathWithoutQuery = queryIndex >= 0 ? path.slice(0, queryIndex) : path;
+    const path = hash.slice(1);
 
-    const matched = this.match(pathWithoutQuery);
+    const matched = this.match(path);
     if (!matched) {
-      if (pathWithoutQuery !== path) {
-        const fallback = this.match(pathWithoutQuery);
-        if (fallback) {
-          if (this.beforeEach) {
-            try {
-              const res = await this.beforeEach(fallback);
-              if (res === false) return;
-            } catch (e) { console.warn('beforeEach failed', e?.message); }
-          }
-          this.current = fallback;
-          this.run(fallback.handler, fallback.params);
-          return;
-        }
-      }
       location.hash = this.defaultRoute;
       return;
     }
+
+    // NOTE: we deliberately always run the handler. Manual Refresh and theme
+    // changes call handle() on the *current* route and rely on a real re-render
+    // (they clear the read cache first). Redundant-render protection lives in the
+    // app's render tokens, not here, so those flows keep working.
+
     if (this.beforeEach) {
       try {
         const res = await this.beforeEach(matched);
         if (res === false) return;
       } catch (e) { console.warn('beforeEach failed', e?.message); }
     }
-    // Avoid re-running same route with same params unless forced
-    const sameRoute = this.current && this.current.path === matched.path && JSON.stringify(this.current.params) === JSON.stringify(matched.params);
-    if (sameRoute && document.getElementById('app')?.dataset.route === matched.path) {
-      // still dispatch start/end to keep progress consistent but skip heavy re-render
-      // For now allow re-render but ensure quick return if already on same page and no query change
-      const currentQuery = location.hash.includes('?') ? location.hash.split('?')[1] : '';
-      const prevQuery = this.current?.fullPath?.includes('?') ? this.current.fullPath.split('?')[1] : '';
-      if (currentQuery === prevQuery) return;
-    }
+    // A newer navigation may have started while beforeEach was awaiting auth.
+    if (token !== this._navToken) return;
+
     this.current = matched;
-    this.run(matched.handler, matched.params);
+    const appEl = document.getElementById('app');
+    if (appEl) appEl.dataset.route = matched.path;
+    await this.run(matched.handler, matched.params);
   }
 
   match(path) {
-    // Strip query for matching
     const cleanPath = path.split('?')[0];
-    for (const route of this.routes) {
-      const paramNames = [];
-      const pattern = route.path.replace(/:([^/]+)/g, (_, name) => { paramNames.push(name); return '([^/]+)'; });
-      const regex = new RegExp(`^${pattern}$`);
+    for (const { route, paramNames, regex } of this._compiled) {
       const m = cleanPath.match(regex);
       if (m) {
         const params = {};
-        paramNames.forEach((n, i) => params[n] = m[i+1]);
+        paramNames.forEach((n, i) => params[n] = m[i + 1]);
         return { ...route, params, path: cleanPath, fullPath: path };
       }
     }

@@ -53,7 +53,7 @@ function buildPage() {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
     .replace(/<script src="https:\/\/cdn\.tailwindcss\.com"><\/script>/, '')
     .replace(/<script>\s*tailwind\.config[\s\S]*?<\/script>/, '')
-    .replace(/<link href="https:\/\/fonts\.googleapis\.com[^>]*>/, '')
+    .replace(/<link[^>]*href="https:\/\/fonts\.googleapis\.com[^>]*>/g, '')
     .replace(/<script src="https:\/\/cdn\.jsdelivr\.net[^>]*><\/script>/, '')
     .replace(/<script type="importmap">[\s\S]*?<\/script>/, '')
     .replace(/<script type="module" src="\.\/src\/js\/app\.js\?v=\d+"><\/script>/,

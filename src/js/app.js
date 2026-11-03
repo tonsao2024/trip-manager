@@ -11,7 +11,7 @@ import { toast } from './components/toast.js';
 import { renderFujiMascot, renderEmptyState } from './components/fuji.js';
 import { logout, hasStepUpSession } from './auth/index.js';
 import { getMemberSession, clearMemberSession } from './auth/memberAuth.js';
-import { runSystemDiagnostics, formatDiagnosticsReport, DIAG } from './utils/diagnostics.js';
+// utils/diagnostics.js is imported lazily at the system-check call sites.
 import { listTrips, getTrip, subscribeTrip, createTrip, updateTrip, deleteTrip, duplicateTrip, uploadCoverImage, clearTripsCache, clearAllDataCache, regenerateInviteCode } from './trips/index.js';
 import {
   signInWithGoogle, completeRedirectSignIn,
@@ -80,11 +80,29 @@ import {
   localCategoryPending, categoriesLoadDenied,
   CATEGORY_ICON_CHOICES, CATEGORY_COLOR_CHOICES
 } from './categories/index.js';
-import {
-  exportWorkbookFile, readSpreadsheet, importItineraryRows, importExpenseRows,
-  downloadItineraryTemplate, downloadExpensesTemplate, exportCsvFile,
-  ITINERARY_COLUMNS, EXPENSE_COLUMNS, itineraryItemToRow, expenseToRow
-} from './utils/excel.js';
+// Heavy, single-screen helpers are loaded on demand (see lazy modules below):
+//   utils/explore.js      → renderExplore only
+//   utils/diagnostics.js  → Settings → system check / fujiDiagnose()
+//   utils/bookingImport.js→ the booking-import sheet
+//   utils/ics.js          → calendar export actions
+// Keeping them out of the initial graph cuts first-load parse/transfer cost.
+let _excelPromise = null;
+function loadExcel() {
+  if (!_excelPromise) _excelPromise = import('./utils/excel.js').catch(e => { _excelPromise = null; throw e; });
+  return _excelPromise;
+}
+let _icsPromise = null;
+function loadIcs() {
+  if (!_icsPromise) _icsPromise = import('./utils/ics.js').catch(e => { _icsPromise = null; throw e; });
+  return _icsPromise;
+}
+let _diagPromise = null;
+function loadDiagnostics() {
+  if (!_diagPromise) _diagPromise = import('./utils/diagnostics.js').catch(e => { _diagPromise = null; throw e; });
+  return _diagPromise;
+}
+
+// Excel/CSV import-export is loaded on demand — see loadExcel() at the call sites.
 import { parseCoordinates, getInitials, compressImage } from './utils/helpers.js';
 import { suggestCards, rememberCard, uploadReceiptImage, tripCards, upsertTripCard, removeTripCard, tripCardLabel, newCardId } from './utils/cards.js';
 import { expandStayItems, stayNights, dayEstimateAmount } from './utils/stays.js';
@@ -113,12 +131,9 @@ import {
   reservationToItineraryPayload, durationBetween, reservationWarnings
 } from './reservations/index.js';
 import { fetchDailyForecast, forecastForDates, forecastLabel, datesBetween, weatherTip, weatherTone, isForecastRelevant, geocodeCity, searchCities } from './utils/weather.js';
-import {
-  DESTINATIONS, EXPLORE_CATEGORIES, destinationById, destinationPlaces, searchPlaces,
-  matchDestinations, exploreCategoryCounts, suggestForTrip, bestTimeLabel, bestTimeIcon,
-  suggestedTime, placeToIdeaPayload, placeToPlanDraft, libraryStats
-} from './utils/explore.js';
-import { parseConfirmationText, draftToReservation, confidenceLabel } from './utils/bookingImport.js';
+// utils/explore.js (destination library) loads inside renderExplore only.
+// utils/bookingImport.js loads inside the booking-import sheet only.
+
 import {
   buildMonthGrid, shiftMonth, monthShort, defaultMonthFor, tripMonths, itemsForDay,
   calendarSummary, parseISODate
@@ -127,7 +142,7 @@ import {
   inviteLink, inviteMessage, lineShareUrl, tripSummaryText, itineraryText,
   printPlanUrl, formatCode, appBaseUrl
 } from './utils/share.js';
-import { buildIcs, downloadIcs, itineraryToEvents, reservationsToEvents } from './utils/ics.js';
+// utils/ics.js is imported lazily via loadIcs() at the calendar-export call sites.
 import { hasCoords, coordOf, haversineKm } from './utils/route.js';
 import { t, setLang, getLang } from './utils/i18n.js';
 
@@ -203,7 +218,7 @@ function openCommentSheet({ tripId, expenseId, title = '', amount = '', comments
   const rowHtml = (c) => `
     <div class="comment-row" data-comment-row="${c.id}">
       <div class="avatar" style="width:28px;height:28px;font-size:11px;background:${escapeHtml(c.color || 'var(--primary)')};">
-        ${c.photoURL ? `<img src="${escapeHtml(c.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(c.name || '?'))}
+        ${c.photoURL ? `<img decoding="async" src="${escapeHtml(c.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(c.name || '?'))}
       </div>
       <div class="min-w-0 flex-1">
         <div class="comment-head">
@@ -822,44 +837,67 @@ function setTrip(tripId) {
 // and the full label from 1280px up — never icon-only, never overlapping.
 // ชวนไปที่นี่ / การจอง / เตรียมตัว / ปฏิทิน were taken out of the menu on request,
 // and ตั้งค่า now lives behind the profile picture (top-right) instead.
+let _desktopNavKey = null;
 function renderDesktopNav() {
-  if (!currentTripId) { desktopNavEl.innerHTML = ''; return; }
+  if (!currentTripId) { desktopNavEl.innerHTML = ''; _desktopNavKey = null; return; }
   const base = `#/trip/${currentTripId}`;
   const currentHash = location.hash.split('?')[0];
   const th = getLang() === 'th';
-  const items = [
-    { label: th ? 'ทริปทั้งหมด' : 'All Trips', short: th ? 'ทริป' : 'Trips', path: '#/trips', icon: 'compass', exact: true },
-    { label: t('dashboard'), short: th ? 'แดชบอร์ด' : 'Board', path: `${base}/dashboard`, icon: 'layout-dashboard' },
-    { label: t('itinerary'), short: th ? 'แผน' : 'Plan', path: `${base}/itinerary`, icon: 'map-pinned' },
-    { label: t('ideas'), short: th ? 'ไอเดีย' : 'Ideas', path: `${base}/ideas`, icon: 'lightbulb' },
-    { label: t('expenses'), short: th ? 'ค่าใช้จ่าย' : 'Expenses', path: `${base}/expenses`, icon: 'wallet' },
-    { label: t('settlement'), short: th ? 'เคลียร์บิล' : 'Settle', path: `${base}/settlement`, icon: 'hand-coins' },
-    { label: t('members'), short: th ? 'สมาชิก' : 'Members', path: `${base}/members`, icon: 'users' },
-    { label: th ? 'เอกสาร' : 'Documents', short: th ? 'เอกสาร' : 'Docs', path: `${base}/documents`, icon: 'folder' },
-  ];
-  desktopNavEl.innerHTML = items.map(i => {
-    const active = currentHash.startsWith(i.path) ? 'chip-active active' : '';
-    return `<a href="${i.path}" class="chip menu-item ${active}" data-nav="${i.path}" title="${i.label}" style="text-decoration:none;">${icon(i.icon, 'w-4 h-4')}<span class="menu-item-label">${i.label}</span><span class="menu-item-label-short">${i.short}</span></a>`;
-  }).join('');
-  queueIcons();
+  // The markup only depends on the trip + language. Rebuilding 8 anchors and
+  // re-rendering 8 icons on every route change was wasted work — when neither
+  // changed, just move the active highlight instead.
+  const key = `${currentTripId}|${getLang()}`;
+  if (_desktopNavKey !== key || !desktopNavEl.childElementCount) {
+    const items = [
+      { label: th ? 'ทริปทั้งหมด' : 'All Trips', short: th ? 'ทริป' : 'Trips', path: '#/trips', icon: 'compass', exact: true },
+      { label: t('dashboard'), short: th ? 'แดชบอร์ด' : 'Board', path: `${base}/dashboard`, icon: 'layout-dashboard' },
+      { label: t('itinerary'), short: th ? 'แผน' : 'Plan', path: `${base}/itinerary`, icon: 'map-pinned' },
+      { label: t('ideas'), short: th ? 'ไอเดีย' : 'Ideas', path: `${base}/ideas`, icon: 'lightbulb' },
+      { label: t('expenses'), short: th ? 'ค่าใช้จ่าย' : 'Expenses', path: `${base}/expenses`, icon: 'wallet' },
+      { label: t('settlement'), short: th ? 'เคลียร์บิล' : 'Settle', path: `${base}/settlement`, icon: 'hand-coins' },
+      { label: t('members'), short: th ? 'สมาชิก' : 'Members', path: `${base}/members`, icon: 'users' },
+      { label: th ? 'เอกสาร' : 'Documents', short: th ? 'เอกสาร' : 'Docs', path: `${base}/documents`, icon: 'folder' },
+    ];
+    desktopNavEl.innerHTML = items.map(i => {
+      return `<a href="${i.path}" class="chip menu-item" data-nav="${i.path}" title="${i.label}" style="text-decoration:none;">${icon(i.icon, 'w-4 h-4')}<span class="menu-item-label">${i.label}</span><span class="menu-item-label-short">${i.short}</span></a>`;
+    }).join('');
+    _desktopNavKey = key;
+    queueIcons();
+  }
+  // Active state always tracks the current route, whether or not we rebuilt.
+  desktopNavEl.querySelectorAll('a[data-nav]').forEach(a => {
+    const active = currentHash.startsWith(a.getAttribute('data-nav'));
+    a.classList.toggle('chip-active', active);
+    a.classList.toggle('active', active);
+  });
 }
 
 
 // --- Bottom Nav - instant ---
+let _bottomNavTrip = null;
 function updateBottomNav() {
   if (!currentTripId) return;
   const base = `#/trip/${currentTripId}`;
   const currentHash = location.hash.split('?')[0];
+  // Routes + click handlers only change when the trip changes; on a normal
+  // in-trip navigation we only need to move the active highlight.
+  const rebind = _bottomNavTrip !== currentTripId;
   bottomNavEl.querySelectorAll('.bottom-nav-item').forEach(btn => {
-    const originalRoute = btn.getAttribute('data-route');
-    let route = originalRoute.replace('#/trip', base);
-    // Map old /map to itinerary since merged
-    if (route.includes('/map')) route = route.replace('/map', '/itinerary');
-    btn.setAttribute('data-full-route', route);
+    let route;
+    if (rebind) {
+      const originalRoute = btn.getAttribute('data-route');
+      route = originalRoute.replace('#/trip', base);
+      // Map old /map to itinerary since merged
+      if (route.includes('/map')) route = route.replace('/map', '/itinerary');
+      btn.setAttribute('data-full-route', route);
+      btn.onclick = () => { location.hash = route; };
+    } else {
+      route = btn.getAttribute('data-full-route');
+    }
     if (currentHash.startsWith(route) || (route.includes('/itinerary') && currentHash.includes('/map'))) btn.classList.add('active');
     else btn.classList.remove('active');
-    btn.onclick = () => { location.hash = route; };
   });
+  _bottomNavTrip = currentTripId;
 }
 
 function renderFAB(route) {
@@ -930,7 +968,7 @@ function addHeaderControls() {
 /** Photo or initials for a signed-in account (settings → account card). */
 function avatarInitialHtml(user) {
   const name = user?.displayName || user?.email || '';
-  if (user?.photoURL) return `<img src="${escapeHtml(user.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">`;
+  if (user?.photoURL) return `<img decoding="async" src="${escapeHtml(user.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">`;
   return escapeHtml(name ? getInitials(name) : '?');
 }
 
@@ -1776,7 +1814,7 @@ function openImageViewer(images, startIndex = 0, title = '') {
       </div>
       <div class="idea-lightbox-main">
         ${imgs.length > 1 ? `<button class="idea-lightbox-nav" data-lb="prev" aria-label="‹">${icon('chevron-left', 'w-5 h-5')}</button>` : ''}
-        <img data-lb="img" src="${escapeHtml(imgs[cur])}" alt="" onerror="this.style.opacity='.25'">
+        <img decoding="async" data-lb="img" src="${escapeHtml(imgs[cur])}" alt="" onerror="this.style.opacity='.25'">
         ${imgs.length > 1 ? `<button class="idea-lightbox-nav" data-lb="next" aria-label="›">${icon('chevron-right', 'w-5 h-5')}</button>` : ''}
       </div>
       <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
@@ -1784,7 +1822,7 @@ function openImageViewer(images, startIndex = 0, title = '') {
         <a data-lb="open" class="btn btn-ghost btn-sm text-[11px]" href="${escapeHtml(imgs[cur])}" target="_blank" rel="noopener">${icon('external-link', 'w-3.5 h-3.5')} ${getLang() === 'th' ? 'เปิดรูปต้นฉบับ' : 'Open original'}</a>
       </div>
       ${imgs.length > 1 ? `<div class="idea-lightbox-thumbs">${imgs.map((u, k) => `
-        <button data-lb="thumb" data-k="${k}" class="${k === cur ? 'is-active' : ''}"><img src="${escapeHtml(u)}" alt="" loading="lazy" onerror="this.closest('[data-lb=thumb]').style.display='none'"></button>`).join('')}</div>` : ''}
+        <button data-lb="thumb" data-k="${k}" class="${k === cur ? 'is-active' : ''}"><img decoding="async" src="${escapeHtml(u)}" alt="" loading="lazy" onerror="this.closest('[data-lb=thumb]').style.display='none'"></button>`).join('')}</div>` : ''}
     </div>
   `, { className: 'modal-card--lightbox' });
   queueIcons();
@@ -1862,7 +1900,7 @@ function openUserSheet(user) {
   const sheet = showBottomSheet(`
     <div class="space-y-4 account-sheet">
       <div class="flex items-center gap-3">
-        <div class="avatar" style="background: var(--gradient-primary); width:52px;height:52px; flex-shrink:0;">${user.photoURL ? `<img src="${escapeHtml(user.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(initial)}</div>
+        <div class="avatar" style="background: var(--gradient-primary); width:52px;height:52px; flex-shrink:0;">${user.photoURL ? `<img decoding="async" src="${escapeHtml(user.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(initial)}</div>
         <div class="flex-1 min-w-0">
           <h3 class="font-bold truncate text-[15px]">${escapeHtml(user.displayName || user.email || 'User')}</h3>
           <p class="text-xs text-[var(--text-secondary)] truncate">${escapeHtml(user.email || user.uid.slice(0,12))} ${tripInfo}</p>
@@ -2016,6 +2054,7 @@ function renderMemberSessionNotice(on) {
 // same report as Settings > ตรวจสอบระบบ (System check).
 if (typeof window !== 'undefined') {
   window.fujiDiagnose = async () => {
+    const { runSystemDiagnostics, formatDiagnosticsReport } = await loadDiagnostics();
     const perms = await resolvePermsCached(currentTripId, currentTrip).catch(() => null);
     const result = await runSystemDiagnostics({
       tripId: currentTripId, lang: getLang(), isTripAdmin: Boolean(perms?.isAdmin)
@@ -2111,7 +2150,7 @@ async function showRulesHelpSheet({ lang, trip = null, action = 'join' } = {}) {
 
 function renderMemberSessionUi(session) {
   const label = (session.displayName || session.username || 'M')[0]?.toUpperCase() || 'M';
-  if (session.photoURL) userAvatarBtn.innerHTML = `<img src="${escapeHtml(session.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">`;
+  if (session.photoURL) userAvatarBtn.innerHTML = `<img decoding="async" src="${escapeHtml(session.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">`;
   else userAvatarBtn.textContent = label;
   userAvatarBtn.onclick = () => openAvatarAction(currentUser);
   updateUserDisplay(currentUser);
@@ -2136,7 +2175,7 @@ if (!isFirebaseConfigured) {
       const initial = (user.displayName || user.email || '?')[0].toUpperCase();
       userAvatarBtn.textContent = initial;
       if (user.photoURL) {
-        userAvatarBtn.innerHTML = `<img src="${escapeHtml(user.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">`;
+        userAvatarBtn.innerHTML = `<img decoding="async" src="${escapeHtml(user.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">`;
       }
       updateUserDisplay(user);
       userAvatarBtn.onclick = () => openAvatarAction(user);
@@ -2487,14 +2526,27 @@ if (isEarlyBlocked) {
 setTimeout(addHeaderControls, 100);
 initOfflineStrip();
 
-refreshBtn?.addEventListener('click', () => {
+refreshBtn?.addEventListener('click', async () => {
+  if (refreshBtn.disabled) return;
+  refreshBtn.disabled = true;
+  refreshBtn.classList.add('is-refreshing');
   syncState.set('syncing');
   // A manual refresh must really go back to Firestore — drop the read cache first.
   clearAllDataCache();
   clearPermissionsCache();
-  toast.success(getLang() === 'th' ? 'รีเฟรชข้อมูลล่าสุดแล้ว' : 'Reloaded from the server');
-  router.handle();
-  setTimeout(() => syncState.set('online'), 300);
+  try {
+    // Wait for the route to actually re-read and re-render before claiming success.
+    await router.handle();
+    syncState.set('online');
+    toast.success(getLang() === 'th' ? 'รีเฟรชข้อมูลล่าสุดแล้ว' : 'Reloaded from the server');
+  } catch (e) {
+    console.warn('refresh failed', e?.message || e);
+    syncState.set('online');
+    toast.error(getLang() === 'th' ? 'รีเฟรชไม่สำเร็จ — ลองอีกครั้ง' : 'Refresh failed — please try again');
+  } finally {
+    refreshBtn.disabled = false;
+    refreshBtn.classList.remove('is-refreshing');
+  }
 });
 
 /* ---------------------------------------------------------------- *
@@ -2724,7 +2776,7 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
                 <button type="button" id="change-image" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:4px 10px;">${icon('replace', 'w-3 h-3')} ${lang==='th' ? 'เปลี่ยน' : 'Change'}</button>
               </div>
               <div class="w-full h-28 rounded-xl overflow-hidden border" style="border-color: var(--border);">
-                <img id="cover-img" class="w-full h-full object-cover" src="${escapeHtml(trip.coverImage || '')}" alt="">
+                <img decoding="async" id="cover-img" class="w-full h-full object-cover" src="${escapeHtml(trip.coverImage || '')}" alt="">
               </div>
               <p id="cover-info" class="text-[10px] text-[var(--text-tertiary)] mt-1"></p>
             </div>
@@ -2994,7 +3046,7 @@ function openTripActions(trip, { onChanged } = {}) {
     <div class="space-y-4">
       <div class="flex items-center gap-3">
         <div class="w-12 h-12 rounded-2xl overflow-hidden flex-shrink-0" style="background: var(--gradient-primary);">
-          ${trip.coverImage ? `<img src="${escapeHtml(trip.coverImage)}" class="w-full h-full object-cover" alt="">` : ''}
+          ${trip.coverImage ? `<img decoding="async" src="${escapeHtml(trip.coverImage)}" class="w-full h-full object-cover" alt="">` : ''}
         </div>
         <div class="min-w-0">
           <h3 class="font-bold truncate" style="font-family: var(--font-display);">${escapeHtml(trip.name)}</h3>
@@ -3207,7 +3259,7 @@ async function renderTripSelector() {
     return `
       <div class="card card-hover p-0 overflow-hidden cursor-pointer group trip-card" data-trip="${trip.id}" style="animation-delay: ${idx * 0.06}s" role="button" tabindex="0" aria-label="${escapeHtml(trip.name)}">
         <div class="${compact ? 'h-28' : 'h-36'} relative overflow-hidden" style="background: linear-gradient(135deg, var(--primary-raw), color-mix(in srgb, var(--primary-raw) 45%, var(--brand-yellow-raw)));">
-          ${trip.coverImage ? `<img src="${escapeHtml(trip.coverImage)}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
+          ${trip.coverImage ? `<img decoding="async" src="${escapeHtml(trip.coverImage)}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
           <div class="absolute inset-0" style="background: linear-gradient(to top, rgba(0,0,0,0.45), transparent 55%);"></div>
           ${!compact ? `<div class="absolute top-3 right-3 flex items-center gap-1.5">
             ${countdownText ? `<span class="badge bg-white/90 backdrop-blur text-[10px]" style="border-color:transparent;color:#333;">${icon('hourglass', 'w-3 h-3')} ${countdownText}</span>` : ''}
@@ -3404,7 +3456,7 @@ async function renderDashboard(params) {
     <div class="page-enter space-y-5" id="dashboard-view">
       <!-- HERO -->
       <div class="hero-card" style="--hero-color:var(--primary-raw);">
-        ${trip?.coverImage ? `<img src="${escapeHtml(trip.coverImage)}" class="hero-bg" alt="" onerror="this.style.display='none'">` : ''}
+        ${trip?.coverImage ? `<img decoding="async" src="${escapeHtml(trip.coverImage)}" class="hero-bg" alt="" onerror="this.style.display='none'">` : ''}
         <div class="hero-overlay"></div>
         <div class="hero-content">
           <div class="flex flex-wrap items-start justify-between gap-3">
@@ -4324,7 +4376,7 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
       <div class="member-row ${isMe ? 'is-me' : ''}" data-mid="${escapeHtml(id)}" role="button" tabindex="0" title="${th('แตะเพื่อดูรายการของคนนี้','Tap to see this person’s bills')}">
         <div class="flex items-center gap-3 min-w-0">
           <div class="avatar w-10 h-10 text-sm" style="background:${m?.color || 'var(--primary)'};width:40px;height:40px;">
-            ${m?.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m?.displayName || 'U'))}
+            ${m?.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m?.displayName || 'U'))}
           </div>
           <div class="min-w-0">
             <div class="font-semibold text-sm flex items-center gap-2 truncate">${escapeHtml(m?.displayName || id.slice(0,6))} ${isMe ? `<span class="text-[10px] px-2 py-0.5 rounded-full text-white flex-shrink-0" style="background:var(--gradient-primary);">${th('คุณ','You')}</span>` : ''}</div>
@@ -4391,7 +4443,7 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
               </div>
               <div class="team-members">
                 ${g.members.length ? g.members.map(m => `
-                  <span class="team-member-chip"><span class="avatar w-5 h-5 text-[9px]" style="background:${escapeHtml(m.color || 'var(--primary)')};width:20px;height:20px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>${escapeHtml((m.displayName || '').split(' ')[0])}</span>`).join('')
+                  <span class="team-member-chip"><span class="avatar w-5 h-5 text-[9px]" style="background:${escapeHtml(m.color || 'var(--primary)')};width:20px;height:20px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>${escapeHtml((m.displayName || '').split(' ')[0])}</span>`).join('')
                   : `<span class="team-card-note">${th('ยังไม่ได้เลือกสมาชิก','No members picked yet')}</span>`}
               </div>
             </article>`;
@@ -5608,7 +5660,7 @@ async function renderItinerary(params) {
 
     let mapBlock;
     if (mapDataUrl) {
-      mapBlock = `<img src="${mapDataUrl}" alt="map">`;
+      mapBlock = `<img decoding="async" src="${mapDataUrl}" alt="map">`;
     } else if (located.length) {
       const { svg, html } = schematicMap(located, { dayColors });
       mapBlock = `<div class="itin-sheet-map-inner">${svg}${html}</div>`;
@@ -5916,7 +5968,7 @@ async function renderItinerary(params) {
         </div>
         <div class="itin-thumb">
           ${it.imageUrl
-            ? `<button type="button" class="itin-thumb-zoom" data-act="photo" data-id="${it.id}" title="${th('กดเพื่อดูภาพใหญ่','Tap to view a large photo')}" aria-label="${th('ดูภาพขนาดใหญ่','View large photo')}"><img src="${escapeHtml(it.imageUrl)}" alt="" loading="lazy" onerror="this.classList.add('hidden'); this.closest('.itin-thumb')?.classList.add('is-empty');"></button>`
+            ? `<button type="button" class="itin-thumb-zoom" data-act="photo" data-id="${it.id}" title="${th('กดเพื่อดูภาพใหญ่','Tap to view a large photo')}" aria-label="${th('ดูภาพขนาดใหญ่','View large photo')}"><img decoding="async" src="${escapeHtml(it.imageUrl)}" alt="" loading="lazy" onerror="this.classList.add('hidden'); this.closest('.itin-thumb')?.classList.add('is-empty');"></button>`
             : `<span class="itin-thumb-ph">${icon(isVirtual || isCheckin ? 'bed-double' : categoryIcon(it.category), 'w-5 h-5')}</span>`}
           <!-- 3-dot menu lives on the photo (was duplicated + unclickable in the action row) -->
           <div class="itin-more-wrap">
@@ -6189,7 +6241,7 @@ async function renderItinerary(params) {
     const memberTiles = (selectedIds = []) => members.map(m => `
       <button type="button" class="tile ${selectedIds.includes(m.id) ? 'tile-selected' : ''}" data-member="${m.id}" data-role="share">
         <span class="flex items-center gap-2 min-w-0">
-          <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+          <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
           <span class="text-xs font-medium truncate">${escapeHtml(m.displayName)}</span>
         </span>
       </button>`).join('') || `<p class="text-xs text-[var(--text-secondary)]">${th('ยังไม่มีสมาชิกในทริป','No members yet')}</p>`;
@@ -6305,7 +6357,7 @@ async function renderItinerary(params) {
             <label class="input-label">${icon('image', 'w-3.5 h-3.5')} ${th('รูปภาพ (URL)','Image (URL)')}</label>
             <input id="it-image-url" class="input" placeholder="https://example.com/image.jpg" autocomplete="off" value="${escapeHtml(it.imageUrl || '')}">
             <div id="it-image-preview" class="${it.imageUrl ? '' : 'hidden'} mt-2 rounded-xl overflow-hidden border" style="border-color: var(--border);">
-              <img id="it-preview-img" class="w-full object-cover" style="aspect-ratio:16/9;" src="${escapeHtml(it.imageUrl || '')}" alt="">
+              <img decoding="async" id="it-preview-img" class="w-full object-cover" style="aspect-ratio:16/9;" src="${escapeHtml(it.imageUrl || '')}" alt="">
             </div>
             <p class="input-hint">${th('แสดงเป็นรูป 16:9 ทางด้านขวาของการ์ด','Shown as a 16:9 thumbnail on the right of the card')}</p>
           </div>
@@ -6344,7 +6396,7 @@ async function renderItinerary(params) {
                   ${members.map(m => `
                     <button type="button" class="tile ${(initPayer === m.id) ? 'tile-selected' : ''}" data-member="${m.id}" data-role="payer">
                       <span class="flex items-center gap-2 min-w-0">
-                        <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+                        <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                         <span class="text-xs font-medium truncate">${escapeHtml(m.displayName)}</span>
                       </span>
                     </button>`).join('')}
@@ -6616,15 +6668,15 @@ async function renderItinerary(params) {
     queueIcons();
     const run = async (fn) => {
       const tLoad = toast.loading(th('กำลังสร้างไฟล์...', 'Preparing file...'));
-      try { await fn(); tLoad.close(); toast.success(th('ดาวน์โหลดแล้ว','Downloaded')); sheet.close(); }
+      try { const excel = await loadExcel(); await fn(excel); tLoad.close(); toast.success(th('ดาวน์โหลดแล้ว','Downloaded')); sheet.close(); }
       catch (e) { tLoad.close(); toast.error(e.message); }
     };
-    bind('xl-cur', 'click', () => run(() => exportWorkbookFile({ trip, items: visibleItems, members, lang, include: 'itinerary' })));
-    bind('xl-all', 'click', () => run(async () => {
+    bind('xl-cur', 'click', () => run(({ exportWorkbookFile }) => exportWorkbookFile({ trip, items: visibleItems, members, lang, include: 'itinerary' })));
+    bind('xl-all', 'click', () => run(async ({ exportWorkbookFile }) => {
       const all = await fetchItinerary(tripId, null);
       await exportWorkbookFile({ trip, items: all, members, lang, include: 'itinerary' });
     }));
-    bind('xl-csv', 'click', () => run(async () => {
+    bind('xl-csv', 'click', () => run(async ({ ITINERARY_COLUMNS, itineraryItemToRow, exportCsvFile }) => {
       const rows = [ITINERARY_COLUMNS.map(c => c.en), ITINERARY_COLUMNS.map(c => c.th),
         ...visibleItems.map(it => {
           const row = itineraryItemToRow(it, members, lang);
@@ -6632,7 +6684,7 @@ async function renderItinerary(params) {
         })];
       await exportCsvFile(rows, ITINERARY_COLUMNS, `itinerary-${tripId}.csv`);
     }));
-    bind('xl-tpl', 'click', () => run(() => downloadItineraryTemplate(trip, { lang, withSample: true })));
+    bind('xl-tpl', 'click', () => run(({ downloadItineraryTemplate }) => downloadItineraryTemplate(trip, { lang, withSample: true })));
   });
 
   /** Excel import — only wired while edit mode is on (a v18.2 request). */
@@ -6645,6 +6697,7 @@ async function renderItinerary(params) {
       if (!file) return;
       const tLoad = toast.loading(th('กำลังอ่านไฟล์...', 'Reading file...'));
       try {
+        const { readSpreadsheet, importItineraryRows } = await loadExcel();
         const { rows } = await readSpreadsheet(file);
         const { items: parsed, errors } = importItineraryRows(rows, { trip, members, lang });
         tLoad.close();
@@ -7023,7 +7076,7 @@ async function renderExpenses(params) {
             ${e.cardName ? `<span class="rcpt-chip rcpt-chip--card" title="${th('บัตรเครดิต','Card')}">${icon('credit-card', 'w-2.5 h-2.5')} ${escapeHtml(e.cardName)}</span>` : ''}
           </div>
           ${e.description ? `<p class="text-[11px] text-[var(--text-secondary)] mt-1 line-clamp-2">${escapeHtml(e.description)}</p>` : ''}
-          ${e.receiptImage ? `<img class="expense-receipt-thumb" src="${escapeHtml(e.receiptImage)}" alt="${th('รูปใบเสร็จ','Receipt photo')}" loading="lazy">` : ''}
+          ${e.receiptImage ? `<img decoding="async" class="expense-receipt-thumb" src="${escapeHtml(e.receiptImage)}" alt="${th('รูปใบเสร็จ','Receipt photo')}" loading="lazy">` : ''}
           ${(e.updatedByName || e.createdByName) ? `<p class="meta-line mt-1" style="color:var(--text-tertiary);">${icon('history', 'w-3 h-3')} ${escapeHtml(lastEditorText({ ...e, updatedAt: e.updatedByName ? e.updatedAt : null }, lang))}</p>` : ''}
           ${commentMap.get(e.id)?.length ? `<p class="expense-comment-preview">${icon('message-square', 'w-3 h-3')} <b>${escapeHtml(commentMap.get(e.id)[commentMap.get(e.id).length - 1].name || '')}</b>: ${escapeHtml((commentMap.get(e.id)[commentMap.get(e.id).length - 1].text || '').slice(0, 70))}</p>` : ''}
         </div>
@@ -7261,6 +7314,7 @@ async function renderExpenses(params) {
     const tLoad = toast.loading(th('กำลังสร้างไฟล์...', 'Preparing file...'));
     try {
       const all = await fetchAllExpenses(tripId);
+      const { exportWorkbookFile } = await loadExcel();
       await exportWorkbookFile({ trip, expenses: all, members, items: [], lang, include: 'expenses' });
       tLoad.close();
       toast.success(th('ดาวน์โหลดแล้ว', 'Downloaded'));
@@ -7276,6 +7330,7 @@ async function renderExpenses(params) {
       if (!file) return;
       const tLoad = toast.loading(th('กำลังอ่านไฟล์...', 'Reading file...'));
       try {
+        const { readSpreadsheet, importExpenseRows } = await loadExcel();
         const { rows } = await readSpreadsheet(file);
         let items = [];
         try { items = await fetchItinerary(tripId, null); } catch {}
@@ -7442,7 +7497,7 @@ function expenseFormSectionsHtml({
                 ${members.map(m => `
                   <button type="button" class="tile ${initialPayers.has(m.id) ? 'tile-selected' : ''}" data-payer="${m.id}" title="${escapeHtml(m.displayName)}">
                     <span class="flex items-center gap-2 min-w-0">
-                      <span class="avatar w-8 h-8 text-xs" style="background:${m.color || 'var(--primary)'};width:32px;height:32px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+                      <span class="avatar w-8 h-8 text-xs" style="background:${m.color || 'var(--primary)'};width:32px;height:32px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                       <span class="text-sm font-medium truncate">${escapeHtml(m.displayName)}</span>
                     </span>
                   </button>`).join('') || `<p class="text-sm text-[var(--text-secondary)]">${tx('ยังไม่พบสมาชิกในทริปนี้','No members found in this trip')}</p>`}
@@ -7477,7 +7532,7 @@ function expenseFormSectionsHtml({
                 ${members.map(m => `
                   <button type="button" class="tile ${selectedShare.some(x => x.id === m.id) ? 'tile-selected' : ''}" data-share="${m.id}" title="${escapeHtml(m.displayName)}">
                     <span class="flex items-center gap-2 min-w-0">
-                      <span class="avatar w-8 h-8 text-xs" style="background:${m.color || 'var(--primary)'};width:32px;height:32px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+                      <span class="avatar w-8 h-8 text-xs" style="background:${m.color || 'var(--primary)'};width:32px;height:32px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                       <span class="text-sm font-medium truncate">${escapeHtml(m.displayName)}</span>
                     </span>
                   </button>`).join('')}
@@ -7515,7 +7570,7 @@ function expenseFormSectionsHtml({
           <label class="input-label">${icon('image-plus', 'w-3.5 h-3.5')} ${tx('รูปใบเสร็จ (ไม่บังคับ)','Receipt photo (optional)')}</label>
           <div class="receipt-upload">
             <div id="${p}ex-receipt-preview" class="receipt-upload-preview ${e.receiptImage ? '' : 'hidden'}">
-              ${e.receiptImage ? `<img src="${escapeHtml(e.receiptImage)}" alt="receipt">` : ''}
+              ${e.receiptImage ? `<img decoding="async" src="${escapeHtml(e.receiptImage)}" alt="receipt">` : ''}
             </div>
             <div class="btn-row">
               <label class="btn btn-secondary btn-sm" for="${p}ex-receipt-file">${icon('upload', 'w-4 h-4')} ${tx('เลือกรูป','Choose photo')}</label>
@@ -7604,7 +7659,7 @@ function mountExpenseForm({
 
   const setReceiptPreview = (src) => {
     if (!receiptPreview) return;
-    receiptPreview.innerHTML = src ? `<img src="${src}" alt="receipt">` : '';
+    receiptPreview.innerHTML = src ? `<img decoding="async" src="${src}" alt="receipt">` : '';
     receiptPreview.classList.toggle('hidden', !src);
     receiptClearBtn?.classList.toggle('hidden', !src);
   };
@@ -7777,7 +7832,7 @@ function mountExpenseForm({
       area.innerHTML = ids.map(m => `
         <div class="split-equal-row flex justify-between items-center text-sm p-2.5 rounded-xl gap-2" style="background: var(--bg-secondary);">
           <span class="flex items-center gap-2 min-w-0">
-            <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+            <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
             <span class="truncate">${escapeHtml(m.displayName)}</span>
           </span>
           <span class="font-bold flex-shrink-0">${moneyHtml(equal.find(a => a.memberId === m.id).amountMinor, v.cur, v.rate)}</span>
@@ -7803,7 +7858,7 @@ function mountExpenseForm({
         return `
           <div class="split-row" data-member="${m.id}">
             <div class="split-name">
-              <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;flex-shrink:0;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+              <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;flex-shrink:0;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
               <span class="truncate text-xs font-medium" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
             </div>
             <input data-alloc="${m.id}" aria-label="${escapeHtml(m.displayName)} ${tx('ยอดที่กรอก','Entered amount')}" class="input split-input money-input" type="text" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${escapeHtml(displayValue)}">
@@ -8089,7 +8144,7 @@ function mountExpenseForm({
       ${picked.map(m => `
         <div class="payer-row" data-payer-row="${m.id}">
           <span class="payer-name">
-            <span class="avatar" style="background:${m.color || 'var(--primary)'};width:26px;height:26px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+            <span class="avatar" style="background:${m.color || 'var(--primary)'};width:26px;height:26px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
             <span class="truncate text-xs font-medium" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
           </span>
           <input class="input money-input" type="text" inputmode="decimal" data-payment="${m.id}" aria-label="${escapeHtml(m.displayName)} ${tx('ยอดที่จ่าย','Amount paid')}" value="${escapeHtml(payerAmounts[m.id] || '')}" placeholder="0.00">
@@ -8796,7 +8851,7 @@ async function renderSettlement(params) {
 
   function memberHeader(m, { withAvatar = true } = {}) {
     const isMe = m.memberId === currentUser.uid;
-    return `${withAvatar ? `<div class="avatar" style="width:34px;height:34px;background:${escapeHtml(m.color || 'var(--primary)')};font-size:12px;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</div>` : ''}
+    return `${withAvatar ? `<div class="avatar" style="width:34px;height:34px;background:${escapeHtml(m.color || 'var(--primary)')};font-size:12px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</div>` : ''}
       <div class="min-w-0">
         <div class="font-bold text-sm truncate">${escapeHtml(m.displayName)} ${isMe ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full text-white" style="background:var(--gradient-primary);">${th('คุณ','you')}</span>` : ''}</div>
         <div class="text-[10px] text-[var(--text-tertiary)]">${th('จ่ายจริง','paid')} ${m.paidCount} • ${th('ร่วมหาร','shares')} ${m.shareCount}</div>
@@ -8851,7 +8906,7 @@ async function renderSettlement(params) {
       const m = state.membersMap[id] || {};
       return `<button type="button" class="settle-answer-row ${direction} no-export" data-settle-person="${escapeHtml(id)}">
         <span class="settle-answer-dir">${icon(direction === 'out' ? 'arrow-up-right' : 'arrow-down-left', 'w-3.5 h-3.5')}</span>
-        ${showNames ? `<span class="avatar" style="width:22px;height:22px;font-size:9px;background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName || '?'))}</span>` : ''}
+        ${showNames ? `<span class="avatar" style="width:22px;height:22px;font-size:9px;background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName || '?'))}</span>` : ''}
         <span class="settle-answer-who">${direction === 'out' ? th('จ่ายให้','Pay') : th('รับจาก','Receive from')} ${escapeHtml(m.displayName || '')}</span>
         <b class="settle-answer-amount">${direction === 'out' ? '−' : '+'}${money(amountMinor)}</b>
         ${icon('chevron-right', 'w-3 h-3')}
@@ -8885,7 +8940,7 @@ async function renderSettlement(params) {
           count: flaggedCount(m),
           netMinor: m.netMinor,
           color: m.color || '',
-          avatar: `<span class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>`
+          avatar: `<span class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>`
         })).join('')}
       </div>`;
   }
@@ -8967,7 +9022,7 @@ async function renderSettlement(params) {
         <!-- The member's name AND the bottom line are the headline (screen + PNG) -->
         <div class="rcpt-member-bar">
           <div class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">
-            ${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}
+            ${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}
           </div>
           <div class="min-w-0 flex-1">
             <div class="rcpt-member-label">${th('ใบเสร็จของ','Receipt for')}</div>
@@ -9174,7 +9229,7 @@ async function renderSettlement(params) {
         return `<section class="tx-payer-group" data-tx-payer="${escapeHtml(group.from)}">
           <div class="tx-payer-head">
             <button type="button" class="tx-person-link tx-payer-person" data-settle-person="${escapeHtml(group.from)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${from.displayName || 'สมาชิก'}`, `View expenses for ${from.displayName || 'member'}`))}">
-              <span class="avatar" style="background:${escapeHtml(from.color || 'var(--primary)')};width:36px;height:36px;font-size:11px;">${from.photoURL ? `<img src="${escapeHtml(from.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(from.displayName || ''))}</span>
+              <span class="avatar" style="background:${escapeHtml(from.color || 'var(--primary)')};width:36px;height:36px;font-size:11px;">${from.photoURL ? `<img decoding="async" src="${escapeHtml(from.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(from.displayName || ''))}</span>
               <span class="min-w-0">
                 <b class="block truncate">${escapeHtml(from.displayName || th('สมาชิก','Member'))}</b>
                 <small>${th('ต้องโอนให้','Owes')} ${group.recipients.length} ${th('คน','people')}</small>
@@ -9196,7 +9251,7 @@ async function renderSettlement(params) {
               return `<div class="tx-row tx-recipient-row" data-tx-recipient="${escapeHtml(recipient.to)}">
                 <div class="tx-recipient-head">
                   <button type="button" class="tx-person-link tx-recipient-person" data-settle-person="${escapeHtml(recipient.to)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${to.displayName || 'สมาชิก'}`, `View expenses for ${to.displayName || 'member'}`))}">
-                    <span class="avatar" style="background:${escapeHtml(to.color || 'var(--primary)')};width:30px;height:30px;font-size:10px;">${to.photoURL ? `<img src="${escapeHtml(to.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(to.displayName || ''))}</span>
+                    <span class="avatar" style="background:${escapeHtml(to.color || 'var(--primary)')};width:30px;height:30px;font-size:10px;">${to.photoURL ? `<img decoding="async" src="${escapeHtml(to.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(to.displayName || ''))}</span>
                     <span class="min-w-0"><small>${th('โอนให้','Pay to')}</small><b class="block truncate">${escapeHtml(to.displayName || th('สมาชิก','Member'))}</b></span>
                   </button>
                   <div class="tx-recipient-amount">${moneyPair(recipient.amountMinor)}</div>
@@ -9303,7 +9358,7 @@ async function renderSettlement(params) {
         <div class="net-summary-grid">
           ${people.map(m => `
             <button type="button" class="net-chip ${m.netMinor >= 0 ? 'is-in' : 'is-out'} no-export" data-settle-person="${escapeHtml(m.memberId)}">
-              <span class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+              <span class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
               <span class="net-chip-body">
                 <span class="net-chip-name">${escapeHtml(m.displayName)}</span>
                 <span class="net-chip-state">${Math.abs(m.netMinor) <= 1 ? th('เคลียร์แล้ว','Settled') : m.netMinor > 0 ? th('รับสุทธิ','Gets back') : th('จ่ายสุทธิ','Pays')}</span>
@@ -9564,7 +9619,7 @@ async function renderSettlement(params) {
     const detail = showBottomSheet(`
       <div class="receipt-detail-head">
         <div class="avatar" style="width:40px;height:40px;background:${escapeHtml(m.color || 'var(--primary)')};">
-          ${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" alt="" class="w-full h-full rounded-full object-cover">` : escapeHtml((m.displayName || '?').trim().charAt(0).toUpperCase())}
+          ${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" alt="" class="w-full h-full rounded-full object-cover">` : escapeHtml((m.displayName || '?').trim().charAt(0).toUpperCase())}
         </div>
         <div class="min-w-0">
           <h3 class="font-bold text-base leading-tight" style="font-family:var(--font-display);">${escapeHtml(m.displayName)}</h3>
@@ -10584,7 +10639,7 @@ async function renderMembers(params) {
     box.innerHTML = pending.length ? pending.map(r => `
       <div class="diag-row" data-request="${escapeHtml(r.uid || r.id)}">
         <div class="w-9 h-9 rounded-full grid place-items-center overflow-hidden flex-shrink-0 text-xs font-bold text-white" style="background:var(--gradient-primary);">
-          ${r.photoURL ? `<img src="${escapeHtml(r.photoURL)}" class="w-full h-full object-cover rounded-full" alt="">` : escapeHtml(getInitials(r.displayName || 'M'))}
+          ${r.photoURL ? `<img decoding="async" src="${escapeHtml(r.photoURL)}" class="w-full h-full object-cover rounded-full" alt="">` : escapeHtml(getInitials(r.displayName || 'M'))}
         </div>
         <div class="min-w-0 flex-1">
           <div class="font-semibold truncate">${escapeHtml(r.displayName || 'Member')}</div>
@@ -10704,7 +10759,7 @@ async function renderMembers(params) {
         <div class="card card-hover p-4 flex items-center justify-between gap-3" data-member="${m.id}">
           <div class="flex items-center gap-3 min-w-0">
             <div class="w-11 h-11 rounded-full grid place-items-center text-sm font-bold text-white flex-shrink-0 overflow-hidden" style="background:${m.color || 'var(--primary)'}">
-              ${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}
+              ${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}
             </div>
             <div class="min-w-0">
               <div class="font-semibold text-sm flex items-center gap-2">
@@ -10797,7 +10852,7 @@ async function renderMembers(params) {
         <div class="group-card-people">
           ${people.length ? people.map(m => `
             <span class="group-person" title="${escapeHtml(m.displayName || '')}">
-              <span class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+              <span class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
               <span class="group-person-name">${escapeHtml((m.displayName || '').split(' ')[0])}</span>
             </span>`).join('')
             : `<span class="text-[11px] text-[var(--text-tertiary)]">${th('ยังไม่ได้เลือกสมาชิก','No members picked yet')}</span>`}
@@ -10913,7 +10968,7 @@ async function renderMembers(params) {
           <div class="tile-grid" id="group-tiles">
             ${all.map(m => `
               <button type="button" class="tile ${picked.has(m.id) ? 'tile-selected' : ''}" data-member="${escapeHtml(m.id)}">
-                <span class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+                <span class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                 <span class="text-sm truncate">${escapeHtml(m.displayName || '')}</span>
               </button>`).join('') || `<p class="text-[11px] text-[var(--text-tertiary)]">${th('ยังไม่มีสมาชิกในทริป','No members on the trip yet')}</p>`}
           </div></div>
@@ -11063,7 +11118,7 @@ async function renderDocuments(params) {
             ${doc.date ? `<p class="meta-line mt-1">${icon('calendar', 'w-3 h-3')} ${escapeHtml(doc.date)}</p>` : ''}
             ${doc.description ? `<p class="text-xs mt-1 text-[var(--text-secondary)]">${escapeHtml(doc.description)}</p>` : ''}
             ${sanitizeUrl(doc.fileUrl) ? `<a href="${escapeHtml(sanitizeUrl(doc.fileUrl))}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-xs font-semibold mt-2" style="color: var(--primary-strong);">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดไฟล์','Open file')}</a>` : ''}
-            ${doc.imageUrl ? `<div class="mt-2 rounded-xl overflow-hidden border" style="border-color: var(--border);"><img src="${escapeHtml(doc.imageUrl)}" class="w-full object-cover" style="aspect-ratio:16/9;" loading="lazy" onerror="this.parentElement.style.display='none'" alt=""></div>` : ''}
+            ${doc.imageUrl ? `<div class="mt-2 rounded-xl overflow-hidden border" style="border-color: var(--border);"><img decoding="async" src="${escapeHtml(doc.imageUrl)}" class="w-full object-cover" style="aspect-ratio:16/9;" loading="lazy" onerror="this.parentElement.style.display='none'" alt=""></div>` : ''}
           </div>
         </div>
       </div>`;
@@ -11141,7 +11196,7 @@ async function renderDocuments(params) {
           <div class="input-group">
             <label class="input-label">${icon('image', 'w-3.5 h-3.5')} ${th('รูปภาพ (URL)','Image (URL)')}</label>
             <input id="doc-image-url" class="input" placeholder="https://..." autocomplete="off" value="${escapeHtml(d.imageUrl || '')}">
-            <div id="doc-img-preview" class="${d.imageUrl ? '' : 'hidden'} mt-2 rounded-xl overflow-hidden border" style="border-color: var(--border);"><img id="doc-preview-img" class="w-full object-cover" style="aspect-ratio:16/9;" src="${escapeHtml(d.imageUrl || '')}" alt=""></div>
+            <div id="doc-img-preview" class="${d.imageUrl ? '' : 'hidden'} mt-2 rounded-xl overflow-hidden border" style="border-color: var(--border);"><img decoding="async" id="doc-preview-img" class="w-full object-cover" style="aspect-ratio:16/9;" src="${escapeHtml(d.imageUrl || '')}" alt=""></div>
           </div>
           <div class="flex gap-2">
             <button type="submit" id="doc-submit" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${t('save')}</button>
@@ -11294,10 +11349,12 @@ async function renderImportExport(params) {
 
   /** Calendar (.ics) export — itinerary, reservations or both. */
   const exportIcs = async (kind) => withLoading(th('กำลังสร้างไฟล์ปฏิทิน...', 'Building the calendar file...'), async () => {
-    const [items, reservations] = await Promise.all([
+    const [ics, items, reservations] = await Promise.all([
+      loadIcs(),
       kind === 'bookings' ? Promise.resolve([]) : fetchItinerary(tripId, null).catch(() => []),
       kind === 'itinerary' ? Promise.resolve([]) : listReservations(tripId).catch(() => [])
     ]);
+    const { buildIcs, downloadIcs, itineraryToEvents, reservationsToEvents } = ics;
     const events = [
       ...itineraryToEvents(items, { lang }),
       ...reservationsToEvents(reservations, { lang })
@@ -11315,6 +11372,7 @@ async function renderImportExport(params) {
     if (!isAdmin) return toast.warning(th('เฉพาะผู้ดูแลทริป','Admins only'));
     const kind = btn.dataset.tpl;
     const done = await withLoading(th('กำลังเตรียมไฟล์...', 'Preparing file...'), async () => {
+      const { downloadItineraryTemplate, downloadExpensesTemplate, exportWorkbookFile } = await loadExcel();
       if (kind === 'itinerary') {
         await downloadItineraryTemplate(trip, { lang, withSample: true });
       } else if (kind === 'expenses') {
@@ -11336,12 +11394,14 @@ async function renderImportExport(params) {
       fetchItinerary(tripId, null).catch(() => []),
       fetchAllExpenses(tripId).catch(() => [])
     ]);
+    const { exportWorkbookFile } = await loadExcel();
     await exportWorkbookFile({ trip, items, expenses, members, lang, include: 'all' });
     toast.success(th('ส่งออกแล้ว', 'Exported'));
   }));
 
   bind('exp-itinerary-xl', 'click', () => withLoading(th('กำลังสร้างไฟล์...', 'Preparing file...'), async () => {
     const items = await fetchItinerary(tripId, null).catch(() => []);
+    const { exportWorkbookFile } = await loadExcel();
     await exportWorkbookFile({ trip, items, members, lang, include: 'itinerary' });
     toast.success(th('ส่งออกแล้ว', 'Exported'));
   }));
@@ -11351,12 +11411,14 @@ async function renderImportExport(params) {
       fetchAllExpenses(tripId).catch(() => []),
       fetchItinerary(tripId, null).catch(() => [])
     ]);
+    const { exportWorkbookFile } = await loadExcel();
     await exportWorkbookFile({ trip, expenses, items, members, lang, include: 'expenses' });
     toast.success(th('ส่งออกแล้ว', 'Exported'));
   }));
 
   bind('exp-itinerary-csv', 'click', () => withLoading(th('กำลังสร้างไฟล์...', 'Preparing file...'), async () => {
     const items = await fetchItinerary(tripId, null).catch(() => []);
+    const { ITINERARY_COLUMNS, itineraryItemToRow, exportCsvFile } = await loadExcel();
     const rows = [
       ITINERARY_COLUMNS.map(c => c.en),
       ITINERARY_COLUMNS.map(c => c.th),
@@ -11393,6 +11455,7 @@ async function renderImportExport(params) {
     if (!file) return;
     const tLoad = toast.loading(th('กำลังอ่านไฟล์...', 'Reading file...'));
     try {
+      const { readSpreadsheet, importItineraryRows } = await loadExcel();
       const { rows } = await readSpreadsheet(file);
       const { items: parsed, errors } = importItineraryRows(rows, { trip, members, lang });
       tLoad.close();
@@ -11430,6 +11493,7 @@ async function renderImportExport(params) {
     if (!file) return;
     const tLoad = toast.loading(th('กำลังอ่านไฟล์...', 'Reading file...'));
     try {
+      const { readSpreadsheet, importExpenseRows } = await loadExcel();
       const { rows } = await readSpreadsheet(file);
       let items = [];
       try { items = await fetchItinerary(tripId, null); } catch {}
@@ -11596,7 +11660,7 @@ async function renderSettings(params) {
             <label class="input-label">${icon('image', 'w-3.5 h-3.5')} ${t('coverImage')}</label>
             <div class="flex gap-2">
               <div class="rounded-xl overflow-hidden border flex-1" style="border-color:var(--border); max-height:92px;">
-                <img id="s-cover-preview" class="w-full h-full object-cover" style="aspect-ratio:16/9; max-height:90px;" src="${escapeHtml(trip?.coverImage || '')}" onerror="this.style.display='none'" alt="">
+                <img decoding="async" id="s-cover-preview" class="w-full h-full object-cover" style="aspect-ratio:16/9; max-height:90px;" src="${escapeHtml(trip?.coverImage || '')}" onerror="this.style.display='none'" alt="">
               </div>
               <div class="flex-1 space-y-1.5">
                 <input id="s-cover-url" class="input text-[11px] !min-h-[32px]" placeholder="https://..." value="${trip?.coverImage && String(trip.coverImage).startsWith('http') ? escapeHtml(trip.coverImage) : ''}">
@@ -11629,7 +11693,7 @@ async function renderSettings(params) {
           <div id="member-budget-rows" class="space-y-2">
             ${settingMembers.map(m => `
               <div class="member-budget-row">
-                <span class="avatar" style="width:28px;height:28px;font-size:10px;background:${escapeHtml(m.color || 'var(--primary)')};flex-shrink:0;">${m.photoURL ? `<img src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+                <span class="avatar" style="width:28px;height:28px;font-size:10px;background:${escapeHtml(m.color || 'var(--primary)')};flex-shrink:0;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                 <span class="text-xs font-medium truncate flex-1" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
                 <input id="s-mbudget-${escapeHtml(m.id)}" class="input money-input member-budget-input" type="text" inputmode="decimal" placeholder="0.00" value="${escapeHtml(fmtBudgetInput(memberBudgets[m.id]))}">
                 <span class="text-[10px] text-[var(--text-tertiary)] flex-shrink-0 font-medium">THB</span>
@@ -12237,6 +12301,7 @@ async function renderSettings(params) {
     btn.disabled = true;
     box.innerHTML = `<div class="diag-row"><span class="diag-dot"></span><span>${th('กำลังตรวจสอบ...','Running checks...')}</span></div>`;
     try {
+      const { runSystemDiagnostics, formatDiagnosticsReport } = await loadDiagnostics();
       const report = await runSystemDiagnostics({ tripId, lang, isTripAdmin: Boolean(perms?.isAdmin) });
       const color = { ok: 'var(--success)', warn: '#d97706', fail: 'var(--danger)' };
       const glyph = { ok: 'check-circle-2', warn: 'alert-circle', fail: 'x-circle' };
@@ -12341,7 +12406,7 @@ async function paintDashboardTools({ tripId, trip, members = [], items = [], lan
         const hasImg = imgs.length > 0;
         return `<div class="flex items-center gap-3 p-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] hover:bg-[var(--surface-2)] transition-colors cursor-pointer" data-idea-id="${escapeHtml(i.id)}">
           <span class="vote-pill flex-shrink-0">${icon('chevron-up','w-3 h-3')} ${voteCount(i)}</span>
-          ${hasImg ? `<img src="${escapeHtml(imgs[0])}" alt="" class="w-10 h-10 rounded-lg object-cover flex-shrink-0 cursor-zoom-in" data-idea-img="${escapeHtml(imgs[0])}">` : `<span class="w-10 h-10 rounded-lg bg-[var(--brand-yellow-tint)] grid place-items-center flex-shrink-0">${icon('map-pin','w-4 h-4')}</span>`}
+          ${hasImg ? `<img decoding="async" src="${escapeHtml(imgs[0])}" alt="" class="w-10 h-10 rounded-lg object-cover flex-shrink-0 cursor-zoom-in" data-idea-img="${escapeHtml(imgs[0])}">` : `<span class="w-10 h-10 rounded-lg bg-[var(--brand-yellow-tint)] grid place-items-center flex-shrink-0">${icon('map-pin','w-4 h-4')}</span>`}
           <span class="min-w-0 flex-1"><span class="block text-[13px] font-semibold truncate">${escapeHtml(i.title||'')}</span><span class="block text-[11px] text-[var(--text-secondary)] truncate">${escapeHtml(i.address||'')}${i.category ? ' • '+escapeHtml(placeCategoryLabel(ideaCategoryId(i.category), lang)) : ''}</span></span>
           ${icon('chevron-right','w-4 h-4 text-[var(--text-tertiary)]')}
         </div>`;
@@ -13337,7 +13402,7 @@ async function renderIdeas(params) {
             ${idea.note ? `<p class="text-xs text-[var(--text-secondary)] mt-1 idea-detail">${escapeHtml(idea.note)}</p>` : ''}
             ${imgs.length ? `<div class="idea-imgs mt-2 idea-detail">${imgs.map((u, k) => `
               <button type="button" class="idea-img" data-act="image" data-id="${idea.id}" data-img="${k}" title="${th('กดเพื่อดูรูป','Tap to view')}">
-                <img src="${escapeHtml(u)}" alt="" loading="lazy" onerror="this.closest('.idea-img').style.display='none'">
+                <img decoding="async" src="${escapeHtml(u)}" alt="" loading="lazy" onerror="this.closest('.idea-img').style.display='none'">
               </button>`).join('')}
               <span class="idea-img-hint">${icon('images', 'w-3 h-3')} ${imgs.length}/3</span>
             </div>` : ''}
@@ -13612,7 +13677,7 @@ async function renderIdeas(params) {
       const urls = [1, 2, 3]
         .map(k => String(sheet.sheet.querySelector(`#idea-img-${k}`)?.value || '').trim())
         .filter(u => /^https?:\/\//i.test(u));
-      wrap.innerHTML = urls.map(u => `<span class="idea-form-preview"><img src="${escapeHtml(u)}" alt="" loading="lazy" onerror="this.parentElement.style.display='none'"></span>`).join('');
+      wrap.innerHTML = urls.map(u => `<span class="idea-form-preview"><img decoding="async" src="${escapeHtml(u)}" alt="" loading="lazy" onerror="this.parentElement.style.display='none'"></span>`).join('');
     };
     sheet.sheet.querySelectorAll('#idea-img-1, #idea-img-2, #idea-img-3').forEach(inp => inp.addEventListener('input', ideaImgPreview));
     ideaImgPreview();
@@ -14145,11 +14210,16 @@ async function renderBookings(params) {
 
   bind('booking-add-btn', 'click', () => openBookingForm(null));
   bind('booking-import-btn', 'click', () => openBookingImport(tripId, { onSaved: () => renderBookings(params) }));
-  bind('booking-ics-btn', 'click', () => {
+  bind('booking-ics-btn', 'click', async () => {
     if (!reservations.length) return toast.error(th('ยังไม่มีการจองให้ส่งออก', 'No reservations to export'));
-    const events = reservationsToEvents(reservations, { lang });
-    downloadIcs(`${(trip?.name || 'trip').replace(/\s+/g, '-')}-bookings.ics`, buildIcs(events, { calendarName: `${trip?.name || 'Trip'} — ${t('reservations')}` }));
-    toast.success(th('ส่งออกไฟล์ปฏิทินแล้ว', 'Calendar file exported'));
+    const tLoad = toast.loading(th('กำลังสร้างไฟล์ปฏิทิน...', 'Building the calendar file...'));
+    try {
+      const { buildIcs, downloadIcs, reservationsToEvents } = await loadIcs();
+      const events = reservationsToEvents(reservations, { lang });
+      downloadIcs(`${(trip?.name || 'trip').replace(/\s+/g, '-')}-bookings.ics`, buildIcs(events, { calendarName: `${trip?.name || 'Trip'} — ${t('reservations')}` }));
+      tLoad.close();
+      toast.success(th('ส่งออกไฟล์ปฏิทินแล้ว', 'Calendar file exported'));
+    } catch (e) { tLoad.close(); toast.error(e.message); }
   });
 
   paintNext();
@@ -14168,10 +14238,31 @@ async function renderExplore(params) {
   const token = beginRender();
   const lang = getLang();
   const th = (a, b) => (lang === 'th' ? a : b);
+  // The destination library is only needed on this screen — load it in parallel
+  // with the trip data instead of shipping it in the initial bundle. The catch
+  // keeps an abandoned/failed load from becoming an unhandled rejection.
+  const explorePromise = import('./utils/explore.js')
+    .catch(e => { console.warn('explore library load failed', e?.message || e); return null; });
   await loadTrip(tripId);
   if (isStale(token)) return;
   const trip = currentTrip;
   const baseCurrency = trip?.baseCurrency || 'THB';
+  const exploreLib = await explorePromise;
+  if (isStale(token)) return;
+  if (!exploreLib) {
+    appEl.innerHTML = `<div class="card p-8 text-center page-enter">
+      <p class="font-semibold mb-2">${th('โหลดคลังสถานที่แนะนำไม่สำเร็จ', 'Could not load the place library')}</p>
+      <p class="text-sm text-[var(--text-secondary)] mb-4">${th('ตรวจสอบอินเทอร์เน็ตแล้วลองอีกครั้ง', 'Check your connection and try again.')}</p>
+      <button id="explore-back" class="btn btn-primary">${th('กลับแดชบอร์ด', 'Back to dashboard')}</button>
+    </div>`;
+    bind('explore-back', 'click', () => { location.hash = `#/trip/${tripId}/dashboard`; });
+    return;
+  }
+  const {
+    DESTINATIONS, destinationById, destinationPlaces, searchPlaces,
+    matchDestinations, exploreCategoryCounts, suggestForTrip, bestTimeLabel, bestTimeIcon,
+    suggestedTime, placeToIdeaPayload, placeToPlanDraft, libraryStats
+  } = exploreLib;
 
   let members = [];
   let items = [];
@@ -14707,6 +14798,12 @@ function openBookingImport(tripId, { onSaved = null } = {}) {
   const th = (a, b) => (lang === 'th' ? a : b);
   const currency = currentTrip?.baseCurrency || 'THB';
   let draft = null;
+  // The e-mail parser is only needed here — fetch it while the sheet is open so
+  // the first "Read the text" tap is instant, without bloating the initial load.
+  let parser = null;
+  const parserReady = import('./utils/bookingImport.js')
+    .then(m => { parser = m; return m; })
+    .catch(e => { console.warn('bookingImport load failed', e?.message || e); return null; });
 
   const sheet = showBottomSheet(`
     <div class="space-y-4">
@@ -14762,7 +14859,7 @@ Total 24,500 THB`
     const saveBtn = document.getElementById('bi-save');
     if (!box) return;
     if (!draft) { box.innerHTML = ''; if (saveBtn) saveBtn.disabled = true; return; }
-    const tone = confidenceLabel(draft.confidence);
+    const tone = parser ? parser.confidenceLabel(draft.confidence) : { tone: 'warning', th: 'ตรวจสอบ', en: 'Check' };
     const toneVar = tone.tone === 'success' ? 'var(--success)' : tone.tone === 'warning' ? 'var(--warning)' : 'var(--danger)';
     box.innerHTML = `
       <div class="card p-3" style="border-color:color-mix(in srgb, ${toneVar} 40%, var(--border));">
@@ -14782,10 +14879,12 @@ Total 24,500 THB`
     const ta = document.getElementById('bi-text');
     if (ta) { ta.value = sample; }
   });
-  bind('bi-parse', 'click', () => {
+  bind('bi-parse', 'click', async () => {
     const text = String(document.getElementById('bi-text')?.value || '');
     if (!text.trim()) return toast.error(th('วางข้อความก่อน แล้วกดอ่าน', 'Paste the text first'));
-    draft = parseConfirmationText(text, { baseCurrency: currency, fallbackDate: currentTrip?.startDate || '' });
+    const mod = parser || await parserReady;
+    if (!mod) return toast.error(th('โหลดตัวอ่านข้อความไม่สำเร็จ — ปิดแล้วลองใหม่', 'Could not load the parser — close and try again'));
+    draft = mod.parseConfirmationText(text, { baseCurrency: currency, fallbackDate: currentTrip?.startDate || '' });
     paintResult();
     if (!draft.recognised.length) toast.warning(th('อ่านไม่เจอข้อมูล — ลองวางข้อความให้ครบขึ้น', 'Nothing recognised — try pasting more of the e-mail'));
     else toast.success(th(`อ่านได้ ${draft.recognised.length} ฟิลด์`, `Found ${draft.recognised.length} fields`));
@@ -14795,7 +14894,9 @@ Total 24,500 THB`
     if (!draft) return;
     const tLoad = toast.loading(th('กำลังบันทึก...', 'Saving…'));
     try {
-      const payload = draftToReservation(draft, { baseCurrency: currency });
+      const mod = parser || await parserReady;
+      if (!mod) throw new Error(th('โหลดตัวอ่านข้อความไม่สำเร็จ', 'Could not load the parser'));
+      const payload = mod.draftToReservation(draft, { baseCurrency: currency });
       await createReservation(tripId, payload, currentUser?.uid || null);
       tLoad.close();
       toast.success(th('บันทึกการจองจากอีเมลแล้ว', 'Booking imported'));
