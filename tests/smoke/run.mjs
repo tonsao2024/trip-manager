@@ -213,6 +213,8 @@ check(!!q('#countdown-scene .cd-progress-fill'), 'countdown: progress bar render
     'countdown: compact mode does not scale the scene down inside its frame');
 }
 check(!!q('.hero-card'), 'dashboard: hero card');
+check(q('#countdown-scene')?.closest('[data-dashboard-widget="countdown"]')?.querySelector('a[href*="focus=dates"]')?.href.includes('tab=trip'),
+  'countdown: date action opens trip settings focused on departure dates');
 check(!!q('.kpi-tile'), 'dashboard: KPI tiles');
 await waitFor(() => (window.document.getElementById('kpi-total')?.textContent || '').trim() !== '--', { label: 'KPI totals' }).catch(() => {});
 check((window.document.getElementById('kpi-total')?.textContent || '').trim() !== '--', 'dashboard: totals computed');
@@ -1709,6 +1711,10 @@ console.log('\n▶ v11: itin day PNG + แผนที่พอดีจอ');
       'map fit: the CSS height comes from a measured value');
     check(!!(q('#map')?.style.getPropertyValue('--itin-map-h') || ''), 'map fit: the map height is measured from the viewport');
     check(/px$/.test(q('#map')?.style.getPropertyValue('--itin-map-h') || ''), 'map fit: the measured height is in pixels');
+    check(/top: calc\(var\(--header-h\) \+ 10px\)/.test(fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8')),
+      'map frame: sticky desktop map stays below the app header');
+    check(/white-space: normal/.test(fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8')) && /overflow-wrap: anywhere/.test(fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8')),
+      'map labels: long place names wrap instead of being clipped');
 
     // every day in the "view all" list can be exported on its own
     if (!q('[data-export-day]')) {
@@ -2721,8 +2727,11 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
   // ---- 3) footer ขนาดเล็กลง ----
   const footCss = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
   check(/\.app-footer \{[^}]*font-size: 10px/.test(footCss) && /\.app-footer-chip \{[^}]*font-size: 8\.5px/.test(footCss)
-    && /\.app-footer \{[^}]*padding: 12px 14px/.test(footCss),
-    'footer: smaller type + tighter padding');
+    && /\.app-footer \{[^}]*margin-top: 10px/.test(footCss) && /\.app-footer \{[^}]*padding: 9px 14px/.test(footCss),
+    'footer: compact spacing + smaller type');
+  const flatCss = fs.readFileSync(path.join(root, 'src/css/flat.css'), 'utf8');
+  check(/#app \{ padding-bottom: 32px; \}/.test(flatCss) && /body \{ padding-bottom: calc\(var\(--bottom-nav-h\) \+ 8px\); \}/.test(flatCss),
+    'footer: excess desktop app padding and duplicate mobile safe-area gap are reduced');
 
   // ---- 4) แถบบน: เมนูย้ายขึ้นมาอยู่ใน header + นาฬิกาเลือกเมืองได้ ----
   const shellHtml = window.document.getElementById('app-header')?.innerHTML || '';
@@ -2918,6 +2927,12 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
   const pingAfter = fsdb.__dump(pingEntry[0]);
   check(pingAfter?.readBy?.u1 === true, 'notifications: tapping a row marks it read for me');
   check(pingAfter?.readBy?.u2 !== true, 'notifications: …and only for me, not for the other member');
+  check(!!q(`#notify-sheet #notify-detail-${pingId}`), 'notifications: tapping a row expands the full detail inside the sheet');
+  check(!!q('#notify-sheet'), 'notifications: opening details stays in the notification sheet');
+  check(!!q(`#notify-sheet [data-notify-edit="${pingId}"]`), 'notifications: edit navigation is a separate explicit action');
+  await click(q(`#notify-sheet [data-notify-edit="${pingId}"]`));
+  await sleep(150);
+  check(location.hash.includes('/expenses/add?id=' + ping.expenseId), 'notifications: explicit edit action opens the linked expense editor');
 
   // ---- 4) “อ่านทั้งหมด” เคลียร์ป้าย
   await goto('#/trip/t1/dashboard');

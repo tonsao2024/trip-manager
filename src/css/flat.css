@@ -1149,10 +1149,12 @@ html[data-depth="soft"] .kpi-tile { box-shadow: var(--shadow-xs); }
 
 /* Keep the last row of a long list clear of the fixed FAB. */
 @media (min-width: 768px) {
-  #app { padding-bottom: 96px; }
+  #app { padding-bottom: 32px; }
 }
 @media (max-width: 767px) {
-  body { padding-bottom: calc(var(--bottom-nav-h) + 34px + env(safe-area-inset-bottom, 0px)); }
+  /* The footer includes its own safe-area inset; reserve only a small scroll
+     cushion after it instead of stacking another full nav-height blank area. */
+  body { padding-bottom: calc(var(--bottom-nav-h) + 8px); }
 }
 
 /* Settings tabs on a phone: wrap into two rows instead of hiding the last tabs

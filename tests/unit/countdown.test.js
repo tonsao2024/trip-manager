@@ -9,6 +9,8 @@ export function testCountdown() {
   const c = computeCountdown({ startDate: '2027-01-11', endDate: '2027-01-15', createdAt: '2026-12-01', now });
   assert(c.phase === 'before', 'Should be in the "before" phase');
   assert(c.days === 10, `Should be 10 days left, got ${c.days}`);
+  assert(c.startDate.getFullYear() === 2027 && c.startDate.getMonth() === 0 && c.startDate.getDate() === 11,
+    'date-only trip dates retain their calendar day in the local timezone');
   assert(c.progress > 0 && c.progress < 1, `Progress should be between 0 and 1, got ${c.progress}`);
   console.log('✓ computeCountdown (before trip)');
 
