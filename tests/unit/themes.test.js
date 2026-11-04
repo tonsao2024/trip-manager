@@ -1,7 +1,7 @@
 // v18 — the colour-theme registry (the palettes came back: LINE / Facebook /
 // Instagram / … + per-user custom colours and a vividness slider).
 import {
-  normalizeHex, hexToRgb, rgbToHex, mix, lighten, darken, intensify, rotate, contrastInk,
+  normalizeHex, hexToRgb, rgbToHex, mix, lighten, darken, intensify, rotate, contrastInk, contrastRatio,
   THEMES, themeList, getTheme, themeName, DEFAULT_THEME_ID, CUSTOM_THEME_ID, CUSTOM_DEFAULTS,
   buildCustomPalette, paletteCompanion, themeVars, readStoredTheme, saveTheme, applyTheme, resetTheme,
   THEME_STORAGE_KEY
@@ -30,9 +30,11 @@ export function testColourMaths() {
   assert(rotate('#ff0000', 120) !== '#ff0000', 'a hue rotation changes the colour');
   assert(HEX.test(rotate('#ff0000', 999)), 'absurd angles still produce a colour');
 
-  assert(contrastInk('#ffffff') === '#14202e', 'white needs dark ink');
+  assert(contrastInk('#ffffff') === '#000000', 'white needs the best-contrast dark ink');
   assert(contrastInk('#1f6bfb') === '#ffffff', 'a saturated blue needs white');
-  assert(contrastInk('#ffb02e') === '#14202e', 'amber needs dark ink');
+  assert(contrastInk('#ffb02e') === '#000000', 'amber needs dark ink');
+  assert(contrastRatio('#000000', '#ffffff') === 21, 'contrast ratio follows WCAG relative luminance');
+  assert(contrastRatio(contrastInk('#1877f2'), '#1877f2') >= 4.5, 'Facebook primary text meets WCAG AA');
   console.log('✓ colour maths');
 }
 
@@ -68,6 +70,7 @@ export function testThemeRegistry() {
     assert(HEX.test(t.vars['--primary-raw']), `${t.id} must publish a raw hex (no color-mix() in the theme layer)`);
     assert(HEX.test(t.vars['--page-bg']) && HEX.test(t.vars['--page-bg-dark']), `${t.id} must ship both page backgrounds`);
     assert(HEX.test(t.vars['--on-primary']), `${t.id} must say which ink sits on the brand colour`);
+    assert(contrastRatio(t.vars['--on-primary'], t.vars['--primary-raw']) >= 4.5, `${t.id} primary button ink must meet WCAG AA for normal text`);
     assert(t.th && t.en, `${t.id} needs both names`);
   }
   assert(themeList().length === THEMES.length && themeList() !== THEMES, 'themeList is a copy');

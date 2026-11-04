@@ -8,7 +8,12 @@ function toDate(value) {
   if (!value) return null;
   if (value instanceof Date) return isNaN(value) ? null : value;
   if (typeof value === 'object' && typeof value.seconds === 'number') return new Date(value.seconds * 1000);
-  const d = new Date(value);
+  // Trip dates are date-only values. Parse them in local calendar time instead
+  // of UTC midnight (new Date('YYYY-MM-DD')), which shifts the day in UTC+ zones.
+  const dateOnly = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const d = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(value);
   return isNaN(d) ? null : d;
 }
 

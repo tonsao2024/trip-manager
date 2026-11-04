@@ -7,6 +7,7 @@ import { expensePayments, initialExpensePayerIds, findMemberForAccount, paymentM
 import { groupIdeasByCategory } from './utils/ideas.js';
 import { app, auth, db, isFirebaseConfigured, onAuthStateChanged, syncState } from './firebase.js';
 import { Router } from './router.js';
+import { primaryNavItems, secondaryNavItems } from './navigation.js';
 import { toast } from './components/toast.js';
 import { renderFujiMascot, renderEmptyState } from './components/fuji.js';
 import { logout, hasStepUpSession } from './auth/index.js';
@@ -44,7 +45,7 @@ import { APP_VERSION, APP_VERSION_LABEL, APP_UPDATED_ISO, APP_NAME, APP_AUTHOR, 
 import { BRAND, BRAND_PRIMARY, brandPalette, brandPrimary, memberColors as themeMemberColors, dayHues as themeDayHues, memberColorAt, categoryColorChoices } from './utils/brand.js';
 import {
   THEMES, DEFAULT_THEME_ID, CUSTOM_THEME_ID, themeName, applyStoredTheme, applyTheme,
-  readStoredTheme, saveTheme, themeVars, buildCustomPalette, mix as mixThemeColor, lighten as lightenThemeColor
+  readStoredTheme, saveTheme, themeVars, buildCustomPalette, contrastInk, mix as mixThemeColor, lighten as lightenThemeColor
 } from './utils/themes.js';
 import { renderFujiBuddy, fujiBuddyMood, fujiBuddyLine } from './components/mascot.js';
 import { showBottomSheet, showModal } from './components/modal.js';
@@ -845,7 +846,6 @@ function setTrip(tripId) {
 let _desktopNavKey = null;
 function renderDesktopNav() {
   if (!currentTripId) { desktopNavEl.innerHTML = ''; _desktopNavKey = null; return; }
-  const base = `#/trip/${currentTripId}`;
   const currentHash = location.hash.split('?')[0];
   const th = getLang() === 'th';
   // The markup only depends on the trip + language. Rebuilding 8 anchors and
@@ -853,18 +853,9 @@ function renderDesktopNav() {
   // changed, just move the active highlight instead.
   const key = `${currentTripId}|${getLang()}`;
   if (_desktopNavKey !== key || !desktopNavEl.childElementCount) {
-    const items = [
-      { label: th ? 'ทริปทั้งหมด' : 'All Trips', short: th ? 'ทริป' : 'Trips', path: '#/trips', icon: 'compass', exact: true },
-      { label: t('dashboard'), short: th ? 'แดชบอร์ด' : 'Board', path: `${base}/dashboard`, icon: 'layout-dashboard' },
-      { label: t('itinerary'), short: th ? 'แผน' : 'Plan', path: `${base}/itinerary`, icon: 'map-pinned' },
-      { label: t('ideas'), short: th ? 'ไอเดีย' : 'Ideas', path: `${base}/ideas`, icon: 'lightbulb' },
-      { label: t('expenses'), short: th ? 'ค่าใช้จ่าย' : 'Expenses', path: `${base}/expenses`, icon: 'wallet' },
-      { label: t('settlement'), short: th ? 'เคลียร์บิล' : 'Settle', path: `${base}/settlement`, icon: 'hand-coins' },
-      { label: t('members'), short: th ? 'สมาชิก' : 'Members', path: `${base}/members`, icon: 'users' },
-      { label: th ? 'เอกสาร' : 'Documents', short: th ? 'เอกสาร' : 'Docs', path: `${base}/documents`, icon: 'folder' },
-    ];
+    const items = primaryNavItems({ tripId: currentTripId, lang: th ? 'th' : 'en', translate: t });
     desktopNavEl.innerHTML = items.map(i => {
-      return `<a href="${i.path}" class="chip menu-item" data-nav="${i.path}" title="${i.label}" style="text-decoration:none;">${icon(i.icon, 'w-4 h-4')}<span class="menu-item-label">${i.label}</span><span class="menu-item-label-short">${i.short}</span></a>`;
+      return `<a href="${i.href}" class="chip menu-item" data-nav="${i.href}" title="${escapeHtml(i.label)}" style="text-decoration:none;">${icon(i.icon, 'w-4 h-4')}<span class="menu-item-label">${escapeHtml(i.label)}</span><span class="menu-item-label-short">${escapeHtml(i.shortLabel)}</span></a>`;
     }).join('');
     _desktopNavKey = key;
     queueIcons();
@@ -919,16 +910,10 @@ let _headerMoreKey = null;
 
 function headerMoreItems() {
   const th = getLang() === 'th';
-  const base = `#/trip/${currentTripId}`;
-  return [
-    { group: th ? 'วางแผน' : 'Plan', path: `${base}/prep`, icon: 'backpack', label: th ? 'เตรียมตัว' : 'Prep' },
-    { group: th ? 'วางแผน' : 'Plan', path: `${base}/bookings`, icon: 'ticket', label: th ? 'การจอง' : 'Bookings' },
-    { group: th ? 'วางแผน' : 'Plan', path: `${base}/calendar`, icon: 'calendar-days', label: th ? 'ปฏิทินทริป' : 'Calendar' },
-    { group: th ? 'วางแผน' : 'Plan', path: `${base}/explore`, icon: 'compass', label: th ? 'ชวนไปที่นี่' : 'Explore' },
-    { group: th ? 'ข้อมูล' : 'Data', path: `${base}/documents`, icon: 'folder', label: th ? 'เอกสารสำคัญ' : 'Documents' },
-    { group: th ? 'ข้อมูล' : 'Data', path: `${base}/import`, icon: 'package', label: th ? 'นำเข้า / ส่งออก' : 'Import / Export' },
-    { group: th ? 'ข้อมูล' : 'Data', path: `${base}/settings`, icon: 'settings', label: th ? 'ตั้งค่า' : 'Settings' }
-  ];
+  return secondaryNavItems({ tripId: currentTripId, lang: th ? 'th' : 'en' }).map(item => ({
+    group: item.group === 'planning' ? (th ? 'วางแผน' : 'Plan') : (th ? 'ข้อมูลและเครื่องมือ' : 'Data & tools'),
+    path: item.href, icon: item.icon, label: item.label
+  }));
 }
 
 function closeHeaderMore() {
@@ -1136,6 +1121,7 @@ const notifyState = {
   dailyDone: new Set(),
   sheet: null,
   sheetFilter: null,
+  sheetSelectedId: null,
   sheetPaint: null,
   tripSettings: {},
   support: null
@@ -1486,21 +1472,38 @@ async function maybeDailySummary(tripId = currentTripId, prefs = null) {
 
 /* ------------------------------------------------------ the bell sheet */
 
-function notificationRowHtml(n, { uid, isAdmin }) {
-  const meta = notificationMeta(n.type, getLang());
+function notificationRowHtml(n, { uid, isAdmin, expanded = false }) {
+  const lang = getLang();
+  const meta = notificationMeta(n.type, lang);
   const unread = !isReadBy(n, uid);
-  const delLabel = getLang() === 'th' ? 'ลบ' : 'Delete';
+  const th = (a, b) => lang === 'th' ? a : b;
+  const delLabel = th('ลบการแจ้งเตือน', 'Delete notification');
+  const date = n.date || (n.createdAt?.toDate?.() ? dayKeyInZone(n.createdAt.toDate(), currentTrip?.timezone) : '');
+  const detail = expanded ? `
+    <div class="notify-detail" id="notify-detail-${escapeHtml(n.id)}" role="region" aria-label="${th('รายละเอียดการแจ้งเตือน','Notification details')}">
+      <dl class="notify-detail-grid">
+        <div><dt>${th('ประเภท','Type')}</dt><dd>${escapeHtml(meta.label)}</dd></div>
+        ${date ? `<div><dt>${th('วันที่ของรายการ','Item date')}</dt><dd>${escapeHtml(date)}</dd></div>` : ''}
+        ${n.createdByName ? `<div><dt>${th('บันทึกโดย','Recorded by')}</dt><dd>${escapeHtml(n.createdByName)}</dd></div>` : ''}
+        ${Number.isFinite(Number(n.amountMinor)) && n.currency ? `<div><dt>${th('จำนวนเงิน','Amount')}</dt><dd>${escapeHtml(formatCurrency(n.amountMinor, n.currency))}</dd></div>` : ''}
+      </dl>
+      ${n.body ? `<p class="notify-detail-message">${escapeHtml(n.body)}</p>` : ''}
+      ${n.link ? `<button type="button" class="btn btn-secondary btn-sm mt-2" data-notify-edit="${escapeHtml(n.id)}">${icon('pencil', 'w-3.5 h-3.5')} ${th('เปิดรายการเพื่อแก้ไข','Open item to edit')}</button>` : ''}
+    </div>` : '';
   return `
-    <button type="button" class="notify-row ${unread ? 'is-unread' : ''}" data-notify="${escapeHtml(n.id)}" data-notify-type="${escapeHtml(n.type || 'trip')}">
-      <span class="notify-row-icon" style="color:${meta.color};">${icon(meta.icon, 'w-4 h-4')}</span>
-      <span class="notify-row-body">
-        <span class="notify-row-title">${escapeHtml(n.title || meta.label)}</span>
-        ${n.body ? `<span class="notify-row-text">${escapeHtml(n.body)}</span>` : ''}
-        <span class="notify-row-meta">${escapeHtml(relativeTime(n.createdAt, getLang()))}</span>
-      </span>
-      ${unread ? '<span class="notify-dot" aria-hidden="true"></span>' : ''}
-      ${isAdmin ? `<span class="notify-row-del" role="button" tabindex="0" data-notify-del="${escapeHtml(n.id)}" title="${delLabel}">${icon('x', 'w-3.5 h-3.5')}</span>` : ''}
-    </button>`;
+    <article class="notify-entry ${unread ? 'is-unread' : ''} ${expanded ? 'is-expanded' : ''}" data-notify="${escapeHtml(n.id)}" data-notify-type="${escapeHtml(n.type || 'trip')}">
+      <button type="button" class="notify-row ${unread ? 'is-unread' : ''}" data-notify="${escapeHtml(n.id)}" data-notify-type="${escapeHtml(n.type || 'trip')}" aria-expanded="${expanded}" ${expanded ? `aria-controls="notify-detail-${escapeHtml(n.id)}"` : ''}>
+        <span class="notify-row-icon" style="color:${meta.color};">${icon(meta.icon, 'w-4 h-4')}</span>
+        <span class="notify-row-body">
+          <span class="notify-row-title">${escapeHtml(n.title || meta.label)}</span>
+          ${n.body ? `<span class="notify-row-text">${escapeHtml(n.body)}</span>` : ''}
+          <span class="notify-row-meta">${escapeHtml(relativeTime(n.createdAt, lang))} · ${th(expanded ? 'แตะเพื่อย่อรายละเอียด' : 'แตะเพื่อดูรายละเอียด', expanded ? 'Tap to collapse' : 'Tap for details')}</span>
+        </span>
+        ${unread ? '<span class="notify-dot" aria-hidden="true"></span>' : ''}
+      </button>
+      ${detail}
+      ${isAdmin ? `<button type="button" class="notify-row-del" data-notify-del="${escapeHtml(n.id)}" aria-label="${delLabel}" title="${delLabel}">${icon('x', 'w-3.5 h-3.5')}</button>` : ''}
+    </article>`;
 }
 
 function notificationFilterChipsHtml() {
@@ -1621,7 +1624,7 @@ async function openNotificationsSheet() {
         .map(group => `
           <div class="notify-group">
             <div class="notify-group-label">${escapeHtml(group.label)}</div>
-            ${group.items.map(n => notificationRowHtml(n, { uid, isAdmin })).join('')}
+            ${group.items.map(n => notificationRowHtml(n, { uid, isAdmin, expanded: notifyState.sheetSelectedId === n.id })).join('')}
           </div>`).join('');
     }
     queueIcons();
@@ -1677,6 +1680,7 @@ async function openNotificationsSheet() {
       if (del) {
         e.stopPropagation();
         await deleteNotification(tripId, del.dataset.notifyDel);
+        if (notifyState.sheetSelectedId === del.dataset.notifyDel) notifyState.sheetSelectedId = null;
         notifyState.list = notifyState.list.filter(n => n.id !== del.dataset.notifyDel);
         paintBell(); paint();
         return;
@@ -1687,17 +1691,25 @@ async function openNotificationsSheet() {
         paint();
         return;
       }
-      const row = e.target.closest('[data-notify]');
+      const edit = e.target.closest('[data-notify-edit]');
+      if (edit) {
+        e.stopPropagation();
+        const note = notifyState.list.find(n => n.id === edit.dataset.notifyEdit);
+        if (note?.link) { sheet.close(); location.hash = note.link; }
+        return;
+      }
+      const row = e.target.closest('.notify-row');
       if (!row) return;
-      const id = row.dataset.notify;
+      const entry = row.closest('[data-notify]');
+      const id = entry?.dataset.notify;
       const note = notifyState.list.find(n => n.id === id);
+      notifyState.sheetSelectedId = notifyState.sheetSelectedId === id ? null : id;
       if (note && !isReadBy(note, currentUser.uid)) {
         await markRead(tripId, note, currentUser.uid);
         note.readBy = { ...(note.readBy || {}), [currentUser.uid]: true };
-        paintBell(); paint();
+        paintBell();
       }
-      const link = note?.link;
-      if (link) { sheet.close(); location.hash = link; }
+      paint();
     });
   };
 
@@ -2385,7 +2397,7 @@ function themePickerHtml({ idPrefix = 'tp', showModes = true } = {}) {
   const cards = themes.map(t => {
     const art = t.gradient || 'linear-gradient(135deg, ' + t.vars['--grad-1'] + ', ' + t.vars['--grad-2'] + ')';
     return `
-    <button type="button" class="theme-card ${active.id === t.id ? 'is-active' : ''}" data-theme-id="${t.id}" title="${escapeHtml(lang === 'th' ? t.hint : t.en)}">
+    <button type="button" class="theme-card ${active.id === t.id ? 'is-active' : ''}" data-theme-id="${t.id}" aria-pressed="${active.id === t.id}" title="${escapeHtml(lang === 'th' ? t.hint : t.en)}">
       <span class="theme-card-art" style="background:${escapeHtml(art)}">
         <span class="theme-card-fuji" aria-hidden="true"></span>
         ${themeSwatchHtml([t.vars['--brand-yellow-raw'], t.vars['--brand-mist-raw'], t.vars['--brand-steel-raw']], 9)}
@@ -2401,7 +2413,7 @@ function themePickerHtml({ idPrefix = 'tp', showModes = true } = {}) {
       <div class="theme-section-title">${icon('palette', 'w-3.5 h-3.5')} ${th('ชุดสีของแอป', 'App colour theme')}
         <span class="theme-current-name">${escapeHtml(themeName(active.id, lang))}</span></div>
       <div class="theme-grid">${cards}
-        <button type="button" class="theme-card ${active.id === CUSTOM_THEME_ID ? 'is-active' : ''}" data-theme-id="${CUSTOM_THEME_ID}">
+        <button type="button" class="theme-card ${active.id === CUSTOM_THEME_ID ? 'is-active' : ''}" data-theme-id="${CUSTOM_THEME_ID}" aria-pressed="${active.id === CUSTOM_THEME_ID}">
           <span class="theme-card-art theme-card-art--custom" style="background:linear-gradient(135deg, ${escapeHtml(custom.primary || '#1f6bfb')}, ${escapeHtml(custom.accent || '#ffb02e')})">
             <span class="theme-card-fuji" aria-hidden="true"></span>
             <span class="theme-card-plus">${icon('sliders-horizontal', 'w-3.5 h-3.5')}</span>
@@ -2426,12 +2438,13 @@ function themePickerHtml({ idPrefix = 'tp', showModes = true } = {}) {
           <input type="range" min="0" max="100" step="5" value="${Number(custom.intensity ?? 72)}" data-theme-part="intensity">
           <output class="theme-slider-out">${Number(custom.intensity ?? 72)}%</output>
         </label>
-        <div class="theme-preview-card" style="border-color:${escapeHtml(pal.blue)}44;">
-          <span class="badge" style="background:${escapeHtml(pal.blue)};color:#fff;">${th('ปุ่ม', 'Button')}</span>
-          <span class="badge" style="background:${escapeHtml(pal.amber)};color:#3f2905;">${th('เน้น', 'Accent')}</span>
-          <span class="text-xs font-bold">${th('ตัวอย่างการ์ด', 'Preview card')}</span>
-          <span class="text-[11px] text-[var(--text-secondary)]">${th('สีพื้นหลัง/การ์ดปรับตามอัตโนมัติ', 'Surfaces follow automatically')}</span>
+        <div class="theme-preview-card" aria-label="${th('ตัวอย่างสีธีม', 'Theme preview')}" style="border-color:${escapeHtml(pal.blue)};">
+          <span class="badge" style="background:${escapeHtml(pal.blue)};color:${escapeHtml(contrastInk(pal.blue))};">${th('ปุ่มหลัก', 'Primary action')}</span>
+          <span class="badge" style="background:${escapeHtml(pal.amber)};color:${escapeHtml(contrastInk(pal.amber))};">${th('สีเน้น', 'Accent')}</span>
+          <span class="text-xs font-bold">${th('ตัวอย่างการ์ดและข้อความ', 'Card and text preview')}</span>
+          <span class="text-[11px] text-[var(--text-secondary)]">${th('ปรับสีแล้วดูตัวอย่างได้ทันที • ใช้เฉพาะอุปกรณ์นี้', 'Live preview • saved on this device only')}</span>
         </div>
+        <p class="text-xs text-[var(--text-secondary)]">${th('ชุดสีและโหมดสว่าง/มืดบันทึกในเบราว์เซอร์ของอุปกรณ์นี้ ไม่ซิงก์ไปยังอุปกรณ์อื่น', 'Colour theme and light/dark mode are stored in this browser on this device and are not synced to other devices.')}</p>
         <div class="btn-row mt-1">
           <button type="button" class="btn btn-ghost btn-sm" data-theme-reset="${DEFAULT_THEME_ID}">${icon('rotate-ccw', 'w-3.5 h-3.5')} ${th('คืนค่าชุดสีเริ่มต้น', 'Reset to Sky light')}</button>
         </div>
@@ -2453,7 +2466,11 @@ function bindThemePicker(root, { onChange = null } = {}) {
   const lang = getLang();
   const paintActive = () => {
     const active = currentTheme();
-    root.querySelectorAll('[data-theme-id]').forEach(btn => btn.classList.toggle('is-active', btn.dataset.themeId === active.id));
+    root.querySelectorAll('[data-theme-id]').forEach(btn => {
+      const selected = btn.dataset.themeId === active.id;
+      btn.classList.toggle('is-active', selected);
+      btn.setAttribute('aria-pressed', String(selected));
+    });
     root.querySelector('[data-theme-custom]')?.classList.toggle('hidden', active.id !== CUSTOM_THEME_ID);
     const label = root.querySelector('.theme-current-name');
     if (label) label.textContent = themeName(active.id, lang);
@@ -3618,6 +3635,7 @@ async function renderDashboard(params) {
           <div class="card p-4 md:p-5">
             <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
               <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('timer', 'w-4 h-4')}</span> ${t('countdown')}</h3>
+              <a href="#/trip/${escapeHtml(tripId)}/settings?tab=trip&amp;focus=dates" class="btn btn-secondary btn-sm text-xs" aria-label="${th('กำหนดหรือแก้ไขวันเดินทาง','Set or edit trip dates')}">${icon('calendar-cog', 'w-3.5 h-3.5')} ${trip?.startDate ? th('แก้ไขวันเดินทาง','Edit trip dates') : th('กำหนดวันเดินทาง','Set trip dates')}</a>
               <div id="live-since" class="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1.5">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="w-3 h-3" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
                 <span data-live-label></span>
@@ -5296,11 +5314,13 @@ async function renderItinerary(params) {
     const mapEl = document.getElementById('map');
     const col = document.getElementById('itin-layout')?.querySelector('.itin-col-map');
     if (!mapEl || !col || !mapVisible) return;
-    const top = Math.max(col.getBoundingClientRect().top, 8);
+    const headerHeight = document.getElementById('app-header')?.getBoundingClientRect().height || 0;
     const isMobile = window.matchMedia('(max-width: 1023px)').matches;
+    // Leave room for the map card toolbar/helper and the viewport bottom so the
+    // full frame stays usable instead of extending below the sticky column.
     const h = isMobile
-      ? Math.round(Math.min(Math.max(window.innerHeight * 0.38, 220), 360))
-      : Math.round(Math.min(Math.max(window.innerHeight - top - 20, 300), 900));
+      ? Math.round(Math.min(Math.max(window.innerHeight * 0.38, 240), 380))
+      : Math.round(Math.min(Math.max(window.innerHeight - headerHeight - 132, 320), 760));
     mapEl.style.setProperty('--itin-map-h', `${h}px`);
     import('./maps/index.js').then(({ refreshMapSize }) => refreshMapSize('map')).catch(() => {});
     if (refit && visibleItems.some(i => i.coordinates)) refreshMap(visibleItems, { fit: true });
@@ -12039,8 +12059,16 @@ async function renderSettings(params) {
       tab.addEventListener('click', () => applySettingsTab(tab.dataset.settingsTab));
     });
     // ?tab=notify (the 🔔 sheet links here) opens the notification tab directly
-    const wanted = new URLSearchParams(location.hash.split('?')[1] || '').get('tab');
+    const params = new URLSearchParams(location.hash.split('?')[1] || '');
+    const wanted = params.get('tab');
     applySettingsTab(['trip', 'appearance', 'notify', 'system', 'advanced'].includes(wanted) ? wanted : 'trip');
+    if (params.get('focus') === 'dates') {
+      requestAnimationFrame(() => {
+        const dateInput = document.getElementById('s-start');
+        dateInput?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+        dateInput?.focus?.({ preventScroll: true });
+      });
+    }
   }
 
   const colorInput = document.getElementById('s-color');

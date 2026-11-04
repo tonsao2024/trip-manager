@@ -126,12 +126,29 @@ export function rotate(hex, deg, { sat = null, light = null } = {}) {
   });
 }
 
-/** Readable text colour for a solid background (white or near-black ink). */
-export function contrastInk(hex, lightInk = '#ffffff', darkInk = '#14202e') {
+/** WCAG 2.x relative luminance for an sRGB hex colour. */
+export function relativeLuminance(hex) {
   const rgb = hexToRgb(hex);
-  if (!rgb) return lightInk;
-  const lum = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
-  return lum > 0.62 ? darkInk : lightInk;
+  if (!rgb) return 0;
+  const linear = rgb.map(value => {
+    const channel = value / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+}
+
+/** WCAG contrast ratio between two opaque sRGB hex colours. */
+export function contrastRatio(foreground, background) {
+  const a = relativeLuminance(foreground);
+  const b = relativeLuminance(background);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+/** Choose the best-contrasting of the supplied foreground candidates. */
+export function contrastInk(hex, lightInk = '#ffffff', darkInk = '#000000') {
+  const background = normalizeHex(hex);
+  if (!background) return lightInk;
+  return contrastRatio(lightInk, background) >= contrastRatio(darkInk, background) ? lightInk : darkInk;
 }
 
 /* --------------------------------- themes --------------------------------- */
@@ -165,7 +182,7 @@ function theme(def) {
       '--brand-sand-raw': normalizeHex(def.sand, mix(def.accent || '#f0ae52', 22, '#ffffff')),
       '--page-bg': normalizeHex(def.bg, mix(primary, 5, '#ffffff')),
       '--page-bg-dark': normalizeHex(def.bgDark, mix(primary, 12, '#0c0f15')),
-      '--on-primary': def.onPrimary || contrastInk(primary),
+      '--on-primary': contrastInk(primary),
       // an empty string means “keep the tokens.css default”
       '--gradient-primary': def.gradient || ''
     },

@@ -641,7 +641,7 @@ export function addItineraryMarkers(map, L, items, dayColors, opts = {}) {
   if (bounds && opts.fitBounds !== false) {
     try {
       if (latlngs.length === 1) map.setView(latlngs[0], opts.singleZoom || 13, { animate: true });
-      else map.fitBounds(bounds, { padding: [56, 56], maxZoom: 15 });
+      else map.fitBounds(bounds, { padding: [88, 88], maxZoom: 15 });
     } catch {}
   }
 
@@ -783,7 +783,7 @@ export function addIdeaMarkers(map, L, ideas, opts = {}) {
   if (latlngs.length && opts.fitBounds !== false) {
     try {
       if (latlngs.length === 1) map.setView(latlngs[0], opts.singleZoom || 13, { animate: true });
-      else map.fitBounds(latlngs, { padding: [56, 56], maxZoom: 15 });
+      else map.fitBounds(latlngs, { padding: [88, 88], maxZoom: 15 });
     } catch {}
   }
 
@@ -854,7 +854,7 @@ export function focusItineraryItem(containerId, items, itemId, { zoom = 16, open
   try {
     try { map.invalidateSize?.(); } catch { /* stub-safe */ }
     if (pts.length === 1) map.setView([pts[0].lat, pts[0].lng], 14, { animate: true });
-    else map.fitBounds(pts.map(p => [p.lat, p.lng]), { padding: [46, 46], maxZoom: 15, animate: true });
+    else map.fitBounds(pts.map(p => [p.lat, p.lng]), { padding: [88, 88], maxZoom: 15, animate: true });
   } catch { return false; }
   return true;
 }
