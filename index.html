@@ -8,7 +8,7 @@
   <meta name="application-name" content="Trip Manager">
   <meta name="author" content="TonSkywalker">
   <meta name="copyright" content="© 2024–2026 TonSkywalker. All rights reserved.">
-  <meta name="theme-color" id="meta-theme-color" content="#f7fbff">
+  <meta name="theme-color" id="meta-theme-color" content="#ffffff">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" id="meta-apple-status-bar-style" content="default">
   <!-- Set iOS status-bar contrast before first paint when a dark mode is saved. -->
@@ -23,10 +23,22 @@
       }
     } catch {}
   </script>
+  <!-- v34 Flat design preferences (radius / density / depth). Applied before the
+       first paint so a chosen style never flashes the default one. -->
+  <script>
+    try {
+      const ui = JSON.parse(localStorage.getItem('fuji_ui_style') || '{}');
+      const root = document.documentElement;
+      const pick = (value, allowed, fallback) => (allowed.includes(value) ? value : fallback);
+      root.dataset.radius = pick(ui.radius, ['sharp', 'soft', 'round'], 'soft');
+      root.dataset.density = pick(ui.density, ['compact', 'regular', 'roomy'], 'regular');
+      root.dataset.depth = pick(ui.depth, ['flat', 'soft'], 'flat');
+    } catch (e) { /* private mode — keep the defaults */ }
+  </script>
   <!-- Build identity — source of truth: src/js/utils/buildInfo.js (a unit test keeps these in sync) -->
-  <meta name="app-version" content="33">
+  <meta name="app-version" content="34">
   <meta name="app-palette" content="Sky light">
-  <meta name="app-updated" content="2026-11-03">
+  <meta name="app-updated" content="2026-11-04">
   <meta property="og:title" content="Trip Manager by TonSkywalker">
   <meta property="og:description" content="วางแผนทริป • แบ่งค่าใช้จ่าย • เคลียร์บิล ครบในแอปเดียว โดย TonSkywalker">
   <!-- Logo ในแถบบราวเซอร์ (favicon) — ไฟล์จริงในโฟลเดอร์ public/ และแบบ inline ที่ตามธีมสี -->
@@ -49,18 +61,22 @@
   <noscript><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
 
   <!-- Design System v21 “Vivid & Deep” (cache-busted) -->
-  <link rel="stylesheet" href="./src/css/tokens.css?v=33">
-  <link rel="stylesheet" href="./src/css/components.css?v=33">
-  <link rel="stylesheet" href="./src/css/refresh.css?v=33">
-  <link rel="stylesheet" href="./src/css/animations.css?v=33">
+  <link rel="stylesheet" href="./src/css/tokens.css?v=34">
+  <link rel="stylesheet" href="./src/css/components.css?v=34">
+  <link rel="stylesheet" href="./src/css/refresh.css?v=34">
+  <link rel="stylesheet" href="./src/css/animations.css?v=34">
+  <!-- v34 FLAT DESIGN LAYER — every surface, button, card and menu is re-shaped
+       here. It loads after the legacy sheets and before the compiled Tailwind
+       utilities; Settings → Appearance can re-scale radius / density / depth live. -->
+  <link rel="stylesheet" href="./src/css/flat.css?v=34">
   <!-- Tailwind: precompiled static utilities (tools/build-assets.mjs).
        Replaces the Play CDN runtime compiler. Loaded AFTER the app stylesheets
        to keep the same cascade order the CDN's injected <style> used to have. -->
-  <link rel="stylesheet" href="./src/css/tailwind.css?v=33">
+  <link rel="stylesheet" href="./src/css/tailwind.css?v=34">
 
   <!-- Lucide icons: local subset (291 icons) instead of the full ~1500-icon CDN
        bundle. Deferred so it never blocks first paint; runs before app.js. -->
-  <script src="./src/js/vendor/lucide.js?v=33" defer></script>
+  <script src="./src/js/vendor/lucide.js?v=34" defer></script>
 
   <!-- Import Map -->
   <script type="importmap">
@@ -147,9 +163,9 @@
     /* ---- Compact world clock + city picker ---- */
     .clock-chip {
       display: inline-flex; align-items: center; gap: 5px;
-      padding: 5px 10px; border-radius: 999px;
-      background: var(--bg-secondary);
-      border: 1.5px solid var(--border);
+      padding: 5px 10px; border-radius: var(--radius-sm);
+      background: var(--surface);
+      border: 1px solid var(--border);
       color: var(--text-secondary);
       font-size: 11px; font-weight: 700;
       cursor: pointer; white-space: nowrap;
@@ -165,8 +181,8 @@
       width: 250px; max-height: min(60vh, 420px); overflow-y: auto;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 14px;
-      box-shadow: 0 18px 50px rgba(0,0,0,.18);
+      border-radius: var(--radius-md);
+      box-shadow: var(--overlay-shadow);
       padding: 6px;
       z-index: 80;
     }
@@ -179,26 +195,26 @@
     }
     .clock-menu-item {
       display: flex; align-items: center; gap: 8px;
-      width: 100%; padding: 7px 10px; border-radius: 10px;
+      width: 100%; padding: 7px 10px; border-radius: var(--radius-sm);
       border: 0; background: transparent; cursor: pointer;
       font-size: 12px; color: var(--text-secondary); text-align: left;
     }
     .clock-menu-item:hover { background: var(--primary-lighter); color: var(--primary-strong); }
-    .clock-menu-item.is-active { background: var(--gradient-primary); color: #fff; }
+    .clock-menu-item.is-active { background: var(--primary); color: var(--on-primary); }
     .clock-menu-item .clock-menu-label {
       font-family: var(--font-mono, monospace); font-weight: 800; font-size: 10.5px;
       min-width: 34px; letter-spacing: .04em;
     }
     .clock-menu-item .clock-menu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-    /* Glass header */
+    /* Flat header — solid surface + one hairline rule (v34) */
     #app-header {
-      background: color-mix(in srgb, var(--surface) 80%, transparent);
-      backdrop-filter: blur(22px) saturate(180%);
-      -webkit-backdrop-filter: blur(22px) saturate(180%);
-      border-bottom: 1px solid var(--border-light);
+      background: var(--surface);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      border-bottom: 1px solid var(--border);
       box-shadow: none;
-      transition: background 0.4s ease, border-color 0.4s ease;
+      transition: background 0.25s ease, border-color 0.25s ease;
     }
     /* Page transition base */
     #app { transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
@@ -213,7 +229,7 @@
       #app-header {
         height: auto;
         padding-top: env(safe-area-inset-top, 0px);
-        background: var(--app-chrome-color, #f7fbff);
+        background: var(--app-chrome-color, #ffffff);
         backdrop-filter: none;
         -webkit-backdrop-filter: none;
       }
@@ -226,29 +242,14 @@
       #app { padding-top: 14px; }
     }
 
-    /* Ambient background wash (theme-tinted, no emoji, no images).
-       Static on purpose: the old version ran three infinite transform animations
-       on 74px-blurred, will-change layers, which kept the GPU compositing every
-       frame even while idle — a real battery/jank cost on phones. The radial
-       gradients are already soft, so the look is preserved at near-zero cost. */
-    #bg-decor { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
-    #bg-decor .blob { position: absolute; border-radius: 9999px; filter: blur(48px); opacity: 0.5; }
-    #bg-decor .blob-1 { width: 44vmax; height: 44vmax; top: -15vmax; left: -11vmax; background: radial-gradient(circle, color-mix(in srgb, var(--grad-1) 24%, transparent), transparent 66%); }
-    #bg-decor .blob-2 { width: 38vmax; height: 38vmax; bottom: -13vmax; right: -9vmax; background: radial-gradient(circle, color-mix(in srgb, var(--brand-mist-raw) 38%, transparent), transparent 66%); }
-    #bg-decor .blob-3 { width: 26vmax; height: 26vmax; top: 36%; left: 56%; background: radial-gradient(circle, color-mix(in srgb, var(--brand-yellow-raw) 20%, transparent), transparent 66%); }
-    [data-theme="dark"] #bg-decor .blob { opacity: 0.32; }
-    /* Phones: the gradients are soft enough without a blur pass at all. */
-    @media (max-width: 767px) {
-      #bg-decor .blob { filter: none; opacity: 0.42; }
-      #bg-decor .blob-3 { display: none; }
-    }
-
+    /* v34: the decorative background wash/blobs are gone — flat design keeps
+       the canvas quiet so content and controls carry the hierarchy. */
     /* Logo link */
-    #logo-link { text-decoration: none; color: inherit; border-radius: var(--radius-full); transition: transform 0.2s ease; }
-    #logo-link:hover { transform: translateY(-1px) scale(1.02); }
-    #logo-link:active { transform: scale(0.97); }
-    .logo-badge { transition: box-shadow 0.3s ease; }
-    #logo-link:hover .logo-badge { box-shadow: var(--shadow-primary); }
+    #logo-link { text-decoration: none; color: inherit; border-radius: var(--radius); }
+    #logo-link:hover { transform: none; }
+    #logo-link:active { transform: none; }
+    .logo-badge { transition: background-color .15s ease; }
+    #logo-link:hover .logo-badge { box-shadow: none; }
     /* “by TonSkywalker” — deliberately small next to the product name */
     .app-by {
       font-size: 9.5px; font-weight: 700; letter-spacing: .02em; opacity: .72;
@@ -276,19 +277,12 @@
   </style>
 </head>
 <body class="min-h-screen bg-[var(--bg)] text-[var(--text)]">
-  <!-- Ambient background -->
-  <div id="bg-decor" aria-hidden="true">
-    <span class="blob blob-1"></span>
-    <span class="blob blob-2"></span>
-    <span class="blob blob-3"></span>
-  </div>
-
   <!-- Header -->
   <header id="app-header" class="sticky top-0 z-30">
     <div class="header-row max-w-[1280px] mx-auto px-4 flex items-center justify-between gap-3">
       <!-- Logo = home (trip list) -->
       <a href="#/trips" id="logo-link" class="flex items-center gap-3 group" title="หน้าแรก — รายการทริป" aria-label="Trip Manager — หน้าแรก">
-        <span class="logo-badge w-10 h-10 rounded-full grid place-items-center shadow-sm animate-float" style="background: var(--gradient-primary); border: 2px solid rgba(255,255,255,0.9);">
+        <span class="logo-badge w-10 h-10 grid place-items-center" aria-hidden="true">
           <svg viewBox="0 0 100 100" width="26" height="26" aria-hidden="true">
             <circle cx="72" cy="28" r="15" fill="var(--brand-yellow-raw)"/>
             <path d="M4 82 L46 18 L88 82 Z" fill="rgba(255,255,255,0.96)"/>
@@ -307,11 +301,16 @@
       </a>
 
       <div class="flex items-center gap-3 header-controls-group">
+        <!-- v34 “เมนูทั้งหมด”: the secondary pages (เตรียมตัว / การจอง / ปฏิทิน /
+             นำเข้า‑ส่งออก / ตั้งค่า) that used to be reachable only from the phone
+             “เพิ่มเติม” page. Filled by renderHeaderMoreMenu(); hidden on phones,
+             where the More page and the bottom bar already cover it. -->
+        <div class="header-more" id="header-more"></div>
         <!-- Theme, Lang, Mode controls injected by app.js -->
         <button id="refresh-btn" class="btn btn-ghost btn-icon btn-press" aria-label="Refresh"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
         <div id="user-menu" class="relative ml-1">
           <!-- v18: the profile picture is the single entry point for Settings -->
-          <button id="user-avatar-btn" class="avatar w-10 h-10 text-[13px] btn-press has-settings" style="background: var(--gradient-primary);" title="ตั้งค่า — Settings" aria-label="ตั้งค่า application">
+          <button id="user-avatar-btn" class="avatar w-10 h-10 text-[13px] btn-press has-settings" style="background: var(--primary);" title="ตั้งค่า — Settings" aria-label="ตั้งค่า application">
             ?<span class="avatar-gear" aria-hidden="true"><i data-lucide="settings"></i></span>
           </button>
         </div>
@@ -411,7 +410,11 @@
   </footer>
 
   <!-- FAB -->
-  <button id="fab" class="fab hidden btn-press" aria-label="Add"><i data-lucide="plus" class="w-6 h-6"></i></button>
+  <!-- FAB: an extended, LABELLED action (v34). A bare “+” made people guess what
+       it would add; the label is set per screen by renderFAB() in app.js. -->
+  <button id="fab" class="fab hidden btn-press" aria-label="เพิ่มรายการ">
+    <i data-lucide="plus" class="w-6 h-6"></i><span class="fab-label" id="fab-label"></span>
+  </button>
 
   <!-- Toast -->
   <div id="toast-container" class="toast-container"></div>
@@ -448,6 +451,6 @@
   <script src="./fcm-vapid.js"></script>
 
   <!-- App (cache-busted) -->
-  <script type="module" src="./src/js/app.js?v=33"></script>
+  <script type="module" src="./src/js/app.js?v=34"></script>
 </body>
 </html>

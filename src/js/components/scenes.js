@@ -228,15 +228,29 @@ const SCENES = {
 };
 
 /**
+ * Pages that are NOT one of the primary destinations get an in-page “ย้อนกลับ”
+ * control (v34). Before this, the only way out of Settings / Members / Import /
+ * Prep / Bookings / Calendar was the browser's back button — the audit flagged it
+ * as the most common dead end on a phone. The handler lives in app.js
+ * (`[data-ps-back]`), so the component stays markup-only.
+ */
+const BACK_PAGES = new Set(['members', 'documents', 'import', 'prep', 'ideas', 'bookings', 'calendar', 'explore', 'settings']);
+
+/**
  * Header block with an animated illustration — drop-in replacement for a plain <h1> row.
  * @param {keyof SCENES} kind
- * @param {{lang?:string, title?:string, subtitle?:string, actions?:string, tone?:string}} opts
+ * @param {{lang?:string, title?:string, subtitle?:string, actions?:string, back?:boolean}} opts
  */
-export function renderPageScene(kind, { lang = 'th', title = '', subtitle = '', actions = '' } = {}) {
+export function renderPageScene(kind, { lang = 'th', title = '', subtitle = '', actions = '', back = null } = {}) {
   const build = SCENES[kind] || SCENES.trips;
+  const showBack = back === null || back === undefined ? BACK_PAGES.has(kind) : !!back;
+  const backLabel = lang === 'th' ? 'ย้อนกลับ' : 'Back';
   return `
   <div class="page-scene ps-${kind}">
     <div class="ps-copy">
+      ${showBack ? `<button type="button" class="ps-back" data-ps-back aria-label="${backLabel}">
+        <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i><span>${backLabel}</span>
+      </button>` : ''}
       <h1 class="page-title">${title}</h1>
       ${subtitle ? `<p class="ps-sub">${subtitle}</p>` : ''}
       ${actions ? `<div class="btn-row ps-actions">${actions}</div>` : ''}

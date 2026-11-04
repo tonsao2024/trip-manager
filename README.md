@@ -10,6 +10,24 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > คำแนะนำ Functions/Push ในบันทึกเวอร์ชันเก่าด้านล่างไม่ใช่ขั้นตอน deploy ปัจจุบัน
 > ดูขั้นตอนล่าสุดที่ [Deploy Guide](docs/DEPLOY.md)
 
+> **v34 — 4 Nov 2026, ออกแบบใหม่ทั้งระบบเป็น Flat design + ตรวจปุ่ม/เมนูทุกหน้า.** A ground-up repaint into
+> a flat design language plus a full button-and-menu audit. **Look:** every gradient, glow, glass blur and
+> card shadow is gone — surfaces are one solid colour separated by a 1px outline, the radius scale shrank from
+> 18–44px to 6–20px, and only things that truly float (sheet, dialog, toast, dropdown, FAB) keep a shadow.
+> All of it lives in ONE new sheet, `src/css/flat.css`; the legacy `--gradient-*` names now resolve to solid
+> fills so hundreds of inline styles flattened without a template rewrite. **Navigation:** a new
+> “เมนูทั้งหมด” menu in the header finally exposes เตรียมตัว / การจอง / ปฏิทิน / ชวนไปที่นี่ / นำเข้า‑ส่งออก /
+> ตั้งค่า on desktop (they had no entry there at all), the phone “เพิ่มเติม” page now lists every screen in three
+> groups, nine sub-pages gained an in-page “ย้อนกลับ”, the bottom bar became a flat edge-to-edge dock, and the
+> FAB is an extended, labelled action (“เพิ่มสถานที่ / เพิ่มค่าใช้จ่าย / เพิ่มเอกสาร”) instead of a bare “+”.
+> **Buttons:** one primary action per screen (the itinerary map button is now an `aria-pressed` toggle), solid
+> 44px controls, one focus ring, flat status badges. **Easy to customise:** Settings → การแสดงผล → “สไตล์หน้าจอ”
+> changes corner radius (คม/นุ่มนวล/กลม), density (กะทัดรัด/มาตรฐาน/โปร่ง) and shadows (แบนสนิท/เงานุ่ม) live,
+> remembered per device in `localStorage.fuji_ui_style` and applied before first paint — `src/js/utils/uiStyle.js`
+> + `flat.css` §11, three steps to add a new preset. Verified: 186 unit tests (7 new for the style knobs), the
+> jsdom smoke test, the headless mobile layout sweep at five iPhone sizes and the desktop check at 1024/1280/1440.
+> Full audit, per-screen table and the remaining recommendations: [UX-FLAT-REDESIGN](docs/UX-FLAT-REDESIGN.md).
+>
 > **v33 — 3 Nov 2026, เร็วขึ้นจริง: ตัด runtime compiler + ไอคอนทั้งชุด ออกจากหน้าแรก.** Performance pass that
 > removes work from first paint instead of decorating the loader. The Tailwind **Play CDN** (a runtime JIT
 > compiler downloaded on every cold load) is replaced by a committed, minified `src/css/tailwind.css` (~18 kB),

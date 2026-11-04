@@ -1,14 +1,26 @@
-/* Trip Manager by TonSkywalker — Design System v20 “Vivid & Deep”
-   The v20 repaint pushes every hue to full saturation: an electric royal-blue
-   brand with a cyan tail, a hot amber accent, jewel-tone companions and status
-   colours that read instantly. Light mode sits on a deeper sky canvas so white
-   cards pop; dark mode drops into a rich indigo-navy night with neon-bright
-   accents. Nothing here is pastel or muddy — contrast stays above WCAG AA.
+/* Trip Manager by TonSkywalker — Design System v34 “Flat & Friendly”
+   ---------------------------------------------------------------------------
+   v34 is a full repaint into FLAT design. It keeps the vivid brand hues of v20
+   (an electric royal blue, a hot amber accent, jewel-tone companions and status
+   colours that read instantly) but drops every decorative effect that stood
+   between the colour and the user:
 
-   A colour THEME (LINE / Facebook / Instagram / … or a custom pair) only writes
-   the raw brand variables below — `src/js/utils/themes.js` sets them on <html>,
-   and every other shade is derived here with color-mix(), so light mode, dark
-   mode, exports and JS colours all follow the theme at once. */
+     • no gradients — one solid fill per surface (the `--gradient-*` names are
+       kept as COMPATIBILITY ALIASES that now resolve to flat colours, because
+       hundreds of inline styles still reference them);
+     • no elevation blur — cards and buttons are separated by 1px borders and
+       tonal fills, not by shadows;
+     • a compact radius scale (6–16px) instead of the old 18–44px “bubble” look;
+     • bigger, calmer type and one clear focus ring.
+
+   Only three shadows survive, and only on things that genuinely float above the
+   page (bottom sheet, dialog, toast, dropdown). Turn them off completely with
+   `data-depth="flat"` (see src/css/flat.css → “Customise the look”).
+
+   A colour THEME (LINE / Facebook / Instagram / … or a custom pair) still only
+   writes the raw brand variables below — `src/js/utils/themes.js` sets them on
+   <html>, and every other shade is derived here with color-mix(), so light mode,
+   dark mode, exports and JS colours all follow the theme at once. */
 
 :root {
   /* ---- Brand base: electric royal blue + hot amber (default “Sky light” theme) ---- */
@@ -54,34 +66,45 @@
   --steel-tint: color-mix(in srgb, var(--brand-steel-raw) 16%, #fff);
   --steel-ink: color-mix(in srgb, var(--brand-steel-raw) 78%, #10283f);
 
-  /* ---- Surfaces: crisp white cards on a deep sky canvas (layering) ---- */
-  --bg: var(--page-bg);
-  --bg-secondary: color-mix(in srgb, var(--primary-raw) 10%, #ffffff);
-  --bg-tertiary: color-mix(in srgb, var(--primary-raw) 17%, #e8f2ff);
+  /* ---- Surfaces: flat, crisp panels on a quiet canvas -------------------
+     The canvas is a very light neutral tinted by the theme (so a LINE theme is
+     faintly green, the default is faintly blue); panels are pure white with a
+     hard 1px outline. That is the whole depth model — no blur, no lift. */
+  --bg: color-mix(in srgb, var(--page-bg) 46%, #f4f6fa);
+  --bg-secondary: color-mix(in srgb, var(--primary-raw) 7%, #f6f8fc);
+  --bg-tertiary: color-mix(in srgb, var(--primary-raw) 11%, #eef2f8);
   --surface: #ffffff;
-  --surface-2: color-mix(in srgb, var(--primary-raw) 7%, #ffffff);
-  --surface-3: color-mix(in srgb, var(--primary-raw) 14%, #e6efff);
+  --surface-2: color-mix(in srgb, var(--primary-raw) 5%, #f7f9fc);
+  --surface-3: color-mix(in srgb, var(--primary-raw) 9%, #eff3f9);
+  --surface-inset: color-mix(in srgb, var(--text) 4%, #ffffff);
   /* Opaque color shared by the mobile header, iOS safe area and browser chrome. */
-  --app-chrome-color: color-mix(in srgb, var(--surface) 80%, var(--bg));
+  --app-chrome-color: var(--surface);
   --card: #ffffff;
   --card-hover: #ffffff;
   --text: #101d33;
   --text-strong: #060f22;
   --text-secondary: #33445f;
   --text-tertiary: #5a6b85;
-  --border: color-mix(in srgb, var(--primary-raw) 34%, #b9d2f5);
-  --border-strong: color-mix(in srgb, var(--primary-raw) 55%, #8fb4ec);
-  --border-light: color-mix(in srgb, var(--primary-raw) 20%, #cbdef8);
+  --border: color-mix(in srgb, var(--primary-raw) 16%, #cfd8e5);
+  --border-strong: color-mix(in srgb, var(--primary-raw) 34%, #aab8cb);
+  --border-light: color-mix(in srgb, var(--primary-raw) 9%, #e3e9f1);
+  --border-w: 1px;
 
-  --shadow-xs: 0 1px 3px color-mix(in srgb, var(--primary-raw) 14%, rgba(12,23,38,0.08));
-  --shadow-sm: 0 3px 14px color-mix(in srgb, var(--primary-raw) 18%, rgba(12,23,38,0.10));
-  --shadow: 0 12px 28px color-mix(in srgb, var(--primary-raw) 20%, rgba(12,23,38,0.12));
-  --shadow-md: 0 18px 40px color-mix(in srgb, var(--primary-raw) 23%, rgba(12,23,38,0.14));
-  --shadow-lg: 0 28px 66px color-mix(in srgb, var(--primary-raw) 27%, rgba(12,23,38,0.18));
-  --shadow-soft: 0 12px 40px color-mix(in srgb, var(--primary-raw) 22%, transparent);
-  --shadow-inner: inset 0 1px 0 rgba(255,255,255,0.95);
-  --shadow-primary: 0 12px 28px color-mix(in srgb, var(--primary-raw) 50%, transparent);
-  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary-raw) 42%, transparent);
+  /* Flat = no elevation. These are the tokens every component used to read, so
+     setting them here removes the shadow everywhere at once. The three overlay
+     vars below are the ONLY shadows left in the system. */
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-soft: none;
+  --shadow-inner: none;
+  --shadow-primary: none;
+  --overlay-shadow: 0 10px 30px rgba(16, 29, 51, 0.14);
+  --overlay-shadow-strong: 0 18px 48px rgba(16, 29, 51, 0.20);
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary-raw) 34%, transparent);
+  --focus-outline: 2px solid var(--primary-raw);
 
   /* ---- Companion accents (member colours, day markers, category chips).
      v20: full jewel saturation — vivid in both light and dark mode. ---- */
@@ -99,23 +122,23 @@
   --accent-violet: #7a2bf5;
   --accent-slate: #5b6cff;
 
-  /* ---- Gradients ----
-     `--gradient-primary` is set INLINE by a theme (see themes.js) — e.g. the
-     Instagram theme paints the real IG rainbow. The values here are the
-     “Sky light” default and the fallback for every other brand colour. */
-  --gradient-primary: linear-gradient(135deg, var(--grad-1) 0%, var(--grad-2) 58%, color-mix(in srgb, var(--grad-2) 70%, #ffffff) 100%);
-  --gradient-blue: var(--gradient-primary);
-  --gradient-duo: linear-gradient(135deg, var(--grad-1) 0%, var(--grad-2) 52%, var(--brand-yellow-raw) 100%);
-  --gradient-sun: linear-gradient(135deg, #ffc42e 0%, var(--brand-yellow-raw) 58%, #ff7300 100%);
-  --gradient-fuji: linear-gradient(135deg, var(--grad-1) 0%, color-mix(in srgb, var(--grad-1) 42%, #7a2bf5) 50%, var(--grad-2) 100%);
-  --gradient-fuji-soft: linear-gradient(135deg, color-mix(in srgb, var(--grad-1) 17%, transparent) 0%, color-mix(in srgb, var(--grad-2) 17%, transparent) 100%);
-  --gradient-vivid: linear-gradient(120deg, var(--grad-1) 0%, color-mix(in srgb, var(--grad-1) 42%, var(--grad-2)) 48%, var(--brand-yellow-raw) 100%);
-  --gradient-mist: linear-gradient(140deg, var(--mist-tint) 0%, color-mix(in srgb, var(--brand-steel-raw) 16%, #fff) 100%);
-  --gradient-mesh:
-    radial-gradient(at 18% 26%, color-mix(in srgb, var(--grad-1) 22%, transparent) 0%, transparent 52%),
-    radial-gradient(at 82% 16%, color-mix(in srgb, var(--brand-yellow-raw) 24%, transparent) 0%, transparent 50%),
-    radial-gradient(at 52% 84%, color-mix(in srgb, var(--brand-mist-raw) 28%, transparent) 0%, transparent 52%);
-  --gradient-glass: linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.66) 100%);
+  /* ---- Flat fills (compatibility aliases) -------------------------------
+     v34 removed gradients from the interface. Every `--gradient-*` name is kept
+     and now resolves to ONE solid colour, so the hundreds of inline
+     `style="background: var(--gradient-primary)"` usages across app.js become
+     flat the moment this file loads — no template had to be rewritten. A colour
+     theme may still write `--gradient-primary` inline on <html>; flat.css
+     re-flattens it on <body>, which wins for every element on the page. */
+  --gradient-primary: var(--primary-raw);
+  --gradient-blue: var(--primary-raw);
+  --gradient-duo: var(--primary-raw);
+  --gradient-sun: var(--brand-yellow-raw);
+  --gradient-fuji: var(--primary-raw);
+  --gradient-fuji-soft: var(--primary-lighter);
+  --gradient-vivid: var(--primary-raw);
+  --gradient-mist: var(--mist-tint);
+  --gradient-mesh: none;
+  --gradient-glass: var(--surface);
 
   /* ---- Status colours (v20: fully saturated jewel tones) ---- */
   --success: #00b368;
@@ -135,14 +158,23 @@
   --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
   --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px; --space-12: 48px;
 
-  --radius-xs: 10px;
-  --radius-sm: 14px;
-  --radius: 18px;
-  --radius-md: 22px;
-  --radius-lg: 28px;
-  --radius-xl: 34px;
-  --radius-2xl: 44px;
+  /* Flat radius scale — tight, geometric, predictable. It is one of the three
+     things the user can re-scale live in Settings → Appearance
+     (`data-radius="sharp|soft|round"` in flat.css). */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius: 10px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
   --radius-full: 9999px;
+  /* Control metrics — density re-writes these (data-density). */
+  --control-h: 44px;
+  --control-h-sm: 36px;
+  --control-h-lg: 52px;
+  --card-pad: 18px;
+  --stack-gap: 14px;
 
   --font-sans: "Plus Jakarta Sans", "Noto Sans Thai", system-ui, -apple-system, sans-serif;
   --font-display: "Outfit", "Plus Jakarta Sans", "Noto Sans Thai", system-ui, sans-serif;
@@ -159,7 +191,7 @@
   --leading-snug: 1.3;
 
   --header-h: 72px;
-  --bottom-nav-h: 84px;
+  --bottom-nav-h: 72px;
   --content-max: 1280px;
   --sidebar-w: 280px;
 }
@@ -197,31 +229,36 @@
   --steel-tint: color-mix(in srgb, var(--brand-steel-raw) 27%, #141a28);
   --steel-ink: #c4e2ff;
 
-  --bg: var(--page-bg-dark);
-  --bg-secondary: color-mix(in srgb, var(--primary-raw) 18%, #0d1428);
-  --bg-tertiary: color-mix(in srgb, var(--primary-raw) 24%, #141d36);
-  --surface: color-mix(in srgb, var(--primary-raw) 16%, #0f1730);
-  --surface-2: color-mix(in srgb, var(--primary-raw) 21%, #151f3a);
-  --surface-3: color-mix(in srgb, var(--primary-raw) 27%, #1c2947);
-  --app-chrome-color: color-mix(in srgb, var(--surface) 80%, var(--bg));
-  --card: color-mix(in srgb, var(--primary-raw) 16%, #0f1730);
-  --card-hover: color-mix(in srgb, var(--primary-raw) 22%, #182441);
+  /* Dark mode is flat too: a deep neutral night canvas and slightly lifted
+     panels, separated by visible outlines instead of shadows. */
+  --bg: color-mix(in srgb, var(--page-bg-dark) 88%, #121722);
+  --bg-secondary: color-mix(in srgb, var(--primary-raw) 9%, #141a26);
+  --bg-tertiary: color-mix(in srgb, var(--primary-raw) 14%, #1a2230);
+  --surface: color-mix(in srgb, var(--primary-raw) 7%, #161c28);
+  --surface-2: color-mix(in srgb, var(--primary-raw) 11%, #1b2330);
+  --surface-3: color-mix(in srgb, var(--primary-raw) 16%, #212b3a);
+  --surface-inset: color-mix(in srgb, #ffffff 5%, #131924);
+  --app-chrome-color: var(--bg);
+  --card: color-mix(in srgb, var(--primary-raw) 7%, #161c28);
+  --card-hover: color-mix(in srgb, var(--primary-raw) 11%, #1b2330);
   --text: #f2f7ff;
   --text-strong: #ffffff;
-  --text-secondary: #c9d6ee;
-  --text-tertiary: #93a7c4;
-  --border: color-mix(in srgb, var(--primary-raw) 38%, #26334f);
-  --border-strong: color-mix(in srgb, var(--primary-raw) 55%, #3a4f7e);
-  --border-light: color-mix(in srgb, var(--primary-raw) 25%, #1f2a45);
+  --text-secondary: #c4d1e6;
+  --text-tertiary: #8fa2bd;
+  --border: color-mix(in srgb, var(--primary-raw) 20%, #33405a);
+  --border-strong: color-mix(in srgb, var(--primary-raw) 38%, #46587a);
+  --border-light: color-mix(in srgb, var(--primary-raw) 12%, #263244);
 
-  --shadow-xs: 0 1px 3px rgba(0,0,0,0.36);
-  --shadow-sm: 0 2px 10px rgba(0,0,0,0.40);
-  --shadow: 0 8px 24px rgba(0,0,0,0.46);
-  --shadow-md: 0 14px 34px rgba(0,0,0,0.52);
-  --shadow-lg: 0 24px 60px rgba(0,0,0,0.58);
-  --shadow-soft: 0 10px 40px rgba(0,0,0,0.48);
-  --shadow-inner: inset 0 1px 0 rgba(255,255,255,0.07);
-  --shadow-primary: 0 10px 28px color-mix(in srgb, var(--primary-raw) 58%, transparent);
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-soft: none;
+  --shadow-inner: none;
+  --shadow-primary: none;
+  --overlay-shadow: 0 10px 30px rgba(0,0,0,0.55);
+  --overlay-shadow-strong: 0 18px 48px rgba(0,0,0,0.65);
 
   --success: #34e0a1;
   --success-light: color-mix(in srgb, #34e0a1 22%, #121a26);
@@ -236,11 +273,9 @@
   --info-light: color-mix(in srgb, #5cc4ff 22%, #121a26);
   --info-bg: color-mix(in srgb, #5cc4ff 14%, #121a26);
 
-  --gradient-glass: linear-gradient(180deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.02) 100%);
-  --gradient-mesh:
-    radial-gradient(at 18% 26%, color-mix(in srgb, var(--grad-1) 26%, transparent) 0%, transparent 52%),
-    radial-gradient(at 82% 16%, color-mix(in srgb, var(--brand-yellow-raw) 18%, transparent) 0%, transparent 50%),
-    radial-gradient(at 52% 84%, color-mix(in srgb, var(--brand-mist-raw) 17%, transparent) 0%, transparent 52%);
+  --gradient-glass: var(--surface);
+  --gradient-mesh: none;
+  --gradient-primary: var(--primary);
 }
 
 * { font-family: var(--font-sans); }

@@ -24,11 +24,14 @@ export function testBrowserChromeMatchesTheHeaderTheme() {
   const app = fs.readFileSync(path.join(root, 'src/js/app.js'), 'utf8');
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));
   const metaColor = html.match(/<meta name="theme-color" id="meta-theme-color" content="([^"]+)"/)?.[1];
-  const themeColorRules = css.match(/--app-chrome-color: color-mix\(in srgb, var\(--surface\) 80%, var\(--bg\)\);/g) || [];
+  // v34 flat design: the browser chrome is exactly the header surface (pure
+  // white in light mode, the dark panel colour in dark mode) — no blend, so the
+  // status bar can never show a different shade than the bar itself.
+  const themeColorRules = css.match(/--app-chrome-color: var\(--surface\);|--app-chrome-color: var\(--bg\);/g) || [];
   const updater = app.match(/function updateMetaThemeColor\(\) \{[\s\S]*?\n\}/)?.[0] || '';
 
-  assert(themeColorRules.length === 2, 'light and dark modes both derive a neutral chrome surface');
-  assert(metaColor === '#f7fbff' && manifest.theme_color === metaColor && manifest.background_color === metaColor,
+  assert(themeColorRules.length === 2, 'light and dark modes both paint the chrome with an exact surface token');
+  assert(metaColor === '#ffffff' && manifest.theme_color === metaColor && manifest.background_color === metaColor,
     'the initial document and installed PWA use the same neutral fallback');
   assert(html.includes("document.documentElement.setAttribute('data-theme', 'dark')")
     && html.includes("setAttribute('content', 'black-translucent')"),
@@ -39,7 +42,7 @@ export function testBrowserChromeMatchesTheHeaderTheme() {
     'iOS status-bar glyphs follow the active light/dark theme');
   assert(updater.includes("getPropertyValue('--app-chrome-color')"),
     'runtime theme changes update the browser color from the actual chrome token');
-  assert(updater.includes("chromeColor || '#f7fbff'"), 'the runtime keeps a safe fallback if CSS is unavailable');
+  assert(updater.includes("chromeColor || '#ffffff'"), 'the runtime keeps a safe fallback if CSS is unavailable');
   assert(updater.includes('faviconSvg(pal.blue || BRAND_PRIMARY'),
     'the favicon still follows the vivid brand color');
 }
