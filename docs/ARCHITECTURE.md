@@ -6,13 +6,24 @@ Fuji Trip Planner is a static SPA hosted on GitHub Pages, backed entirely by Fir
 ## Frontend
 - **SPA Router**: Hash-based, lightweight, no library. Routes defined in `src/js/app.js` + `router.js`.
 - **State**: Current user from Firebase Auth, current trip from localStorage + Firestore doc.
-- **UI**: Tailwind CDN + custom `tokens.css` (**v17 “Sky light”** — one fixed palette: sky blue
-  `#2f6fe4` → `#64a1da`, amber `#f0ae52`, sage mist `#abc1bf`, steel `#639cb5`, slate ink `#374656`;
-  every shade derived with `color-mix()`). `src/css/refresh.css` (loaded after `components.css`)
-  restyles the shell and defines the new-page components. Bento-grid for the dashboard, card-based
-  elsewhere. Lucide icons. Only Light / Dark / Auto is user-selectable — the old colour-theme (ชุดสี)
-  presets and the per-trip colour were removed in v16, and `data-color` / `fuji_color_theme` are
-  cleared on boot.
+- **UI (v34 — Flat design)**: static, compiled Tailwind utilities (`src/css/tailwind.css`, built by
+  `tools/build-assets.mjs`; no runtime CDN) plus a four-layer design system loaded in this order:
+  `tokens.css` → `components.css` → `refresh.css` → **`flat.css`**.
+  - `tokens.css` holds the palette, spacing, radius and elevation tokens. Every shade is derived
+    with `color-mix()` from the brand raws, so light mode, dark mode, maps and PNG exports follow a
+    colour theme together. The `--gradient-*` names are **compatibility aliases that now resolve to
+    one solid colour** — that is how v34 flattened hundreds of inline styles without a template rewrite.
+  - `components.css` / `refresh.css` define **layout and structure** that the regression tests pin
+    down; they should not be restyled. All visual changes go to **`flat.css`**, the single sheet that
+    re-shapes buttons, cards, chips, forms, navigation, sheets, toasts and the footer into the flat look.
+  - **Customisation** lives in `src/css/flat.css` §11 + `src/js/utils/uiStyle.js`: `<html data-radius
+    | data-density | data-depth>` re-scales corners (sharp/soft/round), spacing (compact/regular/roomy)
+    and shadows (flat/soft). The values are stored in `localStorage.fuji_ui_style` and applied by an
+    inline boot script in `index.html` before the first paint. Adding a preset = one entry in
+    `uiStyle.js` + one CSS block + one value in that boot script.
+  - Colour themes (LINE / Facebook / Instagram / custom) still exist and only write the brand raws;
+    Light / Dark / Auto remains the mode switch.
+  - The full screen-by-screen button/menu audit lives in `docs/UX-FLAT-REDESIGN.md`.
 - **Brand colour in JS**: `src/js/utils/brand.js` is the single source (`BRAND`, `BRAND_PRIMARY`,
   `BRAND_GRADIENT*`, `MEMBER_COLORS`, `CATEGORY_COLOR_CHOICES`, `CONFETTI_COLORS`, `DAY_HUES`,
   `memberColorAt()`, `isKnownBrandColor()`). Nothing else hardcodes a brand hex.

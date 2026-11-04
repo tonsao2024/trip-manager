@@ -43,6 +43,7 @@ export function testIndexHtmlStaysInSync() {
   assert(html.includes(`refresh.css?v=${APP_VERSION}`), 'refresh.css cache-buster matches the version');
   assert(html.includes(`components.css?v=${APP_VERSION}`), 'components.css cache-buster matches the version');
   assert(html.includes(`animations.css?v=${APP_VERSION}`), 'animations.css cache-buster matches the version');
+  assert(html.includes(`flat.css?v=${APP_VERSION}`), 'flat.css cache-buster matches the version');
 }
 
 export function testAppShowsTheStamp() {

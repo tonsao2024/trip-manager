@@ -145,10 +145,15 @@ import {
 // utils/ics.js is imported lazily via loadIcs() at the calendar-export call sites.
 import { hasCoords, coordOf, haversineKm } from './utils/route.js';
 import { t, setLang, getLang } from './utils/i18n.js';
+import {
+  RADIUS_OPTIONS, DENSITY_OPTIONS, DEPTH_OPTIONS,
+  readUiStyle, setUiStyle, resetUiStyle, activeUiStyle
+} from './utils/uiStyle.js';
 
 const appEl = document.getElementById('app');
 const headerSubtitle = document.getElementById('header-subtitle');
 const desktopNavEl = document.getElementById('desktop-nav');
+const headerMoreEl = document.getElementById('header-more');
 const bottomNavEl = document.getElementById('bottom-nav');
 const fabEl = document.getElementById('fab');
 const userAvatarBtn = document.getElementById('user-avatar-btn');
@@ -710,7 +715,7 @@ function updateMetaThemeColor() {
   // rather than painting a saturated brand-blue band above a light header.
   const chromeColor = getComputedStyle(document.documentElement)
     .getPropertyValue('--app-chrome-color').trim();
-  meta.setAttribute('content', chromeColor || '#f7fbff');
+  meta.setAttribute('content', chromeColor || '#ffffff');
   // iOS home-screen apps use this setting for status-bar glyph contrast; its
   // translucent dark mode lets the safe-area extension show through behind it.
   const appleStatusBar = document.getElementById('meta-apple-status-bar-style');
@@ -900,6 +905,110 @@ function updateBottomNav() {
   _bottomNavTrip = currentTripId;
 }
 
+
+/* ------------------------------------------------------------------ *
+ * v34 “เมนูทั้งหมด” — every page is reachable from the top bar
+ * ------------------------------------------------------------------
+ * The audit found four real screens (เตรียมตัว / การจอง / ปฏิทิน / นำเข้า‑ส่งออก)
+ * that existed but had no entry anywhere except the mobile “เพิ่มเติม” page, plus
+ * Settings which was hidden behind the avatar icon. This dropdown gives the
+ * desktop bar a single, predictable place for the secondary menu — the eight
+ * primary chips stay exactly as they were.
+ * ------------------------------------------------------------------ */
+let _headerMoreKey = null;
+
+function headerMoreItems() {
+  const th = getLang() === 'th';
+  const base = `#/trip/${currentTripId}`;
+  return [
+    { group: th ? 'วางแผน' : 'Plan', path: `${base}/prep`, icon: 'backpack', label: th ? 'เตรียมตัว' : 'Prep' },
+    { group: th ? 'วางแผน' : 'Plan', path: `${base}/bookings`, icon: 'ticket', label: th ? 'การจอง' : 'Bookings' },
+    { group: th ? 'วางแผน' : 'Plan', path: `${base}/calendar`, icon: 'calendar-days', label: th ? 'ปฏิทินทริป' : 'Calendar' },
+    { group: th ? 'วางแผน' : 'Plan', path: `${base}/explore`, icon: 'compass', label: th ? 'ชวนไปที่นี่' : 'Explore' },
+    { group: th ? 'ข้อมูล' : 'Data', path: `${base}/documents`, icon: 'folder', label: th ? 'เอกสารสำคัญ' : 'Documents' },
+    { group: th ? 'ข้อมูล' : 'Data', path: `${base}/import`, icon: 'package', label: th ? 'นำเข้า / ส่งออก' : 'Import / Export' },
+    { group: th ? 'ข้อมูล' : 'Data', path: `${base}/settings`, icon: 'settings', label: th ? 'ตั้งค่า' : 'Settings' }
+  ];
+}
+
+function closeHeaderMore() {
+  const menu = document.getElementById('header-more-menu');
+  const btn = document.getElementById('header-more-btn');
+  if (!menu || !btn) return;
+  menu.hidden = true;
+  btn.setAttribute('aria-expanded', 'false');
+}
+
+function renderHeaderMoreMenu() {
+  if (!headerMoreEl) return;
+  if (!currentTripId) {
+    headerMoreEl.innerHTML = '';
+    _headerMoreKey = null;
+    return;
+  }
+  const th = getLang() === 'th';
+  const key = `${currentTripId}|${getLang()}`;
+  if (_headerMoreKey !== key || !headerMoreEl.childElementCount) {
+    const items = headerMoreItems();
+    let lastGroup = '';
+    const rows = items.map((it, i) => {
+      const head = it.group !== lastGroup
+        ? `<div class="header-more-title">${lastGroup === '' ? '' : '• '}${escapeHtml(it.group)}</div>`
+        : '';
+      lastGroup = it.group;
+      return `${head}<a class="header-more-link" href="${it.path}" data-more-path="${it.path}" role="menuitem">
+        ${icon(it.icon, 'w-4 h-4')}<span>${escapeHtml(it.label)}</span></a>`;
+    }).join('');
+    headerMoreEl.innerHTML = `
+      <button id="header-more-btn" type="button" class="header-more-btn" aria-haspopup="menu" aria-expanded="false"
+        aria-controls="header-more-menu" title="${th ? 'เมนูทั้งหมดของทริปนี้' : 'All trip menus'}">
+        ${icon('menu', 'w-4 h-4')}<span>${th ? 'เมนูทั้งหมด' : 'More'}</span>${icon('chevron-down', 'w-3 h-3')}
+      </button>
+      <div class="header-more-menu" id="header-more-menu" role="menu" hidden>
+        <div class="header-more-title">${escapeHtml(currentTrip?.name || (th ? 'ทริปนี้' : 'This trip'))}</div>
+        ${rows}
+      </div>`;
+    const btn = document.getElementById('header-more-btn');
+    const menu = document.getElementById('header-more-menu');
+    btn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = menu.hidden;
+      menu.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+    });
+    menu?.addEventListener('click', (e) => {
+      if (e.target.closest('a')) closeHeaderMore();
+    });
+    _headerMoreKey = key;
+    queueIcons();
+  }
+  // Active highlight always tracks the route (cheap, no rebuild).
+  const current = location.hash.split('?')[0];
+  headerMoreEl.querySelectorAll('[data-more-path]').forEach(a => {
+    a.classList.toggle('is-active', current.startsWith(a.dataset.morePath));
+  });
+}
+
+// One outside-click / Escape handler for the whole document.
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#header-more')) closeHeaderMore();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeHeaderMore();
+});
+document.addEventListener('routechange', closeHeaderMore);
+
+/* One handler for the in-page “ย้อนกลับ” control rendered by scenes.js.
+   browser-back when we can, otherwise land on the trip dashboard (a deep link
+   opened from a shared URL has no in-app history to go back to). */
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-ps-back]');
+  if (!btn) return;
+  if (history.length > 1) history.back();
+  else if (currentTripId) location.hash = `#/trip/${currentTripId}/dashboard`;
+  else location.hash = '#/trips';
+});
+
 function renderFAB(route) {
   if (!currentTripId) { fabEl.classList.add('hidden'); return; }
   const cleanRoute = route.split('?')[0];
@@ -908,6 +1017,16 @@ function renderFAB(route) {
   if (/\/expenses\/add\/?$/.test(cleanRoute)) { fabEl.classList.add('hidden'); return; }
   if (cleanRoute.includes('/itinerary') || cleanRoute.includes('/expenses') || cleanRoute.includes('/documents')) {
     fabEl.classList.remove('hidden');
+    // v34: the FAB says what it will add. A bare “+” forced people to guess, and
+    // the same button created three different things on three screens.
+    const thFab = getLang() === 'th';
+    const fabLabel = cleanRoute.includes('/itinerary') ? (thFab ? 'เพิ่มสถานที่' : 'Add place')
+      : cleanRoute.includes('/expenses') ? (thFab ? 'เพิ่มค่าใช้จ่าย' : 'Add expense')
+      : (thFab ? 'เพิ่มเอกสาร' : 'Add document');
+    const fabLabelEl = document.getElementById('fab-label');
+    if (fabLabelEl) fabLabelEl.textContent = fabLabel;
+    fabEl.setAttribute('aria-label', fabLabel);
+    fabEl.setAttribute('title', fabLabel);
     // 👤 v30 — the FAB follows the same permissions the rules enforce.
     const p = (lastPerms.tripId === currentTripId && lastPerms.uid === (currentUser?.uid || null)) ? lastPerms.data : null;
     const applyFabPerms = (perms) => {
@@ -2155,6 +2274,7 @@ function renderMemberSessionUi(session) {
   userAvatarBtn.onclick = () => openAvatarAction(currentUser);
   updateUserDisplay(currentUser);
   renderDesktopNav();
+  renderHeaderMoreMenu();
   updateBottomNav();
 }
 
@@ -2494,6 +2614,7 @@ router.beforeEach = (matched) => {
     setTimeout(() => { paintBell(); }, 300);
   }
   renderDesktopNav();
+  renderHeaderMoreMenu();
   updateBottomNav();
   renderFAB(matched.path);
   if (!currentUser && matched.path !== '/login') {
@@ -4835,7 +4956,7 @@ async function renderItinerary(params) {
         <div class="btn-row">
           <button id="view-all-btn" class="btn btn-secondary btn-sm">${icon('calendar-days', 'w-4 h-4')} <span id="view-all-label">${th('ดูทั้งหมด','View all')}</span></button>
           <button id="itin-density-btn" class="btn btn-secondary btn-sm" type="button" aria-pressed="false" title="${th('สลับมุมมองกระทัดรัด / ปกติ','Switch compact / comfortable view')}">${icon('rows-3', 'w-4 h-4')} <span data-density-label>${th('มุมมองกระทัดรัด','Compact view')}</span></button>
-          <button id="toggle-map-btn" class="btn btn-primary btn-sm">${icon('map', 'w-4 h-4')} ${th('แผนที่','Map')}</button>
+          <button id="toggle-map-btn" class="btn btn-secondary btn-sm" aria-pressed="false">${icon('map', 'w-4 h-4')} ${th('แผนที่','Map')}</button>
           <button id="export-png-btn" class="btn btn-secondary btn-sm" title="${th('PNG ทั้งแผน','Whole-plan PNG')}">${icon('image', 'w-4 h-4')} PNG</button>
           <button id="export-day-png-btn" class="btn btn-secondary btn-sm" title="${th('PNG เฉพาะวันนี้','PNG for one day')}">${icon('calendar-down', 'w-4 h-4')} PNG ${th('รายวัน','per day')}</button>
           ${isAdmin ? `
@@ -5084,7 +5205,12 @@ async function renderItinerary(params) {
     const btn = document.getElementById('toggle-map-btn');
     card?.classList.toggle('hidden', !mapVisible);
     document.getElementById('itin-layout')?.classList.toggle('map-hidden', !mapVisible);
-    if (btn) btn.className = mapVisible ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+    // v34: the map button is a TOGGLE, not a second primary action — a tinted
+    // “on” state keeps exactly one solid primary button (เพิ่มสถานที่) on the page.
+    if (btn) {
+      btn.className = mapVisible ? 'btn btn-soft btn-sm' : 'btn btn-secondary btn-sm';
+      btn.setAttribute('aria-pressed', String(mapVisible));
+    }
     if (mapVisible) {
       setTimeout(async () => {
         fitMapToViewport();
@@ -11705,6 +11831,44 @@ async function renderSettings(params) {
         <button id="save-budget" class="btn btn-secondary w-full">${icon('save', 'w-4 h-4')} ${th('บันทึกงบประมาณ','Save budget')}</button>
       </div>
 
+      <!-- v34: FLAT STYLE CONTROLS — the three knobs that re-shape the whole app.
+           Everything is CSS variables, so these buttons never reload the page. -->
+      <div class="card p-5 space-y-3" id="settings-style-card" data-settings-section="appearance">
+        <h3 class="font-bold flex items-center gap-2">${icon('layout-panel-top', 'w-4 h-4')} ${th('สไตล์หน้าจอ (Flat)', 'Interface style (Flat)')}</h3>
+        <p class="text-xs text-[var(--text-secondary)]">${th('ปรับมุมโค้ง ความแน่นของระยะห่าง และเงา — มีผลทุกหน้าทันที และจำไว้ในเครื่องนี้ ไม่ต้องรีเฟรช', 'Adjust corner radius, spacing density and shadows. It applies to every screen instantly and is remembered on this device.')}</p>
+        <div class="appearance-style-grid">
+          <div class="appearance-style-group">
+            <span class="appearance-style-label">${th('มุมโค้ง', 'Corners')}</span>
+            <div class="appearance-style-options">
+              ${RADIUS_OPTIONS.map(o => `<button type="button" class="appearance-style-option" data-ui-style-key="radius" data-ui-style="${o.id}" title="${escapeHtml(o.hint[lang] || '')}">${escapeHtml(lang === 'th' ? o.th : o.en)}</button>`).join('')}
+            </div>
+          </div>
+          <div class="appearance-style-group">
+            <span class="appearance-style-label">${th('ระยะห่าง', 'Density')}</span>
+            <div class="appearance-style-options">
+              ${DENSITY_OPTIONS.map(o => `<button type="button" class="appearance-style-option" data-ui-style-key="density" data-ui-style="${o.id}" title="${escapeHtml(o.hint[lang] || '')}">${escapeHtml(lang === 'th' ? o.th : o.en)}</button>`).join('')}
+            </div>
+          </div>
+          <div class="appearance-style-group">
+            <span class="appearance-style-label">${th('เงา', 'Shadow')}</span>
+            <div class="appearance-style-options">
+              ${DEPTH_OPTIONS.map(o => `<button type="button" class="appearance-style-option" data-ui-style-key="depth" data-ui-style="${o.id}" title="${escapeHtml(o.hint[lang] || '')}">${escapeHtml(lang === 'th' ? o.th : o.en)}</button>`).join('')}
+            </div>
+          </div>
+        </div>
+        <div class="appearance-style-preview" aria-hidden="true">
+          <span class="row-icon" style="width:32px;height:32px;display:grid;place-items:center;">${icon('palette', 'w-4 h-4')}</span>
+          <span class="text-[11px] font-bold text-[var(--text-secondary)]">${th('ตัวอย่าง', 'Preview')}</span>
+          <span class="btn btn-primary btn-sm">${th('ปุ่มหลัก', 'Primary')}</span>
+          <span class="btn btn-secondary btn-sm">${th('ปุ่มรอง', 'Secondary')}</span>
+          <span class="chip">${th('ชิป', 'Chip')}</span>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p id="ui-style-summary" class="text-[11px] text-[var(--text-tertiary)]"></p>
+          <button type="button" id="ui-style-reset" class="btn btn-ghost btn-sm">${icon('rotate-ccw', 'w-3.5 h-3.5')} ${th('คืนค่าเริ่มต้น', 'Reset look')}</button>
+        </div>
+      </div>
+
       <!-- v18: the colour theme picker lives here (LINE / Facebook / IG / custom) -->
       <div class="card p-5 space-y-3" id="settings-appearance-card" data-settings-section="appearance">
         <h3 class="font-bold flex items-center gap-2">${icon('palette', 'w-4 h-4')} ${th('ชุดสี & การแสดงผล','Colour theme & display')}</h3>
@@ -11827,6 +11991,40 @@ async function renderSettings(params) {
   `;
   queueIcons();
   initReveal(appEl);
+
+  /* ---- v34: flat style controls (corners / density / shadow) ---- */
+  const styleCard = document.getElementById('settings-style-card');
+  if (styleCard) {
+    const labelOf = (options, id) => {
+      const found = options.find(o => o.id === id) || options[0];
+      return lang === 'th' ? found.th : found.en;
+    };
+    const paintStyleState = (style) => {
+      styleCard.querySelectorAll('[data-ui-style]').forEach(btn => {
+        const on = style[btn.dataset.uiStyleKey] === btn.dataset.uiStyle;
+        btn.classList.toggle('is-active', on);
+        btn.setAttribute('aria-pressed', String(on));
+      });
+      const summary = document.getElementById('ui-style-summary');
+      if (summary) {
+        summary.textContent = lang === 'th'
+          ? `มุมโค้ง ${labelOf(RADIUS_OPTIONS, style.radius)} • ระยะห่าง ${labelOf(DENSITY_OPTIONS, style.density)} • เงา ${labelOf(DEPTH_OPTIONS, style.depth)}`
+          : `${labelOf(RADIUS_OPTIONS, style.radius)} corners • ${labelOf(DENSITY_OPTIONS, style.density)} spacing • ${labelOf(DEPTH_OPTIONS, style.depth)} shadow`;
+      }
+    };
+    paintStyleState(activeUiStyle());
+    styleCard.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-ui-style]');
+      if (!btn) return;
+      const next = setUiStyle({ [btn.dataset.uiStyleKey]: btn.dataset.uiStyle });
+      paintStyleState(next);
+      toast.success(lang === 'th' ? 'ปรับสไตล์หน้าจอแล้ว' : 'Interface style updated');
+    });
+    document.getElementById('ui-style-reset')?.addEventListener('click', () => {
+      paintStyleState(resetUiStyle());
+      toast.success(lang === 'th' ? 'คืนค่าหน้าตาเริ่มต้นแล้ว' : 'Interface style reset');
+    });
+  }
 
   /* ---- Settings tabs (v18.1) ---- */
   const settingsTabBar = document.getElementById('settings-tabs');
@@ -14940,52 +15138,87 @@ function initOfflineStrip() {
 function renderMore(params) {
   const tripId = params.tripId;
   const lang = getLang();
-  // v18: ชวนไปที่นี่ / การจอง / เตรียมตัว / ปฏิทินทริป were removed from the menus,
-  // and ตั้งค่า is only reachable through the profile picture (top-right).
-  const menuItems = [
-    { href: '#/trips', icon: 'compass', label: lang==='th' ? 'สลับทริป / ทริปทั้งหมด' : 'Switch trip / All trips', highlight: true },
-    { href: `#/trip/${tripId}/dashboard`, icon: 'layout-dashboard', label: t('dashboard') },
-    { href: `#/trip/${tripId}/settlement`, icon: 'hand-coins', label: t('settlement') },
-    { href: `#/trip/${tripId}/members`, icon: 'users', label: t('members') },
-    { href: `#/trip/${tripId}/ideas`, icon: 'lightbulb', label: t('ideas') },
-    { href: `#/trip/${tripId}/documents`, icon: 'folder', label: lang==='th' ? 'เอกสารสำคัญ' : 'Documents' },
-    { href: `#/trip/${tripId}/import`, icon: 'package', label: t('importExport') },
+  // v34: this page is the mobile “everything else” hub, so it must actually list
+  // EVERYTHING. The audit found เตรียมตัว / การจอง / ปฏิทิน / ตั้งค่า missing here
+  // while the desktop bar had no entry for them at all; both are fixed now.
+  // Items are grouped so the list reads as a map of the app, not a dump.
+  const groups = [
+    {
+      title: lang === 'th' ? 'วางแผนทริป' : 'Plan the trip',
+      items: [
+        { href: `#/trip/${tripId}/dashboard`, icon: 'layout-dashboard', label: t('dashboard') },
+        { href: `#/trip/${tripId}/ideas`, icon: 'lightbulb', label: t('ideas') },
+        { href: `#/trip/${tripId}/prep`, icon: 'backpack', label: lang === 'th' ? 'เตรียมตัวก่อนไป' : 'Trip prep' },
+        { href: `#/trip/${tripId}/bookings`, icon: 'ticket', label: lang === 'th' ? 'การจอง / ตั๋ว' : 'Bookings & tickets' },
+        { href: `#/trip/${tripId}/calendar`, icon: 'calendar-days', label: lang === 'th' ? 'ปฏิทินทริป' : 'Trip calendar' },
+        { href: `#/trip/${tripId}/explore`, icon: 'compass', label: lang === 'th' ? 'ชวนไปที่นี่ (ไกด์)' : 'Explore guides' }
+      ]
+    },
+    {
+      title: lang === 'th' ? 'เงินและสมาชิก' : 'Money & people',
+      items: [
+        { href: `#/trip/${tripId}/expenses`, icon: 'wallet', label: t('expenses') },
+        { href: `#/trip/${tripId}/settlement`, icon: 'hand-coins', label: t('settlement') },
+        { href: `#/trip/${tripId}/members`, icon: 'users', label: t('members') }
+      ]
+    },
+    {
+      title: lang === 'th' ? 'ข้อมูลและเครื่องมือ' : 'Data & tools',
+      items: [
+        { href: `#/trip/${tripId}/documents`, icon: 'folder', label: lang === 'th' ? 'เอกสารสำคัญ' : 'Documents' },
+        { href: `#/trip/${tripId}/import`, icon: 'package', label: t('importExport') },
+        { href: `#/trip/${tripId}/settings`, icon: 'settings', label: t('settings') },
+        { href: '#/trips', icon: 'compass', label: lang === 'th' ? 'สลับทริป / ทริปทั้งหมด' : 'Switch trip / All trips', highlight: true }
+      ]
+    }
   ];
   appEl.innerHTML = `
     <div class="page-enter max-w-[640px] mx-auto space-y-4">
       ${renderPageScene('map', { lang, title: `${icon('more-horizontal', 'w-5 h-5')} ${t('more')}`,
-        subtitle: lang === 'th' ? 'เมนูอื่น ๆ ของทริปนี้' : 'Everything else in this trip' })}
-      <div class="grid gap-3 stagger">
-        ${menuItems.map(m => `
-          <a href="${m.href}" class="card card-hover p-4 flex items-center justify-between gap-3 group" style="text-decoration:none; color:inherit; ${m.highlight ? 'border-color: color-mix(in srgb, var(--primary-raw) 45%, var(--border));' : ''}">
-            <span class="flex items-center gap-3 min-w-0">
-              <span class="row-icon" ${m.highlight ? 'style="background:var(--gradient-primary);color:#fff;"' : ''}>${icon(m.icon, 'w-4 h-4')}</span>
-              <span class="font-semibold text-sm truncate">${m.label}</span>
-            </span>
-            <span class="text-[var(--text-tertiary)] group-hover:translate-x-0.5 transition-transform">${icon('chevron-right', 'w-4 h-4')}</span>
-          </a>
-        `).join('')}
-        <button id="share-more" class="card card-hover p-4 w-full flex items-center justify-between gap-3" style="text-decoration:none; border-color: color-mix(in srgb, var(--primary-raw) 30%, var(--border));">
-          <span class="flex items-center gap-3">
-            <span class="row-icon" style="background:var(--gradient-primary); color:#fff;">${icon('share-2', 'w-4 h-4')}</span>
-            <span class="font-semibold text-sm">${lang==='th' ? 'ชวนเพื่อนเข้าทริป / แชร์' : 'Invite friends / share'}</span>
-          </span>
-          <span style="color: var(--primary-strong);">${icon('chevron-right', 'w-4 h-4')}</span>
-        </button>
-        <button id="logout-more" class="card p-4 w-full flex items-center justify-between gap-3" style="text-decoration:none; border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); background: var(--danger-bg);">
-          <span class="flex items-center gap-3" style="color: var(--danger);">
-            <span class="row-icon" style="background: transparent; color: var(--danger);">${icon('log-out', 'w-4 h-4')}</span>
-            <span class="font-semibold text-sm">${t('logout')}</span>
-          </span>
-          <span style="color: var(--danger);">${icon('chevron-right', 'w-4 h-4')}</span>
-        </button>
-      </div>
+        subtitle: lang === 'th' ? 'ทุกเมนูของทริปนี้ อยู่ในที่เดียว' : 'Every menu for this trip, in one place' })}
+      ${groups.map((group, gi) => `
+        <section class="space-y-2" aria-label="${escapeHtml(group.title)}">
+          <h2 class="text-[11px] font-extrabold uppercase tracking-[0.08em] text-[var(--text-tertiary)] px-1">${escapeHtml(group.title)}</h2>
+          <div class="grid gap-2 stagger">
+            ${group.items.map(m => `
+              <a href="${m.href}" class="card card-hover px-4 py-3 flex items-center justify-between gap-3 group" style="text-decoration:none; color:inherit; ${m.highlight ? 'border-color: var(--primary);' : ''}">
+                <span class="flex items-center gap-3 min-w-0">
+                  <span class="row-icon" ${m.highlight ? 'style="background:var(--primary);color:var(--on-primary);"' : ''}>${icon(m.icon, 'w-4 h-4')}</span>
+                  <span class="font-semibold text-sm truncate">${escapeHtml(m.label)}</span>
+                </span>
+                <span class="text-[var(--text-tertiary)] group-hover:translate-x-0.5 transition-transform">${icon('chevron-right', 'w-4 h-4')}</span>
+              </a>
+            `).join('')}
+          </div>
+        </section>
+      `).join('')}
+      <a href="#/trip/${tripId}/settings" id="more-appearance" class="card card-hover px-4 py-3 flex items-center justify-between gap-3" style="text-decoration:none; color:inherit;">
+        <span class="flex items-center gap-3">
+          <span class="row-icon">${icon('palette', 'w-4 h-4')}</span>
+          <span class="font-semibold text-sm">${lang === 'th' ? 'ปรับหน้าตา (สี / มุมโค้ง / ระยะห่าง)' : 'Appearance (colour / corners / spacing)'}</span>
+        </span>
+        <span style="color: var(--primary-strong);">${icon('chevron-right', 'w-4 h-4')}</span>
+      </a>
+      <button id="share-more" class="card card-hover px-4 py-3 w-full flex items-center justify-between gap-3" style="text-decoration:none; border-color: var(--primary);">
+        <span class="flex items-center gap-3">
+          <span class="row-icon" style="background:var(--primary); color:var(--on-primary);">${icon('share-2', 'w-4 h-4')}</span>
+          <span class="font-semibold text-sm">${lang==='th' ? 'ชวนเพื่อนเข้าทริป / แชร์' : 'Invite friends / share'}</span>
+        </span>
+        <span style="color: var(--primary-strong);">${icon('chevron-right', 'w-4 h-4')}</span>
+      </button>
+      <button id="logout-more" class="card px-4 py-3 w-full flex items-center justify-between gap-3" style="text-decoration:none; border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); background: var(--danger-bg);">
+        <span class="flex items-center gap-3" style="color: var(--danger);">
+          <span class="row-icon" style="background: transparent; color: var(--danger);">${icon('log-out', 'w-4 h-4')}</span>
+          <span class="font-semibold text-sm">${t('logout')}</span>
+        </span>
+        <span style="color: var(--danger);">${icon('chevron-right', 'w-4 h-4')}</span>
+      </button>
       <div class="card p-4 mt-6">
-        <h4 class="font-bold text-sm mb-1 flex items-center gap-2"><span class="row-icon" style="width:28px;height:28px;border-radius:9px;">${icon('user', 'w-3.5 h-3.5')}</span> ${escapeHtml(currentUser?.displayName || currentUser?.email || 'User')}</h4>
+        <h4 class="font-bold text-sm mb-1 flex items-center gap-2"><span class="row-icon" style="width:28px;height:28px;">${icon('user', 'w-3.5 h-3.5')}</span> ${escapeHtml(currentUser?.displayName || currentUser?.email || 'User')}</h4>
         <p class="text-xs text-[var(--text-secondary)]">${escapeHtml(currentUser?.email || '')}</p>
         <p class="text-[10px] text-[var(--text-tertiary)] mt-1 font-mono">UID: ${escapeHtml(currentUser?.uid?.slice(0,12) || '')}...</p>
       </div>
-      <p class="text-center text-[10px] text-[var(--text-tertiary)]">${icon('info', 'w-3 h-3 inline')} ${lang==='th' ? 'แตะโลโก้ซ้ายบนเพื่อไปหน้ารายการทริป • แตะรูปโปรไฟล์ขวาบนเพื่อเปิด “ตั้งค่า”' : 'Tap the logo (top-left) for your trips • tap the profile picture (top-right) for Settings'}</p>
+      <p class="text-center text-[10px] text-[var(--text-tertiary)]">${icon('info', 'w-3 h-3 inline')} ${lang==='th' ? 'แตะโลโก้ซ้ายบนเพื่อไปหน้ารายการทริป • แตะรูปโปรไฟล์ขวบนเพื่อเปิด “ตั้งค่า”' : 'Tap the logo (top-left) for your trips • tap the profile picture (top-right) for Settings'}</p>
       <p class="build-stamp text-center" data-build-stamp>
         ${icon('sparkles', 'w-3 h-3')} ${escapeHtml(appBuildLabel(lang))}
       </p>
