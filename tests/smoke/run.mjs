@@ -1113,6 +1113,25 @@ console.log('\n▶ v9: clear-bill receipts (received / deducted / balance + per-
   check(!errors.some(e => /unsupported color|ส่งออกรูปไม่สำเร็จ/i.test(e)), 'settlement: per-person PNG export runs without colour errors');
 }
 
+console.log('\n▶ v35: debt map leads with the who-pays-whom action list');
+{
+  authStub.__emitAuth({ uid: 'u1', email: 'admin@example.com', displayName: 'สมชาย', photoURL: null, providerData: [{ providerId: 'password' }] });
+  await sleep(80);
+  await goto('#/trip/t1/settlement');
+  await waitFor(() => q('#settle-views'), { timeout: 8000, label: 'settlement page' });
+  await click('#settle-views [data-view="debt-map"]');
+  await waitFor(() => q('#settle-transfer-list'), { timeout: 8000, label: 'debt map transfer list' });
+  const list = q('#settle-transfer-list');
+  const mapCard = q('.debt-map-card');
+  check(!!list, 'debt map: the who-pays-whom list is rendered first');
+  check(/ใครต้องจ่ายใคร/.test(list?.textContent || ''), 'debt map: the list is titled in plain language');
+  const payButtons = qa('#settle-transfer-list [data-settle-pay]');
+  check(payButtons.length >= 2, `debt map: every transfer has a Mark paid button (${payButtons.length})`);
+  check(payButtons.every(b => b.dataset.settleFrom && b.dataset.settleTo && Number(b.dataset.settleAmount) > 0), 'debt map: Mark paid buttons carry the transfer details');
+  check(!!mapCard, 'debt map: the visual map is still available below the list');
+  check(!!(list && mapCard && (list.compareDocumentPosition(mapCard) & window.Node.DOCUMENT_POSITION_FOLLOWING)), 'debt map: the action list comes before the map');
+}
+
 console.log('\n▶ performance: switching menus with a slow connection');
 {
   authStub.__emitAuth({ uid: 'u1', email: 'admin@example.com', displayName: 'สมชาย', photoURL: null, providerData: [{ providerId: 'password' }] });

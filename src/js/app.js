@@ -9821,6 +9821,62 @@ async function renderSettlement(params) {
   }
 
   /**
+   * The answer first: a plain who-pays-whom list with the “Mark paid” action on
+   * every row. The debt map below stays as the visual explanation, but nobody
+   * has to decode the graph before they can act on a transfer.
+   */
+  function transferListHtml() {
+    const txns = (state.transactions || []).filter(tx => tx?.from && tx?.to && tx.from !== tx.to);
+    if (!txns.length) return '';
+    const total = txns.reduce((n, tx) => n + (Number(tx.amountMinor) || 0), 0);
+    const sorted = [...txns].sort((a, b) => (Number(b.amountMinor) || 0) - (Number(a.amountMinor) || 0));
+    const person = (id) => state.membersMap[id] || {};
+    const avatar = (m, size = 28) => `<span class="avatar" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.36)}px;background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName || '?'))}</span>`;
+    return `
+      <section class="card p-4 settle-transfer-list" id="settle-transfer-list" aria-labelledby="settle-transfer-title">
+        <div class="flex items-start justify-between gap-2 mb-3 flex-wrap">
+          <div class="min-w-0">
+            <h3 id="settle-transfer-title" class="font-bold flex items-center gap-2">
+              <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('arrow-left-right', 'w-4 h-4')}</span>
+              ${th('ใครต้องจ่ายใคร', 'Who pays whom')}
+              <span class="badge badge-planned text-[10px]">${txns.length} ${th('รายการ', 'transfers')}</span>
+            </h3>
+            <p class="text-[11px] mt-1" style="color:var(--text-secondary);">${th('รายการด้านล่างคือคำตอบที่ต้องโอน กด “จ่ายแล้ว” หลังโอนเงิน xong ระบบจะปรับยอดคงเหลือให้', 'These are the transfers to make. Tap “Mark paid” after you send the money; the balance updates automatically.')}</p>
+          </div>
+          <div class="text-right flex-shrink-0">
+            <div class="text-[10px]" style="color:var(--text-tertiary);">${th('รวมที่ต้องโอน', 'Total to transfer')}</div>
+            <b class="text-sm">${money(total)}</b>
+          </div>
+        </div>
+        <div class="space-y-2">
+          ${sorted.map(tx => {
+            const from = person(tx.from);
+            const to = person(tx.to);
+            return `<div class="transfer-row">
+              <div class="transfer-person">
+                ${avatar(from)}
+                <span class="min-w-0">
+                  <b class="block truncate">${escapeHtml(from.displayName || th('สมาชิก', 'Member'))}</b>
+                  <small class="text-[10px]" style="color:var(--text-tertiary);">${th('จ่ายให้', 'pays')}</small>
+                </span>
+              </div>
+              <span class="transfer-arrow">${icon('arrow-right', 'w-3.5 h-3.5')}</span>
+              <div class="transfer-person">
+                ${avatar(to)}
+                <span class="min-w-0">
+                  <b class="block truncate">${escapeHtml(to.displayName || th('สมาชิก', 'Member'))}</b>
+                  <small class="text-[10px]" style="color:var(--text-tertiary);">${th('ผู้รับ', 'receiver')}</small>
+                </span>
+              </div>
+              <b class="transfer-amount">${money(tx.amountMinor)}</b>
+              <button type="button" class="btn btn-accent btn-sm transfer-pay no-export" data-settle-pay data-settle-from="${escapeHtml(tx.from)}" data-settle-to="${escapeHtml(tx.to)}" data-settle-amount="${Number(tx.amountMinor) || 0}">${icon('badge-check', 'w-3 h-3')} ${th('จ่ายแล้ว', 'Mark paid')}</button>
+            </div>`;
+          }).join('')}
+        </div>
+      </section>`;
+  }
+
+  /**
    * ONE debt map for the whole trip (v28): every person is a node and every
    * transfer is a connecting line. The old map drew one receiver-centred wheel
    * per receiver and the money lines piled up unreadable.
@@ -10008,6 +10064,7 @@ async function renderSettlement(params) {
       </div>`).join('');
 
     return `
+      ${transferListHtml()}
       <div class="card p-5 debt-map-card">
         <div class="flex items-start justify-between gap-2 mb-3 flex-wrap">
           <h3 class="font-bold flex items-center gap-2">
@@ -10015,13 +10072,13 @@ async function renderSettlement(params) {
             ${th('แผนที่หนี้ — เส้นเดียวต่อการโอนหนึ่งครั้ง', 'Debt map — one line per transfer')}
             <span class="badge badge-planned text-[10px]">${txns.length} ${th('รายการ', 'transfers')}</span>
           </h3>
-          <span class="text-[10px] text-[var(--text-tertiary)]">${th('เส้นชี้จากผู้จ่ายไปยังผู้รับ • สีเส้นเป็นสีของผู้รับเงิน • กดชื่อเพื่อดูรายการค่าใช้จ่าย', 'Lines point from payer to receiver • each line uses the receiver’s colour • tap a name for the expense list')}</span>
+          <span class="text-[10px] text-[var(--text-tertiary)]">${th('เส้น = การโอน • สี = ผู้รับเงิน • กดชื่อเพื่อดูรายการ', 'Line = transfer • colour = receiver • tap a name for details')}</span>
         </div>
         <div class="debt-map-legend">
           <span class="debt-legend-item is-out">${icon('circle-arrow-up', 'w-3 h-3')} ${th('จ่ายเงิน (ลูกศรออก)', 'Pays (arrow out)')}</span>
           <span class="debt-legend-item is-in">${icon('circle-arrow-down', 'w-3 h-3')} ${th('รับเงิน (ลูกศรเข้า)', 'Gets back (arrow in)')}</span>
           <span class="debt-legend-item debt-legend-item--unique"><i class="debt-legend-swatch"></i>${th('สีเส้น = สีของผู้รับเงินรายการนั้น','Line colour = the receiver’s colour')}</span>
-          <span class="debt-legend-hint">${th('ยอดแสดงบนป้ายที่ไม่ทับกัน และมีรายการด้านล่าง','Amount tags do not overlap; matching rows are listed below')}</span>
+          <span class="debt-legend-hint">${th('รายการโอนและปุ่ม “จ่ายแล้ว” อยู่ในรายการด้านบน','The transfer list and “Mark paid” buttons are above the map')}</span>
         </div>
         <div class="debt-map-container">
           <svg class="debt-map-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected by money-transfer lines'))}">
