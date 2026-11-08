@@ -18,7 +18,7 @@
       const darkMode = savedMode === 'dark' || (savedMode !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
       if (darkMode) {
         document.documentElement.setAttribute('data-theme', 'dark');
-        document.getElementById('meta-theme-color').setAttribute('content', '#0f1a46');
+        document.getElementById('meta-theme-color').setAttribute('content', '#0e0e10');
         document.getElementById('meta-apple-status-bar-style').setAttribute('content', 'black-translucent');
       }
     } catch {}
@@ -36,9 +36,9 @@
     } catch (e) { /* private mode — keep the defaults */ }
   </script>
   <!-- Build identity — source of truth: src/js/utils/buildInfo.js (a unit test keeps these in sync) -->
-  <meta name="app-version" content="34">
+  <meta name="app-version" content="35">
   <meta name="app-palette" content="Sky light">
-  <meta name="app-updated" content="2026-11-04">
+  <meta name="app-updated" content="2026-11-08">
   <meta property="og:title" content="Trip Manager by TonSkywalker">
   <meta property="og:description" content="วางแผนทริป • แบ่งค่าใช้จ่าย • เคลียร์บิล ครบในแอปเดียว โดย TonSkywalker">
   <!-- Logo ในแถบบราวเซอร์ (favicon) — ไฟล์จริงในโฟลเดอร์ public/ และแบบ inline ที่ตามธีมสี -->
@@ -53,30 +53,32 @@
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- Web fonts: loaded non-blocking so first paint never waits on an external
-       round-trip. display=swap shows the system fallback immediately, then swaps
-       in the web font when it arrives. noscript keeps it working without JS. -->
-  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap">
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-  <noscript><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+  <!-- Web fonts (v35): ONE family — IBM Plex Sans Thai draws Thai and Latin
+       together (400 / 500 / 600). IBM Plex Mono is only for codes and the
+       settlement receipt. Loaded non-blocking with display=swap; noscript keeps
+       it working without JS. -->
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
 
-  <!-- Design System v21 “Vivid & Deep” (cache-busted) -->
-  <link rel="stylesheet" href="./src/css/tokens.css?v=34">
-  <link rel="stylesheet" href="./src/css/components.css?v=34">
-  <link rel="stylesheet" href="./src/css/refresh.css?v=34">
-  <link rel="stylesheet" href="./src/css/animations.css?v=34">
-  <!-- v34 FLAT DESIGN LAYER — every surface, button, card and menu is re-shaped
-       here. It loads after the legacy sheets and before the compiled Tailwind
-       utilities; Settings → Appearance can re-scale radius / density / depth live. -->
-  <link rel="stylesheet" href="./src/css/flat.css?v=34">
+  <!-- Design System v35 “Calm” (cache-busted) — tokens.css explains the rules -->
+  <link rel="stylesheet" href="./src/css/tokens.css?v=35">
+  <link rel="stylesheet" href="./src/css/components.css?v=35">
+  <link rel="stylesheet" href="./src/css/refresh.css?v=35">
+  <link rel="stylesheet" href="./src/css/animations.css?v=35">
+  <!-- FLAT DESIGN LAYER (v34 → v35 calm pass) — every surface, button, card and
+       menu is shaped here. It loads after the legacy sheets and before the
+       compiled Tailwind utilities; Settings → Appearance can re-scale radius /
+       density / depth live. -->
+  <link rel="stylesheet" href="./src/css/flat.css?v=35">
   <!-- Tailwind: precompiled static utilities (tools/build-assets.mjs).
        Replaces the Play CDN runtime compiler. Loaded AFTER the app stylesheets
        to keep the same cascade order the CDN's injected <style> used to have. -->
-  <link rel="stylesheet" href="./src/css/tailwind.css?v=34">
+  <link rel="stylesheet" href="./src/css/tailwind.css?v=35">
 
-  <!-- Lucide icons: local subset (291 icons) instead of the full ~1500-icon CDN
+  <!-- Lucide icons: local subset (277 icons) instead of the full ~1500-icon CDN
        bundle. Deferred so it never blocks first paint; runs before app.js. -->
-  <script src="./src/js/vendor/lucide.js?v=34" defer></script>
+  <script src="./src/js/vendor/lucide.js?v=35" defer></script>
 
   <!-- Import Map -->
   <script type="importmap">
@@ -95,7 +97,6 @@
     body {
       padding-bottom: calc(var(--bottom-nav-h) + 28px + env(safe-area-inset-bottom));
       background: var(--bg);
-      transition: background 0.4s ease;
     }
     @media (min-width: 768px) {
       body { padding-bottom: 0; }
@@ -132,11 +133,11 @@
       .desktop-nav::-webkit-scrollbar { display: none; }
       .desktop-nav .menu-item {
         flex: 0 0 auto;
-        padding: 6px 9px;
-        font-size: 11.5px;
-        gap: 5px;
+        padding: 6px 10px;
+        font-size: 13px;
+        gap: 6px;
         white-space: nowrap;
-        min-height: 32px;
+        min-height: 34px;
       }
       .header-nav-side {
         margin-left: auto; flex: 0 0 auto;
@@ -146,7 +147,7 @@
     /* Roomy screens get the full-size chips back. */
     @media (min-width: 1280px) {
       .desktop-nav { gap: 6px; }
-      .desktop-nav .menu-item { padding: 7px 11px; font-size: 12px; gap: 6px; min-height: 34px; }
+      .desktop-nav .menu-item { padding: 6px 12px; font-size: 14px; gap: 6px; min-height: 36px; }
     }
     /* Compact laptops (768–1279) swap to SHORT labels — still words, never
        icon-only — so all eight menus stay readable on one line. */
@@ -167,14 +168,14 @@
       background: var(--surface);
       border: 1px solid var(--border);
       color: var(--text-secondary);
-      font-size: 11px; font-weight: 700;
+      font-size: 12px; font-weight: 500;
       cursor: pointer; white-space: nowrap;
-      transition: border-color .2s ease, color .2s ease;
+      transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
     }
-    .clock-chip:hover { border-color: var(--primary-raw); color: var(--primary-strong); }
-    .clock-chip .clock-city-label { color: var(--text-tertiary); font-weight: 800; letter-spacing: .04em; }
-    .clock-chip .clock-time { font-family: var(--font-mono, monospace); font-size: 11.5px; font-weight: 800; color: var(--text-strong); }
-    .clock-chip .clock-caret { opacity: .6; transition: transform .2s ease; }
+    .clock-chip:hover { border-color: var(--border-strong); color: var(--text-strong); }
+    .clock-chip .clock-city-label { color: var(--text-tertiary); font-weight: 500; }
+    .clock-chip .clock-time { font-family: var(--font-mono, monospace); font-size: 12px; font-weight: 500; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+    .clock-chip .clock-caret { opacity: .6; transition: transform var(--t-menu) var(--ease); }
     .clock-chip[aria-expanded="true"] .clock-caret { transform: rotate(180deg); }
     .clock-menu {
       position: absolute; top: calc(100% + 8px); right: 0;
@@ -189,9 +190,8 @@
     .clock-menu-title {
       display: flex; align-items: center; gap: 6px;
       padding: 6px 10px 8px;
-      font-size: 10.5px; font-weight: 800;
+      font-size: 12px; font-weight: 500;
       color: var(--text-tertiary);
-      text-transform: uppercase; letter-spacing: .05em;
     }
     .clock-menu-item {
       display: flex; align-items: center; gap: 8px;
@@ -199,25 +199,24 @@
       border: 0; background: transparent; cursor: pointer;
       font-size: 12px; color: var(--text-secondary); text-align: left;
     }
-    .clock-menu-item:hover { background: var(--primary-lighter); color: var(--primary-strong); }
-    .clock-menu-item.is-active { background: var(--primary); color: var(--on-primary); }
+    .clock-menu-item:hover { background: var(--surface-2); color: var(--text-strong); }
+    .clock-menu-item.is-active { background: var(--surface-2); color: var(--primary-strong); font-weight: 500; }
     .clock-menu-item .clock-menu-label {
-      font-family: var(--font-mono, monospace); font-weight: 800; font-size: 10.5px;
-      min-width: 34px; letter-spacing: .04em;
+      font-family: var(--font-mono, monospace); font-weight: 500; font-size: 12px;
+      min-width: 34px;
     }
     .clock-menu-item .clock-menu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-    /* Flat header — solid surface + one hairline rule (v34) */
+    /* Flat header — solid surface + one hairline rule (v34/v35) */
     #app-header {
       background: var(--surface);
       backdrop-filter: none;
       -webkit-backdrop-filter: none;
       border-bottom: 1px solid var(--border);
       box-shadow: none;
-      transition: background 0.25s ease, border-color 0.25s ease;
     }
-    /* Page transition base */
-    #app { transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+    /* Page transition base: one short fade (v35) */
+    #app { transition: opacity var(--t-menu) var(--ease); }
 
     /*
      * Phones: make the iOS status-bar safe area part of the header surface,
@@ -238,7 +237,7 @@
         padding-left: max(16px, env(safe-area-inset-left, 0px));
         padding-right: max(16px, env(safe-area-inset-right, 0px));
       }
-      #header-subtitle { margin-top: 1px; font-size: 10px; }
+      #header-subtitle { margin-top: 1px; font-size: 12px; }
       #app { padding-top: 14px; }
     }
 
@@ -248,14 +247,13 @@
     #logo-link { text-decoration: none; color: inherit; border-radius: var(--radius); }
     #logo-link:hover { transform: none; }
     #logo-link:active { transform: none; }
-    .logo-badge { transition: background-color .15s ease; }
+    .logo-badge { transition: background-color var(--t-fast) var(--ease); }
     #logo-link:hover .logo-badge { box-shadow: none; }
     /* “by TonSkywalker” — deliberately small next to the product name */
     .app-by {
-      font-size: 9.5px; font-weight: 700; letter-spacing: .02em; opacity: .72;
-      margin-left: 6px; white-space: nowrap; color: var(--text-secondary);
+      font-size: 12px; font-weight: 400;
+      margin-left: 6px; white-space: nowrap; color: var(--text-tertiary);
     }
-    @media (min-width: 768px) { .app-by { font-size: 10px; } }
     /* The account name is useful on desktop; email is intentionally omitted so
        it cannot crowd the dashboard navigation. Long names truncate safely. */
     .user-display-name { flex: 0 1 auto; min-width: 0; max-width: clamp(56px, 9vw, 116px); }
@@ -265,15 +263,8 @@
       #logo-link { flex: 0 1 auto; min-width: 0; }
       .header-controls-group { flex: 0 0 auto; min-width: 0; }
     }
-    /* profile picture = settings (a small gear badge hints at it) */
+    /* The profile picture opens the account menu (settings, theme, refresh). */
     #user-avatar-btn.has-settings { position: relative; }
-    .avatar-gear {
-      position: absolute; right: -3px; bottom: -3px; width: 18px; height: 18px;
-      border-radius: 9999px; display: grid; place-items: center;
-      background: var(--surface); border: 1px solid var(--border);
-      box-shadow: var(--shadow-xs); color: var(--primary-strong);
-    }
-    .avatar-gear i, .avatar-gear svg { width: 11px; height: 11px; }
   </style>
 </head>
 <body class="min-h-screen bg-[var(--bg)] text-[var(--text)]">
@@ -293,25 +284,20 @@
         </span>
         <span class="min-w-0">
           <span class="block leading-none tracking-tight" style="font-family: var(--font-display);">
-            <span class="font-bold text-[16px]">Trip&nbsp;Manager</span>
+            <span class="font-semibold text-[16px]">Trip&nbsp;Manager</span>
             <span class="app-by" title="จัดทำโดย TonSkywalker">by TonSkywalker</span>
           </span>
-          <span id="header-subtitle" class="block text-[11px] text-[var(--text-tertiary)] mt-0.5 font-medium">plan • split • settle • travel</span>
+          <span id="header-subtitle" class="block text-xs text-[var(--text-tertiary)] mt-0.5">วางแผน · แบ่งจ่าย · เคลียร์บิล</span>
         </span>
       </a>
 
       <div class="flex items-center gap-3 header-controls-group">
-        <!-- v34 “เมนูทั้งหมด”: the secondary pages (เตรียมตัว / การจอง / ปฏิทิน /
-             นำเข้า‑ส่งออก / ตั้งค่า) that used to be reachable only from the phone
-             “เพิ่มเติม” page. Filled by renderHeaderMoreMenu(); hidden on phones,
-             where the More page and the bottom bar already cover it. -->
-        <div class="header-more" id="header-more"></div>
         <!-- Theme, Lang, Mode controls injected by app.js -->
         <button id="refresh-btn" class="btn btn-ghost btn-icon btn-press" aria-label="Refresh"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
         <div id="user-menu" class="relative ml-1">
           <!-- v18: the profile picture is the single entry point for Settings -->
-          <button id="user-avatar-btn" class="avatar w-10 h-10 text-[13px] btn-press has-settings" style="background: var(--primary);" title="ตั้งค่า — Settings" aria-label="ตั้งค่า application">
-            ?<span class="avatar-gear" aria-hidden="true"><i data-lucide="settings"></i></span>
+          <button id="user-avatar-btn" class="avatar w-10 h-10 text-[13px] btn-press has-settings" style="background: var(--primary);" title="บัญชีและการตั้งค่า" aria-label="บัญชีและการตั้งค่า">
+            ?
           </button>
         </div>
       </div>
@@ -323,9 +309,14 @@
          The world clock + sync pill sit at the right end of this row. -->
     <div class="header-nav-row max-w-[1280px] mx-auto px-4">
       <nav class="desktop-nav" id="desktop-nav" aria-label="เมนูหลัก"></nav>
+      <!-- “เพิ่มเติม ▾” (v34 → v35): the secondary pages (เตรียมตัว / การจอง /
+           ปฏิทิน / นำเข้า‑ส่งออก / ตั้งค่า). It sits at the end of the menu row —
+           navigation lives in one place — and is filled by renderHeaderMoreMenu();
+           hidden on phones, where the More page covers it. -->
+      <div class="header-more" id="header-more"></div>
       <div class="header-nav-side">
-        <div id="sync-status" class="hidden lg:flex items-center gap-2 text-[11px] px-3 py-1.5 rounded-full border font-medium" style="background:var(--surface); border-color:var(--border); box-shadow: var(--shadow-xs);">
-          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span><span>Online</span>
+        <div id="sync-status" class="hidden lg:flex items-center gap-2 text-xs px-2 py-1 text-[var(--text-tertiary)]">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span><span>ออนไลน์</span>
         </div>
         <!-- Compact world clock: tap to pick the city for the time -->
         <div id="clock-wrap" class="relative hidden lg:block">
@@ -359,18 +350,10 @@
 
   <!-- Main -->
   <main id="app" class="max-w-[1280px] mx-auto px-4 py-6 min-h-[calc(100vh_-_var(--header-h)_-_var(--bottom-nav-h))] md:min-h-[calc(100vh_-_var(--header-h)_-_60px)]">
-    <div id="loading-screen" class="grid place-items-center py-24">
-      <div class="text-center page-enter">
-        <div id="fuji-loader" class="animate-float"></div>
-        <p class="mt-6 text-sm font-medium text-[var(--text-secondary)]">
-          กำลังโหลด
-          <span class="loading-dot inline-block">.</span><span class="loading-dot inline-block" style="animation-delay:.15s">.</span><span class="loading-dot inline-block" style="animation-delay:.3s">.</span>
-        </p>
-        <div class="mt-4 flex justify-center gap-1">
-          <span class="w-2 h-2 rounded-full bg-[var(--primary)] animate-bounce" style="animation-delay: 0s;"></span>
-          <span class="w-2 h-2 rounded-full bg-[var(--primary)] animate-bounce" style="animation-delay: 0.15s;"></span>
-          <span class="w-2 h-2 rounded-full bg-[var(--primary)] animate-bounce" style="animation-delay: 0.3s;"></span>
-        </div>
+    <div id="loading-screen" class="grid place-items-center py-24" role="status" aria-live="polite">
+      <div class="app-loader">
+        <span class="app-loader-spin" aria-hidden="true"></span>
+        <p class="text-sm text-[var(--text-secondary)]">กำลังโหลด…</p>
       </div>
     </div>
   </main>
@@ -386,26 +369,23 @@
     <button data-route="#/trip/more" class="bottom-nav-item"><i data-lucide="more-horizontal"></i><span>เพิ่มเติม</span></button>
   </nav>
 
-  <!-- Global footer — brand lock-up + build identity (always visible).
-       Values are painted from src/js/utils/buildInfo.js on boot (paintAppFooter). -->
+  <!-- Global footer (v35) — one quiet line: product, build, last update and the
+       owner's copyright note. Values are painted from src/js/utils/buildInfo.js
+       on boot (paintAppFooter). -->
   <footer id="app-footer" class="app-footer">
-    <div class="app-footer-inner">
-      <div class="app-footer-brand-row">
-        <span class="app-footer-mark" aria-hidden="true"><i data-lucide="plane-takeoff"></i></span>
-        <span class="app-footer-wordmark">Trip Manager</span>
-        <span class="app-footer-by">by TonSkywalker</span>
-      </div>
-      <div class="app-footer-chips">
-        <span class="app-footer-chip app-footer-chip--version" data-footer-version>v21</span>
-        <span class="app-footer-chip" data-footer-updated>อัปเดตล่าสุด 6 ต.ค. 2569</span>
-        <span class="app-footer-chip" data-footer-palette>ชุดสี Sky light</span>
-        <span class="app-footer-chip app-footer-chip--build" data-build-stamp></span>
-      </div>
-    </div>
+    <p class="app-footer-line">
+      <span class="app-footer-wordmark">Trip Manager</span>
+      <span class="app-footer-by">by TonSkywalker</span>
+      <span class="app-footer-dot" aria-hidden="true">·</span>
+      <span data-footer-version>v35</span>
+      <span class="app-footer-dot" aria-hidden="true">·</span>
+      <span data-footer-updated>อัปเดตล่าสุด 8 พ.ย. 2569</span>
+      <span class="app-footer-dot app-footer-build-dot" aria-hidden="true">·</span>
+      <span class="app-footer-build" data-build-stamp></span>
+    </p>
     <p class="app-footer-legal">
       <!-- full © line, painted from buildInfo.js on boot / language change -->
-      <span class="app-footer-sep" aria-hidden="true"></span>
-      <span data-footer-copyright>© 2024–2026 TonSkywalker — สงวนลิขสิทธิ์ ห้ามทำซ้ำ เผยแพร่ ดัดแปลง หรือใช้เชิงพาณิชย์ก่อนได้รับอนุญาตเป็นลายลักษณ์อักษร</span>
+      <span data-footer-copyright>© 2024–2026 TonSkywalker — สงวนลิขสิทธิ์</span>
     </p>
   </footer>
 
@@ -451,6 +431,6 @@
   <script src="./fcm-vapid.js"></script>
 
   <!-- App (cache-busted) -->
-  <script type="module" src="./src/js/app.js?v=34"></script>
+  <script type="module" src="./src/js/app.js?v=35"></script>
 </body>
 </html>

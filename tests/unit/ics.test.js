@@ -55,7 +55,7 @@ export function testBuildCalendar() {
   assert((ics.match(/BEGIN:VEVENT/g) || []).length === 2, 'two events');
   assert(ics.includes('X-WR-CALNAME:ทริปญี่ปุ่น'), 'calendar name kept');
   assert(ics.includes('\r\n'), 'CRLF line endings (RFC 5545)');
-  assert(ics.includes('PRODID:-//Fuji Trip Planner'), 'product id set');
+  assert(ics.includes('PRODID:-//Trip Manager by TonSkywalker'), 'product id set (v35: renamed to Trip Manager)');
 }
 
 export function testItineraryEvents() {

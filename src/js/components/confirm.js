@@ -26,7 +26,7 @@ export function confirmAction({
             <i data-lucide="${safeIcon}" class="w-5 h-5"></i>
           </div>
           <div class="min-w-0 flex-1">
-            <h3 id="confirm-title" class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${safeTitle}</h3>
+            <h3 id="confirm-title" class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${safeTitle}</h3>
             ${safeMessage ? `<p class="text-sm text-[var(--text-secondary)] mt-1 leading-relaxed">${safeMessage}</p>` : ''}
           </div>
         </div>
@@ -70,7 +70,7 @@ export function promptAction({
       <div class="space-y-4">
         <div class="flex items-center gap-3">
           <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;"><i data-lucide="${safeIcon}" class="w-5 h-5"></i></div>
-          <h3 class="font-bold text-base" style="font-family: var(--font-display);">${safeTitle}</h3>
+          <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${safeTitle}</h3>
         </div>
         <div class="input-group">
           ${safeLabel ? `<label class="input-label">${safeLabel}</label>` : ''}

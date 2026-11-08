@@ -412,7 +412,7 @@ export async function sendTestNotification(tripId, { uid, name = '', lang = 'th'
   return publishNotification(tripId, {
     type: 'test',
     date: day,
-    title: lang === 'th' ? 'ทดสอบการแจ้งเตือน ✅' : 'Test notification ✅',
+    title: lang === 'th' ? 'ทดสอบการแจ้งเตือน' : 'Test notification',
     body: lang === 'th'
       ? 'ถ้าคุณเห็นข้อความนี้ การแจ้งเตือนในแอปทำงานแล้ว — และจะเด้งเป็น Web Push ด้วยถ้าเปิดไว้'
       : 'If you can read this, in-app notifications work — and Web Push will fire too when it is enabled.',

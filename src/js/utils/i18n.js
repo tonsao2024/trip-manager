@@ -1,8 +1,8 @@
 // i18n - Thai only (single language)
 const translations = {
   th: {
-    appName: "Fuji Trip Planner",
-    tagline: "วางแผนทริป • หารค่าใช้จ่าย • เคลียร์บิลจบในที่เดียว",
+    appName: "Trip Manager",
+    tagline: "วางแผนทริป แบ่งค่าใช้จ่าย และเคลียร์บิลกับเพื่อนในที่เดียว",
     login: "เข้าสู่ระบบ",
     logout: "ออกจากระบบ",
     admin: "แอดมิน",

@@ -1,6 +1,6 @@
 {
   "name": "trip-manager",
-  "version": "34.0.0",
+  "version": "35.0.0",
   "private": true,
   "description": "Trip Manager by TonSkywalker — static trip planner + group expense splitting (GitHub Pages + Firebase). No runtime build step; the site is served as-is.",
   "type": "module",

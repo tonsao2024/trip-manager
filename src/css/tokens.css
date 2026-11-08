@@ -1,98 +1,87 @@
-/* Trip Manager by TonSkywalker — Design System v34 “Flat & Friendly”
+/* Trip Manager by TonSkywalker — Design System v35 “Calm” (unslop pass)
    ---------------------------------------------------------------------------
-   v34 is a full repaint into FLAT design. It keeps the vivid brand hues of v20
-   (an electric royal blue, a hot amber accent, jewel-tone companions and status
-   colours that read instantly) but drops every decorative effect that stood
-   between the colour and the user:
+   v35 follows the unslop audit in docs/UNSLOP-AUDIT-2026-11-08.md:
 
-     • no gradients — one solid fill per surface (the `--gradient-*` names are
-       kept as COMPATIBILITY ALIASES that now resolve to flat colours, because
-       hundreds of inline styles still reference them);
-     • no elevation blur — cards and buttons are separated by 1px borders and
-       tonal fills, not by shadows;
-     • a compact radius scale (6–16px) instead of the old 18–44px “bubble” look;
-     • bigger, calmer type and one clear focus ring.
+     • neutral surfaces — the page, cards and borders are graphite/white, NOT
+       tinted by the brand. Colour is reserved for things that mean something;
+     • ONE accent — the brand blue (written by the colour theme as
+       --primary-raw) is used for the primary button, links, focus and the
+       selected state only;
+     • green / red are for money only (+ getting money back / − owing);
+     • one type family — IBM Plex Sans Thai (Thai + Latin drawn together),
+       weights 400 / 500 / 600, sentence case, tabular figures;
+     • a short radius scale (8 / 12 / 16) and one easing curve.
 
-   Only three shadows survive, and only on things that genuinely float above the
-   page (bottom sheet, dialog, toast, dropdown). Turn them off completely with
-   `data-depth="flat"` (see src/css/flat.css → “Customise the look”).
-
-   A colour THEME (LINE / Facebook / Instagram / … or a custom pair) still only
-   writes the raw brand variables below — `src/js/utils/themes.js` sets them on
-   <html>, and every other shade is derived here with color-mix(), so light mode,
-   dark mode, exports and JS colours all follow the theme at once. */
+   A colour THEME (LINE / Facebook / …) still writes the raw brand variables on
+   <html> (src/js/utils/themes.js) — but now it only changes the accent. The
+   page background no longer follows the theme (--bg ignores --page-bg). */
 
 :root {
-  /* ---- Brand base: electric royal blue + hot amber (default “Sky light” theme) ---- */
-  --primary-raw: #1e4bff;          /* vivid royal blue — the brand colour */
-  --grad-1: #2038ff;               /* gradient start (electric ultramarine) */
-  --grad-2: #00b4ff;               /* gradient end   (vivid sky cyan) */
-  --brand-yellow-raw: #ff9e00;     /* hot amber — accent / highlight */
-  --brand-ink-raw: #1c2b4a;        /* deep ink used for text + shadows */
-  --brand-mist-raw: #4fd6be;       /* vivid aqua mist — secondary surface */
-  --brand-steel-raw: #2f7fe0;      /* vivid steel blue — info / day hues */
-  --brand-sand-raw: #ffe9c4;       /* warm sand — soft section tint */
-  /* Page canvas of each mode — a theme may repaint these (see themes.js). */
-  --page-bg: #d9e9ff;
-  --page-bg-dark: #05081a;
+  /* ---- Brand raws (the colour theme overwrites these on <html>) ---- */
+  --primary-raw: #0f5ef5;          /* brand blue — the ONLY accent */
+  --grad-1: var(--primary-raw);    /* kept for compatibility — no gradients in v35 */
+  --grad-2: var(--primary-raw);
+  --brand-yellow-raw: #ffa020;     /* the sun in the logo — logo + countdown only */
+  --brand-ink-raw: #1c2433;
+  --brand-mist-raw: #e4e4e7;
+  --brand-steel-raw: #52525b;
+  --brand-sand-raw: #f5f5f4;
+  /* Theme-written page tints are ignored by v35 (kept so themes stay valid). */
+  --page-bg: #fafafa;
+  --page-bg-dark: #0e0e10;
 
-  /* ---- Derived primary palette (light mode) ---- */
+  /* ---- Accent (derived) ---- */
   --primary: var(--primary-raw);
-  --primary-hover: color-mix(in srgb, var(--primary-raw) 86%, #0b2f8f);
-  --primary-light: color-mix(in srgb, var(--primary-raw) 13%, #fff);
-  --primary-lighter: color-mix(in srgb, var(--primary-raw) 7%, #fff);
-  --primary-dark: color-mix(in srgb, var(--primary-raw) 74%, #12294f);
-  --primary-soft: color-mix(in srgb, var(--primary-raw) 18%, transparent);
-  --primary-strong: color-mix(in srgb, var(--primary-raw) 88%, #0f2a55); /* readable text-on-light */
+  --primary-hover: color-mix(in srgb, var(--primary-raw) 86%, #000);
+  --primary-light: color-mix(in srgb, var(--primary-raw) 8%, #fff);
+  --primary-lighter: color-mix(in srgb, var(--primary-raw) 4%, #fff);
+  --primary-dark: color-mix(in srgb, var(--primary-raw) 78%, #000);
+  --primary-soft: color-mix(in srgb, var(--primary-raw) 14%, transparent);
+  --primary-strong: color-mix(in srgb, var(--primary-raw) 84%, #000); /* accent text on light */
   --on-primary: #ffffff;
 
-  /* ---- Accent amber (never used behind white body text) ---- */
+  /* ---- Sun yellow (never behind body text) ---- */
   --brand-yellow: var(--brand-yellow-raw);
-  --brand-yellow-soft: color-mix(in srgb, var(--brand-yellow-raw) 34%, transparent);
-  --brand-yellow-tint: color-mix(in srgb, var(--brand-yellow-raw) 20%, #fff);
-  --brand-yellow-line: color-mix(in srgb, var(--brand-yellow-raw) 55%, #fff);
-  --brand-yellow-strong: color-mix(in srgb, var(--brand-yellow-raw) 72%, #a35c00);
-  --brand-yellow-ink: #8a4d00;     /* amber-family text on light surfaces */
-  --on-accent: #3f2905;            /* text on a solid amber fill */
-  --shadow-accent: 0 8px 22px color-mix(in srgb, var(--brand-yellow-raw) 52%, transparent);
+  --brand-yellow-soft: color-mix(in srgb, var(--brand-yellow-raw) 20%, transparent);
+  --brand-yellow-tint: color-mix(in srgb, var(--brand-yellow-raw) 10%, #fff);
+  --brand-yellow-line: color-mix(in srgb, var(--brand-yellow-raw) 36%, #fff);
+  --brand-yellow-strong: color-mix(in srgb, var(--brand-yellow-raw) 70%, #7a4300);
+  --brand-yellow-ink: #8a4d00;
+  --on-accent: #3f2905;
+  --shadow-accent: none;
 
-  /* ---- Aqua mist + sand tints (vivid secondary surfaces) ---- */
-  --mist: var(--brand-mist-raw);
-  --mist-soft: color-mix(in srgb, var(--brand-mist-raw) 30%, transparent);
-  --mist-tint: color-mix(in srgb, var(--brand-mist-raw) 20%, #fff);
-  --mist-ink: color-mix(in srgb, var(--brand-mist-raw) 55%, #0c3d33);
-  --sand-tint: color-mix(in srgb, var(--brand-sand-raw) 72%, #fff);
-  --steel: var(--brand-steel-raw);
-  --steel-tint: color-mix(in srgb, var(--brand-steel-raw) 16%, #fff);
-  --steel-ink: color-mix(in srgb, var(--brand-steel-raw) 78%, #10283f);
+  /* ---- Former secondary tints — neutral now ---- */
+  --mist: #a1a1aa;
+  --mist-soft: rgba(0, 0, 0, .04);
+  --mist-tint: #f4f4f5;
+  --mist-ink: #3f3f46;
+  --sand-tint: #f5f5f4;
+  --steel: #52525b;
+  --steel-tint: #f4f4f5;
+  --steel-ink: #3f3f46;
 
-  /* ---- Surfaces: flat, crisp panels on a quiet canvas -------------------
-     The canvas is a very light neutral tinted by the theme (so a LINE theme is
-     faintly green, the default is faintly blue); panels are pure white with a
-     hard 1px outline. That is the whole depth model — no blur, no lift. */
-  --bg: color-mix(in srgb, var(--page-bg) 46%, #f4f6fa);
-  --bg-secondary: color-mix(in srgb, var(--primary-raw) 7%, #f6f8fc);
-  --bg-tertiary: color-mix(in srgb, var(--primary-raw) 11%, #eef2f8);
+  /* ---- Surfaces: graphite canvas, white panels, hairlines ---- */
+  --bg: #fafafa;
+  --bg-secondary: #f4f4f5;
+  --bg-tertiary: #ececee;
   --surface: #ffffff;
-  --surface-2: color-mix(in srgb, var(--primary-raw) 5%, #f7f9fc);
-  --surface-3: color-mix(in srgb, var(--primary-raw) 9%, #eff3f9);
-  --surface-inset: color-mix(in srgb, var(--text) 4%, #ffffff);
+  --surface-2: #f4f4f5;            /* hover / selected = one step down */
+  --surface-3: #ececee;
+  --surface-inset: #f4f4f5;
   /* Opaque color shared by the mobile header, iOS safe area and browser chrome. */
   --app-chrome-color: var(--surface);
   --card: #ffffff;
   --card-hover: #ffffff;
-  --text: #101d33;
-  --text-strong: #060f22;
-  --text-secondary: #33445f;
-  --text-tertiary: #5a6b85;
-  --border: color-mix(in srgb, var(--primary-raw) 16%, #cfd8e5);
-  --border-strong: color-mix(in srgb, var(--primary-raw) 34%, #aab8cb);
-  --border-light: color-mix(in srgb, var(--primary-raw) 9%, #e3e9f1);
+  --text: #171717;
+  --text-strong: #0a0a0a;
+  --text-secondary: #525252;
+  --text-tertiary: #737373;        /* 4.55:1 on #fafafa */
+  --border: rgba(0, 0, 0, .09);
+  --border-strong: rgba(0, 0, 0, .18);
+  --border-light: rgba(0, 0, 0, .05);
   --border-w: 1px;
 
-  /* Flat = no elevation. These are the tokens every component used to read, so
-     setting them here removes the shadow everywhere at once. The three overlay
-     vars below are the ONLY shadows left in the system. */
+  /* No elevation. Only things that float above the page get a shadow. */
   --shadow-xs: none;
   --shadow-sm: none;
   --shadow: none;
@@ -101,94 +90,95 @@
   --shadow-soft: none;
   --shadow-inner: none;
   --shadow-primary: none;
-  --overlay-shadow: 0 10px 30px rgba(16, 29, 51, 0.14);
-  --overlay-shadow-strong: 0 18px 48px rgba(16, 29, 51, 0.20);
-  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary-raw) 34%, transparent);
+  --overlay-shadow: 0 8px 24px rgba(0, 0, 0, .10), 0 1px 2px rgba(0, 0, 0, .06);
+  --overlay-shadow-strong: 0 16px 40px rgba(0, 0, 0, .16), 0 1px 3px rgba(0, 0, 0, .08);
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary-raw) 28%, transparent);
   --focus-outline: 2px solid var(--primary-raw);
 
-  /* ---- Companion accents (member colours, day markers, category chips).
-     v20: full jewel saturation — vivid in both light and dark mode. ---- */
-  --accent-blue: #0b4dff;
-  --accent-sky: #0d9bff;
-  --accent-steel: #2f7fe0;
-  --accent-teal: #00c48c;
-  --accent-sage: #35d09a;
-  --accent-green: #0abf5b;
-  --accent-lime: #83e000;
-  --accent-amber: #ff9e00;
-  --accent-orange: #ff6200;
-  --accent-coral: #ff4438;
-  --accent-rose: #f20f6d;
-  --accent-violet: #7a2bf5;
-  --accent-slate: #5b6cff;
+  /* ---- Data colours (member avatars, day markers, chart segments).
+     Used as small dots / chart fills only — never as surfaces. ---- */
+  --accent-blue: #2563eb;
+  --accent-sky: #0284c7;
+  --accent-steel: #475569;
+  --accent-teal: #0d9488;
+  --accent-sage: #4d7c0f;
+  --accent-green: #16a34a;
+  --accent-lime: #65a30d;
+  --accent-amber: #d97706;
+  --accent-orange: #ea580c;
+  --accent-coral: #dc2626;
+  --accent-rose: #db2777;
+  --accent-violet: #7c3aed;
+  --accent-slate: #4f46e5;
 
-  /* ---- Flat fills (compatibility aliases) -------------------------------
-     v34 removed gradients from the interface. Every `--gradient-*` name is kept
-     and now resolves to ONE solid colour, so the hundreds of inline
-     `style="background: var(--gradient-primary)"` usages across app.js become
-     flat the moment this file loads — no template had to be rewritten. A colour
-     theme may still write `--gradient-primary` inline on <html>; flat.css
-     re-flattens it on <body>, which wins for every element on the page. */
+  /* ---- Flat fills (compatibility aliases — one solid colour each) ---- */
   --gradient-primary: var(--primary-raw);
   --gradient-blue: var(--primary-raw);
   --gradient-duo: var(--primary-raw);
   --gradient-sun: var(--brand-yellow-raw);
   --gradient-fuji: var(--primary-raw);
-  --gradient-fuji-soft: var(--primary-lighter);
+  --gradient-fuji-soft: var(--surface-2);
   --gradient-vivid: var(--primary-raw);
-  --gradient-mist: var(--mist-tint);
+  --gradient-mist: var(--surface-2);
   --gradient-mesh: none;
   --gradient-glass: var(--surface);
 
-  /* ---- Status colours (v20: fully saturated jewel tones) ---- */
-  --success: #00b368;
-  --success-light: color-mix(in srgb, #00b368 20%, #fff);
-  --success-bg: color-mix(in srgb, #00b368 13%, #fff);
-  --warning: #f97316;
-  --warning-light: color-mix(in srgb, #f97316 24%, #fff);
-  --warning-bg: color-mix(in srgb, #f97316 15%, #fff);
-  --danger: #f4113c;
-  --danger-light: color-mix(in srgb, #f4113c 20%, #fff);
-  --danger-bg: color-mix(in srgb, #f4113c 13%, #fff);
-  --info: #0090ff;
-  --info-light: color-mix(in srgb, #0090ff 20%, #fff);
-  --info-bg: color-mix(in srgb, #0090ff 13%, #fff);
+  /* ---- Status. Green / red are reserved for money and errors. ---- */
+  --success: #15803d;              /* 5.0:1 on white */
+  --success-light: color-mix(in srgb, #15803d 14%, #fff);
+  --success-bg: color-mix(in srgb, #15803d 7%, #fff);
+  --warning: #b45309;
+  --warning-light: color-mix(in srgb, #b45309 14%, #fff);
+  --warning-bg: color-mix(in srgb, #b45309 7%, #fff);
+  --danger: #b91c1c;               /* 6.5:1 on white */
+  --danger-light: color-mix(in srgb, #b91c1c 14%, #fff);
+  --danger-bg: color-mix(in srgb, #b91c1c 6%, #fff);
+  --info: var(--primary-strong);
+  --info-light: color-mix(in srgb, var(--primary-raw) 12%, #fff);
+  --info-bg: color-mix(in srgb, var(--primary-raw) 6%, #fff);
 
-  /* ---- Space / radius / type ---- */
+  /* ---- Space (4px grid) / radius / type ---- */
   --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
   --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px; --space-12: 48px;
 
-  /* Flat radius scale — tight, geometric, predictable. It is one of the three
-     things the user can re-scale live in Settings → Appearance
-     (`data-radius="sharp|soft|round"` in flat.css). */
+  /* Radius: controls 8 · cards 12 · panels 16. Settings → Appearance can still
+     re-scale it (`data-radius="sharp|soft|round"` in flat.css). */
   --radius-xs: 6px;
   --radius-sm: 8px;
-  --radius: 10px;
+  --radius: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
-  --radius-xl: 20px;
-  --radius-2xl: 24px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
   --radius-full: 9999px;
   /* Control metrics — density re-writes these (data-density). */
   --control-h: 44px;
   --control-h-sm: 36px;
-  --control-h-lg: 52px;
-  --card-pad: 18px;
-  --stack-gap: 14px;
+  --control-h-lg: 48px;
+  --card-pad: 20px;
+  --stack-gap: 16px;
 
-  --font-sans: "Plus Jakarta Sans", "Noto Sans Thai", system-ui, -apple-system, sans-serif;
-  --font-display: "Outfit", "Plus Jakarta Sans", "Noto Sans Thai", system-ui, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Geist Mono", monospace;
-  --text-xs: 0.75rem;
-  --text-sm: 0.875rem;
-  --text-base: 1rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.25rem;
+  /* One family. Thai and Latin are drawn together, so mixed lines (฿ + ไทย + Kawaguchiko)
+     share one x-height. Mono is only for codes and the settlement receipt. */
+  --font-sans: "IBM Plex Sans Thai", system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif;
+  --font-display: var(--font-sans);
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --text-xs: 0.75rem;     /* 12 — the smallest size used anywhere */
+  --text-sm: 0.875rem;    /* 14 */
+  --text-base: 1rem;      /* 16 */
+  --text-lg: 1.125rem;    /* 18 */
+  --text-xl: 1.375rem;    /* 22 — page titles */
   --text-2xl: 1.5rem;
-  --text-3xl: 1.875rem;
+  --text-3xl: 1.875rem;   /* 30 — the one big figure */
   --text-4xl: 2.25rem;
-  --leading-tight: 1.1;
-  --leading-snug: 1.3;
+  --leading-tight: 1.25;
+  --leading-snug: 1.4;
+
+  /* ---- Motion: one curve, three durations ---- */
+  --ease: cubic-bezier(.22, 1, .36, 1);
+  --t-fast: 150ms;   /* hover, press */
+  --t-menu: 200ms;   /* menus, sheets, toasts */
+  --t-page: 300ms;   /* page fade */
 
   --header-h: 72px;
   --bottom-nav-h: 72px;
@@ -196,58 +186,58 @@
   --sidebar-w: 280px;
 }
 
+@media (max-width: 640px) {
+  :root { --card-pad: 16px; }
+}
+
 /* =========================================================
-   Dark mode — deep indigo-night surfaces, neon-bright accents
+   Dark mode — neutral graphite, not navy
    ========================================================= */
 [data-theme="dark"] {
-  /* primary lightened so it reads well as text/accent on dark surfaces */
-  --primary: color-mix(in srgb, var(--primary-raw) 58%, #fff);
-  --primary-hover: color-mix(in srgb, var(--primary-raw) 70%, #fff);
-  --primary-light: color-mix(in srgb, var(--primary-raw) 30%, #121a30);
-  --primary-lighter: color-mix(in srgb, var(--primary-raw) 18%, #121a30);
-  --primary-dark: color-mix(in srgb, var(--primary-raw) 44%, #fff);
-  --primary-soft: color-mix(in srgb, var(--primary-raw) 38%, transparent);
-  --primary-strong: color-mix(in srgb, var(--primary-raw) 42%, #fff);
-  --on-primary: #06101f;
+  --primary: color-mix(in srgb, var(--primary-raw) 68%, #fff);
+  --primary-hover: color-mix(in srgb, var(--primary-raw) 58%, #fff);
+  --primary-light: color-mix(in srgb, var(--primary-raw) 18%, #161618);
+  --primary-lighter: color-mix(in srgb, var(--primary-raw) 10%, #161618);
+  --primary-dark: color-mix(in srgb, var(--primary-raw) 50%, #fff);
+  --primary-soft: color-mix(in srgb, var(--primary-raw) 26%, transparent);
+  --primary-strong: color-mix(in srgb, var(--primary-raw) 55%, #fff);
+  --on-primary: #0a0a0a;
 
-  /* hot amber so it still pops on ink */
-  --brand-yellow: color-mix(in srgb, var(--brand-yellow-raw) 92%, #fff);
-  --brand-yellow-soft: color-mix(in srgb, var(--brand-yellow-raw) 42%, transparent);
-  --brand-yellow-tint: color-mix(in srgb, var(--brand-yellow-raw) 23%, #141a28);
-  --brand-yellow-line: color-mix(in srgb, var(--brand-yellow-raw) 50%, #141a28);
+  --brand-yellow: var(--brand-yellow-raw);
+  --brand-yellow-soft: color-mix(in srgb, var(--brand-yellow-raw) 24%, transparent);
+  --brand-yellow-tint: color-mix(in srgb, var(--brand-yellow-raw) 12%, #161618);
+  --brand-yellow-line: color-mix(in srgb, var(--brand-yellow-raw) 40%, #161618);
   --brand-yellow-strong: color-mix(in srgb, var(--brand-yellow-raw) 80%, #fff);
-  --brand-yellow-ink: #ffd08a;
+  --brand-yellow-ink: #fbbf6b;
   --on-accent: #241804;
-  --shadow-accent: 0 8px 26px color-mix(in srgb, var(--brand-yellow-raw) 40%, transparent);
+  --shadow-accent: none;
 
-  --mist: color-mix(in srgb, var(--brand-mist-raw) 82%, #fff);
-  --mist-soft: color-mix(in srgb, var(--brand-mist-raw) 30%, transparent);
-  --mist-tint: color-mix(in srgb, var(--brand-mist-raw) 22%, #141a28);
-  --mist-ink: #c9f2e6;
-  --sand-tint: color-mix(in srgb, var(--brand-sand-raw) 18%, #141a28);
-  --steel: color-mix(in srgb, var(--brand-steel-raw) 82%, #fff);
-  --steel-tint: color-mix(in srgb, var(--brand-steel-raw) 27%, #141a28);
-  --steel-ink: #c4e2ff;
+  --mist: #71717a;
+  --mist-soft: rgba(255, 255, 255, .05);
+  --mist-tint: #1d1d20;
+  --mist-ink: #d4d4d8;
+  --sand-tint: #1d1d20;
+  --steel: #a1a1aa;
+  --steel-tint: #1d1d20;
+  --steel-ink: #d4d4d8;
 
-  /* Dark mode is flat too: a deep neutral night canvas and slightly lifted
-     panels, separated by visible outlines instead of shadows. */
-  --bg: color-mix(in srgb, var(--page-bg-dark) 88%, #121722);
-  --bg-secondary: color-mix(in srgb, var(--primary-raw) 9%, #141a26);
-  --bg-tertiary: color-mix(in srgb, var(--primary-raw) 14%, #1a2230);
-  --surface: color-mix(in srgb, var(--primary-raw) 7%, #161c28);
-  --surface-2: color-mix(in srgb, var(--primary-raw) 11%, #1b2330);
-  --surface-3: color-mix(in srgb, var(--primary-raw) 16%, #212b3a);
-  --surface-inset: color-mix(in srgb, #ffffff 5%, #131924);
+  --bg: #0e0e10;
+  --bg-secondary: #161618;
+  --bg-tertiary: #1d1d20;
+  --surface: #161618;
+  --surface-2: #1d1d20;
+  --surface-3: #242428;
+  --surface-inset: #121214;
   --app-chrome-color: var(--bg);
-  --card: color-mix(in srgb, var(--primary-raw) 7%, #161c28);
-  --card-hover: color-mix(in srgb, var(--primary-raw) 11%, #1b2330);
-  --text: #f2f7ff;
-  --text-strong: #ffffff;
-  --text-secondary: #c4d1e6;
-  --text-tertiary: #8fa2bd;
-  --border: color-mix(in srgb, var(--primary-raw) 20%, #33405a);
-  --border-strong: color-mix(in srgb, var(--primary-raw) 38%, #46587a);
-  --border-light: color-mix(in srgb, var(--primary-raw) 12%, #263244);
+  --card: #161618;
+  --card-hover: #1a1a1d;
+  --text: #ededed;
+  --text-strong: #fafafa;
+  --text-secondary: #a3a3a3;
+  --text-tertiary: #8a8a8a;
+  --border: rgba(255, 255, 255, .09);
+  --border-strong: rgba(255, 255, 255, .18);
+  --border-light: rgba(255, 255, 255, .05);
 
   --shadow-xs: none;
   --shadow-sm: none;
@@ -257,25 +247,27 @@
   --shadow-soft: none;
   --shadow-inner: none;
   --shadow-primary: none;
-  --overlay-shadow: 0 10px 30px rgba(0,0,0,0.55);
-  --overlay-shadow-strong: 0 18px 48px rgba(0,0,0,0.65);
+  --overlay-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+  --overlay-shadow-strong: 0 16px 40px rgba(0, 0, 0, .6);
 
-  --success: #34e0a1;
-  --success-light: color-mix(in srgb, #34e0a1 22%, #121a26);
-  --success-bg: color-mix(in srgb, #34e0a1 14%, #121a26);
-  --warning: #ffb02e;
-  --warning-light: color-mix(in srgb, #ffb02e 22%, #121a26);
-  --warning-bg: color-mix(in srgb, #ffb02e 14%, #121a26);
-  --danger: #ff6f91;
-  --danger-light: color-mix(in srgb, #ff6f91 22%, #121a26);
-  --danger-bg: color-mix(in srgb, #ff6f91 14%, #121a26);
-  --info: #5cc4ff;
-  --info-light: color-mix(in srgb, #5cc4ff 22%, #121a26);
-  --info-bg: color-mix(in srgb, #5cc4ff 14%, #121a26);
+  --success: #4ade80;
+  --success-light: color-mix(in srgb, #4ade80 18%, #161618);
+  --success-bg: color-mix(in srgb, #4ade80 10%, #161618);
+  --warning: #fbbf24;
+  --warning-light: color-mix(in srgb, #fbbf24 18%, #161618);
+  --warning-bg: color-mix(in srgb, #fbbf24 10%, #161618);
+  --danger: #f87171;
+  --danger-light: color-mix(in srgb, #f87171 18%, #161618);
+  --danger-bg: color-mix(in srgb, #f87171 10%, #161618);
+  --info: var(--primary);
+  --info-light: color-mix(in srgb, var(--primary-raw) 20%, #161618);
+  --info-bg: color-mix(in srgb, var(--primary-raw) 10%, #161618);
 
   --gradient-glass: var(--surface);
   --gradient-mesh: none;
   --gradient-primary: var(--primary);
+  --gradient-fuji-soft: var(--surface-2);
+  --gradient-mist: var(--surface-2);
 }
 
 * { font-family: var(--font-sans); }
@@ -283,25 +275,26 @@ html { scroll-behavior: smooth; }
 body {
   background: var(--bg);
   color: var(--text);
-  line-height: 1.7;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-feature-settings: "ss01", "ss02";
+  font-feature-settings: normal;
   overflow-x: hidden;
-  transition: background 0.45s ease, color 0.45s ease;
 }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text-tertiary) 45%, transparent);
+  background: color-mix(in srgb, var(--text-tertiary) 40%, transparent);
   border-radius: var(--radius-full);
   border: 3px solid transparent;
   background-clip: content-box;
 }
-::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--text-tertiary) 70%, transparent); background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--text-tertiary) 65%, transparent); background-clip: content-box; }
 
-::selection { background: var(--brand-yellow-soft); color: var(--text-strong); }
+::selection { background: var(--primary-soft); color: var(--text-strong); }
 
-/* Display headings use the geometric display face (product look) */
-h1, h2, h3, h4, .font-display { font-family: var(--font-display); letter-spacing: -0.01em; }
+/* Headings: same family, weight 600, no tracking tricks. */
+h1, h2, h3, h4, .font-display { font-family: var(--font-sans); letter-spacing: 0; }
+code, kbd, samp, pre, .font-mono { font-family: var(--font-mono); }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }

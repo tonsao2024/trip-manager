@@ -1,4 +1,4 @@
-# Trip Manager (Fuji Trip Planner & Group Expense Manager)
+# Trip Manager by TonSkywalker — trip planner & group expense manager
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
@@ -10,6 +10,29 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > คำแนะนำ Functions/Push ในบันทึกเวอร์ชันเก่าด้านล่างไม่ใช่ขั้นตอน deploy ปัจจุบัน
 > ดูขั้นตอนล่าสุดที่ [Deploy Guide](docs/DEPLOY.md)
 
+> **v35 — 8 Nov 2026, “calm pass” ตามแนวทาง [unslop](https://github.com/heydamir/unslop).** A design pass
+> that takes the generic “AI template” signs out of the interface without touching the information
+> architecture, the data or the features. Full audit, decisions and before/after redlines:
+> [UNSLOP-AUDIT-2026-11-08](docs/UNSLOP-AUDIT-2026-11-08.md). **Direction:** precise about money · warm · calm —
+> a Japanese rail ticket and a paper receipt under a morning Fuji sky. **Colour:** brand blue is the single accent;
+> neutral surfaces (#fafafa / #fff), three text roles, hairline borders; green and red only for money; no hue
+> gradients, glows or tinted cards (dashboard rows, settlement tiles, receipt notes and the PNG export included).
+> **Type:** one family — IBM Plex Sans Thai (+ Plex Mono for receipt figures), weights 400/500/600, 12px minimum,
+> tabular numbers, no tracked uppercase; summaries show whole baht (฿13,680), detail rows keep satang.
+> **Copy:** no “!”, no emoji in the UI, Buddhist-era dates everywhere (`thaiDate` / `thaiDateRange` in
+> `src/js/utils/date.js`), readable labels instead of raw keys (B10), the app is called “Trip Manager” everywhere.
+> **Removed:** the mascot “น้องฟูจิ” and the mood faces (`mascot.js`, `moodface.js`), the count-up animations,
+> the shine sweeps and the reveal-on-scroll; one 300 ms entrance at most, one easing curve. **Dashboard:** a plain
+> page head with one primary action and a “⋯” menu, stat cards (label · figure · one change line), a static
+> countdown card with a quiet Fuji line, list rows on hairlines; the old “กระเป๋าของฉัน” card is folded into
+> “ยอดของฉัน” and the team board became its own card. **Moments:** the settlement receipt reads like paper (dashed
+> rules, mono figures) and a member who owes nothing gets a “เคลียร์แล้ว” hanko stamp. **Also:** desktop nav is
+> words only with “เพิ่มเติม ▾” at the end, toolbars group exports into one menu, the FAB is phone-only, labels
+> lost their decorative icons, the “เพิ่มเติม” and สมาชิก pages became grouped lists, the signed-out screen hides
+> everything that needs an account, and a duplicate `#s-cover-url` field in Settings is gone. Verified: 184 unit
+> tests (the 3 mascot tests went with the mascot), the jsdom smoke test (814 checks; only assertions that encoded
+> the old visuals were updated) and the headless mobile + desktop layout checks.
+>
 > **v34 — 4 Nov 2026, ออกแบบใหม่ทั้งระบบเป็น Flat design + ตรวจปุ่ม/เมนูทุกหน้า.** A ground-up repaint into
 > a flat design language plus a full button-and-menu audit. **Look:** every gradient, glow, glass blur and
 > card shadow is gone — surfaces are one solid colour separated by a 1px outline, the radius scale shrank from
@@ -726,6 +749,7 @@ Dashboard + misc:
 - An animated **Mt-Fuji buddy** (`src/js/components/mascot.js`) lives next to the countdown: fluffy, blinking,
   bobbing, with six moods read from the trip (over budget → worried, unsettled bills → wallet-watch, trip about
   to start → cheering, late night → sleepy) and a wiggle + encouragement when tapped.
+  — **removed in v35** (calm pass): the countdown card is static and the mood faces are gone too.
 - ค่าใช้จ่าย: the flat “เรียงรายการ” list now also shows the trip total, like the “แยกตามวัน” view does.
 - **ไอเดียสถานที่ saving was denied by the rules** (“Missing or insufficient permissions”): `ideas`,
   `checklists` and `reservations` no longer require `isTripMember()` for writes (same contract as

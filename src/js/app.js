@@ -9,7 +9,7 @@ import { app, auth, db, isFirebaseConfigured, onAuthStateChanged, syncState } fr
 import { Router } from './router.js';
 import { primaryNavItems, secondaryNavItems } from './navigation.js';
 import { toast } from './components/toast.js';
-import { renderFujiMascot, renderEmptyState } from './components/fuji.js';
+import { renderLogoMark, renderEmptyState } from './components/fuji.js';
 import { logout, hasStepUpSession } from './auth/index.js';
 import { getMemberSession, clearMemberSession } from './auth/memberAuth.js';
 // utils/diagnostics.js is imported lazily at the system-check call sites.
@@ -35,7 +35,7 @@ import {
 import { fetchSettlementData, recordTransfer, deleteTransfer } from './settlement/index.js';
 
 import { listMembers, createMember, updateMember, deleteMember, countMemberReferences, mapFunctionError, MEMBER_ROLES } from './members/index.js';
-import { dayjs, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay, parseDurationInput } from './utils/date.js';
+import { dayjs, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay, parseDurationInput, thaiDate, thaiDateRange } from './utils/date.js';
 import { expensesInThb, convertCurrency, formatCurrency, formatCurrencyHtml, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually, tripCurrencyList } from './utils/currency.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses, groupTransfersByPayer } from './utils/settlement.js';
 import { debtMapColor, layoutDebtMapAmountLabels } from './utils/debtMap.js';
@@ -47,7 +47,6 @@ import {
   THEMES, DEFAULT_THEME_ID, CUSTOM_THEME_ID, themeName, applyStoredTheme, applyTheme,
   readStoredTheme, saveTheme, themeVars, buildCustomPalette, contrastInk, mix as mixThemeColor, lighten as lightenThemeColor
 } from './utils/themes.js';
-import { renderFujiBuddy, fujiBuddyMood, fujiBuddyLine } from './components/mascot.js';
 import { showBottomSheet, showModal } from './components/modal.js';
 import { confirmAction, promptAction } from './components/confirm.js';
 import { mountCountdown, computeCountdown, countdownHeadline } from './components/countdown.js';
@@ -107,7 +106,6 @@ function loadDiagnostics() {
 import { parseCoordinates, getInitials, compressImage } from './utils/helpers.js';
 import { suggestCards, rememberCard, uploadReceiptImage, tripCards, upsertTripCard, removeTripCard, tripCardLabel, newCardId } from './utils/cards.js';
 import { expandStayItems, stayNights, dayEstimateAmount } from './utils/stays.js';
-import { moodFaceHtml, budgetMood, balanceMood, estimateMood } from './components/moodface.js';
 import { schematicMap, parseLatLng } from './exports/itineraryMap.js';
 import { listComments, addComment, deleteComment, commentsByExpense, commentsPending } from './comments/index.js';
 import { logActivity, listActivity, activityLabel, activityIcon, lastEditorText, deleteActivityEntries } from './utils/activity.js';
@@ -159,9 +157,40 @@ const bottomNavEl = document.getElementById('bottom-nav');
 const fabEl = document.getElementById('fab');
 const userAvatarBtn = document.getElementById('user-avatar-btn');
 const refreshBtn = document.getElementById('refresh-btn');
-const fujiLoaderEl = document.getElementById('fuji-loader');
 
-if (fujiLoaderEl) fujiLoaderEl.innerHTML = renderFujiMascot('loading', 80);
+// --- Thai dates (v35): “15 ม.ค.” in rows, “15–20 ม.ค. 2570” for a trip range ---
+const shortDay = (v) => (v ? (thaiDate(v, { year: false }) || String(v)) : '');
+const tripRangeLabel = (t) => thaiDateRange(t?.startDate, t?.endDate);
+// v35: a missing end time used to print “07:00 – -”; show just the start instead.
+const timeRange = (start, end, tz) => {
+  const a = start ? formatTime(start, tz) : '';
+  const b = end ? formatTime(end, tz) : '';
+  return a && b ? `${a}–${b}` : (a || b);
+};
+
+// --- Readable labels for stored keys (v35, audit B10) ---
+// Trip status, member role and member state used to reach the screen as raw keys
+// (“draft”, “trip_admin”, “active”). Values stay the same; only the label changes.
+const TRIP_STATUS_LABELS = {
+  draft: ['ร่าง', 'Draft'], active: ['กำลังใช้งาน', 'Active'],
+  completed: ['จบทริปแล้ว', 'Completed'], archived: ['เก็บถาวร', 'Archived']
+};
+function tripStatusLabel(status, lang = getLang()) {
+  const l = TRIP_STATUS_LABELS[status] || TRIP_STATUS_LABELS.draft;
+  return lang === 'th' ? l[0] : l[1];
+}
+const EXTRA_ROLE_LABELS = { owner: ['เจ้าของทริป', 'Owner'], admin: ['ผู้ดูแลทริป', 'Admin'], editor: ['แก้ไขได้', 'Editor'] };
+function roleLabel(role, lang = getLang()) {
+  const r = MEMBER_ROLES.find(x => x.id === role);
+  if (r) return lang === 'th' ? r.th : r.en;
+  const extra = EXTRA_ROLE_LABELS[role];
+  if (extra) return lang === 'th' ? extra[0] : extra[1];
+  return lang === 'th' ? 'สมาชิก' : 'Member';
+}
+function memberStateLabel(status, lang = getLang()) {
+  if (status === 'disabled') return lang === 'th' ? 'ปิดใช้งาน' : 'Disabled';
+  return lang === 'th' ? 'ใช้งานอยู่' : 'Active';
+}
 
 // --- Icon helpers (Lucide) — replaces all text emoji with real icons ---
 const icon = (name, cls = 'w-4 h-4') => `<i data-lucide="${name}" class="${cls}"></i>`;
@@ -230,7 +259,7 @@ function openCommentSheet({ tripId, expenseId, title = '', amount = '', comments
         <div class="comment-head">
           <b>${escapeHtml(c.name || '—')}</b>
           <span>${escapeHtml(fmtWhen(c.createdAt, lang))}</span>
-          ${c.pending ? `<span class="badge badge-current text-[9px]">${th('ในเครื่องนี้','on device')}</span>` : ''}
+          ${c.pending ? `<span class="badge badge-current text-xs">${th('ในเครื่องนี้','on device')}</span>` : ''}
           ${(canDeleteAny || c.uid === me.uid) ? `<button class="comment-del" data-comment-del="${c.id}" title="${t('delete')}">${icon('trash-2', 'w-3 h-3')}</button>` : ''}
         </div>
         <div class="comment-text">${escapeHtml(c.text)}</div>
@@ -242,8 +271,8 @@ function openCommentSheet({ tripId, expenseId, title = '', amount = '', comments
       <div class="flex items-start gap-3">
         <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--info-light);color:var(--info);">${icon('message-square', 'w-5 h-5')}</div>
         <div class="min-w-0">
-          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${th('ความเห็น / ทักท้วง','Comment / question')}</h3>
-          <p class="text-[11px] text-[var(--text-secondary)] truncate">${escapeHtml(title)}${amount ? ` • ${escapeHtml(amount)}` : ''}</p>
+          <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('ความเห็น / ทักท้วง','Comment / question')}</h3>
+          <p class="text-xs text-[var(--text-secondary)] truncate">${escapeHtml(title)}${amount ? ` • ${escapeHtml(amount)}` : ''}</p>
         </div>
       </div>
       <div id="comment-list" class="comment-list"></div>
@@ -260,7 +289,7 @@ function openCommentSheet({ tripId, expenseId, title = '', amount = '', comments
     if (!listEl) return;
     listEl.innerHTML = items.length
       ? items.map(rowHtml).join('')
-      : `<p class="text-[11px] text-[var(--text-tertiary)] text-center py-3">${th('ยังไม่มีความเห็น — เริ่มทักท้วงรายการนี้ได้เลย','No comments yet — start the discussion')}</p>`;
+      : `<p class="text-xs text-[var(--text-tertiary)] text-center py-3">${th('ยังไม่มีความเห็น — เริ่มทักท้วงรายการนี้ได้เลย','No comments yet — start the discussion')}</p>`;
     listEl.querySelectorAll('[data-comment-del]').forEach(btn => btn.addEventListener('click', async () => {
       const id = btn.dataset.commentDel;
       const ok = await confirmAction({ title: th('ลบความเห็นนี้?','Delete this comment?'), confirmText: t('delete'), danger: true, icon: 'trash-2' });
@@ -313,10 +342,10 @@ async function openActivitySheet(tripId, { isAdmin = false } = {}) {
       <div class="flex items-center gap-3">
         <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--bg-secondary);color:var(--text-secondary);">${icon('history', 'w-5 h-5')}</div>
         <div class="min-w-0 flex-1">
-          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${th('ประวัติการแก้ไข','Activity log')}</h3>
-          <p class="text-[11px] text-[var(--text-secondary)]">${th('ใครเพิ่ม/แก้ไข/ลบ อะไร และเมื่อไร','Who added, edited or deleted what')}</p>
+          <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('ประวัติการแก้ไข','Activity log')}</h3>
+          <p class="text-xs text-[var(--text-secondary)]">${th('ใครเพิ่ม/แก้ไข/ลบ อะไร และเมื่อไร','Who added, edited or deleted what')}</p>
         </div>
-        ${isAdmin ? `<button id="activity-clear-all" class="btn btn-ghost btn-sm text-[10px]" style="min-height:28px;padding:2px 10px;color:var(--danger);">${icon('trash-2', 'w-3.5 h-3.5')} ${th('ล้างทั้งหมด','Clear all')}</button>` : ''}
+        ${isAdmin ? `<button id="activity-clear-all" class="btn btn-ghost btn-sm text-xs" style="min-height:28px;padding:2px 10px;color:var(--danger);">${icon('trash-2', 'w-3.5 h-3.5')} ${th('ล้างทั้งหมด','Clear all')}</button>` : ''}
       </div>
       <div id="activity-list"><div class="skeleton h-16"></div><div class="skeleton h-16"></div></div>
     </div>
@@ -332,12 +361,12 @@ async function openActivitySheet(tripId, { isAdmin = false } = {}) {
         <div class="activity-icon">${icon(activityIcon(e.type), 'w-3.5 h-3.5')}</div>
         <div class="min-w-0 flex-1">
           <div class="text-xs"><b>${escapeHtml(e.name || '—')}</b> ${escapeHtml(activityLabel(e.type, lang))}${e.title ? ` — ${escapeHtml(e.title)}` : ''}</div>
-          ${e.detail ? `<div class="text-[10px] text-[var(--text-tertiary)] truncate">${escapeHtml(e.detail)}</div>` : ''}
-          <div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(fmtWhen(e.at, lang))}${e.pending ? ` • ${th('ในเครื่องนี้','on device')}` : ''}</div>
+          ${e.detail ? `<div class="text-xs text-[var(--text-tertiary)] truncate">${escapeHtml(e.detail)}</div>` : ''}
+          <div class="text-xs text-[var(--text-tertiary)]">${escapeHtml(fmtWhen(e.at, lang))}${e.pending ? ` • ${th('ในเครื่องนี้','on device')}` : ''}</div>
         </div>
         ${isAdmin ? `<button class="activity-del-btn" data-activity-del="${e.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>` : ''}
       </div>`).join('')
-      : `<p class="text-[11px] text-[var(--text-tertiary)] text-center py-4">${th('ยังไม่มีประวัติ','No history yet')}</p>`;
+      : `<p class="text-xs text-[var(--text-tertiary)] text-center py-4">${th('ยังไม่มีประวัติ','No history yet')}</p>`;
 
     // Bind individual delete buttons
     box.querySelectorAll('[data-activity-del]').forEach(btn => btn.addEventListener('click', async () => {
@@ -520,18 +549,8 @@ try {
   }).observe(document.body, { childList: true, subtree: true });
 } catch (e) { console.warn('icon observer failed', e); }
 
-// --- Scroll-reveal + stagger animations for freshly rendered views ---
-let revealQueued = false;
-try {
-  new MutationObserver(() => {
-    if (revealQueued) return;
-    revealQueued = true;
-    requestAnimationFrame(() => {
-      revealQueued = false;
-      try { if (appEl) initReveal(appEl); } catch (e) { /* ignore */ }
-    });
-  }).observe(appEl, { childList: true, subtree: true });
-} catch (e) { console.warn('reveal observer failed', e); }
+// v35: no scroll-reveal observer — content is visible the moment it renders
+// (the old reveal left cards at opacity 0 in print and screenshots, audit B9).
 
 // --- Clocks: one compact chip in the header, with a city picker ---
 // The old twin “BKK / TYO” clocks are replaced by a single chip that shows the
@@ -634,10 +653,12 @@ syncState.subscribe(status => {
   if (!el) return;
   const dot = el.querySelector('span');
   const txt = el.querySelector('span:last-child');
-  if (status === 'online') { dot.className = 'w-2 h-2 rounded-full bg-emerald-500'; txt.textContent = 'Online'; }
-  if (status === 'offline') { dot.className = 'w-2 h-2 rounded-full bg-gray-400'; txt.textContent = 'Offline'; }
-  if (status === 'syncing') { dot.className = 'w-2 h-2 rounded-full bg-amber-500 animate-pulse'; txt.textContent = 'Syncing'; }
-  if (status === 'failed') { dot.className = 'w-2 h-2 rounded-full bg-red-500'; txt.textContent = 'Sync Failed'; }
+  // v35: one quiet status line in the page language; only “syncing” is live.
+  const thS = getLang() === 'th';
+  if (status === 'online') { dot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-600'; txt.textContent = thS ? 'ออนไลน์' : 'Online'; }
+  if (status === 'offline') { dot.className = 'w-1.5 h-1.5 rounded-full bg-zinc-400'; txt.textContent = thS ? 'ออฟไลน์' : 'Offline'; }
+  if (status === 'syncing') { dot.className = 'w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse'; txt.textContent = thS ? 'กำลังซิงก์…' : 'Syncing…'; }
+  if (status === 'failed') { dot.className = 'w-1.5 h-1.5 rounded-full bg-red-600'; txt.textContent = thS ? 'ซิงก์ไม่สำเร็จ' : 'Sync failed'; }
 });
 
 let currentUser = null;
@@ -845,7 +866,11 @@ function setTrip(tripId) {
 // and ตั้งค่า now lives behind the profile picture (top-right) instead.
 let _desktopNavKey = null;
 function renderDesktopNav() {
-  if (!currentTripId) { desktopNavEl.innerHTML = ''; _desktopNavKey = null; return; }
+  // B4 (v35): the last trip id survives a sign-out on purpose (quick return to the
+  // same trip), but its menu must never show on the login screen.
+  const signedOut = !currentUser || /^#\/login/.test(location.hash || '');
+  document.body.classList.toggle('is-signed-out', signedOut);
+  if (!currentTripId || signedOut) { desktopNavEl.innerHTML = ''; _desktopNavKey = null; return; }
   const currentHash = location.hash.split('?')[0];
   const th = getLang() === 'th';
   // The markup only depends on the trip + language. Rebuilding 8 anchors and
@@ -926,7 +951,7 @@ function closeHeaderMore() {
 
 function renderHeaderMoreMenu() {
   if (!headerMoreEl) return;
-  if (!currentTripId) {
+  if (!currentTripId || !currentUser || /^#\/login/.test(location.hash || '')) {
     headerMoreEl.innerHTML = '';
     _headerMoreKey = null;
     return;
@@ -938,7 +963,7 @@ function renderHeaderMoreMenu() {
     let lastGroup = '';
     const rows = items.map((it, i) => {
       const head = it.group !== lastGroup
-        ? `<div class="header-more-title">${lastGroup === '' ? '' : '• '}${escapeHtml(it.group)}</div>`
+        ? `<div class="header-more-title">${escapeHtml(it.group)}</div>`
         : '';
       lastGroup = it.group;
       return `${head}<a class="header-more-link" href="${it.path}" data-more-path="${it.path}" role="menuitem">
@@ -947,10 +972,9 @@ function renderHeaderMoreMenu() {
     headerMoreEl.innerHTML = `
       <button id="header-more-btn" type="button" class="header-more-btn" aria-haspopup="menu" aria-expanded="false"
         aria-controls="header-more-menu" title="${th ? 'เมนูทั้งหมดของทริปนี้' : 'All trip menus'}">
-        ${icon('menu', 'w-4 h-4')}<span>${th ? 'เมนูทั้งหมด' : 'More'}</span>${icon('chevron-down', 'w-3 h-3')}
+        <span>${th ? 'เพิ่มเติม' : 'More'}</span>${icon('chevron-down', 'w-4 h-4')}
       </button>
       <div class="header-more-menu" id="header-more-menu" role="menu" hidden>
-        <div class="header-more-title">${escapeHtml(currentTrip?.name || (th ? 'ทริปนี้' : 'This trip'))}</div>
         ${rows}
       </div>`;
     const btn = document.getElementById('header-more-btn');
@@ -994,8 +1018,40 @@ document.addEventListener('click', (e) => {
   else location.hash = '#/trips';
 });
 
+/* v35 — a small popover menu (the dashboard “⋯”, page actions). One open at a
+   time; closes on outside click, Escape, choosing an item or a route change. */
+function closeMenuPops(except = null) {
+  document.querySelectorAll('.menu-pop:not([hidden])').forEach(menu => {
+    if (menu === except) return;
+    menu.hidden = true;
+    document.querySelector(`[aria-controls="${menu.id}"]`)?.setAttribute('aria-expanded', 'false');
+  });
+}
+function bindMenuPop(btnId, menuId) {
+  const btn = document.getElementById(btnId);
+  const menu = document.getElementById(menuId);
+  if (!btn || !menu) return;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = menu.hidden;
+    closeMenuPops(menu);
+    menu.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+    if (open) menu.querySelector('[role="menuitem"]')?.focus({ preventScroll: true });
+  });
+  menu.addEventListener('click', (e) => {
+    if (e.target.closest('[role="menuitem"]')) {
+      menu.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+}
+document.addEventListener('click', (e) => { if (!e.target.closest('.menu-wrap')) closeMenuPops(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenuPops(); });
+document.addEventListener('routechange', () => closeMenuPops());
+
 function renderFAB(route) {
-  if (!currentTripId) { fabEl.classList.add('hidden'); return; }
+  if (!currentTripId || !currentUser) { fabEl.classList.add('hidden'); return; }
   const cleanRoute = route.split('?')[0];
   // The expense editor has its own floating save bar (v22) — an “add” FAB would sit
   // right on top of it (and there is nothing left to add while you are editing).
@@ -1051,14 +1107,14 @@ function addHeaderControls() {
       ${icon('bell', 'w-[17px] h-[17px]')}
       <span id="notify-badge" class="notify-badge hidden" data-count="0">0</span>
     </button>
-    <button id="header-mode-btn" class="btn btn-ghost btn-icon w-9 h-9" title="Light / Dark / Auto">${icon('sun', 'w-[17px] h-[17px]')}</button>
   `;
+  // v35: the light/dark switch moved into the account sheet (avatar) — the top bar
+  // keeps only the bell, refresh and the avatar.
 
   const referenceNode = rightGroup.querySelector('#refresh-btn');
   if (referenceNode && referenceNode.parentElement === rightGroup) rightGroup.insertBefore(controlsDiv, referenceNode);
   else rightGroup.appendChild(controlsDiv);
 
-  document.getElementById('header-mode-btn').onclick = cycleMode;
   const bellBtn = document.getElementById('notify-bell');
   if (bellBtn) {
     bellBtn.onclick = () => openNotificationsSheet();
@@ -1283,15 +1339,15 @@ async function showNotifyHelpSheet() {
       <div class="flex items-center gap-3">
         <div class="row-icon" style="width:44px;height:44px;border-radius:14px;background:var(--danger-bg);color:var(--danger);">${icon('bell-off', 'w-5 h-5')}</div>
         <div class="min-w-0">
-          <h3 class="font-bold text-base" style="font-family: var(--font-display);">${th('การแจ้งเตือนไม่ทำงาน — วิธีแก้', 'Notifications are down — how to fix')}</h3>
-          <p class="text-[11px] text-[var(--text-tertiary)]">${escapeHtml(problem.title)}</p>
+          <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${th('การแจ้งเตือนไม่ทำงาน — วิธีแก้', 'Notifications are down — how to fix')}</h3>
+          <p class="text-xs text-[var(--text-tertiary)]">${escapeHtml(problem.title)}</p>
         </div>
       </div>
       <p class="text-xs text-[var(--text-secondary)] leading-relaxed">${escapeHtml(problem.message)}</p>
       <ol class="text-xs space-y-2 list-decimal pl-5 text-[var(--text-secondary)]">
         ${steps.map(s => `<li>${escapeHtml(s)}</li>`).join('')}
       </ol>
-      ${problem.fix ? `<div class="p-3 rounded-xl text-[11px] font-mono break-words" style="background:var(--bg-secondary); border:1px solid var(--border);">${escapeHtml(problem.fix)}</div>` : ''}
+      ${problem.fix ? `<div class="p-3 rounded-xl text-xs font-mono break-words" style="background:var(--bg-secondary); border:1px solid var(--border);">${escapeHtml(problem.fix)}</div>` : ''}
       <div class="btn-row">
         <button id="notify-help-copy-rules" class="btn btn-primary btn-sm">${icon('clipboard-copy', 'w-4 h-4')} ${th('คัดลอกกฎทั้งหมด', 'Copy all rules')}</button>
         <button id="notify-help-console" class="btn btn-secondary btn-sm">${icon('external-link', 'w-4 h-4')} ${th('เปิด Firebase Console', 'Open Firebase Console')}</button>
@@ -1300,7 +1356,7 @@ async function showNotifyHelpSheet() {
         <button id="notify-help-system" class="btn btn-ghost btn-sm">${icon('stethoscope', 'w-4 h-4')} ${th('ตรวจสอบระบบ', 'System check')}</button>
         <button id="notify-help-retry" class="btn btn-ghost btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่', 'Retry')}</button>
       </div>
-      <div id="notify-help-status" class="text-[11px] text-[var(--text-tertiary)]"></div>
+      <div id="notify-help-status" class="text-xs text-[var(--text-tertiary)]"></div>
     </div>
   `);
   queueIcons();
@@ -1311,7 +1367,7 @@ async function showNotifyHelpSheet() {
     const text = await fetchRulesText().catch(() => null);
     if (!text) { status(th('ดึงไฟล์กฎไม่สำเร็จ — เปิด GitHub แล้วคัดลอก firestore.rules เอง', 'Could not fetch the rules — copy firestore.rules from GitHub instead')); return; }
     const done = navigator.clipboard?.writeText?.(text);
-    if (done?.then) done.then(() => status(th('✅ คัดลอกกฎแล้ว — วางใน Firebase Console → Firestore → Rules', '✅ Rules copied — paste them in Firebase Console → Firestore → Rules')))
+    if (done?.then) done.then(() => status(th('คัดลอกกฎแล้ว — วางใน Firebase Console → Firestore → Rules', 'Rules copied — paste them in Firebase Console → Firestore → Rules')))
       .catch(() => status(text.slice(0, 60)));
     else status(text.slice(0, 60));
   });
@@ -1574,8 +1630,8 @@ async function openNotificationsSheet() {
       <div class="flex items-center gap-3 mb-2">
         <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('bell', 'w-5 h-5')}</div>
         <div class="min-w-0 flex-1">
-          <h3 class="font-bold text-base" style="font-family: var(--font-display);">${th('การแจ้งเตือน', 'Notifications')}</h3>
-          <p class="text-[11px] text-[var(--text-tertiary)]" id="notify-subtitle">${th('กำลังโหลด...', 'Loading...')}</p>
+          <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${th('การแจ้งเตือน', 'Notifications')}</h3>
+          <p class="text-xs text-[var(--text-tertiary)]" id="notify-subtitle">${th('กำลังโหลด...', 'Loading...')}</p>
         </div>
         <button type="button" class="btn btn-ghost btn-sm" id="notify-read-all">${icon('check-check', 'w-3.5 h-3.5')} ${th('อ่านทั้งหมด', 'Mark all')}</button>
       </div>
@@ -1584,8 +1640,8 @@ async function openNotificationsSheet() {
       <div class="chip-row my-2" id="notify-filters">${notificationFilterChipsHtml()}</div>
       <div id="notify-list" class="notify-list"></div>
       <div class="flex items-center justify-between gap-2 mt-3 flex-wrap">
-        <a class="link-btn text-[11px]" href="#/trip/${escapeHtml(tripId)}/settings?tab=notify">${icon('settings-2', 'w-3.5 h-3.5')} ${th('ตั้งค่าการแจ้งเตือน / Web Push', 'Notification & Web Push settings')}</a>
-        <span class="text-[10px] text-[var(--text-tertiary)]">${th('เก็บ 50 รายการล่าสุดของทริป', 'Newest 50 of this trip')}</span>
+        <a class="link-btn text-xs" href="#/trip/${escapeHtml(tripId)}/settings?tab=notify">${icon('settings-2', 'w-3.5 h-3.5')} ${th('ตั้งค่าการแจ้งเตือน / Web Push', 'Notification & Web Push settings')}</a>
+        <span class="text-xs text-[var(--text-tertiary)]">${th('เก็บ 50 รายการล่าสุดของทริป', 'Newest 50 of this trip')}</span>
       </div>
     </div>
   `);
@@ -1750,8 +1806,8 @@ function notificationSettingsCardsHtml({ lang = 'th', perms = {}, tripSettings =
 
   return `
     <div class="card p-5 space-y-3" id="notify-inapp-card" data-settings-section="notify">
-      <h3 class="font-bold flex items-center gap-2">${icon('bell', 'w-4 h-4')} ${th('การแจ้งเตือนในแอป', 'In-app notifications')}</h3>
-      <p class="text-xs text-[var(--text-secondary)]">${th('รายการจะโผล่ที่กระดิ่ง 🔔 บนแถบด้านบน พร้อมป๊อปอัปมุมจอเมื่อมีของใหม่', 'Items land in the 🔔 bell in the top bar, with a corner pop-up when something new arrives.')}</p>
+      <h3 class="font-semibold flex items-center gap-2">${icon('bell', 'w-4 h-4')} ${th('การแจ้งเตือนในแอป', 'In-app notifications')}</h3>
+      <p class="text-xs text-[var(--text-secondary)]">${th('รายการจะแสดงที่ไอคอนกระดิ่งบนแถบด้านบน พร้อมป๊อปอัปมุมจอเมื่อมีของใหม่', 'Items land in the bell in the top bar, with a corner pop-up when something new arrives.')}</p>
       <label class="settings-toggle-row" for="notify-toggle-enabled">
         <span class="min-w-0"><b>${icon('bell-ring', 'w-3.5 h-3.5')} ${th('เปิดการแจ้งเตือน', 'Notifications on')}</b>
           <small>${th('ปิดแล้วจะไม่มีการแจ้งเตือนใด ๆ บนอุปกรณ์นี้', 'Off hides every notification on this device')}</small></span>
@@ -1781,12 +1837,12 @@ function notificationSettingsCardsHtml({ lang = 'th', perms = {}, tripSettings =
         <button type="button" class="btn btn-secondary btn-sm" id="notify-open-bell">${icon('inbox', 'w-3.5 h-3.5')} ${th('เปิดกล่องการแจ้งเตือน', 'Open the bell')}</button>
         <button type="button" class="btn btn-ghost btn-sm" id="notify-send-test">${icon('send', 'w-3.5 h-3.5')} ${th('ส่งการแจ้งเตือนทดสอบ', 'Send a test')}</button>
       </div>
-      <p class="text-[10px] text-[var(--text-tertiary)]">${th('ค่าตั้งนี้จำไว้ต่ออุปกรณ์ และส่งขึ้นเซิร์ฟเวอร์เพื่อให้ Web Push รู้ว่าคุณอยากได้อะไร', 'These settings are remembered per device and mirrored to the server so Web Push knows what you want.')}</p>
+      <p class="text-xs text-[var(--text-tertiary)]">${th('ค่าตั้งนี้จำไว้ต่ออุปกรณ์ และส่งขึ้นเซิร์ฟเวอร์เพื่อให้ Web Push รู้ว่าคุณอยากได้อะไร', 'These settings are remembered per device and mirrored to the server so Web Push knows what you want.')}</p>
     </div>
 
     <div class="card p-5 space-y-3" id="notify-push-card" data-settings-section="notify">
-      <h3 class="font-bold flex items-center gap-2">${icon('bell-ring', 'w-4 h-4')} ${th('Web Push (FCM)', 'Web Push (FCM)')}
-        <span class="badge ${isOn ? 'badge-completed' : 'badge-planned'} text-[10px]">${isOn ? th('เปิดอยู่', 'On') : th('ปิดอยู่', 'Off')}</span></h3>
+      <h3 class="font-semibold flex items-center gap-2">${icon('bell-ring', 'w-4 h-4')} ${th('Web Push (FCM)', 'Web Push (FCM)')}
+        <span class="badge ${isOn ? 'badge-completed' : 'badge-planned'} text-xs">${isOn ? th('เปิดอยู่', 'On') : th('ปิดอยู่', 'Off')}</span></h3>
       <p class="text-xs text-[var(--text-secondary)]">${th('แจ้งเตือนผ่าน FCM ได้แม้ปิดแอป โดย GitHub Actions ส่งคิวปกติทุก 30 นาที (อาจล่าช้า) — Firebase ยังเป็น Spark', 'FCM can reach this device with the app closed. GitHub Actions sends the queue normally every 30 minutes (possibly delayed). Firebase stays on Spark.')}</p>
       ${statusRow(support.supported, th('เบราว์เซอร์รองรับ', 'Browser support'), support.supported ? th('รองรับ', 'supported') : (support.message || th('ไม่รองรับ', 'not supported')))}
       ${statusRow(permission === 'granted', th('สิทธิ์การแจ้งเตือน', 'Notification permission'), permission)}
@@ -1797,12 +1853,12 @@ function notificationSettingsCardsHtml({ lang = 'th', perms = {}, tripSettings =
           ${isOn ? `${icon('bell-off', 'w-3.5 h-3.5')} ${th('ปิด Push บนอุปกรณ์นี้', 'Turn push off here')}` : `${icon('bell-ring', 'w-3.5 h-3.5')} ${th('เปิด Push บนอุปกรณ์นี้', 'Turn push on here')}`}
         </button>
       </div>
-      <p class="text-[10px] text-[var(--text-tertiary)]">${th('คีย์ VAPID ถูกตั้งค่าจากการ deploy เว็บไซต์ ไม่ต้องกรอกบนหน้านี้ หากยังไม่พร้อม ให้ผู้ดูแลเว็บไซต์ตั้ง GitHub Actions secret ชื่อ FCM_VAPID_KEY และตั้ง Settings → Pages → Source เป็น “GitHub Actions” แล้ว deploy ผ่าน workflow', 'The site supplies its VAPID key at deploy time; there is nothing to enter here. If it is not configured, the site owner should set the FCM_VAPID_KEY GitHub Actions secret, set Settings → Pages → Source to “GitHub Actions”, and redeploy through the workflow.')}</p>
-      <p class="text-[10px] text-[var(--text-tertiary)]">${th('หมายเหตุ: บน iPhone/iPad ต้อง “เพิ่มไปที่หน้าจอโฮม” ก่อน (iOS 16.4+) จึงจะรับ Web Push ได้ และต้องเปิดเว็บผ่าน https://', 'Note: on iPhone/iPad the app must be added to the Home Screen first (iOS 16.4+) and the page must be served over https://.')}</p>
+      <p class="text-xs text-[var(--text-tertiary)]">${th('คีย์ VAPID ถูกตั้งค่าจากการ deploy เว็บไซต์ ไม่ต้องกรอกบนหน้านี้ หากยังไม่พร้อม ให้ผู้ดูแลเว็บไซต์ตั้ง GitHub Actions secret ชื่อ FCM_VAPID_KEY และตั้ง Settings → Pages → Source เป็น “GitHub Actions” แล้ว deploy ผ่าน workflow', 'The site supplies its VAPID key at deploy time; there is nothing to enter here. If it is not configured, the site owner should set the FCM_VAPID_KEY GitHub Actions secret, set Settings → Pages → Source to “GitHub Actions”, and redeploy through the workflow.')}</p>
+      <p class="text-xs text-[var(--text-tertiary)]">${th('หมายเหตุ: บน iPhone/iPad ต้อง “เพิ่มไปที่หน้าจอโฮม” ก่อน (iOS 16.4+) จึงจะรับ Web Push ได้ และต้องเปิดเว็บผ่าน https://', 'Note: on iPhone/iPad the app must be added to the Home Screen first (iOS 16.4+) and the page must be served over https://.')}</p>
     </div>
 
     <div class="card p-5 space-y-3" id="notify-trip-card" data-settings-section="notify">
-      <h3 class="font-bold flex items-center gap-2">${icon('calendar-clock', 'w-4 h-4')} ${th('สรุปค่าใช้จ่ายรายวันของทริปนี้', 'Daily summary of this trip')}</h3>
+      <h3 class="font-semibold flex items-center gap-2">${icon('calendar-clock', 'w-4 h-4')} ${th('สรุปค่าใช้จ่ายรายวันของทริปนี้', 'Daily summary of this trip')}</h3>
       <p class="text-xs text-[var(--text-secondary)]">${th('เวลาในเขตเวลาของทริป — สรุปสร้างเมื่อมีคนเปิดทริปหลังเวลาที่กำหนด แล้ว GitHub Actions ส่ง Push เป็นรอบ (ไม่มีงานสร้างสรุปฝั่งเซิร์ฟเวอร์)', 'Uses the trip timezone. A client creates the summary after the chosen hour, then GitHub Actions sends queued Push. There is no scheduled summary generator.')}</p>
       <label class="settings-toggle-row" for="notify-trip-daily">
         <span class="min-w-0"><b>${icon('sparkles', 'w-3.5 h-3.5')} ${th('เปิดสรุปอัตโนมัติทุกวัน', 'Automatic daily summary')}</b>
@@ -1810,12 +1866,12 @@ function notificationSettingsCardsHtml({ lang = 'th', perms = {}, tripSettings =
         <input type="checkbox" id="notify-trip-daily" class="settings-toggle" ${tripSettings.dailySummary === false ? '' : 'checked'} ${isAdmin ? '' : 'disabled'}>
       </label>
       <div class="input-group mb-0">
-        <label class="input-label" for="notify-trip-hour">${icon('clock', 'w-3 h-3')} ${th('เวลาส่งสรุป', 'Summary hour')}</label>
+        <label class="input-label" for="notify-trip-hour">${th('เวลาส่งสรุป', 'Summary hour')}</label>
         <select id="notify-trip-hour" class="input" ${isAdmin ? '' : 'disabled'}>${hourOptions}</select>
       </div>
       ${isAdmin
         ? `<button type="button" class="btn btn-primary btn-sm" id="notify-trip-save">${icon('save', 'w-3.5 h-3.5')} ${th('บันทึกเวลาสรุป', 'Save summary time')}</button>`
-        : `<p class="text-[10px] text-[var(--text-tertiary)]">${th('แก้ไขได้เฉพาะผู้ดูแลทริป', 'Only trip admins can change this')}</p>`}
+        : `<p class="text-xs text-[var(--text-tertiary)]">${th('แก้ไขได้เฉพาะผู้ดูแลทริป', 'Only trip admins can change this')}</p>`}
     </div>`;
 }
 
@@ -1940,7 +1996,7 @@ function openImageViewer(images, startIndex = 0, title = '') {
   const dlg = showModal(`
     <div class="idea-lightbox">
       <div class="flex items-start justify-between gap-2 mb-2">
-        <h3 class="font-bold text-sm pr-2 min-w-0 truncate">${icon('images', 'w-4 h-4')} ${escapeHtml(title || '')}</h3>
+        <h3 class="font-semibold text-sm pr-2 min-w-0 truncate">${icon('images', 'w-4 h-4')} ${escapeHtml(title || '')}</h3>
         <button class="icon-btn flex-shrink-0" data-lb="close" aria-label="${closeLabel}">${icon('x', 'w-4 h-4')}</button>
       </div>
       <div class="idea-lightbox-main">
@@ -1949,8 +2005,8 @@ function openImageViewer(images, startIndex = 0, title = '') {
         ${imgs.length > 1 ? `<button class="idea-lightbox-nav" data-lb="next" aria-label="›">${icon('chevron-right', 'w-5 h-5')}</button>` : ''}
       </div>
       <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
-        <span class="text-[11px] font-bold text-[var(--text-tertiary)]" data-lb="count">${cur + 1} / ${imgs.length}</span>
-        <a data-lb="open" class="btn btn-ghost btn-sm text-[11px]" href="${escapeHtml(imgs[cur])}" target="_blank" rel="noopener">${icon('external-link', 'w-3.5 h-3.5')} ${getLang() === 'th' ? 'เปิดรูปต้นฉบับ' : 'Open original'}</a>
+        <span class="text-xs font-semibold text-[var(--text-tertiary)]" data-lb="count">${cur + 1} / ${imgs.length}</span>
+        <a data-lb="open" class="btn btn-ghost btn-sm text-xs" href="${escapeHtml(imgs[cur])}" target="_blank" rel="noopener">${icon('external-link', 'w-3.5 h-3.5')} ${getLang() === 'th' ? 'เปิดรูปต้นฉบับ' : 'Open original'}</a>
       </div>
       ${imgs.length > 1 ? `<div class="idea-lightbox-thumbs">${imgs.map((u, k) => `
         <button data-lb="thumb" data-k="${k}" class="${k === cur ? 'is-active' : ''}"><img decoding="async" src="${escapeHtml(u)}" alt="" loading="lazy" onerror="this.closest('[data-lb=thumb]').style.display='none'"></button>`).join('')}</div>` : ''}
@@ -2033,33 +2089,33 @@ function openUserSheet(user) {
       <div class="flex items-center gap-3">
         <div class="avatar" style="background: var(--gradient-primary); width:52px;height:52px; flex-shrink:0;">${user.photoURL ? `<img decoding="async" src="${escapeHtml(user.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(initial)}</div>
         <div class="flex-1 min-w-0">
-          <h3 class="font-bold truncate text-[15px]">${escapeHtml(user.displayName || user.email || 'User')}</h3>
+          <h3 class="font-semibold truncate text-[15px]">${escapeHtml(user.displayName || user.email || 'User')}</h3>
           <p class="text-xs text-[var(--text-secondary)] truncate">${escapeHtml(user.email || user.uid.slice(0,12))} ${tripInfo}</p>
-          <span class="inline-flex items-center gap-1 mt-1 text-[10px] px-2 py-0.5 rounded-full bg-[var(--primary-lighter)] border border-[color-mix(in_srgb,var(--primary-raw)_26%,transparent)] text-[var(--primary-strong)] font-bold">${icon('shield-check','w-3 h-3')} ${th('บัญชีที่เข้าสู่ระบบ','Signed in')}</span>
+          <span class="inline-flex items-center gap-1 mt-1 text-xs px-2 py-0.5 rounded-full bg-[var(--primary-lighter)] border border-[color-mix(in_srgb,var(--primary-raw)_26%,transparent)] text-[var(--primary-strong)] font-semibold">${icon('shield-check','w-3 h-3')} ${th('บัญชีที่เข้าสู่ระบบ','Signed in')}</span>
         </div>
         <button id="close-user-sheet" class="btn btn-ghost btn-sm !p-2">${icon('x','w-4 h-4')}</button>
       </div>
 
       <div class="card p-3 space-y-3">
         <div class="flex items-center justify-between">
-          <h4 class="text-xs font-extrabold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-1.5">${icon('user','w-3.5 h-3.5')} ${th('บัญชี','Account')}</h4>
-          <span class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(user.uid.slice(0,10))}…</span>
+          <h4 class="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">${icon('user','w-3.5 h-3.5')} ${th('บัญชี','Account')}</h4>
+          <span class="text-xs text-[var(--text-tertiary)]">${escapeHtml(user.uid.slice(0,10))}…</span>
         </div>
         <div class="grid gap-2.5">
-          <div class="input-group"><label class="input-label text-[11px]">${icon('user','w-3 h-3')} Display Name</label><input id="edit-display-name" class="input text-[13px] !min-h-[36px]" value="${escapeHtml(user.displayName || '')}" placeholder="ชื่อที่แสดง"></div>
-          <div class="input-group"><label class="input-label text-[11px]">${icon('image','w-3 h-3')} Photo URL</label><input id="edit-photo-url" class="input text-[13px] !min-h-[36px]" value="${escapeHtml(user.photoURL || '')}" placeholder="https://..."></div>
+          <div class="input-group"><label class="input-label text-xs">${icon('user','w-3 h-3')} Display Name</label><input id="edit-display-name" class="input text-[13px] !min-h-[36px]" value="${escapeHtml(user.displayName || '')}" placeholder="ชื่อที่แสดง"></div>
+          <div class="input-group"><label class="input-label text-xs">${icon('image','w-3 h-3')} Photo URL</label><input id="edit-photo-url" class="input text-[13px] !min-h-[36px]" value="${escapeHtml(user.photoURL || '')}" placeholder="https://..."></div>
           <button id="save-profile" class="btn btn-primary btn-sm w-full !min-h-[38px]">${icon('save','w-4 h-4')} ${th('บันทึกโปรไฟล์','Save profile')}</button>
         </div>
       </div>
 
       <div class="card p-3 space-y-3">
         <div class="flex items-center justify-between">
-          <h4 class="text-xs font-extrabold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-1.5">${icon('smartphone','w-3.5 h-3.5')} ${th('อุปกรณ์ & แคช','Device & cache')}</h4>
-          <span class="text-[10px] px-2 py-0.5 rounded-full bg-[var(--bg-secondary)] border border-[var(--border)]">${cacheKeys} keys • ~${cacheSizeKb}KB</span>
+          <h4 class="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">${icon('smartphone','w-3.5 h-3.5')} ${th('อุปกรณ์ & แคช','Device & cache')}</h4>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-[var(--bg-secondary)] border border-[var(--border)]">${cacheKeys} keys • ~${cacheSizeKb}KB</span>
         </div>
         <div class="grid grid-cols-2 gap-2">
-          <div class="account-row !py-2"><div class="row-icon !w-8 !h-8">${icon('database','w-4 h-4')}</div><div class="flex-1 min-w-0"><div class="text-[11px] font-bold">${th('แคช','Cache')}</div><div class="text-[10px] text-[var(--text-tertiary)]">${th('ข้อมูลออฟไลน์','Offline data')}</div></div></div>
-          <div class="account-row !py-2"><div class="row-icon !w-8 !h-8">${icon('globe','w-4 h-4')}</div><div class="flex-1 min-w-0"><div class="text-[11px] font-bold">${getLang()==='th'?'TH':'EN'}</div><div class="text-[10px] text-[var(--text-tertiary)]">${th('ภาษา','Language')}</div></div></div>
+          <div class="account-row !py-2"><div class="row-icon !w-8 !h-8">${icon('database','w-4 h-4')}</div><div class="flex-1 min-w-0"><div class="text-xs font-semibold">${th('แคช','Cache')}</div><div class="text-xs text-[var(--text-tertiary)]">${th('ข้อมูลออฟไลน์','Offline data')}</div></div></div>
+          <div class="account-row !py-2"><div class="row-icon !w-8 !h-8">${icon('globe','w-4 h-4')}</div><div class="flex-1 min-w-0"><div class="text-xs font-semibold">${getLang()==='th'?'TH':'EN'}</div><div class="text-xs text-[var(--text-tertiary)]">${th('ภาษา','Language')}</div></div></div>
         </div>
         <div class="grid grid-cols-2 gap-2">
           <button id="appearance-btn" class="btn btn-secondary btn-sm">${icon('sun-moon','w-4 h-4')} ${t('appearance')}</button>
@@ -2073,8 +2129,8 @@ function openUserSheet(user) {
       </div>
 
       <div class="space-y-2">
-        <button id="logout-btn" class="btn w-full !min-h-[44px] text-[14px] font-extrabold" style="background: var(--danger-bg); color: var(--danger); border: 1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('log-out','w-5 h-5')} ${t('logout')}</button>
-        <p class="text-[10px] text-center text-[var(--text-tertiary)]">${th('ออกจากระบบจะลบเซสชันบนอุปกรณ์นี้','Sign out clears session on this device')}</p>
+        <button id="logout-btn" class="btn w-full !min-h-[44px] text-[14px] font-semibold" style="background: var(--danger-bg); color: var(--danger); border: 1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('log-out','w-5 h-5')} ${t('logout')}</button>
+        <p class="text-xs text-center text-[var(--text-tertiary)]">${th('ออกจากระบบจะลบเซสชันบนอุปกรณ์นี้','Sign out clears session on this device')}</p>
       </div>
     </div>
   `, { maxWidth: '420px' });
@@ -2084,7 +2140,7 @@ function openUserSheet(user) {
   document.getElementById('close-user-sheet')?.addEventListener('click', ()=> sheet.close());
   document.getElementById('logout-btn')?.addEventListener('click', async () => {
     const btn = document.getElementById('logout-btn');
-    if (btn) { btn.disabled = true; btn.innerHTML = `${icon('loader-2','w-5 h-5 animate-spin')} ${th('กำลังออก...','Signing out...')}`; queueIcons(); }
+    if (btn) { btn.disabled = true; btn.innerHTML = `${icon('loader-2','w-5 h-5 animate-spin')} ${th('กำลังออกจากระบบ…','Signing out…')}`; queueIcons(); }
     sheet.close();
     await doLogout();
   });
@@ -2231,8 +2287,8 @@ async function showRulesHelpSheet({ lang, trip = null, action = 'join' } = {}) {
       <div class="flex items-center gap-3">
         <div class="row-icon" style="width:44px;height:44px;border-radius:14px;background:var(--danger-bg);color:var(--danger);">${icon('shield-alert', 'w-5 h-5')}</div>
         <div>
-          <h3 class="font-bold text-base" style="font-family: var(--font-display);">${escapeHtml(help.title)}</h3>
-          <p class="text-[11px] text-[var(--text-tertiary)]">Missing or insufficient permissions</p>
+          <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${escapeHtml(help.title)}</h3>
+          <p class="text-xs text-[var(--text-tertiary)]">Missing or insufficient permissions</p>
         </div>
       </div>
       <p class="text-xs text-[var(--text-secondary)] leading-relaxed">${escapeHtml(help.message)}</p>
@@ -2240,15 +2296,15 @@ async function showRulesHelpSheet({ lang, trip = null, action = 'join' } = {}) {
         ${help.steps.map(step => `<li>${escapeHtml(step)}</li>`).join('')}
       </ol>
       <div class="p-3 rounded-xl" style="background:var(--bg-secondary); border:1px solid var(--border);">
-        <p class="text-[11px] font-semibold mb-1">${th('คอลเลกชันที่กฎยังขาด','Collections missing from the rules')}</p>
-        <div class="flex flex-wrap gap-1.5">${help.missing.map(m => `<code class="text-[10px] px-2 py-0.5 rounded-md" style="background:var(--surface); border:1px solid var(--border);">${escapeHtml(m)}</code>`).join('')}</div>
+        <p class="text-xs font-semibold mb-1">${th('คอลเลกชันที่กฎยังขาด','Collections missing from the rules')}</p>
+        <div class="flex flex-wrap gap-1.5">${help.missing.map(m => `<code class="text-xs px-2 py-0.5 rounded-md" style="background:var(--surface); border:1px solid var(--border);">${escapeHtml(m)}</code>`).join('')}</div>
       </div>
       <div class="btn-row">
         <button id="rules-copy" class="btn btn-primary btn-sm">${icon('clipboard-copy', 'w-4 h-4')} ${th('คัดลอกกฎทั้งหมด','Copy all rules')}</button>
         <button id="rules-open-console" class="btn btn-secondary btn-sm">${icon('external-link', 'w-4 h-4')} ${th('เปิด Firebase Console','Open Firebase Console')}</button>
       </div>
       <button id="rules-ask-admin" class="btn btn-ghost btn-sm w-full">${icon('send', 'w-4 h-4')} ${th('คัดลอกข้อความส่งให้แอดมินทริป','Copy a message for the trip admin')}</button>
-      <div id="rules-status" class="text-[11px] text-[var(--text-tertiary)]"></div>
+      <div id="rules-status" class="text-xs text-[var(--text-tertiary)]"></div>
     </div>
   `);
   queueIcons();
@@ -2256,8 +2312,8 @@ async function showRulesHelpSheet({ lang, trip = null, action = 'join' } = {}) {
   const status = (msg) => { const el = sheet.sheet.querySelector('#rules-status'); if (el) el.textContent = msg; };
   const copy = (text, okMsg, failMsg) => {
     const done = navigator.clipboard?.writeText?.(text);
-    if (done?.then) done.then(() => { status('✅ ' + okMsg); toast.success(okMsg); }).catch(() => status('⚠️ ' + failMsg));
-    else status('⚠️ ' + failMsg);
+    if (done?.then) done.then(() => { status(okMsg); toast.success(okMsg); }).catch(() => status(failMsg));
+    else status(failMsg);
   };
 
   sheet.sheet.querySelector('#rules-copy').addEventListener('click', async (e) => {
@@ -2441,8 +2497,8 @@ function themePickerHtml({ idPrefix = 'tp', showModes = true } = {}) {
         <div class="theme-preview-card" aria-label="${th('ตัวอย่างสีธีม', 'Theme preview')}" style="border-color:${escapeHtml(pal.blue)};">
           <span class="badge" style="background:${escapeHtml(pal.blue)};color:${escapeHtml(contrastInk(pal.blue))};">${th('ปุ่มหลัก', 'Primary action')}</span>
           <span class="badge" style="background:${escapeHtml(pal.amber)};color:${escapeHtml(contrastInk(pal.amber))};">${th('สีเน้น', 'Accent')}</span>
-          <span class="text-xs font-bold">${th('ตัวอย่างการ์ดและข้อความ', 'Card and text preview')}</span>
-          <span class="text-[11px] text-[var(--text-secondary)]">${th('ปรับสีแล้วดูตัวอย่างได้ทันที • ใช้เฉพาะอุปกรณ์นี้', 'Live preview • saved on this device only')}</span>
+          <span class="text-xs font-semibold">${th('ตัวอย่างการ์ดและข้อความ', 'Card and text preview')}</span>
+          <span class="text-xs text-[var(--text-secondary)]">${th('ปรับสีแล้วดูตัวอย่างได้ทันที • ใช้เฉพาะอุปกรณ์นี้', 'Live preview • saved on this device only')}</span>
         </div>
         <p class="text-xs text-[var(--text-secondary)]">${th('ชุดสีและโหมดสว่าง/มืดบันทึกในเบราว์เซอร์ของอุปกรณ์นี้ ไม่ซิงก์ไปยังอุปกรณ์อื่น', 'Colour theme and light/dark mode are stored in this browser on this device and are not synced to other devices.')}</p>
         <div class="btn-row mt-1">
@@ -2561,7 +2617,7 @@ function showAppearanceSheet() {
     <div class="flex items-center gap-3 mb-1">
       <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('palette', 'w-5 h-5')}</div>
       <div>
-        <h3 class="font-bold text-lg leading-tight" style="font-family: var(--font-display);">${t('appearance')}</h3>
+        <h3 class="font-semibold text-lg leading-tight" style="font-family: var(--font-display);">${t('appearance')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${lang === 'th' ? 'เลือกชุดสีที่ชอบ แล้วปรับต่อเองได้' : 'Pick a palette — then fine-tune it yourself'}</p>
       </div>
     </div>
@@ -2612,10 +2668,10 @@ router.beforeEach = (matched) => {
   if (!authReady && matched.path !== '/login') {
     pendingAuthRoute = location.hash || matched.fullPath;
     appEl.innerHTML = `
-      <div class="grid place-items-center py-24 page-enter">
-        <div class="text-center">
-          <div class="animate-float">${renderFujiMascot('loading', 90)}</div>
-          <p class="mt-5 text-sm font-medium text-[var(--text-secondary)] animate-pulse-soft">${getLang() === 'th' ? 'กำลังตรวจสอบการเข้าสู่ระบบ...' : 'Checking your session...'}</p>
+      <div class="grid place-items-center py-24" role="status" aria-live="polite">
+        <div class="app-loader">
+          <span class="app-loader-spin" aria-hidden="true"></span>
+          <p class="text-sm text-[var(--text-secondary)]">${getLang() === 'th' ? 'กำลังตรวจสอบการเข้าสู่ระบบ…' : 'Checking your session…'}</p>
         </div>
       </div>`;
     return false;
@@ -2733,12 +2789,12 @@ function renderConfigNeeded() {
   appEl.innerHTML = `
     <div class="max-w-[720px] mx-auto page-enter">
       <div class="card p-8">
-        <div class="text-center mb-6">${renderFujiMascot('normal', 120)}</div>
-        <h1 class="page-title justify-center text-2xl font-bold mb-2">${icon('database', 'w-5 h-5')} ตั้งค่า Firebase</h1>
+        <div class="flex justify-center mb-5">${renderLogoMark(48)}</div>
+        <h1 class="page-title justify-center mb-2">ตั้งค่า Firebase</h1>
         <p class="text-sm text-[var(--text-secondary)] mb-4 text-center">กรอก Firebase Config เพื่อเริ่มใช้งาน</p>
         <div class="space-y-5">
           <div class="input-group">
-            <label class="input-label">${icon('braces', 'w-3.5 h-3.5')} Firebase Config JSON</label>
+            <label class="input-label">Firebase Config JSON</label>
             <textarea id="cfg-input" class="input font-mono text-xs" style="min-height:160px;" placeholder='{"apiKey":"...","authDomain":"...","projectId":"..."}'>${escapeHtml(savedPretty)}</textarea>
           </div>
           <div class="flex gap-2">
@@ -2778,53 +2834,29 @@ function renderLogin() {
   if (!isFirebaseConfigured) return renderConfigNeeded();
   const lang = getLang();
   appEl.innerHTML = `
-    <div class="min-h-[75vh] grid place-items-center page-enter">
-      <div class="w-full max-w-[440px]">
-        <div class="text-center mb-8">
-          ${renderFujiMascot('normal', 140)}
-          <h1 class="text-[32px] font-bold mt-4 tracking-tight" style="font-family: var(--font-display);">${t('appName')}</h1>
-          <p class="text-sm text-[var(--text-secondary)] mt-2">${t('tagline')}</p>
-          <div class="flex justify-center gap-2 mt-4 flex-wrap">
-            <button id="login-dark" class="chip text-xs" data-mode-current></button>
-          </div>
-        </div>
-
-        <div class="card card-accent p-7 space-y-4">
-          <!-- Google-only sign-in -->
-          <button id="google-signin-btn" class="btn btn-google w-full btn-lg">
-            <svg viewBox="0 0 48 48" class="w-5 h-5" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-            เข้าสู่ระบบด้วยบัญชี Google
-          </button>
-
-          <div class="login-steps">
-            <div class="login-step"><span class="step-num">1</span><span>กดปุ่มด้านบน แล้วเลือกบัญชี Google ของคุณ</span></div>
-            <div class="login-step"><span class="step-num">2</span><span>ขอรหัสเชิญทริปจากแอดมิน แล้วกดเข้าร่วม</span></div>
-            <div class="login-step"><span class="step-num">3</span><span>เริ่มวางแผนทริปด้วยกันได้เลย</span></div>
-          </div>
-
-          <p class="text-[11px] text-center text-[var(--text-tertiary)] leading-relaxed">
-            สมาชิกใช้บัญชี Google ของตัวเองได้ — แอดมินทริปเป็นคนอนุมัติให้เข้าร่วมแต่ละทริป
-          </p>
-        </div>
-
-        <p class="build-stamp text-center" data-build-stamp>
-          ${icon('info', 'w-3 h-3')} ${escapeHtml(appBuildLabel(lang))}
-        </p>
-        </div>
+    <div class="login-wrap page-enter">
+      <div class="login-card">
+        ${renderLogoMark(48)}
+        <h1 class="login-title">${t('appName')}</h1>
+        <p class="login-sub">${t('tagline')}</p>
+        <!-- Google-only sign-in -->
+        <button id="google-signin-btn" class="btn btn-google w-full btn-lg">
+          <svg viewBox="0 0 48 48" class="w-5 h-5" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+          เข้าสู่ระบบด้วย Google
+        </button>
+        <p class="login-note">ใช้บัญชี Google ของคุณเอง แล้วขอรหัสเชิญจากแอดมินทริปเพื่อเข้าร่วม</p>
       </div>
+      <p class="build-stamp text-center" data-build-stamp>${escapeHtml(appBuildLabel(lang))}</p>
     </div>
   `;
   queueIcons();
-  updateModeIcons();
-
-  document.getElementById('login-dark').onclick = cycleMode;
 
   // ---- Google-only sign-in ----
   appEl.querySelector('#google-signin-btn').onclick = async (e) => {
     const btn = e.currentTarget;
     const originalHtml = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = `${spinner('w-5 h-5')} กำลังเปิด Google...`;
+    btn.innerHTML = `${spinner('w-5 h-5')} กำลังเปิด Google…`;
     queueIcons();
     try {
       const user = await signInWithGoogle(true);
@@ -2873,33 +2905,33 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
       <div class="flex items-center gap-3">
         <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon(isEdit ? 'pencil' : 'compass', 'w-5 h-5')}</div>
         <div class="min-w-0">
-          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? (lang==='th' ? 'แก้ไขทริป' : 'Edit trip') : t('createTrip')}</h3>
-          <p class="text-[11px] text-[var(--text-secondary)]">${isEdit ? (lang==='th' ? 'แก้ชื่อ วันเดินทาง รายละเอียด ฯลฯ' : 'Change name, dates, details…') : (lang==='th' ? 'กรอกข้อมูลทริปใหม่ของคุณ' : 'Fill in your new trip details')}</p>
+          <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? (lang==='th' ? 'แก้ไขทริป' : 'Edit trip') : t('createTrip')}</h3>
+          <p class="text-xs text-[var(--text-secondary)]">${isEdit ? (lang==='th' ? 'แก้ชื่อ วันเดินทาง รายละเอียด ฯลฯ' : 'Change name, dates, details…') : (lang==='th' ? 'กรอกข้อมูลทริปใหม่ของคุณ' : 'Fill in your new trip details')}</p>
         </div>
       </div>
 
       <form id="trip-form" class="space-y-3">
-        <div class="input-group"><label class="input-label">${icon('sparkles', 'w-3.5 h-3.5')} ${t('tripName')} *</label><input id="tf-name" class="input" required placeholder="Fuji Autumn 2027" autocomplete="off" value="${escapeHtml(trip.name || '')}"></div>
+        <div class="input-group"><label class="input-label">${t('tripName')} *</label><input id="tf-name" class="input" required placeholder="Fuji Autumn 2027" autocomplete="off" value="${escapeHtml(trip.name || '')}"></div>
 
-        <div class="input-group"><label class="input-label">${icon('align-left', 'w-3.5 h-3.5')} ${lang==='th' ? 'รายละเอียดทริป' : 'Description'}</label><textarea id="tf-desc" class="input" style="min-height:70px;" placeholder="${lang==='th' ? 'บันทึกสิ่งที่อยากทำในทริปนี้' : 'What is this trip about?'}">${escapeHtml(trip.description || '')}</textarea></div>
+        <div class="input-group"><label class="input-label">${lang==='th' ? 'รายละเอียดทริป' : 'Description'}</label><textarea id="tf-desc" class="input" style="min-height:70px;" placeholder="${lang==='th' ? 'บันทึกสิ่งที่อยากทำในทริปนี้' : 'What is this trip about?'}">${escapeHtml(trip.description || '')}</textarea></div>
 
         <div class="input-group">
-          <label class="input-label">${icon('image', 'w-3.5 h-3.5')} ${t('coverImage')}</label>
+          <label class="input-label">${t('coverImage')}</label>
           <div class="p-3 rounded-xl border-2 border-dashed" style="border-color: var(--border); background: var(--bg-secondary);">
             <div id="cover-dropzone" class="text-center cursor-pointer py-3 transition-colors ${trip.coverImage ? 'hidden' : ''}">
               <div class="row-icon mx-auto mb-2" style="width:42px;height:42px;">${icon('camera', 'w-5 h-5')}</div>
               <p class="text-xs font-semibold">${lang==='th' ? 'คลิกหรือลากรูปมาวาง' : 'Click or drop an image'}</p>
-              <p class="text-[10px] text-[var(--text-tertiary)] mt-0.5">JPG / PNG • ≤ 10MB • ${lang==='th' ? 'ครอปได้' : 'croppable'}</p>
+              <p class="text-xs text-[var(--text-tertiary)] mt-0.5">JPG / PNG • ≤ 10MB • ${lang==='th' ? 'ครอปได้' : 'croppable'}</p>
             </div>
             <input id="tf-cover" type="file" accept="image/*" class="hidden">
 
             <div id="cover-cropper-container" class="hidden mt-3">
               <div class="flex gap-1.5 mb-2 flex-wrap items-center">
-                <span class="text-[11px] font-semibold">${icon('crop', 'w-3.5 h-3.5 inline')} ${lang==='th' ? 'อัตราส่วน' : 'Aspect'}:</span>
-                <button type="button" data-aspect="16/9" class="chip chip-active text-[10px] aspect-btn" style="min-height:28px;padding:4px 10px;">16:9</button>
-                <button type="button" data-aspect="4/3" class="chip text-[10px] aspect-btn" style="min-height:28px;padding:4px 10px;">4:3</button>
-                <button type="button" data-aspect="1" class="chip text-[10px] aspect-btn" style="min-height:28px;padding:4px 10px;">1:1</button>
-                <button type="button" data-aspect="free" class="chip text-[10px] aspect-btn" style="min-height:28px;padding:4px 10px;">Free</button>
+                <span class="text-xs font-semibold">${icon('crop', 'w-3.5 h-3.5 inline')} ${lang==='th' ? 'อัตราส่วน' : 'Aspect'}:</span>
+                <button type="button" data-aspect="16/9" class="chip chip-active text-xs aspect-btn" style="min-height:28px;padding:4px 10px;">16:9</button>
+                <button type="button" data-aspect="4/3" class="chip text-xs aspect-btn" style="min-height:28px;padding:4px 10px;">4:3</button>
+                <button type="button" data-aspect="1" class="chip text-xs aspect-btn" style="min-height:28px;padding:4px 10px;">1:1</button>
+                <button type="button" data-aspect="free" class="chip text-xs aspect-btn" style="min-height:28px;padding:4px 10px;">Free</button>
               </div>
               <div id="cropper-wrapper" class="w-full rounded-xl overflow-hidden" style="min-height:180px;max-height:260px;background:#000;"></div>
               <div class="flex gap-2 mt-2">
@@ -2910,51 +2942,51 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
 
             <div id="cover-preview" class="${trip.coverImage ? '' : 'hidden'} mt-3">
               <div class="flex items-center justify-between mb-1.5">
-                <span class="text-[11px] font-bold flex items-center gap-1">${icon('eye', 'w-3.5 h-3.5')} ${lang==='th' ? 'ตัวอย่าง' : 'Preview'}</span>
-                <button type="button" id="change-image" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:4px 10px;">${icon('replace', 'w-3 h-3')} ${lang==='th' ? 'เปลี่ยน' : 'Change'}</button>
+                <span class="text-xs font-semibold flex items-center gap-1">${icon('eye', 'w-3.5 h-3.5')} ${lang==='th' ? 'ตัวอย่าง' : 'Preview'}</span>
+                <button type="button" id="change-image" class="btn btn-ghost btn-sm text-xs" style="min-height:26px;padding:4px 10px;">${icon('replace', 'w-3 h-3')} ${lang==='th' ? 'เปลี่ยน' : 'Change'}</button>
               </div>
               <div class="w-full h-28 rounded-xl overflow-hidden border" style="border-color: var(--border);">
                 <img decoding="async" id="cover-img" class="w-full h-full object-cover" src="${escapeHtml(trip.coverImage || '')}" alt="">
               </div>
-              <p id="cover-info" class="text-[10px] text-[var(--text-tertiary)] mt-1"></p>
+              <p id="cover-info" class="text-xs text-[var(--text-tertiary)] mt-1"></p>
             </div>
           </div>
           <div class="input-group mt-2">
-            <label class="input-label text-[12px]">${icon('link', 'w-3.5 h-3.5')} ${lang==='th' ? 'หรือใส่ URL รูปภาพ' : 'Or image URL'}</label>
+            <label class="input-label text-[12px]">${lang==='th' ? 'หรือใส่ URL รูปภาพ' : 'Or image URL'}</label>
             <input id="tf-cover-url" class="input text-sm" style="min-height:38px;" placeholder="https://..." autocomplete="off" value="${trip.coverImage && String(trip.coverImage).startsWith('http') ? escapeHtml(trip.coverImage) : ''}">
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
-          <div class="input-group"><label class="input-label text-[12px]">${icon('globe', 'w-3.5 h-3.5')} ${t('country')}</label><input id="tf-country" class="input text-sm" style="min-height:38px;" placeholder="Japan" autocomplete="off" value="${escapeHtml(trip.country || '')}"></div>
-          <div class="input-group"><label class="input-label text-[12px]">${icon('building-2', 'w-3.5 h-3.5')} ${t('city')}</label><input id="tf-city" class="input text-sm" style="min-height:38px;" placeholder="Fujikawaguchiko" autocomplete="off" value="${escapeHtml(trip.city || '')}"></div>
+          <div class="input-group"><label class="input-label text-[12px]">${t('country')}</label><input id="tf-country" class="input text-sm" style="min-height:38px;" placeholder="Japan" autocomplete="off" value="${escapeHtml(trip.country || '')}"></div>
+          <div class="input-group"><label class="input-label text-[12px]">${t('city')}</label><input id="tf-city" class="input text-sm" style="min-height:38px;" placeholder="Fujikawaguchiko" autocomplete="off" value="${escapeHtml(trip.city || '')}"></div>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
-          <div class="input-group"><label class="input-label text-[12px]">${icon('calendar', 'w-3.5 h-3.5')} ${t('startDate')} *</label><input id="tf-start" class="input text-sm" style="min-height:38px;" type="date" required value="${escapeHtml(trip.startDate || '')}"></div>
-          <div class="input-group"><label class="input-label text-[12px]">${icon('calendar-check', 'w-3.5 h-3.5')} ${t('endDate')} *</label><input id="tf-end" class="input text-sm" style="min-height:38px;" type="date" required value="${escapeHtml(trip.endDate || '')}"></div>
+          <div class="input-group"><label class="input-label text-[12px]">${t('startDate')} *</label><input id="tf-start" class="input text-sm" style="min-height:38px;" type="date" required value="${escapeHtml(trip.startDate || '')}"></div>
+          <div class="input-group"><label class="input-label text-[12px]">${t('endDate')} *</label><input id="tf-end" class="input text-sm" style="min-height:38px;" type="date" required value="${escapeHtml(trip.endDate || '')}"></div>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
           <div class="input-group">
-            <label class="input-label text-[12px]">${icon('clock', 'w-3.5 h-3.5')} ${t('timezone')}</label>
+            <label class="input-label text-[12px]">${t('timezone')}</label>
             <select id="tf-tz" class="input text-sm" style="min-height:38px;">${options(TRIP_TIMEZONES, trip.timezone || 'Asia/Bangkok')}</select>
           </div>
           <div class="input-group">
-            <label class="input-label text-[12px]">${icon('banknote', 'w-3.5 h-3.5')} ${t('baseCurrency')}</label>
+            <label class="input-label text-[12px]">${t('baseCurrency')}</label>
             <select id="tf-cur" class="input text-sm" style="min-height:38px;">${currencyOptions(trip.baseCurrency || 'THB')}</select>
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
           <div class="input-group">
-            <label class="input-label text-[12px]">${icon('flag', 'w-3.5 h-3.5')} ${lang==='th' ? 'สถานะทริป' : 'Status'}</label>
+            <label class="input-label text-[12px]">${lang==='th' ? 'สถานะทริป' : 'Status'}</label>
             <select id="tf-status" class="input text-sm" style="min-height:38px;">
-              ${['draft','active','completed','archived'].map(st => `<option value="${st}" ${(trip.status||'draft')===st?'selected':''}>${st}</option>`).join('')}
+              ${['draft','active','completed','archived'].map(st => `<option value="${st}" ${(trip.status||'draft')===st?'selected':''}>${tripStatusLabel(st)}</option>`).join('')}
             </select>
           </div>
           <div class="input-group">
-            <label class="input-label text-[12px]">${icon('arrow-left-right', 'w-3.5 h-3.5')} ${lang==='th' ? 'เรทเป็น THB' : 'Rate → THB'}</label>
+            <label class="input-label text-[12px]">${lang==='th' ? 'เรทเป็น THB' : 'Rate → THB'}</label>
             <input id="tf-rate" class="input text-sm" style="min-height:38px;" type="number" step="0.0001" min="0" value="${trip.exchangeRateToTHB || 1}">
           </div>
         </div>
@@ -3183,12 +3215,12 @@ function openTripActions(trip, { onChanged } = {}) {
   const sheet = showBottomSheet(`
     <div class="space-y-4">
       <div class="flex items-center gap-3">
-        <div class="w-12 h-12 rounded-2xl overflow-hidden flex-shrink-0" style="background: var(--gradient-primary);">
+        <div class="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0" style="background: var(--gradient-primary);">
           ${trip.coverImage ? `<img decoding="async" src="${escapeHtml(trip.coverImage)}" class="w-full h-full object-cover" alt="">` : ''}
         </div>
         <div class="min-w-0">
-          <h3 class="font-bold truncate" style="font-family: var(--font-display);">${escapeHtml(trip.name)}</h3>
-          <p class="text-[11px] text-[var(--text-secondary)]">${escapeHtml(trip.startDate || '')} → ${escapeHtml(trip.endDate || '')}</p>
+          <h3 class="font-semibold truncate" style="font-family: var(--font-display);">${escapeHtml(trip.name)}</h3>
+          <p class="text-xs text-[var(--text-secondary)]">${escapeHtml(tripRangeLabel(trip))}</p>
         </div>
       </div>
       <div class="grid gap-2">
@@ -3265,12 +3297,12 @@ async function renderTripSelector() {
       <div id="trip-grid" class="grid md:grid-cols-2 lg:grid-cols-3 gap-5 mb-5"></div>
 
       <div class="card p-5 space-y-3" id="join-trip-card">
-        <h3 class="font-bold flex items-center gap-2">${icon('ticket', 'w-4 h-4')} ${lang === 'th' ? 'เข้าร่วมทริปด้วยรหัสเชิญ' : 'Join a trip with an invite code'}</h3>
+        <h3 class="font-semibold flex items-center gap-2">${icon('ticket', 'w-4 h-4')} ${lang === 'th' ? 'เข้าร่วมทริปด้วยรหัสเชิญ' : 'Join a trip with an invite code'}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${lang === 'th'
           ? 'ขอรหัส 6 ตัวจากแอดมินทริป แล้วส่งคำขอเข้าร่วม — แอดมินกดอนุมัติแล้วคุณจะเห็นทริปนี้ทันที'
           : 'Ask the trip admin for the 6-character code, request to join, and the trip appears here once approved.'}</p>
         <div class="btn-row">
-          <input id="join-code-input" class="input font-mono tracking-[0.3em] uppercase" maxlength="7" placeholder="ABC-123" autocomplete="off" aria-label="invite code">
+          <input id="join-code-input" class="input font-mono tracking-[0.3em]" maxlength="7" placeholder="ABC-123" autocomplete="off" aria-label="invite code">
           <button id="join-code-btn" class="btn btn-primary">${icon('log-in', 'w-4 h-4')} ${lang === 'th' ? 'ขอเข้าร่วม' : 'Request to join'}</button>
         </div>
         <div id="my-join-requests" class="space-y-2"></div>
@@ -3278,7 +3310,7 @@ async function renderTripSelector() {
           ${icon('shield-alert', 'w-4 h-4 shrink-0')}
           <div class="min-w-0">
             <div class="font-semibold">${lang === 'th' ? 'บัญชีของคุณยังไม่ถูกบันทึกลงไดเรกทอรี' : 'Your account is not in the directory yet'}</div>
-            <div class="text-[11px] text-[var(--text-secondary)]">${lang === 'th'
+            <div class="text-xs text-[var(--text-secondary)]">${lang === 'th'
               ? 'แอดมินจะยังค้นหาอีเมลของคุณไม่เจอ — ต้อง Publish Firestore Rules ก่อน'
               : 'The trip admin cannot find your email yet — Firestore rules must be published first.'}</div>
             <button id="profile-rules-help" class="btn btn-ghost btn-sm mt-1">${icon('wrench', 'w-3.5 h-3.5')} ${lang === 'th' ? 'ดูวิธีแก้' : 'How to fix'}</button>
@@ -3307,7 +3339,7 @@ async function renderTripSelector() {
         ${icon(r.status === 'rejected' ? 'x-circle' : 'clock', 'w-4 h-4 shrink-0')}
         <div class="min-w-0">
           <div class="font-semibold">${escapeHtml(r.tripName || r.tripId || '')}</div>
-          <div class="text-[11px] text-[var(--text-secondary)]">${r.status === 'rejected'
+          <div class="text-xs text-[var(--text-secondary)]">${r.status === 'rejected'
             ? (lang === 'th' ? 'แอดมินปฏิเสธคำขอ' : 'The admin declined this request')
             : (lang === 'th' ? 'รอแอดมินอนุมัติ' : 'Waiting for the admin to approve')}</div>
         </div>
@@ -3360,13 +3392,13 @@ async function renderTripSelector() {
         message: lang === 'th'
           ? 'ระบบจะส่งคำขอไปให้แอดมินทริปอนุมัติ'
           : 'A request will be sent to the trip admin for approval.',
-        detail: `${escapeHtml(trip.startDate || '')} → ${escapeHtml(trip.endDate || '')}`,
+        detail: `${escapeHtml(tripRangeLabel(trip))}`,
         confirmText: lang === 'th' ? 'ส่งคำขอ' : 'Send request', icon: 'ticket'
       });
       if (!ok) { btn.disabled = false; return; }
       await requestToJoin(trip, currentUser);
       confetti({ y: 160 });
-      toast.success(lang === 'th' ? 'ส่งคำขอแล้ว! รอแอดมินอนุมัติ' : 'Request sent! Waiting for approval');
+      toast.success(lang === 'th' ? 'ส่งคำขอแล้ว รอแอดมินอนุมัติ' : 'Request sent. Waiting for approval');
       input.value = '';
       btn.disabled = false;
       renderMyJoinRequests();
@@ -3396,23 +3428,23 @@ async function renderTripSelector() {
       : '';
     return `
       <div class="card card-hover p-0 overflow-hidden cursor-pointer group trip-card" data-trip="${trip.id}" style="animation-delay: ${idx * 0.06}s" role="button" tabindex="0" aria-label="${escapeHtml(trip.name)}">
-        <div class="${compact ? 'h-28' : 'h-36'} relative overflow-hidden" style="background: linear-gradient(135deg, var(--primary-raw), color-mix(in srgb, var(--primary-raw) 45%, var(--brand-yellow-raw)));">
-          ${trip.coverImage ? `<img decoding="async" src="${escapeHtml(trip.coverImage)}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
-          <div class="absolute inset-0" style="background: linear-gradient(to top, rgba(0,0,0,0.45), transparent 55%);"></div>
+        <div class="trip-card-cover ${trip.coverImage ? 'has-image' : 'is-empty'} ${compact ? 'h-28' : 'h-36'} relative overflow-hidden">
+          ${trip.coverImage ? `<img decoding="async" src="${escapeHtml(trip.coverImage)}" class="w-full h-full object-cover" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.replace('has-image', 'is-empty')">
+          <div class="absolute inset-0 trip-card-scrim"></div>` : ''}
           ${!compact ? `<div class="absolute top-3 right-3 flex items-center gap-1.5">
-            ${countdownText ? `<span class="badge bg-white/90 backdrop-blur text-[10px]" style="border-color:transparent;color:#333;">${icon('hourglass', 'w-3 h-3')} ${countdownText}</span>` : ''}
+            ${countdownText ? `<span class="badge bg-white/90 backdrop-blur text-xs" style="border-color:transparent;color:#333;">${icon('hourglass', 'w-3 h-3')} ${countdownText}</span>` : ''}
             <button class="trip-menu-btn" data-trip-menu="${trip.id}" aria-label="เมนูทริป" title="เมนู">${icon('more-vertical', 'w-4 h-4')}</button>
           </div>` : ''}
-          <div class="absolute bottom-3 left-3 right-3"><h3 class="font-bold text-white ${compact ? 'text-sm' : 'text-[16px]'} leading-tight" style="font-family: var(--font-display); text-shadow: 0 1px 6px rgba(0,0,0,0.35);">${escapeHtml(trip.name)}</h3></div>
+          <div class="absolute bottom-3 left-3 right-3"><h3 class="trip-card-title font-semibold ${compact ? 'text-sm' : 'text-[16px]'} leading-tight">${escapeHtml(trip.name)}</h3></div>
         </div>
         <div class="${compact ? 'p-3' : 'p-4'}">
           ${(trip.country || trip.city) ? `<p class="meta-line">${icon('globe', 'w-3 h-3')} <span class="truncate">${escapeHtml(trip.country || '')}${trip.city ? ' • ' + escapeHtml(trip.city) : ''}</span></p>` : ''}
-          <p class="meta-line ${compact ? 'mt-0.5' : 'mt-1'}">${icon('calendar', 'w-3 h-3')} ${escapeHtml(trip.startDate || '?')} ${icon('arrow-right', 'w-3 h-3')} ${escapeHtml(trip.endDate || '?')}</p>
+          <p class="meta-line ${compact ? 'mt-0.5' : 'mt-1'}">${escapeHtml(tripRangeLabel(trip) || (getLang() === 'th' ? 'ยังไม่กำหนดวัน' : 'No dates yet'))}</p>
           ${!compact ? `
           <div class="flex items-center gap-2 mt-3 flex-wrap">
-            <span class="text-[11px] px-2.5 py-1 rounded-full bg-[var(--bg-secondary)] font-semibold flex items-center gap-1">${icon('banknote', 'w-3 h-3')} ${escapeHtml(trip.baseCurrency || 'THB')}</span>
-            <span class="text-[11px] px-2.5 py-1 rounded-full bg-[var(--bg-secondary)] font-semibold flex items-center gap-1">${icon('users', 'w-3 h-3')} ${(trip.memberUids || []).length || 1}</span>
-            <span class="text-[11px] px-2.5 py-1 rounded-full font-bold flex items-center gap-1 ml-auto" style="background: var(--primary-light); color: var(--primary-strong);">${icon('log-in', 'w-3 h-3')} ${lang==='th' ? 'เปิดทริป' : 'Open'}</span>
+            <span class="text-xs px-2.5 py-1 rounded-full bg-[var(--bg-secondary)] font-semibold flex items-center gap-1">${icon('banknote', 'w-3 h-3')} ${escapeHtml(trip.baseCurrency || 'THB')}</span>
+            <span class="text-xs px-2.5 py-1 rounded-full bg-[var(--bg-secondary)] font-semibold flex items-center gap-1">${icon('users', 'w-3 h-3')} ${(trip.memberUids || []).length || 1}</span>
+            <span class="text-xs px-2.5 py-1 rounded-full font-semibold flex items-center gap-1 ml-auto" style="background: var(--primary-light); color: var(--primary-strong);">${icon('log-in', 'w-3 h-3')} ${lang==='th' ? 'เปิดทริป' : 'Open'}</span>
           </div>` : ''}
         </div>
       </div>`;
@@ -3482,7 +3514,7 @@ async function renderTripSelector() {
     let hint = '';
     if (e.code === 'permission-denied' || msg.includes('permission') || msg.includes('Missing') || msg.includes('insufficient')) {
       hint = `
-        <div class="text-left mt-3 p-3 rounded-xl text-[11px] leading-relaxed" style="background: var(--warning-bg); border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);">
+        <div class="text-left mt-3 p-3 rounded-xl text-xs leading-relaxed" style="background: var(--warning-bg); border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);">
           <strong class="flex items-center gap-1">${icon('alert-triangle', 'w-3.5 h-3.5')} Firestore Rules ยังไม่ deploy</strong>
           ต้อง publish กฎใหม่ที่ Firebase Console &gt; Firestore &gt; Rules<br>
           <button id="trips-rules-help" class="btn btn-secondary btn-sm mt-2">${icon('shield-alert', 'w-4 h-4')} ดูวิธีแก้ทีละขั้น</button>
@@ -3490,7 +3522,7 @@ async function renderTripSelector() {
       msg = 'ไม่มีสิทธิ์เข้าถึง — ต้อง deploy Firestore Rules';
     }
     if (msg.includes('index') || e.code === 'failed-precondition') {
-      hint = `<div class="text-left mt-3 p-3 rounded-xl text-[11px]" style="background: var(--info-light); border: 1px solid color-mix(in srgb, var(--info) 35%, transparent);"><strong class="flex items-center gap-1">${icon('database', 'w-3.5 h-3.5')} ต้องสร้าง Firestore Index</strong>รัน <code>firebase deploy --only firestore:indexes</code></div>`;
+      hint = `<div class="text-left mt-3 p-3 rounded-xl text-xs" style="background: var(--info-light); border: 1px solid color-mix(in srgb, var(--info) 35%, transparent);"><strong class="flex items-center gap-1">${icon('database', 'w-3.5 h-3.5')} ต้องสร้าง Firestore Index</strong>รัน <code>firebase deploy --only firestore:indexes</code></div>`;
       msg = 'ต้องสร้าง Index — ดูคำสั่งใน Console';
     }
     bind('trips-rules-help', 'click', () => showRulesHelpSheet({ lang }));
@@ -3521,14 +3553,14 @@ async function renderTripSelector() {
 
     grid.innerHTML = `<div class="col-span-full card p-6 text-center">
       <div class="row-icon mx-auto mb-3" style="width:52px;height:52px;border-radius:16px;background:var(--danger-bg);color:var(--danger);">${icon('cloud-off', 'w-6 h-6')}</div>
-      <p class="text-sm font-bold mb-1" style="color: var(--danger);">${escapeHtml(msg)}</p>
+      <p class="text-sm font-semibold mb-1" style="color: var(--danger);">${escapeHtml(msg)}</p>
       ${hint}
       <div class="flex gap-2 justify-center mt-4 flex-wrap">
         <button id="retry-trips" class="btn btn-primary btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${lang==='th' ? 'ลองใหม่' : 'Retry'}</button>
         <button id="show-rules" class="btn btn-secondary btn-sm">${icon('scroll-text', 'w-4 h-4')} ${lang==='th' ? 'ดู Rules' : 'View Rules'}</button>
         <button id="clear-cfg-btn" class="btn btn-ghost btn-sm">${icon('eraser', 'w-4 h-4')} ${lang==='th' ? 'ล้าง Config' : 'Clear Config'}</button>
       </div>
-      <p class="text-[10px] text-[var(--text-tertiary)] mt-3">UID: ${currentUser?.uid?.slice(0,8)} • ${escapeHtml(currentUser?.email || '')}</p>
+      <p class="text-xs text-[var(--text-tertiary)] mt-3">UID: ${currentUser?.uid?.slice(0,8)} • ${escapeHtml(currentUser?.email || '')}</p>
     </div>`;
     bind('retry-trips', 'click', () => renderTripSelector());
     bind('clear-cfg-btn', 'click', () => { localStorage.removeItem('fuji_firebase_config'); location.reload(); });
@@ -3537,9 +3569,9 @@ async function renderTripSelector() {
         const res = await fetch('./firestore.rules');
         const rulesText = await res.text();
         showBottomSheet(`
-          <h3 class="font-bold mb-2 flex items-center gap-2">${icon('scroll-text', 'w-4 h-4')} Firestore Rules — คัดลอกไป deploy</h3>
+          <h3 class="font-semibold mb-2 flex items-center gap-2">${icon('scroll-text', 'w-4 h-4')} Firestore Rules — คัดลอกไป deploy</h3>
           <p class="text-xs mb-3 text-[var(--text-secondary)]">คัดลอกทั้งหมดไปวางใน Firebase Console &gt; Firestore &gt; Rules &gt; Publish</p>
-          <pre class="p-3 rounded-xl text-[10px] overflow-auto whitespace-pre-wrap" style="background:#111;color:#8ce8a5;max-height:400px;">${escapeHtml(rulesText)}</pre>
+          <pre class="p-3 rounded-xl text-xs overflow-auto whitespace-pre-wrap" style="background:#111;color:#8ce8a5;max-height:400px;">${escapeHtml(rulesText)}</pre>
           <button id="copy-rules-btn" class="btn btn-primary w-full mt-3 btn-sm">${icon('copy', 'w-4 h-4')} คัดลอก Rules</button>
         `);
         queueIcons();
@@ -3590,136 +3622,109 @@ async function renderDashboard(params) {
   const currency = trip?.baseCurrency || 'THB';
   const th = (a, b) => (lang === 'th' ? a : b);
 
+  const coverUrl = trip?.coverImage || '';
+  const placeLabel = [trip?.country, trip?.city].filter(Boolean).join(' · ');
+  const rangeLabel = tripRangeLabel(trip);
+  const dragHandle = (what) => `<div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลาก','Drag')}${what}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>`;
   appEl.innerHTML = `
     <div class="page-enter space-y-5" id="dashboard-view">
-      <!-- HERO -->
-      <div class="hero-card" style="--hero-color:var(--primary-raw);">
-        ${trip?.coverImage ? `<img decoding="async" src="${escapeHtml(trip.coverImage)}" class="hero-bg" alt="" onerror="this.style.display='none'">` : ''}
-        <div class="hero-overlay"></div>
-        <div class="hero-content">
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div class="min-w-0">
-              <div class="flex items-center gap-2 flex-wrap">
-                <span class="badge" style="background:rgba(255,255,255,.9);color:#333;border-color:transparent;">${icon('flag', 'w-3 h-3')} ${escapeHtml(trip?.status || 'draft')}</span>
-                ${trip?.country ? `<span class="badge" style="background:rgba(255,255,255,.9);color:#333;border-color:transparent;">${icon('globe', 'w-3 h-3')} ${escapeHtml(trip.country)}${trip.city ? ' • ' + escapeHtml(trip.city) : ''}</span>` : ''}
+      <!-- v35: a plain page header. The cover photo shows only when the trip has
+           one, as a picture — no scrim, no text on top of it (audit B8 / L2). -->
+      <header class="dash-head${coverUrl ? ' has-cover' : ''}">
+        ${coverUrl ? `<div class="dash-cover"><img decoding="async" src="${escapeHtml(coverUrl)}" alt="" onerror="this.closest('.dash-cover')?.remove()"></div>` : ''}
+        <div class="dash-head-row">
+          <div class="dash-head-main">
+            <h1 class="page-title">${escapeHtml(trip?.name || t('dashboard'))}</h1>
+            <p class="dash-meta">
+              ${rangeLabel ? `<span>${escapeHtml(rangeLabel)}</span>` : `<span>${th('ยังไม่กำหนดวันเดินทาง','No travel dates yet')}</span>`}
+              ${placeLabel ? `<span>${escapeHtml(placeLabel)}</span>` : ''}
+              <span id="dash-meta-people" hidden></span>
+              ${trip?.status && trip.status !== 'active' ? `<span class="dash-status">${escapeHtml(tripStatusLabel(trip.status, lang))}</span>` : ''}
+            </p>
+          </div>
+          <div class="dash-head-actions">
+            <button id="add-expense-quick" type="button" class="btn btn-primary">${icon('plus', 'w-4 h-4')} ${t('addExpense')}</button>
+            <div class="menu-wrap">
+              <button id="dash-more-btn" type="button" class="btn btn-secondary btn-icon" aria-haspopup="menu" aria-expanded="false"
+                aria-controls="dash-more-menu" aria-label="${th('ตัวเลือกเพิ่มเติม','More options')}" title="${th('ตัวเลือกเพิ่มเติม','More options')}">${icon('more-horizontal', 'w-4 h-4')}</button>
+              <div class="menu-pop" id="dash-more-menu" role="menu" hidden>
+                <button id="add-place-quick" type="button" class="menu-pop-item" role="menuitem">${icon('map-pin', 'w-4 h-4')} ${t('addPlace')}</button>
+                <button id="dash-edit-trip" type="button" class="menu-pop-item" role="menuitem">${icon('pencil', 'w-4 h-4')} ${th('แก้ไขทริป','Edit trip')}</button>
+                <div class="menu-pop-sep" role="separator"></div>
+                <button id="dash-widgets-btn" type="button" class="menu-pop-item" role="menuitem" title="${th('เลือกการ์ดที่แสดงบนแดชบอร์ด','Choose which cards show on the dashboard')}">${icon('layout-grid', 'w-4 h-4')} ${th('เลือกการ์ด','Choose cards')}</button>
+                <button id="dash-layout-edit-btn" type="button" class="menu-pop-item" role="menuitem" aria-pressed="false">${icon('move', 'w-4 h-4')} <span data-layout-label>${th('จัดเรียงการ์ด','Arrange cards')}</span></button>
+                <button id="dash-density-btn" type="button" class="menu-pop-item" role="menuitem">${icon('rows-3', 'w-4 h-4')} <span data-density-label>มุมมองกะทัดรัด</span></button>
               </div>
-              <h1 class="text-3xl font-bold tracking-tight mt-2 truncate" style="font-family: var(--font-display); color:#fff;">${escapeHtml(trip?.name || t('dashboard'))}</h1>
-              <div class="flex items-center gap-3 mt-1.5 flex-wrap text-sm" style="color:rgba(255,255,255,.92);">
-                <span class="meta-line" style="color:inherit;">${icon('calendar', 'w-3.5 h-3.5')} ${escapeHtml(trip?.startDate || '')} ${icon('arrow-right', 'w-3 h-3')} ${escapeHtml(trip?.endDate || '')}</span>
-                <span class="meta-line" style="color:inherit;">${icon('clock', 'w-3.5 h-3.5')} ${escapeHtml((trip?.timezone || '').replace('_',' '))}</span>
-              </div>
-            </div>
-            <div class="btn-row hero-actions">
-              <button id="dash-edit-trip" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;">${icon('pencil', 'w-4 h-4')} ${th('แก้ไขทริป','Edit trip')}</button>
-              <button id="add-place-quick" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;">${icon('map-pin', 'w-4 h-4')} ${t('addPlace')}</button>
-              <button id="add-expense-quick" class="btn btn-sm btn-primary">${icon('wallet', 'w-4 h-4')} ${t('addExpense')}</button>
-              <button id="dash-widgets-btn" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;" title="${th('เลือกการ์ดที่แสดงบนแดชบอร์ด','Choose which cards show on the dashboard')}">${icon('layout-grid', 'w-4 h-4')} ${th('เลือกการ์ด','Choose cards')}</button>
-              <button id="dash-layout-edit-btn" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;" aria-pressed="false">${icon('layout-dashboard', 'w-4 h-4')} <span data-layout-label>${th('จัดเรียงการ์ด','Arrange cards')}</span></button>
-              <button id="dash-density-btn" class="btn btn-sm" style="background:rgba(255,255,255,.92);color:#333;border-color:transparent;" title="สลับมุมมองกะทัดรัด/ปกติ">${icon('rows-3', 'w-4 h-4')} <span data-density-label>มุมมองกะทัดรัด</span></button>
             </div>
           </div>
         </div>
-      </div>
+      </header>
 
       <div id="dash-layout-tools" class="dash-layout-tools hidden">
-        <span>${icon('move', 'w-3.5 h-3.5')} ${th('กดค้างที่แถบจับแล้วลากเพื่อจัดวาง การเปลี่ยนแปลงจะซิงก์ในทริปนี้ทุกอุปกรณ์','Drag a card by its handle. The layout syncs across this trip’s devices.')}</span>
+        <span>${th('ลากการ์ดจากแถบจับเพื่อจัดวาง การจัดวางจะซิงก์ทุกอุปกรณ์ในทริปนี้','Drag a card by its handle. The layout syncs across this trip’s devices.')}</span>
         <div class="flex items-center gap-2">
           <span id="dash-layout-status" class="dash-layout-status" aria-live="polite"></span>
-          <button id="dash-layout-reset" type="button" class="btn btn-ghost btn-sm">${icon('rotate-ccw', 'w-3.5 h-3.5')} ${th('คืนค่าเริ่มต้น','Reset')}</button>
+          <button id="dash-layout-reset" type="button" class="btn btn-ghost btn-sm">${th('คืนค่าเริ่มต้น','Reset')}</button>
+          <button id="dash-layout-done" type="button" class="btn btn-primary btn-sm">${th('เสร็จสิ้น','Done')}</button>
         </div>
       </div>
 
       <div id="dashboard-board" class="dashboard-board">
         <section class="dash-widget dash-widget--half" data-dashboard-widget="countdown">
-          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดนับถอยหลัง','Drag countdown card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          ${dragHandle(th('การ์ดนับถอยหลัง','countdown card'))}
           <div class="card p-4 md:p-5">
-            <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
-              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('timer', 'w-4 h-4')}</span> ${t('countdown')}</h3>
-              <a href="#/trip/${escapeHtml(tripId)}/settings?tab=trip&amp;focus=dates" class="btn btn-secondary btn-sm text-xs" aria-label="${th('กำหนดหรือแก้ไขวันเดินทาง','Set or edit trip dates')}">${icon('calendar-cog', 'w-3.5 h-3.5')} ${trip?.startDate ? th('แก้ไขวันเดินทาง','Edit trip dates') : th('กำหนดวันเดินทาง','Set trip dates')}</a>
-              <div id="live-since" class="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1.5">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="w-3 h-3" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-                <span data-live-label></span>
+            <div class="card-head">
+              <div class="min-w-0">
+                <h3 class="card-title">${t('countdown')}</h3>
+                <p id="live-since" class="card-sub"><span data-live-label></span></p>
               </div>
+              <a href="#/trip/${escapeHtml(tripId)}/settings?tab=trip&amp;focus=dates" class="btn btn-ghost btn-sm" aria-label="${th('กำหนดหรือแก้ไขวันเดินทาง','Set or edit trip dates')}">${trip?.startDate ? th('แก้ไขวัน','Edit dates') : th('กำหนดวันเดินทาง','Set trip dates')}</a>
             </div>
             <div id="countdown-scene"></div>
           </div>
         </section>
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="weather">
-          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดสภาพอากาศ','Drag weather card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          ${dragHandle(th('การ์ดสภาพอากาศ','weather card'))}
           <div class="card p-4 md:p-5" id="dash-weather-card">
             <div id="dash-weather-multi"><div class="skeleton h-24"></div></div>
           </div>
         </section>
 
         <section class="dash-widget dash-widget--full" data-dashboard-widget="kpis">
-          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดสรุปยอด','Drag summary cards')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
-          <div class="kpi-grid-compact">
-            <div class="kpi-tile kpi-compact" data-kpi="total">
-              <span class="kpi-icon" style="background: var(--primary-light); color: var(--primary-strong);">${icon('wallet', 'w-4 h-4')}</span>
+          ${dragHandle(th('การ์ดสรุปยอด','summary cards'))}
+          <div class="kpi-grid-compact stat-grid">
+            <div class="kpi-tile kpi-compact stat" data-kpi="total">
               <p class="kpi-label">${t('totalExpense')}</p>
               <h3 class="kpi-value" id="kpi-total">--</h3>
               <p class="kpi-sub" id="kpi-total-sub"></p>
             </div>
-            <div class="kpi-tile kpi-compact" data-kpi="budget">
-              <span class="kpi-mood" id="kpi-budget-mood"></span>
-              <span class="kpi-icon" style="background: var(--info-light); color: var(--info);">${icon('piggy-bank', 'w-4 h-4')}</span>
+            <div class="kpi-tile kpi-compact stat" data-kpi="balance">
+              <p class="kpi-label">${th('ยอดของฉัน','My share')}</p>
+              <h3 class="kpi-value" id="kpi-mine">--</h3>
+              <p class="kpi-sub" id="kpi-mine-sub"></p>
+            </div>
+            <div class="kpi-tile kpi-compact stat" data-kpi="budget">
               <p class="kpi-label">${th('งบคงเหลือ','Budget left')}</p>
               <h3 class="kpi-value" id="kpi-budget">--</h3>
-              <div class="progress mt-1.5" style="height:5px;"><div class="progress-bar" id="kpi-budget-bar" style="width:0%;"></div></div>
+              <div class="progress stat-bar"><div class="progress-bar" id="kpi-budget-bar" style="width:0%;"></div></div>
               <p class="kpi-sub" id="kpi-budget-sub"></p>
             </div>
-            <div class="kpi-tile kpi-compact" data-kpi="balance">
-              <span class="kpi-mood" id="kpi-balance-mood"></span>
-              <span class="kpi-icon" style="background: var(--success-light); color: var(--success);">${icon('scale', 'w-4 h-4')}</span>
-              <p class="kpi-label">${t('myBalance')}</p>
-              <h3 class="kpi-value" id="kpi-balance">--</h3>
-              <p class="kpi-sub" id="kpi-balance-sub"></p>
-            </div>
-            <div class="kpi-tile kpi-compact" data-kpi="plan">
-              <span class="kpi-icon" style="background: var(--warning-light); color: var(--warning);">${icon('map-pinned', 'w-4 h-4')}</span>
-              <p class="kpi-label">${th('แผนการเดินทาง','Itinerary')}</p>
-              <h3 class="kpi-value" id="kpi-places">--</h3>
-              <p class="kpi-sub" id="kpi-places-sub"></p>
-            </div>
-          </div>
-        </section>
-
-        <section class="dash-widget dash-widget--full" data-dashboard-widget="wallet">
-          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดกระเป๋าของฉัน','Drag wallet card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
-          <div class="card p-5" id="my-wallet-card">
-            <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-              <h3 class="font-bold flex items-center gap-2">
-                <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('user-round', 'w-4 h-4')}</span>
-                ${th('กระเป๋าของฉัน','My wallet')}
-                <span class="text-[10px] font-normal text-[var(--text-tertiary)]">${th('ยอดทริปรวม vs ยอดของฉัน vs งบของฉัน','trip total vs my totals vs my budget')}</span>
-              </h3>
-              <span id="my-wallet-mood"></span>
-            </div>
-            <div id="my-wallet" class="my-wallet-grid"><div class="skeleton h-16"></div></div>
-            <div class="dash-subhead">
-              <h4>
-                <span class="row-icon" style="width:26px;height:26px;border-radius:9px;">${icon('users-round', 'w-3.5 h-3.5')}</span>
-                ${th('ทีม • ค่าใช้จ่ายต่อคน / รวมทีม','Teams • cost per person / per team')}
-              </h4>
-              <button id="dash-teams-link" class="btn btn-ghost btn-sm text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการทีม','Manage teams')}</button>
-            </div>
-            <div id="team-board" class="team-board"><div class="skeleton h-16"></div></div>
           </div>
         </section>
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="current">
-          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดกิจกรรมตอนนี้','Drag current activity card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          ${dragHandle(th('การ์ดกิจกรรมตอนนี้','current activity card'))}
           <div class="card p-5">
-            <div class="flex items-center justify-between gap-2 mb-3">
-              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('target', 'w-4 h-4')}</span> ${t('currentActivity')}</h3>
-              <button id="dash-today-link" class="btn btn-ghost btn-sm text-xs">${icon('calendar-days', 'w-3.5 h-3.5')} ${th('ดูวันนี้','Today')}</button>
+            <div class="card-head">
+              <h3 class="card-title">${t('currentActivity')}</h3>
+              <button id="dash-today-link" type="button" class="btn btn-ghost btn-sm">${th('ดูวันนี้','Today')}</button>
             </div>
             <div id="current-activity"><div class="skeleton h-14"></div></div>
-            <div class="mt-4 pt-3 border-t" style="border-color:var(--border);">
-              <div class="flex items-center justify-between text-xs mb-1.5">
-                <span class="meta-line">${icon('plane', 'w-3.5 h-3.5')} ${th('ความคืบหน้าทริป','Trip progress')}</span>
-                <span class="font-bold" id="trip-progress-label">--</span>
+            <div class="card-foot">
+              <div class="flex items-center justify-between text-sm mb-1.5">
+                <span class="text-[var(--text-secondary)]">${th('ความคืบหน้าทริป','Trip progress')}</span>
+                <span class="font-medium tabular-nums" id="trip-progress-label">--</span>
               </div>
               <div class="progress"><div class="progress-bar" id="trip-progress-bar" style="width:0%;"></div></div>
             </div>
@@ -3727,76 +3732,87 @@ async function renderDashboard(params) {
         </section>
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="up-next">
-          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดแผนถัดไป','Drag upcoming plans card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          ${dragHandle(th('การ์ดแผนถัดไป','upcoming plans card'))}
           <div class="card p-5">
-            <div class="flex items-center justify-between gap-2 mb-3">
-              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('sparkles', 'w-4 h-4')}</span> ${t('upNext')}</h3>
-              <button id="dash-itinerary-link" class="btn btn-ghost btn-sm text-xs">${icon('map-pinned', 'w-3.5 h-3.5')} ${th('ดูแผนทั้งหมด','All plans')}</button>
+            <div class="card-head">
+              <h3 class="card-title">${t('upNext')}</h3>
+              <button id="dash-itinerary-link" type="button" class="btn btn-ghost btn-sm">${th('ดูแผนทั้งหมด','All plans')}</button>
             </div>
-            <div id="upnext-list" class="stagger"><div class="skeleton h-14"></div></div>
+            <div id="upnext-list"><div class="skeleton h-14"></div></div>
           </div>
         </section>
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="category">
-          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดค่าใช้จ่ายตามหมวด','Drag spend by category card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          ${dragHandle(th('การ์ดค่าใช้จ่ายตามหมวด','spend by category card'))}
           <div class="card p-5">
-            <div class="flex items-center justify-between gap-2 mb-3">
-              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('pie-chart', 'w-4 h-4')}</span> ${th('ค่าใช้จ่ายตามหมวด','Spend by category')}</h3>
-              <button id="cat-expand-btn" class="btn btn-ghost btn-sm text-[11px]" style="display:none;">${icon('chevron-down','w-3.5 h-3.5')} <span data-cat-label>${th('ดูทั้งหมด','Show all')}</span></button>
+            <div class="card-head">
+              <h3 class="card-title">${th('ค่าใช้จ่ายตามหมวด','Spend by category')}</h3>
+              <button id="cat-expand-btn" type="button" class="btn btn-ghost btn-sm" style="display:none;"><span data-cat-label>${th('ดูทั้งหมด','Show all')}</span></button>
             </div>
             <div id="category-stats"><div class="skeleton h-24"></div></div>
           </div>
         </section>
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="estimate">
-          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดประมาณการเทียบจ่ายจริง','Drag estimated vs actual card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          ${dragHandle(th('การ์ดประมาณการเทียบจ่ายจริง','estimated vs actual card'))}
           <div class="card p-5">
-            <h3 class="font-bold mb-3 flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('bar-chart-3', 'w-4 h-4')}</span> ${th('ประมาณการ vs จ่ายจริง','Estimated vs actual')}</h3>
+            <div class="card-head"><h3 class="card-title">${th('ประมาณการเทียบจ่ายจริง','Estimated vs actual')}</h3></div>
             <div id="estimate-compare"></div>
-            <div id="summary-stats" class="mt-4 pt-3 border-t text-sm space-y-1" style="border-color:var(--border);"></div>
+            <div id="summary-stats" class="card-foot"></div>
           </div>
         </section>
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="bookings">
-          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดการจองที่กำลังจะถึง','Drag upcoming bookings card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          ${dragHandle(th('การ์ดการจองที่กำลังจะถึง','upcoming bookings card'))}
           <div class="card p-5">
-            <div class="flex items-center justify-between gap-2 mb-3">
-              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('ticket', 'w-4 h-4')}</span> ${th('การจองที่กำลังจะถึง','Upcoming bookings')}</h3>
-              <button id="dash-bookings-link" class="btn btn-ghost btn-sm text-xs">${icon('arrow-right', 'w-3.5 h-3.5')} ${th('ดูทั้งหมด','View all')}</button>
+            <div class="card-head">
+              <h3 class="card-title">${th('การจองที่กำลังจะถึง','Upcoming bookings')}</h3>
+              <button id="dash-bookings-link" type="button" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</button>
             </div>
-            <div id="dash-bookings" class="space-y-2"><div class="skeleton h-12"></div></div>
+            <div id="dash-bookings" class="booking-list"><div class="skeleton h-12"></div></div>
           </div>
         </section>
         <section class="dash-widget dash-widget--full" data-dashboard-widget="ideas">
-          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดสถานที่ที่อยากไป','Drag wishlist card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          ${dragHandle(th('การ์ดสถานที่ที่อยากไป','wishlist card'))}
           <div id="dash-ideas-board" class="card p-5">
-            <div class="flex items-center justify-between gap-2 mb-3">
-              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);">${icon('lightbulb', 'w-4 h-4')}</span> ${th('สถานที่ที่อยากไป','Wishlist')}</h3>
-              <a id="dash-ideas-link" href="#/trip/${tripId}/ideas" class="btn btn-ghost btn-sm text-xs">${icon('arrow-right','w-3.5 h-3.5')} ${th('ดูทั้งหมด','View all')}</a>
+            <div class="card-head">
+              <h3 class="card-title">${th('สถานที่ที่อยากไป','Wishlist')}</h3>
+              <a id="dash-ideas-link" href="#/trip/${tripId}/ideas" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</a>
             </div>
             <div id="dash-ideas-list"><div class="skeleton h-16"></div></div>
           </div>
         </section>
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="members">
-          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดสมาชิก','Drag members card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          ${dragHandle(th('การ์ดสมาชิก','members card'))}
           <div class="card p-5">
-            <div class="flex items-center justify-between gap-2 mb-4">
-              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('users', 'w-4 h-4')}</span> ${th('สมาชิก • จ่ายไป / ต้องรับผิดชอบ','Members • paid / share')}</h3>
-              <button id="dash-members-link" class="btn btn-ghost btn-sm text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการสมาชิก','Manage')}</button>
+            <div class="card-head">
+              <h3 class="card-title">${th('สมาชิก · จ่ายไปและส่วนที่รับผิดชอบ','Members · paid and share')}</h3>
+              <button id="dash-members-link" type="button" class="btn btn-ghost btn-sm">${th('จัดการ','Manage')}</button>
             </div>
-            <div id="member-board-content" class="space-y-3 stagger"><div class="skeleton h-16"></div></div>
+            <div id="member-board-content" class="member-board"><div class="skeleton h-16"></div></div>
           </div>
         </section>
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="recent-expenses">
-          <div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลากการ์ดค่าใช้จ่ายล่าสุด','Drag recent expenses card')}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>
+          ${dragHandle(th('การ์ดค่าใช้จ่ายล่าสุด','recent expenses card'))}
           <div class="card p-5">
-            <div class="flex items-center justify-between gap-2 mb-3">
-              <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;">${icon('receipt', 'w-4 h-4')}</span> ${th('รายการล่าสุด','Recent expenses')}</h3>
-              <button id="dash-expenses-link" class="btn btn-ghost btn-sm text-xs">${icon('wallet', 'w-3.5 h-3.5')} ${th('ดูทั้งหมด','View all')}</button>
+            <div class="card-head">
+              <h3 class="card-title">${th('รายการล่าสุด','Recent expenses')}</h3>
+              <button id="dash-expenses-link" type="button" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</button>
             </div>
-            <div id="recent-expenses" class="space-y-2 stagger"><div class="skeleton h-12"></div></div>
+            <div id="recent-expenses" class="recent-list"><div class="skeleton h-12"></div></div>
+          </div>
+        </section>
+
+        <section class="dash-widget dash-widget--half" data-dashboard-widget="teams">
+          ${dragHandle(th('การ์ดทีม','teams card'))}
+          <div class="card p-5" id="dash-teams-card">
+            <div class="card-head">
+              <h3 class="card-title">${th('ทีม · ค่าใช้จ่ายต่อคนและรวมทีม','Teams · cost per person and per team')}</h3>
+              <button id="dash-teams-link" type="button" class="btn btn-ghost btn-sm">${th('จัดการทีม','Manage teams')}</button>
+            </div>
+            <div id="team-board" class="team-board"><div class="skeleton h-16"></div></div>
           </div>
         </section>
         <button id="dash-add-tile" type="button" class="dash-add-tile hidden">${icon('plus', 'w-4 h-4')} <span>${th('เพิ่มการ์ด','Add a card')}</span> <b data-add-count>0</b></button>
@@ -3818,6 +3834,7 @@ async function renderDashboard(params) {
   bind('dash-members-link', 'click', () => { location.hash = `#/trip/${tripId}/members`; });
   bind('dash-expenses-link', 'click', () => { location.hash = `#/trip/${tripId}/expenses`; });
   bind('dash-teams-link', 'click', () => { location.hash = `#/trip/${tripId}/members`; });
+  bindMenuPop('dash-more-btn', 'dash-more-menu');
 
   // Dashboard layout is stored on the shared trip document so every device and
   // trip member sees the same card order.
@@ -3903,6 +3920,7 @@ async function renderDashboard(params) {
     }
   }
   bind('dash-layout-edit-btn', 'click', () => setDashboardLayoutEditing(!dashboardLayoutEditing));
+  bind('dash-layout-done', 'click', () => setDashboardLayoutEditing(false));
   bind('dash-layout-reset', 'click', () => {
     applyDashboardOrder(dashboardWidgetKeys);
     saveDashboardOrder(dashboardWidgetKeys);
@@ -3940,7 +3958,7 @@ async function renderDashboard(params) {
           <span class="dash-pick-icon">${icon(w.icon, 'w-4 h-4')}</span>
           <div class="min-w-0 flex-1">
             <div class="font-semibold text-sm truncate">${escapeHtml(th(w.th, w.en))}</div>
-            <div class="text-[11px] text-[var(--text-secondary)]">${escapeHtml(th(w.hintTh, w.hintEn))}</div>
+            <div class="text-xs text-[var(--text-secondary)]">${escapeHtml(th(w.hintTh, w.hintEn))}</div>
           </div>
           <button type="button" class="btn btn-sm ${off ? 'btn-primary' : 'btn-secondary'}" data-pick="${w.key}">
             ${off ? `${icon('plus', 'w-3.5 h-3.5')} ${th('เพิ่ม','Add')}` : `${icon('eye-off', 'w-3.5 h-3.5')} ${th('ซ่อน','Hide')}`}
@@ -3979,8 +3997,8 @@ async function renderDashboard(params) {
     const sheet = showBottomSheet(`
       <div class="space-y-3" id="dash-picker">
         <div>
-          <h3 class="font-bold text-base flex items-center gap-2" style="font-family:var(--font-display);">${icon('layout-grid', 'w-4 h-4')} ${th('เลือกการ์ดบนแดชบอร์ด','Choose dashboard cards')}</h3>
-          <p class="text-[11px] text-[var(--text-secondary)] mt-1">${th('ซ่อนการ์ดที่ไม่ต้องการ หรือกด “เพิ่ม” เพื่อนำการ์ดที่ซ่อนไว้กลับมา การเลือกนี้ซิงก์ให้สมาชิกทริปทุกคน','Hide the cards you do not need, or tap “Add” to bring one back. The choice syncs to every trip member.')}</p>
+          <h3 class="font-semibold text-base flex items-center gap-2" style="font-family:var(--font-display);">${icon('layout-grid', 'w-4 h-4')} ${th('เลือกการ์ดบนแดชบอร์ด','Choose dashboard cards')}</h3>
+          <p class="text-xs text-[var(--text-secondary)] mt-1">${th('ซ่อนการ์ดที่ไม่ต้องการ หรือกด “เพิ่ม” เพื่อนำการ์ดที่ซ่อนไว้กลับมา การเลือกนี้ซิงก์ให้สมาชิกทริปทุกคน','Hide the cards you do not need, or tap “Add” to bring one back. The choice syncs to every trip member.')}</p>
         </div>
         <div id="dash-pick-list" class="dash-pick-list">${pickerRowsHtml()}</div>
         <div class="btn-row">
@@ -4026,11 +4044,13 @@ async function renderDashboard(params) {
     box.innerHTML = next.length
       ? next.map(r => {
         const rt = reservationTypeDef(r.type);
-        return `<div class="flex items-center gap-3 min-w-0">
-          <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:color-mix(in srgb, ${rt.tone} 16%, transparent);color:${rt.tone};">${icon(rt.icon, 'w-4 h-4')}</span>
-          <div class="min-w-0 flex-1">
-            <div class="font-semibold text-sm truncate">${escapeHtml(r.title || (lang === 'th' ? rt.th : rt.en))}</div>
-            <div class="text-[11px] text-[var(--text-secondary)]">${escapeHtml(r.date || '')}${r.startTime ? ` • ${escapeHtml(r.startTime)}` : ''}</div>
+        // v35: neutral icon, no tinted tile; Thai date instead of the raw ISO string.
+        const when = [r.date ? (thaiDate(r.date, { weekday: true, year: false }) || r.date) : '', r.startTime || ''].filter(Boolean).join(' · ');
+        return `<div class="booking-row">
+          <span class="booking-row-icon" aria-hidden="true">${icon(rt.icon, 'w-4 h-4')}</span>
+          <div class="booking-row-main">
+            <div class="booking-row-title">${escapeHtml(r.title || (lang === 'th' ? rt.th : rt.en))}</div>
+            <div class="booking-row-sub">${escapeHtml(lang === 'th' ? rt.th : rt.en)}${when ? ` · ${escapeHtml(when)}` : ''}</div>
           </div>
         </div>`;
       }).join('')
@@ -4090,9 +4110,13 @@ async function renderDashboard(params) {
     const node = document.getElementById('live-since');
     if (!node) return false;
     const c = computeCountdown({ startDate: trip?.startDate, endDate: trip?.endDate, createdAt: trip?.createdAt, now: new Date() });
-    const label = c.phase === 'before'
-      ? `${th('เหลืออีก','Left')} ${c.days}${th(' วัน ',' d ')}${String(c.hours).padStart(2,'0')}:${String(c.minutes).padStart(2,'0')}`
-      : countdownHeadline(c, lang);
+    // v35: the card's big number already says “N วัน”, so this line gives the
+    // departure date instead of repeating the count.
+    const label = !c.startDate
+      ? th('ตั้งวันเดินทางเพื่อเริ่มนับถอยหลัง', 'Set a travel date to start the countdown')
+      : c.phase === 'before'
+        ? `${th('ออกเดินทาง','Departs')} ${thaiDate(trip?.startDate, { weekday: true })}`
+        : countdownHeadline(c, lang);
     const target = node.querySelector('[data-live-label]') || node;
     if (target.dataset.label !== label) {
       target.dataset.label = label;
@@ -4173,6 +4197,9 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
   const originalExpenses = expenses;
   expenses = expensesInThb(expenses, trip);
   const fmt = minor => formatCurrency(minor || 0, 'THB');
+  // v35 money rule: summaries (the three stat figures and their change lines) are
+  // whole baht — ฿13,680 — while rows and detail screens keep satang (฿3,343.92).
+  const fmtSum = minor => formatCurrency(Math.round((minor || 0) / 100) * 100, 'THB').replace(/[.,]00(?=\D*$)/, '');
   const secondary = minor => currency === 'THB' || !rate ? '' : formatCurrency(convertCurrency(minor, 'THB', currency, 1 / rate), currency);
   const thbTag = minor => origTextChipHtml(secondary(minor));
   const thbOfBudget = secondary;
@@ -4191,9 +4218,11 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
   const myPaid = paidBy[myId] || 0;
   const myShare = shareBy[myId] || 0;
 
-  /* ---- KPI: total ---- */
+  /* ---- KPI: total ----
+     v35 stat card: label · figure · one change line. No icon tile, no mood face,
+     the figure is written once (no count-up). */
   const totalEl = document.getElementById('kpi-total');
-  if (totalEl) countUp(totalEl, totalMinor, { formatter: (v) => fmt(Math.round(v)) });
+  if (totalEl) totalEl.textContent = fmtSum(totalMinor);
   if (totalEl && currency !== 'THB') {
     // Keep the original trip currency below the baht headline.
     const tag = document.getElementById('kpi-total-thb');
@@ -4206,12 +4235,7 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
       totalEl.insertAdjacentElement('afterend', span);
     } else tag.textContent = label;
   }
-  setHtml('kpi-total-sub', `
-    <span class="meta-line">${icon('check-circle', 'w-3 h-3')} ${th('จ่ายจริง','Actual')} ${fmt(actualMinor)}</span>
-    <span class="meta-line">${icon('hourglass', 'w-3 h-3')} ${th('ประมาณการ','Estimated')} ${fmt(estimatedMinor)}</span>
-    <span class="meta-line" style="color:var(--primary-strong);font-weight:700;">${icon('user', 'w-3 h-3')} ${th('ส่วนของฉัน','My share')} ${fmt(myShare)}${thbTag(myShare)}</span>
-    <span class="meta-line">${icon('receipt', 'w-3 h-3')} ${expenses.length} ${th('รายการ','items')}</span>
-  `);
+  setHtml('kpi-total-sub', `<span>${th('จ่ายจริง','Actual')} ${fmtSum(actualMinor)}</span><span>${th('ประมาณการ','Estimated')} ${fmtSum(estimatedMinor)}</span>`);
 
   /* ---- KPI: budget ---- */
   const budgetBase = Number(trip?.budgetTotal) > 0
@@ -4239,55 +4263,32 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
     // Both budget and expenses have been normalized to Thai satang.
     const spend = totalMinor;
     const left = budget - spend;
-    if (budgetEl) budgetEl.textContent = fmt(Math.max(0, left));
+    if (budgetEl) budgetEl.textContent = fmtSum(Math.max(0, left));
     const pct = Math.min(100, Math.round((spend / budget) * 100));
     const bar = document.getElementById('kpi-budget-bar');
-    if (bar) { bar.style.width = `${pct}%`; if (left < 0) bar.style.background = 'var(--danger)'; }
-    // Comparison → animated mood face (a request): the budget "feeling" at a glance.
-    const budgetMoodEl = document.getElementById('kpi-budget-mood');
-    if (budgetMoodEl) budgetMoodEl.innerHTML = moodFaceHtml(budgetMood(spend, budget), { size: 36, lang });
+    if (bar) { bar.style.width = `${pct}%`; bar.classList.toggle('is-over', left < 0); }
     // งบคงเหลือต้องเห็นเป็นเงินบาทด้วย (แม้ทริปไม่ตั้งเรต) — a request.
     const leftThb = Math.max(0, left);
     setKpiThb(budgetEl, 'kpi-budget-thb', secondary(leftThb));
     setHtml('kpi-budget-sub', left >= 0
-      ? `${th('ใช้ไป','Used')} ${pct}% • ${th('งบ','budget')} ${fmt(budget)}${budget !== totalMinor && thbOfBudget(budget) ? ` (≈ ${thbOfBudget(budget)})` : ''}`
-      : `<span style="color:var(--danger);">${th('เกินงบ','Over budget')} ${fmt(-left)}${thbOfBudget(-left) ? ` (≈ ${thbOfBudget(-left)})` : ''}</span>`);
+      ? `<span>${th('ใช้ไป','Used')} ${pct}% ${th('ของ','of')} ${fmtSum(budget)}</span>`
+      : `<span class="text-danger">${th('เกินงบ','Over budget by')} ${fmtSum(-left)}</span>`);
   } else {
     if (budgetEl) budgetEl.textContent = '—';
-    setHtml('kpi-budget-sub', `<button id="kpi-set-budget" class="link-btn">${icon('plus', 'w-3 h-3')} ${th('ตั้งงบประมาณ','Set budget')}</button>`);
+    setHtml('kpi-budget-sub', `<button id="kpi-set-budget" type="button" class="link-btn">${th('ตั้งงบประมาณ','Set a budget')}</button>`);
     bind('kpi-set-budget', 'click', () => { location.hash = `#/trip/${tripId}/settings`; });
     const bar = document.getElementById('kpi-budget-bar');
     if (bar) bar.style.width = '0%';
   }
 
-  /* ---- KPI: my balance ---- */
+  /* ---- KPI: my share (v35 — absorbs the old “กระเป๋าของฉัน” card) ----
+     Figure = what I am responsible for. Change line = what the group owes me
+     (green) or what I still owe (red), and how much of MY budget that uses. */
   let balances = [];
   try {
     balances = calculateSettlement(expenses, members.map(m => ({ id: m.id })), transfers).balances || [];
   } catch (e) { console.warn('settlement calc failed', e); }
   const myBal = balances.find(b => b.memberId === currentUser.uid);
-  const balEl = document.getElementById('kpi-balance');
-  if (balEl) {
-    balEl.textContent = fmt(myBal?.net || 0);
-    balEl.style.color = (myBal?.net || 0) >= 0 ? 'var(--success)' : 'var(--danger)';
-    const existing = document.getElementById('kpi-balance-thb');
-    if (currency !== 'THB') {
-      const label = secondary(myBal?.net || 0);
-      if (existing) existing.textContent = label;
-      else {
-        const span = document.createElement('div');
-        span.id = 'kpi-balance-thb';
-        span.className = 'money-secondary';
-        span.textContent = label;
-        balEl.insertAdjacentElement('afterend', span);
-      }
-    } else existing?.remove();
-  }
-  setHtml('kpi-balance-sub', `<span class="meta-line">${myBal?.net >= 0 ? icon('arrow-down-left', 'w-3 h-3') + ' ' + th('จะได้รับคืน','gets back') : icon('arrow-up-right', 'w-3 h-3') + ' ' + th('ต้องจ่ายเพิ่ม','needs to pay')}</span>`);
-  const balMoodEl = document.getElementById('kpi-balance-mood');
-  if (balMoodEl) balMoodEl.innerHTML = moodFaceHtml(balanceMood(myBal?.net || 0), { size: 36, lang });
-
-  /* ---- My wallet: trip total vs MY totals vs MY budget (requests #7 + #8) ---- */
   const memberBudgets = (trip?.memberBudgets && typeof trip.memberBudgets === 'object') ? trip.memberBudgets : {};
   const hasOwnBudget = Number(memberBudgets[myId]) > 0;
   const myBudgetBase = hasOwnBudget
@@ -4297,52 +4298,27 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
   const myNet = myBal?.net || 0;
   const myLeft = myBudget - myShare;
   const myPct = myBudget > 0 ? Math.min(100, Math.round((myShare / myBudget) * 100)) : 0;
-  setHtml('my-wallet', `
-    <div class="my-wallet-tile">
-      <span class="my-wallet-label">${icon('globe', 'w-3 h-3')} ${th('ยอดทริปรวม','Trip total')}</span>
-      <b class="my-wallet-value">${fmt(totalMinor)}</b>
-      ${thbTag(totalMinor)}
-      <span class="my-wallet-sub">${th('ทุกใบของทุกคน','everyone, all bills')}</span>
-    </div>
-    <div class="my-wallet-tile is-me">
-      <span class="my-wallet-label">${icon('user', 'w-3 h-3')} ${th('ยอดของฉัน','My total')}</span>
-      <b class="my-wallet-value">${fmt(myShare)}</b>
-      ${thbTag(myShare)}
-      <span class="my-wallet-sub">${th('สำรองจ่ายไป','I fronted')} <b>${fmt(myPaid)}</b>${thbTag(myPaid)}</span>
-    </div>
-    <div class="my-wallet-tile">
-      <span class="my-wallet-label">${icon('scale', 'w-3 h-3')} ${th('คงเหลือของฉัน','My balance')}</span>
-      <b class="my-wallet-value" style="color:${myNet >= 0 ? 'var(--success)' : 'var(--danger)'};">${myNet >= 0 ? '+' : '−'}${fmt(Math.abs(myNet))}</b>
-      ${thbTag(Math.abs(myNet))}
-      <span class="my-wallet-sub">${myNet >= 0 ? th('จะได้รับคืนจากเพื่อน','gets back from the group') : th('ต้องจ่ายคืนให้เพื่อน','owes the group')}</span>
-    </div>
-    <div class="my-wallet-tile my-wallet-tile--budget">
-      <span class="my-wallet-label">${icon('piggy-bank', 'w-3 h-3')} ${th('งบของฉัน','My budget')}${myBudget > 0 && !hasOwnBudget ? ` <i class="my-wallet-default">(${th('ค่าเริ่มต้นต่อคน','default per person')})</i>` : ''}</span>
-      ${myBudget > 0 ? `
-        <b class="my-wallet-value">${fmt(myBudget)}</b>
-        <div class="progress mt-1.5" style="height:6px;"><div class="progress-bar" style="width:${myPct}%; ${myLeft < 0 ? 'background:var(--danger);' : ''}"></div></div>
-        <span class="my-wallet-sub">${myLeft >= 0
-          ? `${th('ใช้ไป','used')} ${myPct}% • ${th('เหลือ','left')} <b style="color:var(--success);">${fmt(myLeft)}</b>`
-          : `<b style="color:var(--danger);">${th('เกินงบส่วนตัว','over personal budget')} ${fmt(-myLeft)}</b>`}${thbTag(myBudget)}</span>
-      ` : `
-        <b class="my-wallet-value">—</b>
-        <span class="my-wallet-sub"><button id="my-wallet-set-budget" class="link-btn">${icon('plus', 'w-3 h-3')} ${th('ตั้งงบของฉัน','Set my budget')}</button></span>
-      `}
-    </div>
-  `);
-  bind('my-wallet-set-budget', 'click', () => { location.hash = `#/trip/${tripId}/settings`; });
-  const myWalletMood = document.getElementById('my-wallet-mood');
-  if (myWalletMood) myWalletMood.innerHTML = moodFaceHtml(myBudget > 0 ? budgetMood(myShare, myBudget) : balanceMood(myNet), { size: 42, lang });
+  const mineEl = document.getElementById('kpi-mine');
+  if (mineEl) mineEl.textContent = fmtSum(myShare);
+  setKpiThb(mineEl, 'kpi-mine-thb', secondary(myShare));
+  const netLine = Math.abs(myNet) < 1
+    ? `<span>${th('ไม่มียอดค้าง','Nothing owed')}</span>`
+    : myNet > 0
+      ? `<span class="text-success">${th('ได้คืน','Gets back')} ${fmtSum(myNet)}</span>`
+      : `<span class="text-danger">${th('ต้องจ่ายเพิ่ม','Owes')} ${fmtSum(-myNet)}</span>`;
+  const myBudgetLine = myBudget > 0
+    ? (myLeft >= 0
+      ? `<span>${th('ใช้ไป','Used')} ${myPct}% ${th('ของงบฉัน','of my budget')}</span>`
+      : `<span class="text-danger">${th('เกินงบฉัน','Over my budget by')} ${fmtSum(-myLeft)}</span>`)
+    : '';
+  setHtml('kpi-mine-sub', netLine + myBudgetLine);
 
-  /* ---- KPI: places ---- */
-  const placesEl = document.getElementById('kpi-places');
-  if (placesEl) countUp(placesEl, items.length, { formatter: v => String(Math.round(v)) });
-  const withCoord = items.filter(i => i.coordinates).length;
-  setHtml('kpi-places-sub', `
-    <span class="meta-line">${icon('calendar-days', 'w-3 h-3')} ${getTripDays(trip?.startDate, trip?.endDate).length} ${th('วัน','days')}</span>
-    <span class="meta-line">${icon('users', 'w-3 h-3')} ${members.length} ${th('คน','people')}</span>
-    <span class="meta-line">${icon('crosshair', 'w-3 h-3')} ${withCoord} ${th('มีพิกัด','mapped')}</span>
-  `);
+  // “· N คน” in the page header, once the members are known.
+  const peopleEl = document.getElementById('dash-meta-people');
+  if (peopleEl) {
+    peopleEl.textContent = `${members.length} ${th('คน','people')}`;
+    peopleEl.hidden = !members.length;
+  }
 
   /* ---- Current activity ---- */
   const todayStr = dayjs().format('YYYY-MM-DD');
@@ -4354,43 +4330,41 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
     const total = Math.max(1, dayjs(current.endAt).diff(dayjs(current.startAt)));
     const progress = Math.min(100, Math.max(2, Math.round((now.diff(dayjs(current.startAt)) / total) * 100)));
     setHtml('current-activity', `
-      <div class="p-3 rounded-xl" style="background:var(--primary-light); border:1px solid color-mix(in srgb, var(--primary-raw) 30%, transparent);">
-        <div class="flex items-center gap-2 font-semibold text-sm">${icon('map-pin', 'w-4 h-4')} <span class="truncate">${escapeHtml(current.title)}</span>
-          <span class="badge badge-current text-[10px] ml-auto">${th('กำลังทำ','now')}</span></div>
-        <div class="meta-line mt-1">${icon('clock', 'w-3 h-3')} ${formatTime(current.startAt, trip?.timezone)} – ${formatTime(current.endAt, trip?.timezone)}${current.address ? ` • ${icon('map-pin', 'w-3 h-3')} ${escapeHtml(current.address)}` : ''}</div>
-        <div class="progress mt-2.5"><div class="progress-bar progress-striped" style="width:${progress}%"></div></div>
+      <div class="now-card is-live">
+        <div class="now-label"><span class="now-dot" aria-hidden="true"></span>${th('กำลังทำอยู่','Happening now')}</div>
+        <div class="now-title">${escapeHtml(current.title)}</div>
+        <div class="now-meta"><span>${timeRange(current.startAt, current.endAt, trip?.timezone)}</span>${current.address ? `<span>${escapeHtml(current.address)}</span>` : ''}</div>
+        <div class="progress mt-2"><div class="progress-bar" style="width:${progress}%"></div></div>
       </div>`);
   } else {
     const upcoming = nextItem || items.find(i => i.date > todayStr);
     setHtml('current-activity', upcoming
-      ? `<div class="p-3 rounded-xl" style="background:var(--bg-secondary); border:1px solid var(--border);">
-          <div class="meta-line">${icon('coffee', 'w-3.5 h-3.5')} ${th('ยังไม่มีกิจกรรมตอนนี้ • ถัดไป','Nothing now • next')}</div>
-          <div class="font-semibold text-sm mt-1 truncate">${escapeHtml(upcoming.title)}</div>
-          <div class="meta-line mt-0.5">${icon('calendar', 'w-3 h-3')} ${formatDate(upcoming.date, lang, trip?.timezone)} ${icon('clock', 'w-3 h-3')} ${formatTime(upcoming.startAt, trip?.timezone)}</div>
+      ? `<div class="now-card">
+          <div class="now-label">${th('ยังไม่มีกิจกรรมตอนนี้ · ถัดไป','Nothing right now · next')}</div>
+          <div class="now-title">${escapeHtml(upcoming.title)}</div>
+          <div class="now-meta"><span>${escapeHtml(formatDate(upcoming.date, lang, trip?.timezone))}</span>${upcoming.startAt ? `<span>${formatTime(upcoming.startAt, trip?.timezone)}</span>` : ''}</div>
         </div>`
-      : `<p class="text-sm text-[var(--text-secondary)] flex items-center gap-2">${icon('coffee', 'w-4 h-4')} ${th('ยังไม่มีแผนสำหรับวันนี้','No plans for today')}</p>`);
+      : `<p class="text-sm text-[var(--text-secondary)]">${th('ยังไม่มีแผนสำหรับวันนี้','No plans for today')}</p>`);
   }
 
-  /* ---- Up next ---- */
+  /* ---- Up next ----
+     B3 (v35): the meta line wraps between parts (never inside a time), and the
+     price drops to its own line on narrow phones instead of squeezing the title. */
   const upcomingList = items.filter(i => i.date >= todayStr).slice(0, 4);
   setHtml('upnext-list', upcomingList.length ? upcomingList.map((it, idx) => `
-    <div class="flex gap-3 py-2.5 border-b last:border-0 items-center dash-clickable dash-upnext" data-ui="${idx}" style="border-color:var(--border);" title="${th('กดเพื่อดูรายละเอียด','Tap for details')}">
+    <div class="upnext-row dash-clickable dash-upnext" data-ui="${idx}" title="${th('กดเพื่อดูรายละเอียด','Tap for details')}">
       <div class="step-num">${idx + 1}</div>
-      <div class="flex-1 min-w-0">
-        <div class="font-medium text-sm truncate">${escapeHtml(it.title)}</div>
-        <div class="meta-line mt-0.5">
-          ${icon('calendar', 'w-3 h-3')} ${formatDate(it.date, lang, trip?.timezone)}
-          ${icon('clock', 'w-3 h-3')} ${formatTime(it.startAt, trip?.timezone)}
-          ${it.address ? ` • ${escapeHtml(String(it.address).slice(0, 28))}` : ''}
-        </div>
+      <div class="upnext-body">
+        <div class="upnext-title">${escapeHtml(it.title)}</div>
+        <div class="upnext-meta"><span>${escapeHtml(shortDay(it.date))}</span>${it.startAt ? `<span>${formatTime(it.startAt, trip?.timezone)}</span>` : ''}${it.address ? `<span class="upnext-addr">${escapeHtml(String(it.address))}</span>` : ''}</div>
       </div>
-      ${Number(it.estimateAmount) > 0 ? `<span class="badge badge-skipped text-[10px]">${moneyHtml(toMinor(Number(it.estimateAmount), getCurrencyDecimals(it.estimateCurrency || currency)), it.estimateCurrency || currency, resolveTripThbRate(trip, originalExpenses, it.estimateCurrency || currency))}</span>` : ''}
+      ${Number(it.estimateAmount) > 0 ? `<span class="upnext-price">${moneyHtml(toMinor(Number(it.estimateAmount), getCurrencyDecimals(it.estimateCurrency || currency)), it.estimateCurrency || currency, resolveTripThbRate(trip, originalExpenses, it.estimateCurrency || currency))}</span>` : ''}
     </div>`).join('')
     : renderEmptyState({
       icon: 'map-pinned',
       title: th('ยังไม่มีแผนถัดไป', 'No upcoming plans'),
       desc: th('เพิ่มสถานที่เพื่อเริ่มวางแผน', 'Add a place to start planning'),
-      actionHtml: `<button id="upnext-add" class="btn btn-primary btn-sm mt-3">${icon('plus', 'w-4 h-4')} ${t('addPlace')}</button>`
+      actionHtml: `<button id="upnext-add" type="button" class="btn btn-primary btn-sm">${icon('plus', 'w-4 h-4')} ${t('addPlace')}</button>`
     }));
   bind('upnext-add', 'click', () => { location.hash = `#/trip/${tripId}/itinerary?action=add`; });
 
@@ -4427,21 +4401,19 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
     const pct = Math.round((total / grand) * 100);
     const empty = !total;
     return `
-      <div class="py-2 dash-cat-row cat-stats-compact" data-cat="${escapeHtml(cat)}" style="${empty ? 'opacity:.62;' : ''}">
-        <div class="flex justify-between items-center text-sm gap-2">
-          <span class="meta-line truncate">${icon(categoryIcon(cat), 'w-3.5 h-3.5')} ${escapeHtml(categoryLabel(cat, lang))} <span class="text-[10px] text-[var(--text-tertiary)]">• ${v.count}</span></span>
-          <span class="font-bold flex-shrink-0">${fmt(total)} <span class="text-[10px] font-normal text-[var(--text-tertiary)]">${pct}%</span>${thbTag(total)}</span>
+      <div class="dash-cat-row cat-stats-compact${empty ? ' is-empty' : ''}" data-cat="${escapeHtml(cat)}">
+        <div class="dash-cat-line">
+          <span class="dash-cat-name">${escapeHtml(categoryLabel(cat, lang))}<span class="dash-cat-count">${v.count}</span></span>
+          <span class="dash-cat-amount">${fmt(total)}<span class="dash-cat-pct">${pct}%</span>${thbTag(total)}</span>
         </div>
-        <div class="progress mt-1.5" style="height:5px;">
-          <div class="progress-bar progress-striped" style="width:${empty ? 0 : Math.max(3, Math.round(total / catMax * 100))}%; background:${categoryColor(cat)};"></div>
-        </div>
-        ${v.estimate ? `<div class="text-[10px] text-[var(--text-tertiary)] mt-0.5">${icon('hourglass', 'w-3 h-3 inline')} ${th('ประมาณการ','est.')} ${fmt(v.estimate)}${v.actual ? ` • ${th('จ่ายจริง','actual')} ${fmt(v.actual)}` : ''}</div>` : (empty ? `<div class="text-[10px] text-[var(--text-tertiary)] mt-0.5">${th('ยังไม่มีรายการ','No expenses yet')}</div>` : '')}
+        <div class="progress"><div class="progress-bar" style="width:${empty ? 0 : Math.max(2, Math.round(total / catMax * 100))}%;"></div></div>
+        ${v.estimate ? `<div class="dash-cat-note">${th('ประมาณการ','Estimated')} ${fmt(v.estimate)}${v.actual ? ` · ${th('จ่ายจริง','actual')} ${fmt(v.actual)}` : ''}</div>` : ''}
       </div>`;
   };
   setHtml('category-stats', catEntries.length ? `
-    <p class="text-[10px] text-[var(--text-tertiary)] mb-2">${icon('layout-grid', 'w-3 h-3 inline')} ${spentCats ? th(`ยอดสูง ${Math.min(TOP_N, spentCats)} หมวดแรก • ทั้งหมด ${spentCats} หมวดมีรายจ่าย`, `Top ${Math.min(TOP_N, spentCats)} • ${spentCats} categories with spending`) : th('ยังไม่มีรายจ่าย','No spending yet')}</p>
-    <div id="cat-top">${catTop.map(renderCatRow).join('') || `<p class="text-xs text-[var(--text-tertiary)]">${th('ยังไม่มีค่าใช้จ่าย','No expenses yet')}</p>`}</div>
-    <div id="cat-rest" style="display:none;">${catRest.map(renderCatRow).join('')}${catEmpty.length ? `<div class="mt-2 pt-2 border-t border-dashed" style="border-color:var(--border);"><p class="text-[10px] text-[var(--text-tertiary)] mb-1">${th('หมวดที่ยังไม่มีรายจ่าย','Empty categories')}</p>${catEmpty.map(renderCatRow).join('')}</div>` : ''}</div>
+    <p class="dash-cat-caption">${spentCats ? th(`${Math.min(TOP_N, spentCats)} หมวดที่ใช้มากที่สุด จาก ${spentCats} หมวดที่มีรายจ่าย`, `Top ${Math.min(TOP_N, spentCats)} of ${spentCats} categories with spending`) : th('ยังไม่มีรายจ่าย','No spending yet')}</p>
+    <div id="cat-top">${catTop.map(renderCatRow).join('') || `<p class="text-sm text-[var(--text-tertiary)]">${th('ยังไม่มีค่าใช้จ่าย','No expenses yet')}</p>`}</div>
+    <div id="cat-rest" style="display:none;">${catRest.map(renderCatRow).join('')}${catEmpty.length ? `<div class="dash-cat-empty"><p class="dash-cat-caption">${th('หมวดที่ยังไม่มีรายจ่าย','Categories with no spending')}</p>${catEmpty.map(renderCatRow).join('')}</div>` : ''}</div>
   ` : `<p class="text-sm text-[var(--text-secondary)]">${t('noData')}</p>`);
   // expand button logic
   const catExpandBtn = document.getElementById('cat-expand-btn');
@@ -4455,51 +4427,44 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
       if (rest) rest.style.display = expanded ? '' : 'none';
       const label = catExpandBtn.querySelector('[data-cat-label]');
       if (label) label.textContent = expanded ? (lang==='th'?'ย่อ':'Show less') : (lang==='th'?'ดูทั้งหมด':'Show all');
-      catExpandBtn.innerHTML = `${icon(expanded ? 'chevron-up' : 'chevron-down','w-3.5 h-3.5')} <span data-cat-label>${label?.textContent || ''}</span>`;
-      queueIcons();
+      catExpandBtn.innerHTML = `<span data-cat-label>${label?.textContent || ''}</span>`;
     });
   }
 
   /* ---- Estimated vs actual ---- */
+  const actPct = totalMinor ? Math.round((actualMinor / totalMinor) * 100) : 0;
   const estPct = totalMinor ? Math.round((estimatedMinor / totalMinor) * 100) : 0;
   const memberCount = Math.max(1, members.length);
-  const estMood = estimateMood(estimatedMinor, totalMinor);
-  const estMoodText = estMood === 'think'
-    ? th('ยังมีรายการประมาณการรอจ่ายจริงอีกเยอะ — ชวนเพื่อนเคลียร์รายการที่จองไว้', 'A big chunk is still estimated — turn bookings into real payments')
-    : estMood === 'meh'
-      ? th('เริ่มชัดเจน — ยังมีประมาณการค้างอยู่บ้าง', 'Getting concrete — a few estimates still open')
-      : totalMinor > 0
-        ? th('เกือบทั้งหมดเป็นยอดจ่ายจริงแล้ว เยี่ยม!', 'Almost everything is actual spending. Nice!')
-        : th('ยังไม่มีข้อมูลให้เทียบ', 'Nothing to compare yet');
+  const tripDayCount = Math.max(1, getTripDays(trip?.startDate, trip?.endDate).length);
+  const estNote = !totalMinor
+    ? th('ยังไม่มีข้อมูลให้เทียบ', 'Nothing to compare yet')
+    : estPct >= 50
+      ? th('ส่วนใหญ่ยังเป็นยอดประมาณการ เปลี่ยนรายการที่จ่ายแล้วเป็นยอดจริงได้ที่หน้าค่าใช้จ่าย', 'Most of it is still estimated — mark paid items as actual on the Expenses page')
+      : estPct > 0
+        ? th(`ยังเป็นประมาณการอยู่ ${estPct}%`, `${estPct}% is still estimated`)
+        : th('ทุกรายการเป็นยอดจ่ายจริงแล้ว', 'Every item is actual spending');
   setHtml('estimate-compare', `
     <div class="space-y-3">
-      <div class="compare-mood-head">
-        ${moodFaceHtml(estMood, { size: 44, lang })}
-        <span class="compare-mood-text">${estMoodText}</span>
+      <p class="text-sm text-[var(--text-secondary)]">${estNote}</p>
+      <div>
+        <div class="flex justify-between gap-3 text-sm mb-1"><span>${th('จ่ายจริง','Paid')}</span><b class="font-medium tabular-nums">${thbPlusLabelHtml(actualMinor, secondary(actualMinor))}</b></div>
+        <div class="progress"><div class="progress-bar" style="width:${actPct}%;"></div></div>
       </div>
       <div>
-        <div class="flex justify-between text-xs mb-1"><span class="meta-line">${icon('check-circle', 'w-3.5 h-3.5')} ${th('จ่ายจริงแล้ว','Paid')}</span><b>${thbPlusLabelHtml(actualMinor, secondary(actualMinor))}</b></div>
-        <div class="progress" style="height:8px;"><div class="progress-bar" style="width:${totalMinor ? Math.round(actualMinor / totalMinor * 100) : 0}%;"></div></div>
+        <div class="flex justify-between gap-3 text-sm mb-1"><span>${th('ประมาณการ','Estimated')}</span><b class="font-medium tabular-nums">${thbPlusLabelHtml(estimatedMinor, secondary(estimatedMinor))}</b></div>
+        <div class="progress"><div class="progress-bar is-muted" style="width:${estPct}%;"></div></div>
       </div>
-      <div>
-        <div class="flex justify-between text-xs mb-1"><span class="meta-line">${icon('hourglass', 'w-3.5 h-3.5')} ${th('ประมาณการ/ต้องจอง','Estimated')}</span><b>${thbPlusLabelHtml(estimatedMinor, secondary(estimatedMinor))}</b></div>
-        <div class="progress" style="height:8px;"><div class="progress-bar" style="width:${estPct}%; background: var(--warning);"></div></div>
-      </div>
-      <div class="grid grid-cols-2 gap-2 text-xs">
-        <div class="p-2.5 rounded-xl" style="background:var(--bg-secondary);">${icon('user', 'w-3 h-3')} ${th('เฉลี่ย/คน','Avg / person')}<div class="font-bold text-sm mt-0.5">${fmt(Math.round(totalMinor / memberCount))}</div>${thbTag(Math.round(totalMinor / memberCount))}</div>
-        <div class="p-2.5 rounded-xl" style="background:var(--bg-secondary);">${icon('calendar-days', 'w-3 h-3')} ${th('เฉลี่ย/วัน','Avg / day')}<div class="font-bold text-sm mt-0.5">${fmt(Math.round(totalMinor / Math.max(1, getTripDays(trip?.startDate, trip?.endDate).length)))}</div>${thbTag(Math.round(totalMinor / Math.max(1, getTripDays(trip?.startDate, trip?.endDate).length)))}</div>
-      </div>
+      <dl class="mini-stats">
+        <div><dt>${th('เฉลี่ยต่อคน','Avg per person')}</dt><dd>${fmt(Math.round(totalMinor / memberCount))}</dd>${thbTag(Math.round(totalMinor / memberCount))}</div>
+        <div><dt>${th('เฉลี่ยต่อวัน','Avg per day')}</dt><dd>${fmt(Math.round(totalMinor / tripDayCount))}</dd>${thbTag(Math.round(totalMinor / tripDayCount))}</div>
+      </dl>
     </div>`);
 
   /* ---- Summary stats ---- */
   const settlement = (() => { try { return calculateSettlement(expenses, members.map(m => ({ id: m.id })), transfers); } catch { return { transactions: [] }; } })();
   setHtml('summary-stats', `
-    <div class="flex items-center gap-3 flex-wrap">
-      <span class="meta-line text-sm">${icon('users', 'w-4 h-4')} ${members.length} ${th('คน','people')}</span>
-      <span class="meta-line text-sm">${icon('receipt', 'w-4 h-4')} ${expenses.length} ${th('รายการ','items')}</span>
-      <span class="meta-line text-sm">${icon('hand-coins', 'w-4 h-4')} ${th('ต้องเคลียร์','settlements')} ${settlement.transactions?.length || 0} ${th('รายการ','items')}</span>
-    </div>
-    ${(settlement.transactions || []).length ? `<button id="dash-go-settlement" class="btn btn-secondary btn-sm mt-2">${icon('hand-coins', 'w-4 h-4')} ${th('ไปเคลียร์บิล','Go to settlement')}</button>` : `<div class="text-xs mt-2" style="color:var(--success);">${icon('check', 'w-3.5 h-3.5 inline')} ${t('allCleared')}</div>`}
+    <p class="text-sm text-[var(--text-secondary)]">${members.length} ${th('คน','people')} · ${expenses.length} ${th('รายการ','items')} · ${th('ต้องเคลียร์','to settle')} ${settlement.transactions?.length || 0} ${th('รายการ','items')}</p>
+    ${(settlement.transactions || []).length ? `<button id="dash-go-settlement" type="button" class="btn btn-secondary btn-sm mt-2">${th('ไปเคลียร์บิล','Go to settlement')}</button>` : `<p class="text-sm mt-2 text-success">${t('allCleared')}</p>`}
   `);
   bind('dash-go-settlement', 'click', () => { location.hash = `#/trip/${tripId}/settlement`; });
 
@@ -4511,24 +4476,23 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
     const m = membersMap[id];
     const isMe = id === currentUser.uid;
     const bal = balances.find(b => b.memberId === id)?.net || 0;
+    const settled = Math.abs(bal) < 1;
     return `
       <div class="member-row ${isMe ? 'is-me' : ''}" data-mid="${escapeHtml(id)}" role="button" tabindex="0" title="${th('แตะเพื่อดูรายการของคนนี้','Tap to see this person’s bills')}">
-        <div class="flex items-center gap-3 min-w-0">
-          <div class="avatar w-10 h-10 text-sm" style="background:${m?.color || 'var(--primary)'};width:40px;height:40px;">
+        <div class="member-row-main">
+          <div class="avatar member-row-avatar" style="background:${m?.color || 'var(--primary)'};">
             ${m?.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m?.displayName || 'U'))}
           </div>
           <div class="min-w-0">
-            <div class="font-semibold text-sm flex items-center gap-2 truncate">${escapeHtml(m?.displayName || id.slice(0,6))} ${isMe ? `<span class="text-[10px] px-2 py-0.5 rounded-full text-white flex-shrink-0" style="background:var(--gradient-primary);">${th('คุณ','You')}</span>` : ''}</div>
-            <div class="text-[11px] text-[var(--text-secondary)]">
-              ${th('จ่าย','paid')} ${fmt(paidBy[id] || 0)} • ${th('รับผิดชอบ','share')} ${fmt(shareBy[id] || 0)}
-            </div>
+            <div class="member-row-name"><span class="truncate">${escapeHtml(m?.displayName || id.slice(0,6))}</span>${isMe ? `<span class="you-badge">${th('คุณ','You')}</span>` : ''}</div>
+            <div class="member-row-sub">${th('จ่าย','Paid')} ${fmt(paidBy[id] || 0)} · ${th('รับผิดชอบ','share')} ${fmt(shareBy[id] || 0)}</div>
             ${thbTag(paidBy[id] || 0)}
           </div>
         </div>
-        <div class="text-right flex-shrink-0">
-          <div class="font-bold text-sm" style="color:${bal >= 0 ? 'var(--success)' : 'var(--danger)'};">${fmt(bal)}</div>
+        <div class="member-row-net">
+          <div class="member-row-amount ${settled ? '' : bal > 0 ? 'text-success' : 'text-danger'}">${settled ? fmt(0) : `${bal > 0 ? '+' : '−'}${fmt(Math.abs(bal))}`}</div>
           ${thbTag(bal)}
-          <div class="text-[10px] text-[var(--text-tertiary)]">${bal >= 0 ? th('ได้รับคืน','gets back') : th('ต้องจ่าย','pays')}</div>
+          <div class="member-row-hint">${settled ? th('ไม่มียอดค้าง','Settled') : bal > 0 ? th('ได้คืน','gets back') : th('ต้องจ่าย','pays')}</div>
         </div>
       </div>`;
   }).join('') : `<p class="text-sm text-[var(--text-secondary)]">${t('noData')}</p>`);
@@ -4544,10 +4508,9 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
       if (!groups.length) {
         teamBox.innerHTML = `
           <div class="team-empty">
-            ${icon('users-round', 'w-5 h-5')}
-            <p class="font-semibold text-[12.5px]">${th('ยังไม่มีทีมในทริปนี้','No teams in this trip yet')}</p>
-            <p class="text-[11px] text-[var(--text-secondary)]">${th('สร้างกลุ่มย่อย (ทีม) ที่หน้าสมาชิก แล้วแต่ละทีมจะถูกคำนวณค่าใช้จ่ายต่อคน / รวมทีมให้อัตโนมัติ','Create sub-groups (teams) on the Members page and each team’s cost per person / team total is calculated for you')}</p>
-            <button id="team-empty-btn" class="btn btn-secondary btn-sm">${icon('plus', 'w-4 h-4')} ${th('ไปสร้างทีม','Create a team')}</button>
+            <p class="font-medium text-sm">${th('ยังไม่มีทีมในทริปนี้','No teams in this trip yet')}</p>
+            <p class="text-xs text-[var(--text-secondary)]">${th('สร้างกลุ่มย่อย (ทีม) ที่หน้าสมาชิก แล้วแต่ละทีมจะถูกคำนวณค่าใช้จ่ายต่อคน / รวมทีมให้อัตโนมัติ','Create sub-groups (teams) on the Members page and each team’s cost per person / team total is calculated for you')}</p>
+            <button id="team-empty-btn" type="button" class="btn btn-secondary btn-sm">${th('ไปสร้างทีม','Create a team')}</button>
           </div>`;
         bind('team-empty-btn', 'click', () => { location.hash = `#/trip/${tripId}/members`; });
       } else {
@@ -4560,7 +4523,7 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
             <article class="team-card" data-gid="${escapeHtml(g.id)}" role="button" tabindex="0" style="--team-color:${escapeHtml(g.color)};">
               <div class="team-card-head">
                 <span class="team-card-name" style="color:${escapeHtml(g.color)};">${icon(g.icon || 'users', 'w-4 h-4')} ${escapeHtml(g.name)}</span>
-                <span class="badge badge-planned text-[10px] ml-auto">${icon('users', 'w-2.5 h-2.5')} ${g.memberCount} ${th('คน','pax')}</span>
+                <span class="badge badge-planned text-xs ml-auto">${g.memberCount} ${th('คน','pax')}</span>
               </div>
               ${g.note ? `<p class="team-card-note">${escapeHtml(g.note)}</p>` : ''}
               <div class="team-stats">
@@ -4576,13 +4539,13 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
                 </div>
               </div>
               <div class="team-facts">
-                <span>${icon('map-pinned', 'w-3 h-3')} ${places} ${th('สถานที่','places')}</span>
-                <span>${icon('receipt', 'w-3 h-3')} ${g.itemCount} ${th('รายการ','items')}</span>
-                <span>${icon('scale', 'w-3 h-3')} ${g.netMinor >= 0 ? th('รอรับคืน','owed') : th('ต้องจ่ายเพิ่ม','owes')} ${fmt(Math.abs(g.netMinor))}</span>
+                <span>${places} ${th('สถานที่','places')}</span>
+                <span>${g.itemCount} ${th('รายการ','items')}</span>
+                <span>${g.netMinor >= 0 ? th('รอรับคืน','owed') : th('ต้องจ่ายเพิ่ม','owes')} ${fmt(Math.abs(g.netMinor))}</span>
               </div>
               <div class="team-members">
                 ${g.members.length ? g.members.map(m => `
-                  <span class="team-member-chip"><span class="avatar w-5 h-5 text-[9px]" style="background:${escapeHtml(m.color || 'var(--primary)')};width:20px;height:20px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>${escapeHtml((m.displayName || '').split(' ')[0])}</span>`).join('')
+                  <span class="team-member-chip"><span class="avatar w-5 h-5 text-xs" style="background:${escapeHtml(m.color || 'var(--primary)')};width:20px;height:20px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>${escapeHtml((m.displayName || '').split(' ')[0])}</span>`).join('')
                   : `<span class="team-card-note">${th('ยังไม่ได้เลือกสมาชิก','No members picked yet')}</span>`}
               </div>
             </article>`;
@@ -4590,8 +4553,8 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
         teamBox.innerHTML = report.groups.map(teamCard).join('') + `
           <article class="team-card team-card--trip" data-gid="__trip" role="button" tabindex="0">
             <div class="team-card-head">
-              <span class="team-card-name">${icon('users', 'w-4 h-4')} ${th('ทั้งทริป','Whole trip')}</span>
-              <span class="badge badge-planned text-[10px] ml-auto">${report.trip.memberCount} ${th('คน','pax')}</span>
+              <span class="team-card-name">${th('ทั้งทริป','Whole trip')}</span>
+              <span class="badge badge-planned text-xs ml-auto">${report.trip.memberCount} ${th('คน','pax')}</span>
             </div>
             <div class="team-stats">
               <div class="team-stat">
@@ -4605,7 +4568,7 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
                 <span class="team-delta">${th('จ่ายไป','paid')} ${fmt(report.trip.paidMinor)}</span>
               </div>
             </div>
-            ${report.ungrouped.length ? `<div class="team-facts"><span>${icon('user-plus', 'w-3 h-3')} ${th('ยังไม่อยู่ในทีม','Not in a team')}: ${report.ungrouped.map(m => escapeHtml(m.displayName || '')).join(', ')}</span></div>` : ''}
+            ${report.ungrouped.length ? `<div class="team-facts"><span>${th('ยังไม่อยู่ในทีม','Not in a team')}: ${report.ungrouped.map(m => escapeHtml(m.displayName || '')).join(', ')}</span></div>` : ''}
           </article>`;
       }
       queueIcons();
@@ -4619,15 +4582,14 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
   setHtml('recent-expenses', recent.length ? recent.map(e => {
     const payer = expensePayments(e).map(p => membersMap[p.memberId]?.displayName || p.memberId).join(', ');
     return `
-      <button class="expense-row" data-expense="${e.id}">
-        <span class="row-icon" style="width:34px;height:34px;border-radius:11px;background:color-mix(in srgb, ${categoryColor(e.category)} 18%, transparent);color:${categoryColor(e.category)};">${icon(categoryIcon(e.category), 'w-4 h-4')}</span>
+      <button type="button" class="expense-row" data-expense="${e.id}">
         <span class="min-w-0 flex-1 text-left">
-          <span class="block font-semibold text-sm truncate">${escapeHtml(e.title)}</span>
-          <span class="block text-[11px] text-[var(--text-secondary)]">${escapeHtml(categoryLabel(e.category, lang))}${payer ? ' • ' + escapeHtml(payer) : ''} • ${escapeHtml(e.date || '')}</span>
+          <span class="expense-row-title">${escapeHtml(e.title)}</span>
+          <span class="expense-row-meta">${[categoryLabel(e.category, lang), payer, shortDay(e.date)].filter(Boolean).map(x => escapeHtml(x)).join(' · ')}</span>
         </span>
-        <span class="text-right expense-row-amount">
+        <span class="expense-row-amount">
           ${moneyHtml(e.netTotalMinor || 0, e.currency || currency, e.thbRate || resolveTripThbRate(trip, originalExpenses, e.currency || currency))}
-          ${e.isEstimated ? `<span class="badge badge-skipped text-[9px]">${th('ประมาณการ','est.')}</span>` : ''}
+          ${e.isEstimated ? `<span class="expense-row-est">${th('ประมาณการ','est.')}</span>` : ''}
         </span>
       </button>`;
   }).join('') : `<p class="text-sm text-[var(--text-secondary)]">${th('ยังไม่มีค่าใช้จ่าย','No expenses yet')}</p>`);
@@ -4638,16 +4600,15 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
   function openDashPopup({ icon: ic = 'info', title = '', subtitle = '', body = '', links = [] }) {
     const sheet = showBottomSheet(`
       <div class="space-y-3">
-        <div class="flex items-start gap-3">
-          <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--gradient-primary);color:#fff;flex-shrink:0;">${icon(ic, 'w-5 h-5')}</div>
+        <div class="sheet-head">
           <div class="min-w-0 flex-1">
-            <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${title}</h3>
-            ${subtitle ? `<p class="text-xs text-[var(--text-secondary)] mt-0.5">${subtitle}</p>` : ''}
+            <h3 class="sheet-title">${title}</h3>
+            ${subtitle ? `<p class="sheet-sub">${subtitle}</p>` : ''}
           </div>
         </div>
         ${body}
         ${links.length ? `<div class="grid gap-2">${links.map((l, k) => `
-          <button class="btn ${l.primary ? 'btn-primary' : 'btn-secondary'} w-full justify-start" data-dl="${k}">${icon(l.icon || 'arrow-right', 'w-4 h-4')} ${l.label}</button>`).join('')}</div>` : ''}
+          <button type="button" class="btn ${l.primary ? 'btn-primary' : 'btn-secondary'} w-full" data-dl="${k}">${l.label}</button>`).join('')}</div>` : ''}
       </div>
     `);
     queueIcons();
@@ -4666,13 +4627,12 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
   }
   const dashExpRow = (e) => {
     const payers = expensePayments(e).map(p => membersMap[p.memberId]?.displayName || '').filter(Boolean).join(', ');
-    return `<button class="dash-pop-row" data-pop-exp="${e.id}">
-      <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:color-mix(in srgb, ${categoryColor(e.category)} 18%, transparent);color:${categoryColor(e.category)};">${icon(categoryIcon(e.category), 'w-3.5 h-3.5')}</span>
+    return `<button type="button" class="dash-pop-row" data-pop-exp="${e.id}">
       <span class="min-w-0 flex-1 text-left">
-        <span class="block text-xs font-bold truncate">${escapeHtml(e.title || '')}</span>
-        <span class="block text-[10px] text-[var(--text-tertiary)]">${escapeHtml(e.date || '')}${payers ? ` • ${escapeHtml(payers)}` : ''}${e.isEstimated ? ` • ${th('ประมาณการ','est.')}` : ''}</span>
+        <span class="block text-sm font-medium truncate">${escapeHtml(e.title || '')}</span>
+        <span class="block text-xs text-[var(--text-tertiary)]">${escapeHtml(shortDay(e.date))}${payers ? ` · ${escapeHtml(payers)}` : ''}${e.isEstimated ? ` · ${th('ประมาณการ','est.')}` : ''}</span>
       </span>
-      <b class="text-xs flex-shrink-0">${escapeHtml(formatCurrency(e.netTotalMinor || 0, e.currency || currency))}</b>
+      <b class="text-sm font-medium tabular-nums flex-shrink-0">${escapeHtml(formatCurrency(e.netTotalMinor || 0, e.currency || currency))}</b>
     </button>`;
   };
   const dashExpList = (list, emptyTh = 'ไม่มีรายการในช่วงนี้', emptyEn = 'No items here') =>
@@ -4696,10 +4656,10 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
           icon: 'wallet', title: th('ยอดใช้จ่ายรวม', 'Total spending'),
           subtitle: th(`${expenses.length} รายการ • แตะแถวเพื่อดูค่าใช้จ่าย`, `${expenses.length} items • tap a row to open it`),
           body: `<div class="dash-pop-card">
-              ${dashRow(`${icon('check-circle', 'w-3.5 h-3.5')} ${th('จ่ายจริง','Actual')}`, fmt(actualMinor))}
-              ${dashRow(`${icon('hourglass', 'w-3.5 h-3.5')} ${th('ประมาณการ','Estimated')}`, fmt(estimatedMinor))}
-              ${dashRow(`${icon('user', 'w-3.5 h-3.5')} ${th('ส่วนของฉัน','My share')}`, fmt(myShare))}
-              ${top.length ? `<div class="dash-pop-sub">${th('หมวดที่ใช้มากสุด','Top categories')}</div>` + top.map(x => dashRow(`${icon(categoryIcon(x.cat), 'w-3.5 h-3.5')} ${escapeHtml(categoryLabel(x.cat, lang))}`, fmt(x.total))).join('') : ''}
+              ${dashRow(th('จ่ายจริง','Actual'), fmt(actualMinor))}
+              ${dashRow(th('ประมาณการ','Estimated'), fmt(estimatedMinor))}
+              ${dashRow(th('ส่วนของฉัน','My share'), fmt(myShare))}
+              ${top.length ? `<div class="dash-pop-sub">${th('หมวดที่ใช้มากสุด','Top categories')}</div>` + top.map(x => dashRow(escapeHtml(categoryLabel(x.cat, lang)), fmt(x.total))).join('') : ''}
             </div>
             ${dashExpList([...originalExpenses].sort(byDateDesc).slice(0, 5))}`,
           links: [
@@ -4726,52 +4686,14 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
               ${dashRow(th('สำรองจ่ายไป','I fronted'), fmt(myPaid))}
               ${dashRow(th('ส่วนที่ต้องรับผิดชอบ','My share'), fmt(myShare))}
               ${dashRow(th('รายการเคลียร์ที่เกี่ยวกับฉัน','My settlements'), `${myTx.length} ${th('รายการ','items')}`)}
+              ${myBudget > 0 ? dashRow(th('งบของฉัน','My budget'), `${fmt(myBudget)} · ${th('ใช้ไป','used')} ${myPct}%`) : dashRow(th('งบของฉัน','My budget'), th('ยังไม่ได้ตั้ง','Not set'))}
             </div>`,
           links: [
             { label: th('ไปเคลียร์บิล', 'Go to settlement'), hash: `#/trip/${tripId}/settlement`, icon: 'hand-coins', primary: true },
             { label: th('ดูค่าใช้จ่ายทั้งหมด', 'View all expenses'), hash: `#/trip/${tripId}/expenses`, icon: 'wallet' }
-          ]
-        });
-      } else if (kind === 'plan') {
-        openDashPopup({
-          icon: 'map-pinned', title: th('แผนการเดินทาง', 'Itinerary'),
-          body: `<div class="dash-pop-card">
-              ${dashRow(th('สถานที่ทั้งหมด','Places'), `${items.length}`)}
-              ${dashRow(th('จำนวนวัน','Days'), `${getTripDays(trip?.startDate, trip?.endDate).length}`)}
-              ${dashRow(th('สมาชิก','People'), `${members.length}`)}
-              ${dashRow(th('มีพิกัดบนแผนที่','Mapped'), `${withCoord}`)}
-            </div>`,
-          links: [
-            { label: th('ดูแผนการเดินทาง', 'View itinerary'), hash: `#/trip/${tripId}/itinerary`, icon: 'map-pinned', primary: true },
-            { label: t('addPlace'), hash: `#/trip/${tripId}/itinerary?action=add`, icon: 'plus' }
           ]
         });
       }
-    });
-  });
-
-  // My wallet tiles → the same numbers, explained.
-  document.querySelectorAll('#my-wallet .my-wallet-tile').forEach((tile, wi) => {
-    tile.classList.add('dash-clickable');
-    tile.setAttribute('title', th('กดเพื่อดูรายละเอียด', 'Tap for details'));
-    tile.addEventListener('click', (ev) => {
-      if (ev.target.closest('button, a')) return;
-      const conf = [
-        { icon: 'globe', title: th('ยอดทริปรวม', 'Trip total'), rows: [[th('ทุกคนทุกใบรวมกัน','Everyone, all bills'), fmt(totalMinor)]] },
-        { icon: 'user', title: th('ยอดของฉัน', 'My total'), rows: [[th('ส่วนที่ต้องรับผิดชอบ','My share'), fmt(myShare)], [th('สำรองจ่ายไป','I fronted'), fmt(myPaid)]] },
-        { icon: 'scale', title: th('คงเหลือของฉัน', 'My balance'), rows: [[myNet >= 0 ? th('จะได้รับคืน','Gets back') : th('ต้องจ่ายคืน','Owes'), fmt(Math.abs(myNet))]] },
-        { icon: 'piggy-bank', title: th('งบของฉัน', 'My budget'), rows: myBudget > 0 ? [[th('งบ','Budget'), fmt(myBudget)], [th('ใช้ไป','Used'), `${myPct}%`], [myLeft >= 0 ? th('เหลือ','Left') : th('เกินงบ','Over'), fmt(Math.abs(myLeft))]] : [[th('สถานะ','Status'), th('ยังไม่ได้ตั้งงบ','No budget yet')]] }
-      ][wi] || { icon: 'info', title: '', rows: [] };
-      openDashPopup({
-        icon: conf.icon, title: conf.title,
-        body: `<div class="dash-pop-card">${conf.rows.map(([a, b]) => dashRow(a, b)).join('')}</div>`,
-        links: wi === 3
-          ? [{ label: th('ตั้งงบของฉัน', 'Set my budget'), hash: `#/trip/${tripId}/settings`, icon: 'settings-2', primary: true }]
-          : [
-            { label: th('ไปเคลียร์บิล', 'Go to settlement'), hash: `#/trip/${tripId}/settlement`, icon: 'hand-coins', primary: true },
-            { label: th('ดูค่าใช้จ่ายทั้งหมด', 'View all expenses'), hash: `#/trip/${tripId}/expenses`, icon: 'wallet' }
-          ]
-      });
     });
   });
 
@@ -4789,7 +4711,7 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
     }
     openDashPopup({
       icon: 'target', title: live.title || t('currentActivity'),
-      subtitle: `${formatDate(live.date, lang, trip?.timezone)} • ${formatTime(live.startAt, trip?.timezone)} – ${formatTime(live.endAt, trip?.timezone)}`,
+      subtitle: [formatDate(live.date, lang, trip?.timezone), timeRange(live.startAt, live.endAt, trip?.timezone)].filter(Boolean).join(' · '),
       body: `<div class="dash-pop-card">
           ${live.address ? dashRow(th('สถานที่','Place'), escapeHtml(live.address)) : ''}
           ${dashRow(th('หมวด','Category'), escapeHtml(categoryLabel(live.category || 'general', lang)))}
@@ -4913,7 +4835,7 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
     const shared = (e.allocations || []).map(a => membersMap[a.memberId]?.displayName || a.memberId).filter(Boolean);
     openDashPopup({
       icon: categoryIcon(e.category), title: e.title || th('ค่าใช้จ่าย', 'Expense'),
-      subtitle: `${escapeHtml(categoryLabel(e.category, lang))} • ${escapeHtml(e.date || '')}${e.isEstimated ? ` • ${th('ประมาณการ','estimated')}` : ''}`,
+      subtitle: `${escapeHtml(categoryLabel(e.category, lang))} • ${escapeHtml(shortDay(e.date))}${e.isEstimated ? ` • ${th('ประมาณการ','estimated')}` : ''}`,
       body: `<div class="dash-pop-card">
           ${dashRow(th('ยอดสุทธิ','Net'), escapeHtml(formatCurrency(e.netTotalMinor || 0, e.currency || currency)))}
           ${payers.length ? dashRow(th('ผู้จ่าย','Paid by'), escapeHtml(payers.join(' · '))) : ''}
@@ -4975,10 +4897,16 @@ async function renderItinerary(params) {
           <button id="view-all-btn" class="btn btn-secondary btn-sm">${icon('calendar-days', 'w-4 h-4')} <span id="view-all-label">${th('ดูทั้งหมด','View all')}</span></button>
           <button id="itin-density-btn" class="btn btn-secondary btn-sm" type="button" aria-pressed="false" title="${th('สลับมุมมองกระทัดรัด / ปกติ','Switch compact / comfortable view')}">${icon('rows-3', 'w-4 h-4')} <span data-density-label>${th('มุมมองกระทัดรัด','Compact view')}</span></button>
           <button id="toggle-map-btn" class="btn btn-secondary btn-sm" aria-pressed="false">${icon('map', 'w-4 h-4')} ${th('แผนที่','Map')}</button>
-          <button id="export-png-btn" class="btn btn-secondary btn-sm" title="${th('PNG ทั้งแผน','Whole-plan PNG')}">${icon('image', 'w-4 h-4')} PNG</button>
-          <button id="export-day-png-btn" class="btn btn-secondary btn-sm" title="${th('PNG เฉพาะวันนี้','PNG for one day')}">${icon('calendar-down', 'w-4 h-4')} PNG ${th('รายวัน','per day')}</button>
+          <!-- v35: exports live behind one “ส่งออก” menu instead of three more buttons -->
+          <div class="menu-wrap">
+            <button id="itin-export-btn" type="button" class="btn btn-secondary btn-sm" aria-haspopup="menu" aria-expanded="false" aria-controls="itin-export-menu">${icon('download', 'w-4 h-4')} ${th('ส่งออก','Export')} ${icon('chevron-down', 'w-3.5 h-3.5')}</button>
+            <div class="menu-pop" id="itin-export-menu" role="menu" hidden>
+              <button id="export-png-btn" type="button" class="menu-pop-item" role="menuitem">${icon('image', 'w-4 h-4')} ${th('รูปภาพทั้งแผน (PNG)','Whole plan (PNG)')}</button>
+              <button id="export-day-png-btn" type="button" class="menu-pop-item" role="menuitem">${icon('calendar-down', 'w-4 h-4')} ${th('รูปภาพรายวัน (PNG)','One day (PNG)')}</button>
+              ${isAdmin ? `<button id="export-excel-btn" type="button" class="menu-pop-item" role="menuitem">${icon('file-spreadsheet', 'w-4 h-4')} Excel</button>` : ''}
+            </div>
+          </div>
           ${isAdmin ? `
-          <button id="export-excel-btn" class="btn btn-secondary btn-sm">${icon('file-spreadsheet', 'w-4 h-4')} Excel</button>
           <!-- v18.2: the Excel *import* tool only exists while edit mode is on -->
           <span id="itin-import-slot" class="contents"></span>` : ''}
           ${perms.canEditItinerary ? `
@@ -4992,10 +4920,10 @@ async function renderItinerary(params) {
         <div class="itin-col-days">
       <div class="card p-4 mb-5" id="notes-card">
         <div class="flex items-center justify-between gap-2 flex-wrap">
-          <h3 class="font-bold flex items-center gap-2 text-sm">
+          <h3 class="font-semibold flex items-center gap-2 text-sm">
             <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--warning-light);color:var(--warning);">${icon('sticky-note', 'w-4 h-4')}</span>
             ${th('โน้ตติดเตือนความจำ','Sticky notes')}
-            <span id="notes-count" class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:var(--bg-secondary);">0</span>
+            <span id="notes-count" class="text-xs font-semibold px-2 py-0.5 rounded-full" style="background:var(--bg-secondary);">0</span>
           </h3>
           <div class="btn-row">
             <button id="notes-toggle-btn" class="btn btn-ghost btn-sm hidden" title="${th('ย่อ/ขยาย','Collapse / expand')}">${icon('chevron-up', 'w-4 h-4')}</button>
@@ -5010,7 +4938,7 @@ async function renderItinerary(params) {
         <div id="notes-board-wrap" class="hidden">
           <div id="notes-board" class="notes-board mt-3"></div>
           <div id="notes-done-wrap" class="hidden mt-3">
-            <button id="notes-done-toggle" class="link-btn text-[11px]"></button>
+            <button id="notes-done-toggle" class="link-btn text-xs"></button>
             <div id="notes-done-board" class="notes-board notes-board--done mt-2 hidden"></div>
           </div>
         </div>
@@ -5028,7 +4956,7 @@ async function renderItinerary(params) {
 
         <aside class="itin-col-map">
           <div id="map-card" class="card p-3 mb-5">
-            <div id="map-wrap" class="relative rounded-2xl overflow-hidden" style="border:1px solid var(--border);">
+            <div id="map-wrap" class="relative rounded-xl overflow-hidden" style="border:1px solid var(--border);">
               <div id="map" class="map-frame w-full" style="height:min(46vh, 420px);"></div>
               <div class="map-toolbar" id="map-layer-bar">
                 <button class="map-tool-btn" data-layer="map">${icon('map', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</button>
@@ -5043,10 +4971,10 @@ async function renderItinerary(params) {
               </div></div>
             </div>
             <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
-              <p class="map-helper text-[10px] text-[var(--text-tertiary)] flex items-center gap-1">${icon('info', 'w-3 h-3')} ${th('กดการ์ดสถานที่ → แผนที่มุ่งไปที่หมุด • เส้นประ = ลำดับที่ไป • กดปุ่มนำทางบนการ์ดเพื่อเปิด Google Maps','Tap a place card → the map focuses its pin • dashed line = visit order • tap 🧭 on a card to open Google Maps')}</p>
+              <p class="map-helper text-xs text-[var(--text-tertiary)] flex items-center gap-1">${icon('info', 'w-3 h-3')} ${th('กดการ์ดสถานที่ → แผนที่มุ่งไปที่หมุด • เส้นประ = ลำดับที่ไป • กดปุ่มนำทางบนการ์ดเพื่อเปิด Google Maps','Tap a place card → the map focuses its pin • dashed line = visit order • tap Directions on a card to open Google Maps')}</p>
               <div class="flex items-center gap-2">
-                <span id="map-count" class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:var(--bg-secondary);">0 ${th('หมุด','pins')}</span>
-                <button id="map-fit-btn" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:2px 8px;">${icon('maximize', 'w-3 h-3')} ${th('พอดีจอ','Fit')}</button>
+                <span id="map-count" class="text-xs font-semibold px-2 py-0.5 rounded-full" style="background:var(--bg-secondary);">0 ${th('หมุด','pins')}</span>
+                <button id="map-fit-btn" class="btn btn-ghost btn-sm text-xs" style="min-height:26px;padding:2px 8px;">${icon('maximize', 'w-3 h-3')} ${th('พอดีจอ','Fit')}</button>
               </div>
             </div>
           </div>
@@ -5144,7 +5072,7 @@ async function renderItinerary(params) {
   if (chipsEl) {
     chipsEl.innerHTML = tripDays.map(d => {
       const ds = dayjs(d).format('YYYY-MM-DD');
-      return `<button data-date="${ds}" class="chip ${ds === selectedDate && !showAll ? 'chip-active' : ''}">${icon('calendar', 'w-3.5 h-3.5')} ${dayjs(d).format('DD MMM')}</button>`;
+      return `<button data-date="${ds}" class="chip ${ds === selectedDate && !showAll ? 'chip-active' : ''}">${icon('calendar', 'w-3.5 h-3.5')} ${thaiDate(d, { year: false })}</button>`;
     }).join('') + `<button data-date="__all" class="chip ${showAll ? 'chip-active' : ''}">${icon('layers', 'w-3.5 h-3.5')} ${th('ทั้งหมด','All')}</button>`;
     chipsEl.querySelectorAll('[data-date]').forEach(btn => btn.addEventListener('click', () => {
       const ds = btn.dataset.date;
@@ -5247,6 +5175,7 @@ async function renderItinerary(params) {
     fitMapToViewport();
   });
 
+  bindMenuPop('itin-export-btn', 'itin-export-menu');
   bind('export-png-btn', 'click', () => exportItineraryPng());
   bind('export-day-png-btn', 'click', () => exportItineraryDayPng(selectedDate));
 
@@ -5298,7 +5227,7 @@ async function renderItinerary(params) {
         <div class="text-center px-4">
           <div class="row-icon mx-auto mb-2" style="width:40px;height:40px;background:var(--danger-bg);color:var(--danger);">${icon('map', 'w-5 h-5')}</div>
           <p class="text-xs font-semibold" style="color:var(--danger);">${th('โหลดแผนที่ไม่สำเร็จ','Map failed to load')}</p>
-          <p class="text-[11px] text-[var(--text-secondary)] mb-2">${escapeHtml(message)}</p>
+          <p class="text-xs text-[var(--text-secondary)] mb-2">${escapeHtml(message)}</p>
           <button id="map-retry" class="btn btn-secondary btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่','Retry')}</button>
         </div>`;
       bind('map-retry', 'click', () => refreshMap(visibleItems, { forceRecreate: true }));
@@ -5554,7 +5483,7 @@ async function renderItinerary(params) {
         ${n.title ? `<div class="note-title">${escapeHtml(n.title)}</div>` : ''}
         <div class="note-body">${escapeHtml(n.body || '')}</div>
         <div class="note-meta">
-          <span class="note-tag">${icon('calendar', 'w-2.5 h-2.5')} ${n.createdAt?.seconds ? dayjs(n.createdAt.seconds * 1000).format('D MMM') : dayjs().format('D MMM')}</span>
+          <span class="note-tag">${icon('calendar', 'w-2.5 h-2.5')} ${n.createdAt?.seconds ? thaiDate(n.createdAt.seconds * 1000, { year: false }) : thaiDate(new Date(), { year: false })}</span>
           <span class="note-actions">
             ${archived
               ? `<button data-note-act="restore" data-id="${n.id}" title="${th('นำกลับมา','Bring back')}">${icon('undo-2', 'w-3 h-3')}</button>`
@@ -5606,7 +5535,7 @@ async function renderItinerary(params) {
         <div class="notes-empty" style="grid-column:1/-1;">
           <div class="row-icon mx-auto mb-2" style="width:38px;height:38px;background:var(--warning-light);color:var(--warning);">${icon('party-popper', 'w-4 h-4')}</div>
           <p class="text-xs font-semibold">${th('ไม่มีโน้ตค้างแล้ว','Nothing left to do')}</p>
-          <p class="text-[11px] text-[var(--text-secondary)] mt-1">${th('โน้ตที่เก็บไว้ยังอยู่ใน “เก็บแล้ว” ด้านล่าง กดนำกลับมาได้ทุกเมื่อ','Filed notes stay under “Done” below — bring any of them back any time')}</p>
+          <p class="text-xs text-[var(--text-secondary)] mt-1">${th('โน้ตที่เก็บไว้ยังอยู่ใน “เก็บแล้ว” ด้านล่าง กดนำกลับมาได้ทุกเมื่อ','Filed notes stay under “Done” below — bring any of them back any time')}</p>
         </div>`;
     } else {
       const sorted = [...active].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
@@ -5681,15 +5610,15 @@ async function renderItinerary(params) {
         <div class="flex items-center gap-3">
           <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--warning-light);color:var(--warning);">${icon('sticky-note', 'w-5 h-5')}</div>
           <div>
-            <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขโน้ต','Edit note') : th('เพิ่มโน้ต','New note')}</h3>
-            <p class="text-[11px] text-[var(--text-secondary)]">${th('ข้อความสำคัญที่อยากเห็นทุกครั้งที่เปิดแผน','A reminder you want to see on the itinerary')}</p>
+            <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขโน้ต','Edit note') : th('เพิ่มโน้ต','New note')}</h3>
+            <p class="text-xs text-[var(--text-secondary)]">${th('ข้อความสำคัญที่อยากเห็นทุกครั้งที่เปิดแผน','A reminder you want to see on the itinerary')}</p>
           </div>
         </div>
         <form id="note-form" class="space-y-3">
-          <div class="input-group"><label class="input-label">${icon('type', 'w-3.5 h-3.5')} ${th('หัวข้อ','Title')}</label><input id="note-title" class="input" autocomplete="off" value="${escapeHtml(n.title || '')}" placeholder="${th('เช่น ต้องจองรถไฟ 7:00','e.g. Book 7:00 train')}"></div>
-          <div class="input-group"><label class="input-label">${icon('align-left', 'w-3.5 h-3.5')} ${th('รายละเอียด','Details')}</label><textarea id="note-body" class="input" style="min-height:96px;" placeholder="${th('รหัสจอง เบอร์โทร ที่อยู่…','Booking code, phone, address…')}">${escapeHtml(n.body || '')}</textarea></div>
+          <div class="input-group"><label class="input-label">${th('หัวข้อ','Title')}</label><input id="note-title" class="input" autocomplete="off" value="${escapeHtml(n.title || '')}" placeholder="${th('เช่น ต้องจองรถไฟ 7:00','e.g. Book 7:00 train')}"></div>
+          <div class="input-group"><label class="input-label">${th('รายละเอียด','Details')}</label><textarea id="note-body" class="input" style="min-height:96px;" placeholder="${th('รหัสจอง เบอร์โทร ที่อยู่…','Booking code, phone, address…')}">${escapeHtml(n.body || '')}</textarea></div>
           <div class="input-group">
-            <label class="input-label">${icon('palette', 'w-3.5 h-3.5')} ${th('สีโพสอิท','Paper color')}</label>
+            <label class="input-label">${th('สีโพสอิท','Paper color')}</label>
             <div class="flex gap-2 flex-wrap" id="note-colors">
               ${NOTE_COLORS.map(c => `<button type="button" class="chip ${((n.color || 'yellow') === c.id) ? 'chip-active' : ''}" data-color="${c.id}" style="${(n.color || 'yellow') === c.id ? '' : `background:${c.color};color:#3b3527;border-color:transparent;`}">${c.label}</button>`).join('')}
             </div>
@@ -5816,7 +5745,7 @@ async function renderItinerary(params) {
 
     const legend = located.length ? '' : '';
     const legendItems = days.map((d, i) => `
-      <span><i class="itin-sheet-dot" style="background:${dayColors[d] || '#2563eb'};"></i>${th('วันที่','Day')} ${i + 1} • ${dayjs(d).format('DD MMM')}${dayColors[d] ? '' : ''}</span>`).join('');
+      <span><i class="itin-sheet-dot" style="background:${dayColors[d] || '#2563eb'};"></i>${th('วันที่','Day')} ${i + 1} • ${thaiDate(d, { year: false })}${dayColors[d] ? '' : ''}</span>`).join('');
 
     const daySections = days.map((day, dayIdx) => {
       const dayItems = scoped.filter(it => (it.date || '') === day);
@@ -5824,7 +5753,7 @@ async function renderItinerary(params) {
       const rows = dayItems.map((it, idx) => {
         const est = estTripMinor(it);
         const meta = [
-          `${formatTime(it.startAt, trip?.timezone)} – ${formatTime(it.endAt, trip?.timezone)}`,
+          timeRange(it.startAt, it.endAt, trip?.timezone),
           (it.virtualStay || it.virtualDeparture) ? '' : formatDuration(it.durationMinutes),
           it.isStay ? (it.virtualDeparture ? th(`เดินทางออกจากที่พัก • หลังคืนที่ ${it.stayNight}/${it.stayNights}`, `leave the hotel • after night ${it.stayNight}/${it.stayNights}`) : (it.virtualStay ? th(`กลับเข้าพัก • คืนที่ ${it.stayNight}/${it.stayNights}`, `back to hotel • night ${it.stayNight}/${it.stayNights}`) : th(`พัก ${it.stayNights} คืน`, `${it.stayNights} nights`))) : '',
           categoryLabel(it.category || 'general', lang),
@@ -5834,7 +5763,7 @@ async function renderItinerary(params) {
         ].filter(Boolean).map(escapeHtml).join(' • ');
         return `
           <tr>
-            <td style="width:34px;color:#6b7280;font-weight:700;">${it.virtualStay ? '🏨' : idx + 1}</td>
+            <td style="width:34px;color:#6b7280;font-weight:700;">${it.virtualStay ? th('พัก', 'Stay') : idx + 1}</td>
             <td>
               <div class="itin-sheet-item-title">${escapeHtml((it.virtualDeparture ? `${th('เดินทางออกจากที่พัก', 'Leave the hotel')} — ` : (it.virtualStay ? `${th('กลับเข้าพัก', 'Back to hotel')} — ` : '')) + (it.title || ''))}</div>
               <div class="itin-sheet-item-meta">${meta}</div>
@@ -5869,7 +5798,7 @@ async function renderItinerary(params) {
             <h1>${escapeHtml(trip?.name || '')}</h1>
             ${isDay ? `<div class="itin-sheet-dayline">${escapeHtml(dayTitle)} • ${located.length} ${th('หมุดบนแผนที่','map pins')}</div>` : ''}
             <div class="itin-sheet-meta">
-              <span>${icon('calendar-days', 'w-3.5 h-3.5')} <b>${escapeHtml(trip?.startDate || '')}</b> → <b>${escapeHtml(trip?.endDate || '')}</b></span>
+              <span><b>${escapeHtml(tripRangeLabel(trip))}</b></span>
               <span>${icon('map-pinned', 'w-3.5 h-3.5')} <b>${ordered.length}</b> ${th('ที่','places')}</span>
               <span>${icon('users', 'w-3.5 h-3.5')} <b>${members.length}</b> ${th('คน','people')}</span>
               <span>${icon('wallet', 'w-3.5 h-3.5')} <b>${escapeHtml(currency)}</b></span>
@@ -5895,7 +5824,7 @@ async function renderItinerary(params) {
         ${daySections || `<div class="itin-sheet-empty">${isDay ? th('วันนี้ยังไม่มีแผน','No plans for this day') : th('ยังไม่มีแผนในทริปนี้','No itinerary items yet')}</div>`}
 
         <footer class="itin-sheet-foot">
-          <span>${escapeHtml(trip?.name || '')} • ${th('สร้างเมื่อ','generated')} ${dayjs().format('D MMM YYYY HH:mm')}</span>
+          <span>${escapeHtml(trip?.name || '')} • ${th('สร้างเมื่อ','generated')} ${`${thaiDate(new Date())} ${dayjs().format('HH:mm')}`}</span>
           <span>${isDay ? `${th('แผนของวัน','Plan for')} ${escapeHtml(dayTitle)} • ${scoped.length} ${th('รายการ','items')}` : `${th('แผนการเดินทางทั้งหมด','Full itinerary')} • ${scoped.length} ${th('รายการ','items')}`}</span>
         </footer>
       </div>`;
@@ -6083,15 +6012,15 @@ async function renderItinerary(params) {
               <div class="itin-title-row">
                 <h3 class="itin-title font-semibold text-sm leading-snug">${escapeHtml(title)}</h3>
                 <span class="itin-title-tags">
-                  <span class="badge badge-${it.status || 'planned'} text-[9px] itin-status-badge">${escapeHtml(statusDef ? (lang==='th'?statusDef.th:statusDef.en) : (it.status || 'planned'))}</span>
+                  <span class="badge badge-${it.status || 'planned'} text-xs itin-status-badge">${escapeHtml(statusDef ? (lang==='th'?statusDef.th:statusDef.en) : (it.status || 'planned'))}</span>
                 </span>
               </div>
               <div class="flex items-center gap-2 flex-wrap mt-1.5">
-                ${it.isStay ? `<span class="badge badge-stay text-[9px] itin-quiet">${icon(isDeparture ? 'sunrise' : (isVirtual ? 'moon' : 'bed-double'), 'w-2.5 h-2.5')} ${isDeparture ? th(`ออกจากที่พัก • หลังคืนที่ ${it.stayNight}/${nights}`, `check-out • after night ${it.stayNight}/${nights}`) : (isVirtual ? th(`คืนที่ ${it.stayNight}/${nights}`, `night ${it.stayNight}/${nights}`) : th(`พัก ${nights} คืน`, `${nights} nights`))}</span>` : ''}
-                <span class="meta-line">${icon('clock', 'w-3 h-3')} ${formatTime(it.startAt, trip?.timezone)} – ${formatTime(it.endAt, trip?.timezone)}</span>
+                ${it.isStay ? `<span class="badge badge-stay text-xs itin-quiet">${icon(isDeparture ? 'sunrise' : (isVirtual ? 'moon' : 'bed-double'), 'w-2.5 h-2.5')} ${isDeparture ? th(`ออกจากที่พัก • หลังคืนที่ ${it.stayNight}/${nights}`, `check-out • after night ${it.stayNight}/${nights}`) : (isVirtual ? th(`คืนที่ ${it.stayNight}/${nights}`, `night ${it.stayNight}/${nights}`) : th(`พัก ${nights} คืน`, `${nights} nights`))}</span>` : ''}
+                ${it.startAt || it.endAt ? `<span class="meta-line">${icon('clock', 'w-3 h-3')} ${timeRange(it.startAt, it.endAt, trip?.timezone)}</span>` : ''}
                 ${isVirtual ? '' : `<span class="meta-line itin-quiet">${icon('timer', 'w-3 h-3')} ${formatDuration(it.durationMinutes)}</span>`}
                 ${(!isVirtual && it.travelToNextMinutes > 0) ? `<span class="meta-line itin-detail">${icon('footprints', 'w-3 h-3')} ${formatDuration(it.travelToNextMinutes)}</span>` : ''}
-                <span class="badge badge-planned text-[10px] itin-cat-badge" title="${escapeHtml(categoryLabel(it.category || 'general', lang))}">${icon(categoryIcon(it.category), 'w-2.5 h-2.5')} <span class="itin-cat-label">${escapeHtml(categoryLabel(it.category || 'general', lang))}</span></span>
+                <span class="badge badge-planned text-xs itin-cat-badge" title="${escapeHtml(categoryLabel(it.category || 'general', lang))}">${icon(categoryIcon(it.category), 'w-2.5 h-2.5')} <span class="itin-cat-label">${escapeHtml(categoryLabel(it.category || 'general', lang))}</span></span>
                 <!-- v23: the navigate link sits INSIDE the meta row, so the compact view
                      keeps it on the same line as the time/chips instead of a row of its own. -->
                 ${(it.coordinates || it.address || it.googleMapsUrl) ? `<a class="nav-link-btn" href="${escapeHtml(googleMapsPlaceUrl(it))}" target="_blank" rel="noopener" title="${th('นำทาง Google Maps','Navigate with Google Maps')}">${icon('navigation', 'w-3 h-3')} <span class="itin-nav-label">${th('นำทาง Google Maps','Navigate')}</span></a>` : ''}
@@ -6103,10 +6032,10 @@ async function renderItinerary(params) {
                 <div class="estimate-line ${it.isStay ? 'estimate-line--stay' : ''}">
                   ${icon(it.isStay ? 'bed-double' : 'hourglass', 'w-3.5 h-3.5')}
                   <span>${isVirtual ? th('ส่วนของคืนนี้','This night’s share') : th('ประมาณการ','Est.')} <b>${moneyHtml(dayMinor, cur, rate)}</b></span>
-                  ${isCheckin && perNightMinor && nights > 1 ? `<span class="text-[10px] itin-detail">${th('เฉลี่ย','avg')} ${moneyHtml(perNightMinor, cur, rate)} / ${th('คืน','night')}</span>` : ''}
-                  ${!it.isStay ? `<span class="text-[10px] itin-detail" ${payerNames.length > 1 ? `title="${escapeHtml(payerNames.join(', '))}"` : ''}>${escapeHtml(categoryLabel(it.estimateCategory || 'general', lang))}${payerName ? ` • ${th('จ่าย','paid by')} ${escapeHtml(payerName)}` : ''}${sharedNames.length ? ` • ${th('หาร','split')} ${sharedNames.length} ${th('คน','pax')}` : ''}</span>` : ''}
-                  ${pendingPayer ? `<span class="badge badge-pending text-[9px] itin-detail">${icon('help-circle', 'w-2.5 h-2.5')} ${th('ยังไม่ระบุเจ้าภาพ','payer TBD')}</span>` : ''}
-                  ${isVirtual ? '' : `<button type="button" class="badge badge-skipped text-[9px] itin-expense-btn itin-detail" data-act="expense" data-id="${it.id}">${icon(it.expenseId ? 'pencil' : 'plus', 'w-2.5 h-2.5')} ${it.expenseId ? th('แก้ไขค่าใช้จ่าย','Edit expense') : th('ผูกค่าใช้จ่าย','Link a cost')}</button>`}
+                  ${isCheckin && perNightMinor && nights > 1 ? `<span class="text-xs itin-detail">${th('เฉลี่ย','avg')} ${moneyHtml(perNightMinor, cur, rate)} / ${th('คืน','night')}</span>` : ''}
+                  ${!it.isStay ? `<span class="text-xs itin-detail" ${payerNames.length > 1 ? `title="${escapeHtml(payerNames.join(', '))}"` : ''}>${escapeHtml(categoryLabel(it.estimateCategory || 'general', lang))}${payerName ? ` • ${th('จ่าย','paid by')} ${escapeHtml(payerName)}` : ''}${sharedNames.length ? ` • ${th('หาร','split')} ${sharedNames.length} ${th('คน','pax')}` : ''}</span>` : ''}
+                  ${pendingPayer ? `<span class="badge badge-pending text-xs itin-detail">${icon('help-circle', 'w-2.5 h-2.5')} ${th('ยังไม่ระบุเจ้าภาพ','payer TBD')}</span>` : ''}
+                  ${isVirtual ? '' : `<button type="button" class="badge badge-skipped text-xs itin-expense-btn itin-detail" data-act="expense" data-id="${it.id}">${icon(it.expenseId ? 'pencil' : 'plus', 'w-2.5 h-2.5')} ${it.expenseId ? th('แก้ไขค่าใช้จ่าย','Edit expense') : th('ผูกค่าใช้จ่าย','Link a cost')}</button>`}
                 </div>` : ''}
               ${hasDetails ? `<button type="button" class="itin-expand-btn" data-act="expand" data-id="${it.id}" aria-expanded="${expanded}">${icon(expanded ? 'chevron-up' : 'chevron-down', 'w-3.5 h-3.5')} <span>${expanded ? th('ซ่อนรายละเอียด','Hide details') : th('ดูเพิ่มเติม','More details')}</span></button>` : ''}
             </div>
@@ -6144,9 +6073,9 @@ async function renderItinerary(params) {
     if (!badges.length) return '';
     // .itin-detail → phones hide team chips behind the card's “ดูเพิ่มเติม” toggle
     if (badges.length === tripGroups.length) {
-      return `<span class="badge badge-completed text-[10px] itin-detail" title="${th('ทุกทีมไปที่นี่','Every team goes here')}">${icon('users-round', 'w-2.5 h-2.5')} ${th('ทุกทีม','all teams')}</span>`;
+      return `<span class="badge badge-completed text-xs itin-detail" title="${th('ทุกทีมไปที่นี่','Every team goes here')}">${icon('users-round', 'w-2.5 h-2.5')} ${th('ทุกทีม','all teams')}</span>`;
     }
-    return badges.map(g => `<span class="badge text-[10px] itin-detail" style="background:color-mix(in srgb, ${escapeHtml(g.color)} 18%, var(--surface)); border:1px solid color-mix(in srgb, ${escapeHtml(g.color)} 45%, transparent); color:color-mix(in srgb, ${escapeHtml(g.color)} 72%, var(--text-strong));" title="${th('ทีมที่ไปสถานที่นี้','Teams going here')}">${icon(g.icon || 'users', 'w-2.5 h-2.5')} ${escapeHtml(g.name)}</span>`).join('');
+    return badges.map(g => `<span class="badge text-xs itin-detail" style="background:color-mix(in srgb, ${escapeHtml(g.color)} 18%, var(--surface)); border:1px solid color-mix(in srgb, ${escapeHtml(g.color)} 45%, transparent); color:color-mix(in srgb, ${escapeHtml(g.color)} 72%, var(--text-strong));" title="${th('ทีมที่ไปสถานที่นี้','Teams going here')}">${icon(g.icon || 'users', 'w-2.5 h-2.5')} ${escapeHtml(g.name)}</span>`).join('');
   }
 
   async function loadItems() {
@@ -6184,12 +6113,12 @@ async function renderItinerary(params) {
         items.forEach(it => { const day = it.date || 'unknown'; (byDay[day] = byDay[day] || []).push(it); });
         listEl.innerHTML = Object.entries(byDay).map(([day, dayItems]) => `
           <div class="mb-6">
-            <h3 class="font-bold text-sm mb-3 flex items-center gap-2">
+            <h3 class="font-semibold text-sm mb-3 flex items-center gap-2">
               <span class="step-num">${dayjs(day).format('DD')}</span>
               ${formatDate(day, lang, trip?.timezone)}
-              <span class="badge badge-planned text-[10px]">${dayItems.length} ${th('ที่','places')}</span>
+              <span class="badge badge-planned text-xs">${dayItems.length} ${th('ที่','places')}</span>
               <span class="weather-chip weather-chip--mini" data-weather-day="${escapeHtml(day)}" hidden></span>
-              <span class="text-[10px] text-[var(--text-tertiary)] ml-auto">${itineraryMoney(dayItems)}</span>
+              <span class="text-xs text-[var(--text-tertiary)] ml-auto">${itineraryMoney(dayItems)}</span>
               <button class="itin-day-export-btn" data-export-day="${escapeHtml(day)}" title="${th('ส่งออก PNG ของวันนี้','Export this day as a PNG')}">${icon('image', 'w-3.5 h-3.5')} PNG</button>
             </h3>
             <div class="space-y-3 stagger" data-day-group="${escapeHtml(day)}">${dayCardsHtml(dayItems, { draggable: editMode })}</div>
@@ -6356,7 +6285,7 @@ async function renderItinerary(params) {
 
   async function changeStatus(item) {
     const sheet = showBottomSheet(`
-      <h3 class="font-bold mb-3 flex items-center gap-2">${icon('circle-check', 'w-4 h-4')} ${th('เปลี่ยนสถานะ','Change status')}</h3>
+      <h3 class="font-semibold mb-3 flex items-center gap-2">${icon('circle-check', 'w-4 h-4')} ${th('เปลี่ยนสถานะ','Change status')}</h3>
       <div class="grid gap-2">
         ${ITINERARY_STATUSES.map(st => `
           <button data-status="${st.id}" class="btn ${item.status === st.id ? 'btn-primary' : 'btn-secondary'} w-full justify-start">
@@ -6387,7 +6316,7 @@ async function renderItinerary(params) {
     const memberTiles = (selectedIds = []) => members.map(m => `
       <button type="button" class="tile ${selectedIds.includes(m.id) ? 'tile-selected' : ''}" data-member="${m.id}" data-role="share">
         <span class="flex items-center gap-2 min-w-0">
-          <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+          <span class="avatar w-7 h-7 text-xs" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
           <span class="text-xs font-medium truncate">${escapeHtml(m.displayName)}</span>
         </span>
       </button>`).join('') || `<p class="text-xs text-[var(--text-secondary)]">${th('ยังไม่มีสมาชิกในทริป','No members yet')}</p>`;
@@ -6409,21 +6338,21 @@ async function renderItinerary(params) {
         <div class="flex items-center gap-3">
           <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon(isEdit ? 'pencil' : 'map-pin', 'w-5 h-5')}</div>
           <div class="min-w-0">
-            <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขสถานที่','Edit place') : t('addPlace')}</h3>
-            <p class="text-[11px] text-[var(--text-secondary)]">${isEdit ? escapeHtml(it.title || '') : th('เพิ่มสถานที่ลงในแผนการเดินทาง','Add a place to your itinerary')}</p>
+            <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขสถานที่','Edit place') : t('addPlace')}</h3>
+            <p class="text-xs text-[var(--text-secondary)]">${isEdit ? escapeHtml(it.title || '') : th('เพิ่มสถานที่ลงในแผนการเดินทาง','Add a place to your itinerary')}</p>
           </div>
         </div>
 
         <form id="itinerary-form" class="space-y-4">
-          <div class="input-group"><label class="input-label">${icon('sparkles', 'w-3.5 h-3.5')} ${th('ชื่อสถานที่','Place name')} *</label><input id="it-title" class="input" required autocomplete="off" placeholder="${th('เช่น ทะเลสาบคาวากุจิโกะ','e.g. Lake Kawaguchi')}" value="${escapeHtml(it.title || '')}"></div>
+          <div class="input-group"><label class="input-label">${th('ชื่อสถานที่','Place name')} *</label><input id="it-title" class="input" required autocomplete="off" placeholder="${th('เช่น ทะเลสาบคาวากุจิโกะ','e.g. Lake Kawaguchi')}" value="${escapeHtml(it.title || '')}"></div>
 
           <div class="grid grid-cols-2 gap-3">
-            <div class="input-group"><label class="input-label">${icon('calendar', 'w-3.5 h-3.5')} ${th('วันที่','Date')} *</label><input id="it-date" class="input" type="date" value="${escapeHtml(it.date || presetDate || selectedDate)}" required></div>
-            <div class="input-group"><label class="input-label">${icon('clock', 'w-3.5 h-3.5')} ${th('เวลาเริ่ม','Start time')} *</label><input id="it-time" class="input" type="time" value="${it.startAt ? dayjs(it.startAt).format('HH:mm') : '09:00'}" required></div>
+            <div class="input-group"><label class="input-label">${th('วันที่','Date')} *</label><input id="it-date" class="input" type="date" value="${escapeHtml(it.date || presetDate || selectedDate)}" required></div>
+            <div class="input-group"><label class="input-label">${th('เวลาเริ่ม','Start time')} *</label><input id="it-time" class="input" type="time" value="${it.startAt ? dayjs(it.startAt).format('HH:mm') : '09:00'}" required></div>
           </div>
 
           <div class="grid grid-cols-3 gap-3">
-            <div class="input-group"><label class="input-label">${icon('timer', 'w-3.5 h-3.5')} ${th('ระยะเวลา','Duration')}</label>
+            <div class="input-group"><label class="input-label">${th('ระยะเวลา','Duration')}</label>
               <div class="unit-input-row">
                 <input id="it-duration" class="input" type="number" min="0" step="${durInit.unit === 'hr' ? '0.25' : '1'}" value="${durInit.value}">
                 <select id="it-duration-unit" class="input unit-select" aria-label="${th('หน่วย','Unit')}">
@@ -6432,7 +6361,7 @@ async function renderItinerary(params) {
                 </select>
               </div>
             </div>
-            <div class="input-group"><label class="input-label">${icon('footprints', 'w-3.5 h-3.5')} ${th('เดินทางต่อ','Travel')}</label>
+            <div class="input-group"><label class="input-label">${th('เดินทางต่อ','Travel')}</label>
               <div class="unit-input-row">
                 <input id="it-travel" class="input" type="number" min="0" step="${travelInit.unit === 'hr' ? '0.25' : '1'}" value="${travelInit.value}">
                 <select id="it-travel-unit" class="input unit-select" aria-label="${th('หน่วย','Unit')}">
@@ -6441,7 +6370,7 @@ async function renderItinerary(params) {
                 </select>
               </div>
             </div>
-            <div class="input-group"><label class="input-label">${icon('flag', 'w-3.5 h-3.5')} ${th('สถานะ','Status')}</label>
+            <div class="input-group"><label class="input-label">${th('สถานะ','Status')}</label>
               <select id="it-status" class="input">${ITINERARY_STATUSES.map(st => `<option value="${st.id}" ${(it.status || 'planned') === st.id ? 'selected' : ''}>${lang==='th'?st.th:st.en}</option>`).join('')}</select>
             </div>
           </div>
@@ -6449,21 +6378,21 @@ async function renderItinerary(params) {
           <!-- Accommodation stay: price entered ONCE, spread over the nights, and
                a "back to hotel" card shows on every day of the stay -->
           <div class="p-3 rounded-xl" style="background: var(--bg-secondary); border:1px solid var(--border);">
-            <label class="flex items-center gap-2 text-sm font-bold cursor-pointer">
+            <label class="flex items-center gap-2 text-sm font-semibold cursor-pointer">
               <input id="it-is-stay" type="checkbox" class="accent-[var(--primary)] w-4 h-4" ${isStay ? 'checked' : ''}>
               ${icon('bed-double', 'w-3.5 h-3.5')} ${th('เป็นที่พัก (โรงแรม / เรียวกัง)','Accommodation (hotel / ryokan)')}
             </label>
             <p class="input-hint mt-1">${th('กรอกค่าที่พักครั้งเดียว ระบบจะกระจายตามจำนวนคืน และแสดง “กลับเข้าพัก” ในแผนทุกวันที่พัก','Enter the price once — it is spread across the nights and a “back to hotel” card appears on every stay day')}</p>
             <div id="it-stay-fields" class="${isStay ? '' : 'hidden'} space-y-2 mt-2">
               <div class="grid grid-cols-2 gap-2">
-                <div class="input-group"><label class="input-label text-[12px]">${icon('log-in', 'w-3.5 h-3.5')} ${th('เช็คอิน (วันไหน)','Check-in')}</label><input id="it-stay-checkin" class="input" type="date" value="${escapeHtml(it.stayCheckIn || it.date || presetDate || selectedDate || '')}"></div>
-                <div class="input-group"><label class="input-label text-[12px]">${icon('log-out', 'w-3.5 h-3.5')} ${th('เช็คเอาท์ (ถึงวันไหน)','Check-out')}</label><input id="it-stay-checkout" class="input" type="date" value="${escapeHtml(it.stayCheckOut || '')}"></div>
+                <div class="input-group"><label class="input-label text-[12px]">${th('เช็คอิน (วันไหน)','Check-in')}</label><input id="it-stay-checkin" class="input" type="date" value="${escapeHtml(it.stayCheckIn || it.date || presetDate || selectedDate || '')}"></div>
+                <div class="input-group"><label class="input-label text-[12px]">${th('เช็คเอาท์ (ถึงวันไหน)','Check-out')}</label><input id="it-stay-checkout" class="input" type="date" value="${escapeHtml(it.stayCheckOut || '')}"></div>
               </div>
               <p id="it-stay-summary" class="input-hint"></p>
             </div>
           </div>
 
-          <div class="input-group"><label class="input-label">${icon('tag', 'w-3.5 h-3.5')} ${th('หมวดหมู่ (ใช้ได้ทั้งสถานที่และค่าใช้จ่าย)','Category — place and money, one list')}</label>
+          <div class="input-group"><label class="input-label">${th('หมวดหมู่ (ใช้ได้ทั้งสถานที่และค่าใช้จ่าย)','Category — place and money, one list')}</label>
             <select id="it-category" class="input">${categoryChoices(lang).map(c => `<option value="${c.id}" ${(it.category || 'general') === c.id ? 'selected' : ''}>${escapeHtml(categoryChoiceLabel(c, lang))}</option>`).join('')}</select>
             <p class="input-hint mt-1">${th('เลือกครั้งเดียวจบ — กลุ่มค่าใช้จ่ายของสถานที่นี้จะถูกกำหนดให้อัตโนมัติ ไม่ต้องเลือกซ้ำ','One pick only — the expense group of this place follows automatically, no second field to fill')}
               <span id="it-category-group" class="font-semibold" style="color:var(--primary-strong);"></span></p>
@@ -6471,14 +6400,14 @@ async function renderItinerary(params) {
 
           <div class="input-group" id="it-groups-wrap">
             <div class="flex items-center justify-between">
-              <label class="input-label">${icon('users-round', 'w-3.5 h-3.5')} ${th('ทีมที่ไปสถานที่นี้','Teams going to this place')}</label>
-              <button type="button" id="it-groups-all" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:2px 8px;">${th('ทุกทีม','All teams')}</button>
+              <label class="input-label">${th('ทีมที่ไปสถานที่นี้','Teams going to this place')}</label>
+              <button type="button" id="it-groups-all" class="btn btn-ghost btn-sm text-xs" style="min-height:26px;padding:2px 8px;">${th('ทุกทีม','All teams')}</button>
             </div>
             <div class="tile-grid" id="it-group-tiles">
               ${tripGroups.length ? tripGroups.map(g => `
                 <button type="button" class="tile ${(it.groupIds || []).includes(g.id) ? 'tile-selected' : ''}" data-group="${g.id}">
                   <span class="flex items-center gap-2 min-w-0">
-                    <span class="avatar w-7 h-7 text-[10px]" style="background:${escapeHtml(g.color || 'var(--primary)')};width:28px;height:28px;">${icon(g.icon || 'users', 'w-3.5 h-3.5')}</span>
+                    <span class="avatar w-7 h-7 text-xs" style="background:${escapeHtml(g.color || 'var(--primary)')};width:28px;height:28px;">${icon(g.icon || 'users', 'w-3.5 h-3.5')}</span>
                     <span class="text-xs font-medium truncate">${escapeHtml(g.name)}</span>
                   </span>
                 </button>`).join('')
@@ -6488,7 +6417,7 @@ async function renderItinerary(params) {
           </div>
 
           <div class="input-group">
-            <label class="input-label">${icon('crosshair', 'w-3.5 h-3.5')} ${th('พิกัด lat,lng','Coordinates lat,lng')}</label>
+            <label class="input-label">${th('พิกัด lat,lng','Coordinates lat,lng')}</label>
             <div class="flex gap-2">
               <input id="it-coords" class="input flex-1" placeholder="35.3606,138.7274" autocomplete="off" value="${escapeHtml(it.coordinates || '')}">
               <button type="button" id="it-geo" class="btn btn-secondary btn-sm" title="${th('ใช้ตำแหน่งปัจจุบัน','Use my location')}">${icon('locate-fixed', 'w-4 h-4')}</button>
@@ -6496,11 +6425,11 @@ async function renderItinerary(params) {
             <p class="input-hint">${th('ใส่พิกัดเพื่อให้หมุดแสดงบนแผนที่ทันที','Add coordinates so the pin shows on the map')}</p>
           </div>
 
-          <div class="input-group"><label class="input-label">${icon('map-pin', 'w-3.5 h-3.5')} ${th('ที่อยู่','Address')}</label><input id="it-address" class="input" autocomplete="off" value="${escapeHtml(it.address || '')}"></div>
-          <div class="input-group"><label class="input-label">${icon('link', 'w-3.5 h-3.5')} Google Maps URL</label><input id="it-maps-url" class="input" placeholder="https://maps.google.com/?q=..." autocomplete="off" value="${escapeHtml(it.googleMapsUrl || '')}"></div>
+          <div class="input-group"><label class="input-label">${th('ที่อยู่','Address')}</label><input id="it-address" class="input" autocomplete="off" value="${escapeHtml(it.address || '')}"></div>
+          <div class="input-group"><label class="input-label">Google Maps URL</label><input id="it-maps-url" class="input" placeholder="https://maps.google.com/?q=..." autocomplete="off" value="${escapeHtml(it.googleMapsUrl || '')}"></div>
 
           <div class="input-group">
-            <label class="input-label">${icon('image', 'w-3.5 h-3.5')} ${th('รูปภาพ (URL)','Image (URL)')}</label>
+            <label class="input-label">${th('รูปภาพ (URL)','Image (URL)')}</label>
             <input id="it-image-url" class="input" placeholder="https://example.com/image.jpg" autocomplete="off" value="${escapeHtml(it.imageUrl || '')}">
             <div id="it-image-preview" class="${it.imageUrl ? '' : 'hidden'} mt-2 rounded-xl overflow-hidden border" style="border-color: var(--border);">
               <img decoding="async" id="it-preview-img" class="w-full object-cover" style="aspect-ratio:16/9;" src="${escapeHtml(it.imageUrl || '')}" alt="">
@@ -6508,13 +6437,13 @@ async function renderItinerary(params) {
             <p class="input-hint">${th('แสดงเป็นรูป 16:9 ทางด้านขวาของการ์ด','Shown as a 16:9 thumbnail on the right of the card')}</p>
           </div>
 
-          <div class="input-group"><label class="input-label">${icon('align-left', 'w-3.5 h-3.5')} ${th('รายละเอียด','Description')}</label><textarea id="it-desc" class="input" style="min-height:70px;">${escapeHtml(it.description || '')}</textarea></div>
-          <div class="input-group"><label class="input-label">${icon('sticky-note', 'w-3.5 h-3.5')} ${th('โน้ต','Notes')}</label><textarea id="it-notes" class="input" style="min-height:60px;">${escapeHtml(it.notes || '')}</textarea></div>
+          <div class="input-group"><label class="input-label">${th('รายละเอียด','Description')}</label><textarea id="it-desc" class="input" style="min-height:70px;">${escapeHtml(it.description || '')}</textarea></div>
+          <div class="input-group"><label class="input-label">${th('โน้ต','Notes')}</label><textarea id="it-notes" class="input" style="min-height:60px;">${escapeHtml(it.notes || '')}</textarea></div>
 
           <!-- Estimated cost -->
           <div class="p-3 rounded-xl" style="background: var(--bg-secondary); border:1px solid var(--border);">
             <div class="flex items-center justify-between gap-2 flex-wrap">
-              <label class="flex items-center gap-2 text-sm font-bold cursor-pointer">
+              <label class="flex items-center gap-2 text-sm font-semibold cursor-pointer">
                 <input id="it-has-estimate" type="checkbox" class="accent-[var(--primary)] w-4 h-4" ${hasEstimate ? 'checked' : ''}>
                 ${icon('hourglass', 'w-3.5 h-3.5')} ${th('มีค่าใช้จ่าย (ประมาณการ)','Has a cost (estimate)')}
               </label>
@@ -6524,25 +6453,25 @@ async function renderItinerary(params) {
 
             <div id="it-estimate-fields" class="${hasEstimate ? '' : 'hidden'} space-y-3 mt-3">
               <div class="grid grid-cols-3 gap-2">
-                <div class="input-group col-span-2"><label class="input-label text-[12px]">${icon('banknote', 'w-3.5 h-3.5')} ${th('จำนวนเงิน','Amount')}</label><input id="it-estimate-amount" class="input money-input" type="text" inputmode="decimal" value="${it.estimateAmount == null ? '' : formatAmount(it.estimateAmount, getCurrencyDecimals(it.estimateCurrency || currency))}" placeholder="0.00"></div>
-                <div class="input-group"><label class="input-label text-[12px]">${icon('coins', 'w-3.5 h-3.5')} ${th('สกุลเงิน','Currency')}</label>
+                <div class="input-group col-span-2"><label class="input-label text-[12px]">${th('จำนวนเงิน','Amount')}</label><input id="it-estimate-amount" class="input money-input" type="text" inputmode="decimal" value="${it.estimateAmount == null ? '' : formatAmount(it.estimateAmount, getCurrencyDecimals(it.estimateCurrency || currency))}" placeholder="0.00"></div>
+                <div class="input-group"><label class="input-label text-[12px]">${th('สกุลเงิน','Currency')}</label>
                   <select id="it-estimate-currency" class="input">${tripCurrencyList(trip, [it.estimateCurrency, currency]).map(c => `<option value="${c}" ${(it.estimateCurrency || currency) === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
                 </div>
               </div>
               <p class="input-hint">${icon('tag', 'w-3 h-3')} ${th('หมวดค่าใช้จ่ายของรายการนี้มาจาก “หมวดหมู่” ด้านบน — ระบุที่เดียวใช้ทั้งระบบ','This item’s expense group comes from the “Category” field above — one pick, used everywhere')}</p>
               <div class="input-group">
-                <label class="input-label text-[12px]">${icon('user', 'w-3.5 h-3.5')} ${th('ใครจ่าย','Paid by')}</label>
+                <label class="input-label text-[12px]">${th('ใครจ่าย','Paid by')}</label>
                 <div class="tile-grid" id="it-payer-tiles">
                   <button type="button" class="tile tile-pending ${initPayer === '__pending' ? 'tile-selected' : ''}" data-member="__pending" data-role="payer">
                     <span class="flex items-center gap-2 min-w-0">
-                      <span class="avatar w-7 h-7 text-[10px]" style="background:var(--bg-secondary);color:var(--text-secondary);width:28px;height:28px;border:1.5px dashed var(--border);">${icon('help-circle', 'w-3.5 h-3.5')}</span>
+                      <span class="avatar w-7 h-7 text-xs" style="background:var(--bg-secondary);color:var(--text-secondary);width:28px;height:28px;border:1.5px dashed var(--border);">${icon('help-circle', 'w-3.5 h-3.5')}</span>
                       <span class="text-xs font-medium truncate">${th('ยังไม่ระบุเจ้าภาพ','TBD — no host yet')}</span>
                     </span>
                   </button>
                   ${members.map(m => `
                     <button type="button" class="tile ${(initPayer === m.id) ? 'tile-selected' : ''}" data-member="${m.id}" data-role="payer">
                       <span class="flex items-center gap-2 min-w-0">
-                        <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+                        <span class="avatar w-7 h-7 text-xs" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                         <span class="text-xs font-medium truncate">${escapeHtml(m.displayName)}</span>
                       </span>
                     </button>`).join('')}
@@ -6552,8 +6481,8 @@ async function renderItinerary(params) {
               </div>
               <div class="input-group">
                 <div class="flex items-center justify-between">
-                  <label class="input-label text-[12px]">${icon('split', 'w-3.5 h-3.5')} ${th('ใครหารด้วย','Split with')}</label>
-                  <button type="button" id="it-share-all" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:2px 8px;">${th('เลือกทั้งหมด','Select all')}</button>
+                  <label class="input-label text-[12px]">${th('ใครหารด้วย','Split with')}</label>
+                  <button type="button" id="it-share-all" class="btn btn-ghost btn-sm text-xs" style="min-height:26px;padding:2px 8px;">${th('เลือกทั้งหมด','Select all')}</button>
                 </div>
                 <div class="tile-grid" id="it-share-tiles">
                   ${memberTiles(it.estimateShareWith?.length ? it.estimateShareWith : members.map(m => m.id))}
@@ -6802,7 +6731,7 @@ async function renderItinerary(params) {
   /* ------------------------- Excel export / import (admin) ------------------------- */
   bind('export-excel-btn', 'click', async () => {
     const sheet = showBottomSheet(`
-      <h3 class="font-bold mb-3 flex items-center gap-2">${icon('file-spreadsheet', 'w-4 h-4')} ${th('ส่งออก Excel','Export Excel')}</h3>
+      <h3 class="font-semibold mb-3 flex items-center gap-2">${icon('file-spreadsheet', 'w-4 h-4')} ${th('ส่งออก Excel','Export Excel')}</h3>
       <p class="text-xs text-[var(--text-secondary)] mb-3">${th('เลือกช่วงข้อมูลที่ต้องการส่งออก','Choose what to export')}</p>
       <div class="grid gap-2">
         <button id="xl-cur" class="btn btn-primary w-full">${icon('map-pinned', 'w-4 h-4')} ${th('แผนการเดินทาง (ที่แสดงอยู่)','Itinerary (current view)')}</button>
@@ -6853,19 +6782,19 @@ async function renderItinerary(params) {
           return;
         }
         const preview = showBottomSheet(`
-          <h3 class="font-bold mb-2 flex items-center gap-2">${icon('upload', 'w-4 h-4')} ${th('นำเข้าแผนการเดินทาง','Import itinerary')}</h3>
+          <h3 class="font-semibold mb-2 flex items-center gap-2">${icon('upload', 'w-4 h-4')} ${th('นำเข้าแผนการเดินทาง','Import itinerary')}</h3>
           <div class="flex gap-2 mb-3 flex-wrap">
             <span class="badge badge-completed">${icon('check', 'w-3 h-3')} ${parsed.length} ${th('รายการพร้อมนำเข้า','ready')}</span>
             ${errors.length ? `<span class="badge badge-cancelled">${icon('x', 'w-3 h-3')} ${errors.length} ${th('แถวมีปัญหา','errors')}</span>` : ''}
           </div>
           <div class="max-h-[240px] overflow-auto rounded-xl border" style="border-color:var(--border);">
-            <table class="w-full text-[11px]"><thead style="background:var(--bg-secondary);"><tr>
+            <table class="w-full text-xs"><thead style="background:var(--bg-secondary);"><tr>
               <th class="p-2 text-left">${th('วันที่','Date')}</th><th class="p-2 text-left">${th('สถานที่','Place')}</th><th class="p-2 text-right">${th('ประมาณการ','Est.')}</th>
             </tr></thead><tbody>
               ${parsed.slice(0, 40).map(p => `<tr style="border-top:1px solid var(--border);"><td class="p-2">${escapeHtml(p.date)}</td><td class="p-2 truncate">${escapeHtml(p.title)}</td><td class="p-2 text-right">${p.estimateAmount ? escapeHtml(`${p.estimateCurrency} ${p.estimateAmount}`) : '-'}</td></tr>`).join('')}
             </tbody></table>
           </div>
-          ${errors.length ? `<details class="mt-2"><summary class="text-xs cursor-pointer text-[var(--danger)]">${th('ดูแถวที่มีปัญหา','See problem rows')}</summary><pre class="mt-1 p-2 rounded-lg text-[10px] overflow-auto" style="background:var(--bg-secondary);max-height:160px;">${escapeHtml(JSON.stringify(errors.slice(0, 10), null, 1))}</pre></details>` : ''}
+          ${errors.length ? `<details class="mt-2"><summary class="text-xs cursor-pointer text-[var(--danger)]">${th('ดูแถวที่มีปัญหา','See problem rows')}</summary><pre class="mt-1 p-2 rounded-lg text-xs overflow-auto" style="background:var(--bg-secondary);max-height:160px;">${escapeHtml(JSON.stringify(errors.slice(0, 10), null, 1))}</pre></details>` : ''}
           <label class="flex items-center gap-2 text-xs mt-3 cursor-pointer">
             <input id="import-sync-expenses" type="checkbox" class="accent-[var(--primary)] w-4 h-4" checked>
             ${th('สร้างรายการประมาณการในหน้าค่าใช้จ่ายด้วย','Also create the estimated expenses')}
@@ -6986,10 +6915,16 @@ async function renderExpenses(params) {
         ${renderPageScene('expenses', { lang, title: `${icon('wallet', 'w-5 h-5')} ${t('expenses')}`,
           subtitle: th('บันทึกค่าใช้จ่าย • หารเท่ากัน/ไม่เท่ากัน • ประมาณการจากแผน','Log expenses • split equally or custom • estimates from the plan') })}
         <div class="btn-row exp-top-actions">
-          ${isAdmin ? `
-          <button id="exp-excel-btn" class="btn btn-secondary btn-sm">${icon('file-spreadsheet', 'w-4 h-4')} Excel</button>
-          <button id="exp-import-btn" class="btn btn-secondary btn-sm">${icon('upload', 'w-4 h-4')} Import</button>` : ''}
-          <button id="export-expenses" class="btn btn-secondary btn-sm">${icon('file-json', 'w-4 h-4')} JSON</button>
+          <!-- v35: file actions behind one menu; the page keeps one primary action -->
+          <div class="menu-wrap">
+            <button id="exp-file-btn" type="button" class="btn btn-secondary btn-sm" aria-haspopup="menu" aria-expanded="false" aria-controls="exp-file-menu">${icon('download', 'w-4 h-4')} ${th('ส่งออก / นำเข้า','Export / import')} ${icon('chevron-down', 'w-3.5 h-3.5')}</button>
+            <div class="menu-pop" id="exp-file-menu" role="menu" hidden>
+              ${isAdmin ? `
+              <button id="exp-excel-btn" type="button" class="menu-pop-item" role="menuitem">${icon('file-spreadsheet', 'w-4 h-4')} ${th('ส่งออก Excel','Export Excel')}</button>
+              <button id="exp-import-btn" type="button" class="menu-pop-item" role="menuitem">${icon('upload', 'w-4 h-4')} ${th('นำเข้าจาก Excel','Import from Excel')}</button>` : ''}
+              <button id="export-expenses" type="button" class="menu-pop-item" role="menuitem">${icon('file-json', 'w-4 h-4')} ${th('ส่งออก JSON','Export JSON')}</button>
+            </div>
+          </div>
           ${perms.canEditExpense
             ? `<button id="add-expense-btn" class="btn btn-primary btn-sm">${icon('plus', 'w-4 h-4')} ${t('addExpense')}</button>`
             : `<span class="ro-chip" title="${th('ผู้ดูแลทริปให้สิทธิ์คุณดูได้อย่างเดียว','The trip admin gave you read-only access')}">${icon('lock', 'w-3.5 h-3.5')} ${th('ดูอย่างเดียว','Read only')}</span>`}
@@ -7021,9 +6956,9 @@ async function renderExpenses(params) {
           <button type="button" class="segmented-item" data-group="day">${icon('calendar-days', 'w-3.5 h-3.5')} ${th('แยกตามวัน','By day')}</button>
         </div>
         <div class="btn-row">
-          <button id="exp-density-btn" class="btn btn-ghost btn-sm text-[11px]" type="button" aria-pressed="false">${icon('rows-3', 'w-3.5 h-3.5')} <span data-density-label>${th('มุมมองกระทัดรัด','Compact view')}</span></button>
-          <button id="activity-btn" class="link-btn text-[11px]">${icon('history', 'w-3.5 h-3.5')} ${th('ประวัติการแก้ไข','Activity log')}</button>
-          ${perms.canEditExpense ? `<button id="manage-cats-btn" class="link-btn text-[11px]">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage expense groups')}</button>` : ''}
+          <button id="exp-density-btn" class="btn btn-ghost btn-sm text-xs" type="button" aria-pressed="false">${icon('rows-3', 'w-3.5 h-3.5')} <span data-density-label>${th('มุมมองกระทัดรัด','Compact view')}</span></button>
+          <button id="activity-btn" class="link-btn text-xs">${icon('history', 'w-3.5 h-3.5')} ${th('ประวัติการแก้ไข','Activity log')}</button>
+          ${perms.canEditExpense ? `<button id="manage-cats-btn" class="link-btn text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage expense groups')}</button>` : ''}
         </div>
       </div>
       <div class="chip-row mb-4" id="cat-filters">
@@ -7210,18 +7145,18 @@ async function renderExpenses(params) {
             </div>
           </div>
           <div class="flex items-center gap-2 flex-wrap mt-1">
-            <span class="badge badge-planned text-[10px]">${icon(categoryIcon(e.category), 'w-2.5 h-2.5')} ${escapeHtml(catLabel)}</span>
-            ${e.isEstimated ? `<span class="badge badge-skipped text-[10px]">${icon('hourglass', 'w-2.5 h-2.5')} ${th('ประมาณการ','est.')}</span>` : ''}
-            ${e.source === 'itinerary-estimate' ? `<span class="badge badge-current text-[10px]">${icon('map-pinned', 'w-2.5 h-2.5')} ${th('จากแผน','from itinerary')}</span>` : ''}
-            <span class="meta-line">${icon('calendar', 'w-3 h-3')} ${escapeHtml(e.date || '')}</span>
+            <span class="badge badge-planned text-xs">${icon(categoryIcon(e.category), 'w-2.5 h-2.5')} ${escapeHtml(catLabel)}</span>
+            ${e.isEstimated ? `<span class="badge badge-skipped text-xs">${icon('hourglass', 'w-2.5 h-2.5')} ${th('ประมาณการ','est.')}</span>` : ''}
+            ${e.source === 'itinerary-estimate' ? `<span class="badge badge-current text-xs">${icon('map-pinned', 'w-2.5 h-2.5')} ${th('จากแผน','from itinerary')}</span>` : ''}
+            <span class="meta-line">${icon('calendar', 'w-3 h-3')} ${escapeHtml(shortDay(e.date))}</span>
             ${e.payerPending
-              ? `<span class="badge badge-pending text-[10px]" title="${th('ยังไม่รู้ว่าจะใครสำรองจ่าย — ยอดยังไม่ถูกนับเป็นหนี้ของใคร','Nobody is hosting this bill yet — it stays out of balances until assigned')}">${icon('help-circle', 'w-2.5 h-2.5')} ${th('ยังไม่ระบุเจ้าภาพ','payer TBD')}</span>`
+              ? `<span class="badge badge-pending text-xs" title="${th('ยังไม่รู้ว่าจะใครสำรองจ่าย — ยอดยังไม่ถูกนับเป็นหนี้ของใคร','Nobody is hosting this bill yet — it stays out of balances until assigned')}">${icon('help-circle', 'w-2.5 h-2.5')} ${th('ยังไม่ระบุเจ้าภาพ','payer TBD')}</span>`
               : payer ? `<span class="meta-line">${icon('user', 'w-3 h-3')} ${escapeHtml(payer)}</span>` : ''}
             ${participants ? `<span class="meta-line">${icon('split', 'w-3 h-3')} ${participants} ${th('คน','pax')}</span>` : ''}
             <span class="rcpt-chip rcpt-chip--${method}">${icon(method === 'card' ? 'credit-card' : method === 'transfer' ? 'arrow-left-right' : 'banknote', 'w-2.5 h-2.5')} ${methodText}</span>
             ${e.cardName ? `<span class="rcpt-chip rcpt-chip--card" title="${th('บัตรเครดิต','Card')}">${icon('credit-card', 'w-2.5 h-2.5')} ${escapeHtml(e.cardName)}</span>` : ''}
           </div>
-          ${e.description ? `<p class="text-[11px] text-[var(--text-secondary)] mt-1 line-clamp-2">${escapeHtml(e.description)}</p>` : ''}
+          ${e.description ? `<p class="text-xs text-[var(--text-secondary)] mt-1 line-clamp-2">${escapeHtml(e.description)}</p>` : ''}
           ${e.receiptImage ? `<img decoding="async" class="expense-receipt-thumb" src="${escapeHtml(e.receiptImage)}" alt="${th('รูปใบเสร็จ','Receipt photo')}" loading="lazy">` : ''}
           ${(e.updatedByName || e.createdByName) ? `<p class="meta-line mt-1" style="color:var(--text-tertiary);">${icon('history', 'w-3 h-3')} ${escapeHtml(lastEditorText({ ...e, updatedAt: e.updatedByName ? e.updatedAt : null }, lang))}</p>` : ''}
           ${commentMap.get(e.id)?.length ? `<p class="expense-comment-preview">${icon('message-square', 'w-3 h-3')} <b>${escapeHtml(commentMap.get(e.id)[commentMap.get(e.id).length - 1].name || '')}</b>: ${escapeHtml((commentMap.get(e.id)[commentMap.get(e.id).length - 1].text || '').slice(0, 70))}</p>` : ''}
@@ -7395,7 +7330,7 @@ async function renderExpenses(params) {
     const ok = await confirmAction({
       title: th(`ลบ "${exp?.title || ''}" ?`, `Delete "${exp?.title || ''}"?`),
       message: th('ลบรายการค่าใช้จ่ายนี้ออกจากทริป', 'Remove this expense from the trip'),
-      detail: exp ? `${formatCurrency(exp.netTotalMinor || 0, exp.currency || currency)} • ${escapeHtml(exp.date || '')}` : '',
+      detail: exp ? `${formatCurrency(exp.netTotalMinor || 0, exp.currency || currency)} • ${escapeHtml(shortDay(exp.date))}` : '',
       confirmText: t('delete'), danger: true, icon: 'trash-2'
     });
     if (!ok) return;
@@ -7440,6 +7375,7 @@ async function renderExpenses(params) {
 
   bind('load-more', 'click', () => loadMore(false));
 
+  bindMenuPop('exp-file-btn', 'exp-file-menu');
   bind('export-expenses', 'click', async () => {
     const tLoad = toast.loading(th('กำลังส่งออก...', 'Exporting...'));
     try {
@@ -7487,19 +7423,19 @@ async function renderExpenses(params) {
           return;
         }
         const preview = showBottomSheet(`
-          <h3 class="font-bold mb-2 flex items-center gap-2">${icon('upload', 'w-4 h-4')} ${th('นำเข้าค่าใช้จ่าย', 'Import expenses')}</h3>
+          <h3 class="font-semibold mb-2 flex items-center gap-2">${icon('upload', 'w-4 h-4')} ${th('นำเข้าค่าใช้จ่าย', 'Import expenses')}</h3>
           <div class="flex gap-2 mb-3 flex-wrap">
             <span class="badge badge-completed">${icon('check', 'w-3 h-3')} ${parsed.length} ${th('รายการพร้อมนำเข้า','ready')}</span>
             ${errors.length ? `<span class="badge badge-cancelled">${icon('x', 'w-3 h-3')} ${errors.length} ${th('แถวมีปัญหา','errors')}</span>` : ''}
           </div>
           <div class="max-h-[220px] overflow-auto rounded-xl border" style="border-color:var(--border);">
-            <table class="w-full text-[11px]"><thead style="background:var(--bg-secondary);"><tr>
+            <table class="w-full text-xs"><thead style="background:var(--bg-secondary);"><tr>
               <th class="p-2 text-left">${th('วันที่','Date')}</th><th class="p-2 text-left">${th('รายการ','Title')}</th><th class="p-2 text-right">${th('ยอด','Amount')}</th>
             </tr></thead><tbody>
               ${parsed.slice(0, 40).map(p => `<tr style="border-top:1px solid var(--border);"><td class="p-2">${escapeHtml(p.date)}</td><td class="p-2 truncate">${escapeHtml(p.title)}</td><td class="p-2 text-right">${escapeHtml(`${p.currency} ${fromMinor(p.netTotalMinor, getCurrencyDecimals(p.currency)).toLocaleString()}`)}</td></tr>`).join('')}
             </tbody></table>
           </div>
-          ${errors.length ? `<details class="mt-2"><summary class="text-xs cursor-pointer text-[var(--danger)]">${th('ดูแถวที่มีปัญหา','See problem rows')}</summary><pre class="mt-1 p-2 rounded-lg text-[10px] overflow-auto" style="background:var(--bg-secondary);max-height:160px;">${escapeHtml(JSON.stringify(errors.slice(0, 10), null, 1))}</pre></details>` : ''}
+          ${errors.length ? `<details class="mt-2"><summary class="text-xs cursor-pointer text-[var(--danger)]">${th('ดูแถวที่มีปัญหา','See problem rows')}</summary><pre class="mt-1 p-2 rounded-lg text-xs overflow-auto" style="background:var(--bg-secondary);max-height:160px;">${escapeHtml(JSON.stringify(errors.slice(0, 10), null, 1))}</pre></details>` : ''}
           <div class="flex gap-2 mt-3">
             <button id="imp-exp-cancel" class="btn btn-secondary flex-1">${t('cancel')}</button>
             <button id="imp-exp-confirm" class="btn btn-primary flex-1">${icon('check', 'w-4 h-4')} ${th('นำเข้า','Import')}</button>
@@ -7565,13 +7501,13 @@ function expenseFormSectionsHtml({
             <h3>${tx('รายละเอียดรายการ', 'Item details')}</h3>
           </div>
           <div class="space-y-3">
-            <div class="input-group"><label class="input-label">${icon('sparkles', 'w-3.5 h-3.5')} ${tx('ชื่อรายการ','Title')} *</label><input id="${p}ex-title" class="input" required autocomplete="off" placeholder="${tx('เช่น ราเมงมื้อเย็น','e.g. Dinner ramen')}" value="${escapeHtml(e.title || '')}"></div>
+            <div class="input-group"><label class="input-label">${tx('ชื่อรายการ','Title')} *</label><input id="${p}ex-title" class="input" required autocomplete="off" placeholder="${tx('เช่น ราเมงมื้อเย็น','e.g. Dinner ramen')}" value="${escapeHtml(e.title || '')}"></div>
 
             <div class="grid grid-cols-2 gap-3">
-              <div class="input-group"><label class="input-label">${icon('calendar', 'w-3.5 h-3.5')} ${tx('วันที่','Date')} *</label><input id="${p}ex-date" class="input" type="date" value="${escapeHtml(e.date || dayjs().format('YYYY-MM-DD'))}" required></div>
+              <div class="input-group"><label class="input-label">${tx('วันที่','Date')} *</label><input id="${p}ex-date" class="input" type="date" value="${escapeHtml(e.date || dayjs().format('YYYY-MM-DD'))}" required></div>
               <div class="input-group">
-                <label class="input-label flex items-center justify-between">${icon('tag', 'w-3.5 h-3.5')} ${tx('กลุ่มค่าใช้จ่าย','Expense group')}
-                  <button type="button" id="${p}ex-manage-cats" class="link-btn text-[10px]">${icon('settings-2', 'w-3 h-3')} ${tx('จัดการ','Manage')}</button>
+                <label class="input-label flex items-center justify-between">${tx('กลุ่มค่าใช้จ่าย','Expense group')}
+                  <button type="button" id="${p}ex-manage-cats" class="link-btn text-xs">${icon('settings-2', 'w-3 h-3')} ${tx('จัดการ','Manage')}</button>
                 </label>
                 <select id="${p}ex-cat" class="input">
                   ${getAllExpenseCategories().map(c => `<option value="${escapeHtml(c.id)}" ${normalizeCategory(e.category || 'general') === c.id ? 'selected' : ''}>${escapeHtml(lang==='th'?(c.th||c.en):(c.en||c.th))}</option>`).join('')}
@@ -7580,7 +7516,7 @@ function expenseFormSectionsHtml({
             </div>
 
             <div class="grid grid-cols-2 gap-3">
-              ${showType ? `<div class="input-group"><label class="input-label">${icon('list-checks', 'w-3.5 h-3.5')} ${tx('ประเภท','Type')}</label>
+              ${showType ? `<div class="input-group"><label class="input-label">${tx('ประเภท','Type')}</label>
                 <select id="${p}ex-type" class="input">
                   <option value="actual" ${!e.isEstimated ? 'selected' : ''}>${tx('จ่ายจริง','Actual')}</option>
                   <option value="estimated" ${e.isEstimated ? 'selected' : ''}>${tx('ประมาณการ','Estimated')}</option>
@@ -7588,7 +7524,7 @@ function expenseFormSectionsHtml({
               </div>` : `<input id="${p}ex-type" type="hidden" value="${e.isEstimated ? 'estimated' : 'actual'}">`}
               <input id="${p}ex-reservation" type="hidden" value="${escapeHtml(e.reservationId || '')}">
               ${lockItinerary
-                ? `<div class="input-group"><label class="input-label">${icon('map-pinned', 'w-3.5 h-3.5')} ${tx('ผูกกับแผนการเดินทาง','Linked place')}</label>
+                ? `<div class="input-group"><label class="input-label">${tx('ผูกกับแผนการเดินทาง','Linked place')}</label>
                      <div class="input trail-input" style="display:flex;align-items:center;gap:6px;">${icon('map-pin', 'w-3.5 h-3.5')} <span class="truncate">${escapeHtml(planLabel || e.itineraryItemTitle || '')}</span></div>
                      <input id="${p}ex-itinerary" type="hidden" value="${escapeHtml(e.itineraryItemId || '')}">
                    </div>`
@@ -7605,21 +7541,21 @@ function expenseFormSectionsHtml({
           </div>
           <div class="space-y-3">
             <div class="grid grid-cols-3 gap-3">
-              <div class="input-group col-span-2"><label class="input-label">${icon('banknote', 'w-3.5 h-3.5')} ${tx('ยอดก่อนส่วนลด / VAT / Service Charge','Subtotal before adjustments')} *</label><input id="${p}ex-subtotal" class="input money-input" type="text" inputmode="decimal" required placeholder="0.00" value="${amount(e.subtotalMinor)}"></div>
-              <div class="input-group"><label class="input-label">${icon('coins', 'w-3.5 h-3.5')} ${tx('สกุลเงิน','Currency')}</label>
+              <div class="input-group col-span-2"><label class="input-label">${tx('ยอดก่อนส่วนลด / VAT / Service Charge','Subtotal before adjustments')} *</label><input id="${p}ex-subtotal" class="input money-input" type="text" inputmode="decimal" required placeholder="0.00" value="${amount(e.subtotalMinor)}"></div>
+              <div class="input-group"><label class="input-label">${tx('สกุลเงิน','Currency')}</label>
                 <select id="${p}ex-currency" class="input">${tripCurrencyList(trip, [e.currency]).map(c => `<option value="${c}" ${currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
               </div>
             </div>
 
             <div class="grid grid-cols-3 gap-3">
-              <div class="input-group"><label class="input-label">${icon('ticket', 'w-3.5 h-3.5')} ${tx('ส่วนลด','Discount')}</label><input id="${p}ex-discount" class="input money-input" type="text" inputmode="decimal" value="${amount(e.discountMinor) || 0}"></div>
-              <div class="input-group"><label class="input-label">${icon('concierge-bell', 'w-3.5 h-3.5')} Service Charge</label><input id="${p}ex-service" class="input money-input" type="text" inputmode="decimal" value="${amount(e.serviceMinor) || 0}"></div>
-              <div class="input-group"><label class="input-label">${icon('receipt-text', 'w-3.5 h-3.5')} VAT / Tax</label><input id="${p}ex-tax" class="input money-input" type="text" inputmode="decimal" value="${amount(e.taxMinor) || 0}"></div>
+              <div class="input-group"><label class="input-label">${tx('ส่วนลด','Discount')}</label><input id="${p}ex-discount" class="input money-input" type="text" inputmode="decimal" value="${amount(e.discountMinor) || 0}"></div>
+              <div class="input-group"><label class="input-label">Service Charge</label><input id="${p}ex-service" class="input money-input" type="text" inputmode="decimal" value="${amount(e.serviceMinor) || 0}"></div>
+              <div class="input-group"><label class="input-label">VAT / Tax</label><input id="${p}ex-tax" class="input money-input" type="text" inputmode="decimal" value="${amount(e.taxMinor) || 0}"></div>
             </div>
 
-            <div class="input-group"><label class="input-label">${icon('arrow-left-right', 'w-3.5 h-3.5')} ${tx('เรทเป็น THB','Rate to THB')}</label><input id="${p}ex-thb-rate" class="input" type="number" step="0.0001" min="0" value="${e.thbRate || resolveTripThbRate(trip, expenseRates, currency) || ''}"></div>
+            <div class="input-group"><label class="input-label">${tx('เรทเป็น THB','Rate to THB')}</label><input id="${p}ex-thb-rate" class="input" type="number" step="0.0001" min="0" value="${e.thbRate || resolveTripThbRate(trip, expenseRates, currency) || ''}"></div>
 
-            <div id="${p}net-preview" class="p-4 rounded-xl text-sm font-bold border flex items-center gap-2" style="border-color: var(--border); background: var(--bg-secondary);">${icon('calculator', 'w-4 h-4')} ${t('netTotal')}: --</div>
+            <div id="${p}net-preview" class="p-4 rounded-xl text-sm font-semibold border flex items-center gap-2" style="border-color: var(--border); background: var(--bg-secondary);">${icon('calculator', 'w-4 h-4')} ${t('netTotal')}: --</div>
             <div id="${p}thb-preview" class="p-3 rounded-xl border text-sm flex items-center gap-2" style="border-color: color-mix(in srgb, var(--success) 35%, transparent); background: var(--success-bg); color: var(--success);">${icon('banknote', 'w-4 h-4')} THB: --</div>
           </div>
         </section>
@@ -7632,7 +7568,7 @@ function expenseFormSectionsHtml({
           </div>
           <div class="space-y-4">
             <div class="input-group">
-              <label class="input-label">${icon('user', 'w-3.5 h-3.5')} ${tx('คนจ่าย (เลือกได้หลายคน)','Paid by (select one or more)')} *</label>
+              <label class="input-label">${tx('คนจ่าย (เลือกได้หลายคน)','Paid by (select one or more)')} *</label>
               <div id="${p}payer-tiles" class="tile-grid">
                 <button type="button" class="tile tile-pending ${e.payerPending ? 'tile-selected' : ''} ${e.isEstimated ? '' : 'hidden'}" data-payer="__pending" title="${tx('ประมาณการที่ยังไม่ทราบผู้จ่าย','Estimated item with no payer assigned yet')}">
                   <span class="flex items-center gap-2 min-w-0">
@@ -7651,7 +7587,7 @@ function expenseFormSectionsHtml({
             </div>
 
         <div class="grid grid-cols-2 gap-3">
-          <div class="input-group"><label class="input-label">${icon('credit-card', 'w-3.5 h-3.5')} ${tx('วิธีจ่าย','Payment method')}</label>
+          <div class="input-group"><label class="input-label">${tx('วิธีจ่าย','Payment method')}</label>
             <select id="${p}ex-payment" class="input">
               <option value="cash" ${(e.paymentMethod || 'cash') === 'cash' ? 'selected' : ''}>${tx('เงินสด','Cash')}</option>
               <option value="card" ${e.paymentMethod === 'card' ? 'selected' : ''}>${tx('บัตรเครดิต','Card')}</option>
@@ -7659,8 +7595,8 @@ function expenseFormSectionsHtml({
             </select>
           </div>
           <div class="input-group" id="${p}ex-card-group">
-            <label class="input-label flex items-center justify-between">${icon('credit-card', 'w-3.5 h-3.5')} ${tx('บัตรเครดิต','Credit card')}
-              <button type="button" id="${p}ex-manage-cards" class="link-btn text-[10px]">${icon('settings-2', 'w-3 h-3')} ${tx('จัดการบัตร','Manage cards')}</button>
+            <label class="input-label flex items-center justify-between">${tx('บัตรเครดิต','Credit card')}
+              <button type="button" id="${p}ex-manage-cards" class="link-btn text-xs">${icon('settings-2', 'w-3 h-3')} ${tx('จัดการบัตร','Manage cards')}</button>
             </label>
             <!-- Managed dropdown only — the trip's card list prevents random card names -->
             <select id="${p}ex-card" class="input"></select>
@@ -7671,8 +7607,8 @@ function expenseFormSectionsHtml({
             <div id="${p}payer-amounts"></div>
             <div class="input-group">
               <div class="flex items-center justify-between">
-                <label class="input-label">${icon('split', 'w-3.5 h-3.5')} ${tx('ใครหารด้วย','Who shares')}</label>
-                <button type="button" id="${p}share-all" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:2px 8px;">${tx('เลือกทั้งหมด','Select all')}</button>
+                <label class="input-label">${tx('ใครหารด้วย','Who shares')}</label>
+                <button type="button" id="${p}share-all" class="btn btn-ghost btn-sm text-xs" style="min-height:26px;padding:2px 8px;">${tx('เลือกทั้งหมด','Select all')}</button>
               </div>
               <div id="${p}share-tiles" class="tile-grid">
                 ${members.map(m => `
@@ -7686,7 +7622,7 @@ function expenseFormSectionsHtml({
             </div>
 
             <div class="input-group">
-              <label class="input-label">${icon('sliders-horizontal', 'w-3.5 h-3.5')} ${t('splitMethod')}</label>
+              <label class="input-label">${t('splitMethod')}</label>
               <div class="segmented">
                 <button type="button" data-split="equal" class="segmented-item active">${icon('scale', 'w-4 h-4')} ${t('equal')}</button>
                 <button type="button" data-split="unequal" class="segmented-item">${icon('sliders-horizontal', 'w-4 h-4')} ${t('unequal')}</button>
@@ -7704,16 +7640,16 @@ function expenseFormSectionsHtml({
           </div>
           <div class="space-y-3">
         ${lockItinerary ? '' : `<div class="input-group">
-          <label class="input-label">${icon('map-pinned', 'w-3.5 h-3.5')} ${tx('ผูกกับแผนการเดินทาง','Linked itinerary place')}</label>
+          <label class="input-label">${tx('ผูกกับแผนการเดินทาง','Linked itinerary place')}</label>
           <select id="${p}ex-itinerary" class="input">
             <option value="">${tx('— ไม่ผูก —','— none —')}</option>
-            ${items.map(it => `<option value="${it.id}" ${e.itineraryItemId === it.id ? 'selected' : ''}>${escapeHtml(it.date || '')} • ${escapeHtml(it.title)}</option>`).join('')}
+            ${items.map(it => `<option value="${it.id}" ${e.itineraryItemId === it.id ? 'selected' : ''}>${escapeHtml(shortDay(it.date))} • ${escapeHtml(it.title)}</option>`).join('')}
           </select>
         </div>`}
 
 
         <div class="input-group">
-          <label class="input-label">${icon('image-plus', 'w-3.5 h-3.5')} ${tx('รูปใบเสร็จ (ไม่บังคับ)','Receipt photo (optional)')}</label>
+          <label class="input-label">${tx('รูปใบเสร็จ (ไม่บังคับ)','Receipt photo (optional)')}</label>
           <div class="receipt-upload">
             <div id="${p}ex-receipt-preview" class="receipt-upload-preview ${e.receiptImage ? '' : 'hidden'}">
               ${e.receiptImage ? `<img decoding="async" src="${escapeHtml(e.receiptImage)}" alt="receipt">` : ''}
@@ -7726,9 +7662,9 @@ function expenseFormSectionsHtml({
           </div>
         </div>
 
-        <div class="input-group"><label class="input-label">${icon('link', 'w-3.5 h-3.5')} ${tx('ลิงก์ใบเสร็จ','Receipt URL')}</label><input id="${p}ex-receipt" class="input" placeholder="https://..." value="${escapeHtml(e.receiptUrl || '')}"></div>
+        <div class="input-group"><label class="input-label">${tx('ลิงก์ใบเสร็จ','Receipt URL')}</label><input id="${p}ex-receipt" class="input" placeholder="https://..." value="${escapeHtml(e.receiptUrl || '')}"></div>
 
-        <div class="input-group"><label class="input-label">${icon('align-left', 'w-3.5 h-3.5')} ${tx('รายละเอียด','Description')}</label><textarea id="${p}ex-desc" class="input" style="min-height:70px;">${escapeHtml(e.description || '')}</textarea></div>
+        <div class="input-group"><label class="input-label">${tx('รายละเอียด','Description')}</label><textarea id="${p}ex-desc" class="input" style="min-height:70px;">${escapeHtml(e.description || '')}</textarea></div>
           </div>
         </section>`;
 }
@@ -7770,7 +7706,7 @@ function mountExpenseForm({
       <option value="">${cards.length ? tx('— เลือกบัตร —', '— pick a card —') : tx('— ยังไม่มีบัตรในทริป —', '— no trip cards yet —')}</option>
       ${cards.map(c => `<option value="${escapeHtml(c.name)}" ${c.name === selected ? 'selected' : ''}>${escapeHtml(tripCardLabel(c))}${c.holderId ? ` (${escapeHtml(members.find(m => m.id === c.holderId)?.displayName || '')})` : ''}</option>`).join('')}
       ${selected && !known ? `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)} ${tx('(ของเดิม)', '(legacy)')}</option>` : ''}
-      <option value="__manage">${tx('➕ เพิ่ม / จัดการบัตร…', '➕ Add / manage cards…')}</option>`;
+      <option value="__manage">${tx('เพิ่ม / จัดการบัตร…', 'Add / manage cards…')}</option>`;
   }
   fillCardOptions();
 
@@ -7978,17 +7914,17 @@ function mountExpenseForm({
       area.innerHTML = ids.map(m => `
         <div class="split-equal-row flex justify-between items-center text-sm p-2.5 rounded-xl gap-2" style="background: var(--bg-secondary);">
           <span class="flex items-center gap-2 min-w-0">
-            <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+            <span class="avatar w-7 h-7 text-xs" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
             <span class="truncate">${escapeHtml(m.displayName)}</span>
           </span>
-          <span class="font-bold flex-shrink-0">${moneyHtml(equal.find(a => a.memberId === m.id).amountMinor, v.cur, v.rate)}</span>
+          <span class="font-semibold flex-shrink-0">${moneyHtml(equal.find(a => a.memberId === m.id).amountMinor, v.cur, v.rate)}</span>
         </div>`).join('');
     } else {
       // ---- Custom split ----
       // Show VAT/SC inclusion toggle + auto-distribute inputs
       const vatScToggle = `
         <div class="split-vat-toggle">
-          <span class="text-[11px] font-bold flex-shrink-0">${icon('calculator', 'w-3.5 h-3.5')} ${tx('ยอดที่กรอก','Amounts')}:</span>
+          <span class="text-xs font-semibold flex-shrink-0">${icon('calculator', 'w-3.5 h-3.5')} ${tx('ยอดที่กรอก','Amounts')}:</span>
           <div class="segmented" style="flex:1;min-height:28px;">
             <button type="button" data-vatsc="include" class="segmented-item ${splitIncludesVatSc ? 'active' : ''}" style="font-size:11px;padding:4px 8px;">${tx('ยอดสุทธิ (รวมทุกอย่างแล้ว)','Final amounts')}</button>
             <button type="button" data-vatsc="exclude" class="segmented-item ${!splitIncludesVatSc ? 'active' : ''}" style="font-size:11px;padding:4px 8px;">${tx('ยอดก่อนส่วนลด / VAT / SC','Before adjustments')}</button>
@@ -8004,7 +7940,7 @@ function mountExpenseForm({
         return `
           <div class="split-row" data-member="${m.id}">
             <div class="split-name">
-              <span class="avatar w-7 h-7 text-[10px]" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;flex-shrink:0;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+              <span class="avatar w-7 h-7 text-xs" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;flex-shrink:0;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
               <span class="truncate text-xs font-medium" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
             </div>
             <input data-alloc="${m.id}" aria-label="${escapeHtml(m.displayName)} ${tx('ยอดที่กรอก','Entered amount')}" class="input split-input money-input" type="text" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${escapeHtml(displayValue)}">
@@ -8249,14 +8185,14 @@ function mountExpenseForm({
       } else {
         hint.className = 'input-hint';
         hint.textContent = `${tx('กรอกแล้ว','Entered')} ${fmt(result.enteredMinor)} / ${fmt(v.netMinor)}`
-          + (blanks ? ` • ${tx('ส่วนที่เหลือ','Remaining')} ${fmt(diff)} ${tx('แบ่งให้','shared by')} ${blanks} ${tx('คนที่ยังว่าง','blank payer(s)')}` : ' ✓');
+          + (blanks ? ` • ${tx('ส่วนที่เหลือ','Remaining')} ${fmt(diff)} ${tx('แบ่งให้','shared by')} ${blanks} ${tx('คนที่ยังว่าง','blank payer(s)')}` : ` • ${tx('ครบแล้ว','complete')}`);
       }
       return;
     }
     const payments = readPayments(v);
     const diff = v.netMinor - payments.reduce((n, p) => n + p.amountMinor, 0);
     hint.className = validatePayments(v.netMinor, payments) ? 'input-hint' : 'split-warning';
-    hint.textContent = `${tx('ยอดผู้จ่ายรวม','Total paid')} ${fmt(v.netMinor - diff)} / ${fmt(v.netMinor)}` + (diff ? ` • ${tx('ยอดยังไม่ตรง ส่วนต่าง','Mismatch, difference')} ${fmt(Math.abs(diff))}` : ' ✓');
+    hint.textContent = `${tx('ยอดผู้จ่ายรวม','Total paid')} ${fmt(v.netMinor - diff)} / ${fmt(v.netMinor)}` + (diff ? ` • ${tx('ยอดยังไม่ตรง ส่วนต่าง','Mismatch, difference')} ${fmt(Math.abs(diff))}` : ` • ${tx('ตรงกับยอดบิล','matches the bill')}`);
   }
 
   function payerCardOptionsHtml(selected = '') {
@@ -8471,11 +8407,11 @@ async function renderExpenseAdd(params) {
           subtitle: th('กรอกยอด ผู้จ่าย และคนที่ร่วมหาร','Enter the amount, who paid and who shares it') })}
         <button id="exp-back" class="btn btn-ghost btn-sm">${icon('arrow-left', 'w-4 h-4')} ${th('กลับ','Back')}</button>
       </div>
-      ${isEdit ? `<div class="card p-3 mb-3 flex items-center gap-2 text-[11px] no-export" style="background:var(--bg-secondary);">
+      ${isEdit ? `<div class="card p-3 mb-3 flex items-center gap-2 text-xs no-export" style="background:var(--bg-secondary);">
         ${icon('history', 'w-3.5 h-3.5')}
         <span>${escapeHtml(lastEditorText(e, lang) || th('ยังไม่มีข้อมูลผู้แก้ไข','No editor information yet'))}</span>
         ${(commentMapAll().get(editId) || []).length ? commentChip((commentMapAll().get(editId) || []).length) : ''}
-        <button type="button" id="ex-comments-btn" class="link-btn text-[11px] ml-auto">${icon('message-square', 'w-3.5 h-3.5')} ${th('ความเห็น','Comments')}</button>
+        <button type="button" id="ex-comments-btn" class="link-btn text-xs ml-auto">${icon('message-square', 'w-3.5 h-3.5')} ${th('ความเห็น','Comments')}</button>
       </div>` : ''}
       <form id="expense-form" class="expense-form card card-accent p-6">
         ${expenseFormSectionsHtml({ prefix: '', e, members, items, trip, lang, currency, expenseRates })}
@@ -8641,10 +8577,10 @@ async function openExpenseSheet({
       <div class="flex items-start gap-3">
         <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('receipt', 'w-5 h-5')}</div>
         <div class="min-w-0 flex-1">
-          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${editing ? th('แก้ไขค่าใช้จ่าย','Edit expense') : (item ? th('เพิ่มค่าใช้จ่ายให้สถานที่นี้','Add a cost to this place') : th('เพิ่มค่าใช้จ่าย','Add expense'))}</h3>
-          <p class="text-[11px] text-[var(--text-secondary)] flex items-center gap-1 flex-wrap">
+          <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${editing ? th('แก้ไขค่าใช้จ่าย','Edit expense') : (item ? th('เพิ่มค่าใช้จ่ายให้สถานที่นี้','Add a cost to this place') : th('เพิ่มค่าใช้จ่าย','Add expense'))}</h3>
+          <p class="text-xs text-[var(--text-secondary)] flex items-center gap-1 flex-wrap">
             ${item ? `${icon('map-pinned', 'w-3 h-3')} <span class="truncate">${escapeHtml(item.title || '')}</span>` : ''}
-            <span class="badge badge-planned text-[10px]">${th('เมนูเดียวกับหน้าค่าใช้จ่าย','same form as the expenses page')}</span>
+            <span class="badge badge-planned text-xs">${th('เมนูเดียวกับหน้าค่าใช้จ่าย','same form as the expenses page')}</span>
           </p>
         </div>
         <button class="btn btn-ghost btn-sm" id="sh-close">${icon('x', 'w-4 h-4')}</button>
@@ -8680,7 +8616,7 @@ async function openExpenseSheet({
       const ok = await confirmAction({
         title: th(`ลบ "${e.title || ''}" ?`, `Delete "${e.title || ''}"?`),
         message: th('ลบรายการค่าใช้จ่ายนี้ออกจากทริป', 'Remove this expense from the trip'),
-        detail: `${formatCurrency(e.netTotalMinor || 0, e.currency || baseCurrency)} • ${escapeHtml(e.date || '')}`,
+        detail: `${formatCurrency(e.netTotalMinor || 0, e.currency || baseCurrency)} • ${escapeHtml(shortDay(e.date))}`,
         confirmText: t('delete'), danger: true, icon: 'trash-2'
       });
       if (!ok) return;
@@ -8999,8 +8935,8 @@ async function renderSettlement(params) {
     const isMe = m.memberId === currentUser.uid;
     return `${withAvatar ? `<div class="avatar" style="width:34px;height:34px;background:${escapeHtml(m.color || 'var(--primary)')};font-size:12px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</div>` : ''}
       <div class="min-w-0">
-        <div class="font-bold text-sm truncate">${escapeHtml(m.displayName)} ${isMe ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full text-white" style="background:var(--gradient-primary);">${th('คุณ','you')}</span>` : ''}</div>
-        <div class="text-[10px] text-[var(--text-tertiary)]">${th('จ่ายจริง','paid')} ${m.paidCount} • ${th('ร่วมหาร','shares')} ${m.shareCount}</div>
+        <div class="font-semibold text-sm truncate">${escapeHtml(m.displayName)} ${isMe ? `<span class="text-xs px-1.5 py-0.5 rounded-full text-white" style="background:var(--gradient-primary);">${th('คุณ','you')}</span>` : ''}</div>
+        <div class="text-xs text-[var(--text-tertiary)]">${th('จ่ายจริง','paid')} ${m.paidCount} • ${th('ร่วมหาร','shares')} ${m.shareCount}</div>
       </div>`;
   }
 
@@ -9117,6 +9053,10 @@ async function renderSettlement(params) {
     const paidItems = m.items.filter(i => i.role === 'paid');
     const shareItems = m.items.filter(i => i.role === 'share');
     const settled = m.netMinor > 0 && shareItems.length === 0;
+    // v35 signature moment: once nothing is left to transfer for this person,
+    // the receipt gets a “เคลียร์แล้ว” hanko stamp in the accent ink.
+    const pendingTx = transfersFor(m.memberId);
+    const cleared = m.items.length > 0 && !pendingTx.out.length && !pendingTx.inc.length;
     const cards = cardTotals(paidItems);
     const chip = (k) => `<span class="rcpt-chip rcpt-chip--${k}">${icon(methodIcon(k), 'w-3 h-3')} ${methodLabel(k)}</span>`;
     const positive = m.netMinor >= 0;
@@ -9125,7 +9065,7 @@ async function renderSettlement(params) {
     /** One compact item row; rows past COLLAPSE_AFTER fold until "show all". */
     const itemRow = (i, idx, side) => {
       const extra = idx >= COLLAPSE_AFTER;
-      const sub = `${escapeHtml(i.date || '')} • ${methodLabel(i.method)}${side === 'paid' && i.cardName ? ` • ${escapeHtml(i.cardName)}` : ''}`;
+      const sub = `${escapeHtml(shortDay(i.date))} • ${methodLabel(i.method)}${side === 'paid' && i.cardName ? ` • ${escapeHtml(i.cardName)}` : ''}`;
       // A shared bill names everyone who paid and how much each put in, so the
       // receipt explains the whole bill, not just this person's part of it.
       const payers = payersOf(i);
@@ -9159,10 +9099,14 @@ async function renderSettlement(params) {
       </button>` : '';
 
     return `
-      <div class="receipt" id="receipt-${escapeHtml(m.memberId)}" data-receipt="${escapeHtml(m.memberId)}">
+      <div class="receipt${cleared ? ' is-cleared' : ''}" id="receipt-${escapeHtml(m.memberId)}" data-receipt="${escapeHtml(m.memberId)}">
+        ${cleared ? `<div class="hanko" role="img" aria-label="${th('เคลียร์แล้ว','Cleared')}">
+          <span class="hanko-text">${th('เคลียร์แล้ว','Cleared')}</span>
+          <span class="hanko-date">${escapeHtml(thaiDate(new Date()))}</span>
+        </div>` : ''}
         <div class="receipt-head">
           <div class="receipt-title">${escapeHtml(t('settlement'))}</div>
-          <div class="receipt-sub">${escapeHtml(trip?.name || '')} • ${escapeHtml(trip?.startDate || '')} → ${escapeHtml(trip?.endDate || '')}</div>
+          <div class="receipt-sub">${escapeHtml([trip?.name || '', tripRangeLabel(trip)].filter(Boolean).join(' · '))}</div>
         </div>
 
         <!-- The member's name AND the bottom line are the headline (screen + PNG) -->
@@ -9172,11 +9116,10 @@ async function renderSettlement(params) {
           </div>
           <div class="min-w-0 flex-1">
             <div class="rcpt-member-label">${th('ใบเสร็จของ','Receipt for')}</div>
-            <div class="receipt-member-name receipt-member-name--lg">${escapeHtml(m.displayName)}${isMe ? ` <span style="font-size:14px;font-weight:700;color:var(--text-secondary);">(${th('คุณ','you')})</span>` : ''}</div>
-            <div class="rcpt-member-sub">${th('จ่ายจริง','paid')} ${m.paidCount} • ${th('ร่วมหาร','shares')} ${m.shareCount}${flaggedCount(m) ? ` • ${icon('message-square', 'w-3 h-3')} ${flaggedCount(m)} ${th('รายการที่ทักท้วง','flagged')}` : ''}</div>
+            <div class="receipt-member-name receipt-member-name--lg">${escapeHtml(m.displayName)}${isMe ? ` <span class="you-badge">${th('คุณ','You')}</span>` : ''}</div>
+            <div class="rcpt-member-sub">${th('จ่ายจริง','Paid')} ${m.paidCount} · ${th('ร่วมหาร','shared')} ${m.shareCount}${flaggedCount(m) ? ` · ${flaggedCount(m)} ${th('รายการที่ทักท้วง','flagged')}` : ''}</div>
           </div>
           <div class="rcpt-hero ${positive ? 'is-positive' : 'is-negative'}">
-            <span class="rcpt-hero-face">${moodFaceHtml(balanceMood(m.netMinor), { size: 40, lang })}</span>
             <div class="min-w-0">
               <div class="rcpt-hero-label">${settled ? th('เคลียร์ครบแล้ว','Fully settled') : positive ? th('จะได้รับคืน','Gets back') : th('ต้องจ่ายคืน','Owes')}</div>
               <div class="rcpt-hero-amount">${positive ? '+' : '−'}${money(Math.abs(m.netMinor))}</div>
@@ -9184,12 +9127,11 @@ async function renderSettlement(params) {
             </div>
           </div>
         </div>
-        <p class="rcpt-hint no-export">${icon('message-square', 'w-3 h-3')} ${th('แตะไอคอน 💬 ข้างรายการใดก็ได้ เพื่อทักท้วงหรือสอบถาม','Tap the 💬 icon beside any item to dispute or ask about it')}</p>
+        <p class="rcpt-hint no-export">${th('แตะไอคอนข้อความข้างรายการ เพื่อทักท้วงหรือสอบถาม','Tap the message icon beside an item to question it')}</p>
 
         <!-- 1) รับ — money this member actually paid (green block) -->
         <section class="rcpt-block rcpt-block--recv" data-receipt-section="received">
           <div class="rcpt-block-head">
-            <span class="rcpt-block-icon">${icon('arrow-down-circle', 'w-4 h-4')}</span>
             <span class="rcpt-block-title">${th('รับ — เงินที่จ่ายไป','Received — money this member paid')}</span>
             <span class="rcpt-block-total">${moneyPair(m.paidMinor)}</span>
           </div>
@@ -9208,7 +9150,6 @@ async function renderSettlement(params) {
         <!-- 2) หัก — this member's share of everything (rose block) -->
         <section class="rcpt-block rcpt-block--deduct" data-receipt-section="deduct">
           <div class="rcpt-block-head">
-            <span class="rcpt-block-icon">${icon('arrow-up-circle', 'w-4 h-4')}</span>
             <span class="rcpt-block-title">${th('หัก — ส่วนที่ต้องรับผิดชอบ','Deductions — this member\'s share')}</span>
             <span class="rcpt-block-total">${moneyPair(m.owedMinor)}</span>
           </div>
@@ -9223,7 +9164,6 @@ async function renderSettlement(params) {
         <!-- 3) คงเหลือ — the answer, blue block -->
         <section class="rcpt-block rcpt-block--balance" data-receipt-section="balance">
           <div class="rcpt-block-head">
-            <span class="rcpt-block-icon">${icon('scale', 'w-4 h-4')}</span>
             <span class="rcpt-block-title">${th('คงเหลือ — สรุปสุดท้าย','Balance — the bottom line')}</span>
           </div>
           <div class="rcpt-block-body">
@@ -9243,7 +9183,7 @@ async function renderSettlement(params) {
               <div class="rcpt-summary-comments-title">${icon('message-square', 'w-3.5 h-3.5')} ${th('มีความเห็น/ข้อทักท้วง','Comments & questions')} • ${flaggedCount(m)} ${th('รายการ','items')}</div>
               ${[...new Set(m.items.map(i => i.expenseId))].filter(id => commentsFor(id).length).map(id => {
                 const item = m.items.find(i => i.expenseId === id);
-                return `<div class="text-[10.5px] mt-1"><b>${escapeHtml(item?.title || '')}</b></div>
+                return `<div class="text-xs mt-1"><b>${escapeHtml(item?.title || '')}</b></div>
                   ${commentsFor(id).map(c => `<div class="rcpt-comment"><span class="rcpt-comment-icon">${icon('message-square', 'w-3 h-3')}</span><span><b>${escapeHtml(c.name || '')}</b> ${escapeHtml(c.text)}</span></div>`).join('')}`;
               }).join('')}
             </div>` : ''}
@@ -9251,14 +9191,13 @@ async function renderSettlement(params) {
         </section>
 
         <div class="receipt-foot">
-          ${settled ? `<span class="receipt-stamp">${icon('check-circle-2', 'w-3 h-3')} ${th('เคลียร์ครบแล้ว','Fully settled')}</span><br>` : ''}
-          ${currency !== 'THB' && thbRate ? `1 ${escapeHtml(currency)} ≈ ${formatAmount(thbRate, 4)} THB • ` : ''}${th(`ออกโดย ${APP_NAME_BY}`, `Generated by ${APP_NAME_BY}`)} • ${escapeHtml(new Date().toLocaleString(lang === 'th' ? 'th-TH' : 'en-GB'))}
+          ${currency !== 'THB' && thbRate ? `1 ${escapeHtml(currency)} ≈ ${formatAmount(thbRate, 4)} THB · ` : ''}${th(`ออกโดย ${APP_NAME_BY}`, `Generated by ${APP_NAME_BY}`)} · ${escapeHtml(`${thaiDate(new Date())} ${dayjs().format('HH:mm')}`)}
         </div>
 
         <div class="btn-row mt-3 no-export">
-          <button class="btn btn-secondary btn-sm" data-export-receipt="${escapeHtml(m.memberId)}">${icon('image', 'w-4 h-4')} ${th('PNG ใบเสร็จนี้','PNG this receipt')}</button>
-          <button class="btn btn-ghost btn-sm" data-share-receipt="${escapeHtml(m.memberId)}">${icon('share-2', 'w-4 h-4')} ${th('แชร์ให้เพื่อน','Share')}</button>
-          <button class="btn btn-ghost btn-sm" data-copy-receipt="${escapeHtml(m.memberId)}">${icon('clipboard-copy', 'w-4 h-4')} ${th('คัดลอกข้อความ','Copy text')}</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-export-receipt="${escapeHtml(m.memberId)}">${icon('image', 'w-4 h-4')} ${th('บันทึกเป็นรูป','Save as image')}</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-share-receipt="${escapeHtml(m.memberId)}">${icon('share-2', 'w-4 h-4')} ${th('แชร์','Share')}</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-copy-receipt="${escapeHtml(m.memberId)}">${icon('copy', 'w-4 h-4')} ${th('คัดลอกข้อความ','Copy text')}</button>
         </div>
       </div>`;
   }
@@ -9271,7 +9210,7 @@ async function renderSettlement(params) {
           <button type="button" class="segmented-item ${receiptDensity === 'full' ? 'active' : ''}" data-density="full">${icon('rows-3', 'w-3.5 h-3.5')} ${th('ละเอียด','Detailed')}</button>
           <button type="button" class="segmented-item ${receiptDensity === 'compact' ? 'active' : ''}" data-density="compact">${icon('align-justify', 'w-3.5 h-3.5')} ${th('กระทัดรัด','Compact')}</button>
         </div>
-        <span class="text-[10.5px] text-[var(--text-tertiary)]">${th('โหมดกระทัดรัดซ่อนรายการย่อย แสดงเฉพาะยอดรับ/หัก/คงเหลือ','Compact hides the item rows and keeps the paid / share / balance answer')}</span>
+        <span class="text-xs text-[var(--text-tertiary)]">${th('โหมดกระทัดรัดซ่อนรายการย่อย แสดงเฉพาะยอดรับ/หัก/คงเหลือ','Compact hides the item rows and keeps the paid / share / balance answer')}</span>
       </div>`;
   }
 
@@ -9280,8 +9219,8 @@ async function renderSettlement(params) {
     const paid = state.transfers || [];
     if (!paid.length) return '';
     return `<div class="card p-5 mt-4" id="paid-card">
-      <h4 class="font-bold text-sm flex items-center gap-2 mb-3">${icon('badge-check', 'w-4 h-4')} ${th('จ่ายแล้ว', 'Paid')}
-        <span class="badge badge-completed text-[10px]">${paid.length}</span></h4>
+      <h4 class="font-semibold text-sm flex items-center gap-2 mb-3">${th('จ่ายแล้ว', 'Paid')}
+        <span class="badge badge-completed text-xs">${paid.length}</span></h4>
       <div class="space-y-2">${paid.map(p => {
         const from = state.membersMap[p.fromId];
         const to = state.membersMap[p.toId];
@@ -9307,7 +9246,7 @@ async function renderSettlement(params) {
     const today = dayjs().format('YYYY-MM-DD');
     const sheet = showBottomSheet(`
       <div class="space-y-3">
-        <h3 class="font-bold text-base">${th('บันทึกว่าจ่ายแล้ว', 'Record as paid')}</h3>
+        <h3 class="font-semibold text-base">${th('บันทึกว่าจ่ายแล้ว', 'Record as paid')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${escapeHtml(from?.displayName || '')} → ${escapeHtml(to?.displayName || '')} • ${th('ยังค้างอยู่', 'Still owed')} ${moneyPair(amountMinor)}</p>
         <div class="input-group"><label class="input-label" for="tr-amount">${th('จำนวนที่โอน (฿)', 'Amount sent (฿)')}</label>
           <input id="tr-amount" class="input" inputmode="decimal" value="${escapeHtml(Number(fromMinor(amountMinor, dec)).toFixed(dec))}"></div>
@@ -9361,8 +9300,8 @@ async function renderSettlement(params) {
     const payerGroups = groupTransfersByPayer(state.transactions);
     return `<div class="card p-5" id="tx-card">
       <div class="flex items-center justify-between gap-2 mb-4 flex-wrap">
-        <h4 class="font-bold text-sm flex items-center gap-2">${icon('arrow-left-right', 'w-4 h-4')} ${t('transactions')}
-          <span class="badge badge-planned text-[10px]">${state.transactions.length} ${th('รายการโอน','transfers')}</span></h4>
+        <h4 class="font-semibold text-sm flex items-center gap-2">${t('transactions')}
+          <span class="badge badge-planned text-xs">${state.transactions.length} ${th('รายการโอน','transfers')}</span></h4>
         <div class="btn-row no-export">
           <button class="btn btn-ghost btn-sm tx-tool-btn" data-tx-toggle="open" type="button">${icon('unfold-vertical', 'w-3.5 h-3.5')} ${th('ขยายทั้งหมด','Expand all')}</button>
           <button class="btn btn-ghost btn-sm tx-tool-btn" data-tx-toggle="close" type="button">${icon('fold-vertical', 'w-3.5 h-3.5')} ${th('ย่อทั้งหมด','Collapse all')}</button>
@@ -9403,23 +9342,23 @@ async function renderSettlement(params) {
                   <div class="tx-recipient-amount">${moneyPair(recipient.amountMinor)}</div>
                 </div>
                 <div class="tx-row-actions no-export">
-                  <button class="btn btn-accent btn-sm text-[11px] no-export" style="min-height:30px;padding:2px 10px;" type="button" data-settle-pay data-settle-from="${escapeHtml(group.from)}" data-settle-to="${escapeHtml(recipient.to)}" data-settle-amount="${recipient.amountMinor}">${icon('badge-check', 'w-3 h-3')} ${th('จ่ายแล้ว', 'Mark paid')}</button>
+                  <button class="btn btn-accent btn-sm text-xs no-export" style="min-height:30px;padding:2px 10px;" type="button" data-settle-pay data-settle-from="${escapeHtml(group.from)}" data-settle-to="${escapeHtml(recipient.to)}" data-settle-amount="${recipient.amountMinor}">${icon('badge-check', 'w-3 h-3')} ${th('จ่ายแล้ว', 'Mark paid')}</button>
                 </div>
                 <details class="tx-details mt-2">
-                  <summary class="text-[11px] cursor-pointer" style="color:var(--text-secondary);">${hasMatchedSources ? th('รายการที่ทำให้เกิดยอดโอน','Expenses behind this transfer') : th('รายการค่าใช้จ่ายของผู้จ่าย','Payer expense items')} (${sourceRows.length})</summary>
+                  <summary class="text-xs cursor-pointer" style="color:var(--text-secondary);">${hasMatchedSources ? th('รายการที่ทำให้เกิดยอดโอน','Expenses behind this transfer') : th('รายการค่าใช้จ่ายของผู้จ่าย','Payer expense items')} (${sourceRows.length})</summary>
                   ${sourceRows.length ? `<div class="tx-sources mt-2">
                     ${sourceRows.map(i => {
                       const payers = payersOf(i);
                       return `<div class="tx-source-row">
                         <div class="min-w-0">
-                          <div class="text-[11.5px] font-bold">${expenseLink(i)}${i.estimated ? ` <span class="rcpt-mini-badge rcpt-mini-badge--est">${th('ประมาณการ','est.')}</span>` : ''}</div>
-                          <div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(i.date || '')} • ${th('จ่ายโดย','paid by')} ${payersLabel(payers) || escapeHtml(to.displayName || '')} (${methodLabel(i.method)})${payers.length > 1 && i.totalMinor ? ` • ${th('ยอดบิลรวม','bill total')} ${money(i.totalMinor)}` : ''}</div>
+                          <div class="text-xs font-semibold">${expenseLink(i)}${i.estimated ? ` <span class="rcpt-mini-badge rcpt-mini-badge--est">${th('ประมาณการ','est.')}</span>` : ''}</div>
+                          <div class="text-xs text-[var(--text-tertiary)]">${escapeHtml(shortDay(i.date))} • ${th('จ่ายโดย','paid by')} ${payersLabel(payers) || escapeHtml(to.displayName || '')} (${methodLabel(i.method)})${payers.length > 1 && i.totalMinor ? ` • ${th('ยอดบิลรวม','bill total')} ${money(i.totalMinor)}` : ''}</div>
                         </div>
-                        <span class="text-[11.5px] font-bold flex-shrink-0">${moneyPair(i.amountMinor)}</span>
+                        <span class="text-xs font-semibold flex-shrink-0">${moneyPair(i.amountMinor)}</span>
                       </div>`;
                     }).join('')}
-                  </div>` : `<p class="text-[10px] mt-2" style="color:var(--text-tertiary);">${th('ไม่พบรายการต้นทางที่จับคู่ได้ — เปิดรายการค่าใช้จ่ายผู้จ่ายเพื่อดูรายละเอียดทั้งหมด','No matching source items were found — open the payer expense list for the full details.')}</p>`}
-                  ${hasMatchedSources ? `<p class="text-[10px] mt-2" style="color:var(--text-tertiary);">${th('ยอดโอนจริงถูกหักกลบกับรายการที่อีกฝ่ายจ่ายให้แล้ว จึงอาจไม่เท่ากับผลรวมรายการ','Recorded transfers are netted against prior payments, so this explanation may not add up to the transfer total.')}</p>` : ''}
+                  </div>` : `<p class="text-xs mt-2" style="color:var(--text-tertiary);">${th('ไม่พบรายการต้นทางที่จับคู่ได้ — เปิดรายการค่าใช้จ่ายผู้จ่ายเพื่อดูรายละเอียดทั้งหมด','No matching source items were found — open the payer expense list for the full details.')}</p>`}
+                  ${hasMatchedSources ? `<p class="text-xs mt-2" style="color:var(--text-tertiary);">${th('ยอดโอนจริงถูกหักกลบกับรายการที่อีกฝ่ายจ่ายให้แล้ว จึงอาจไม่เท่ากับผลรวมรายการ','Recorded transfers are netted against prior payments, so this explanation may not add up to the transfer total.')}</p>` : ''}
                 </details>
               </div>`;
             }).join('')}
@@ -9440,19 +9379,19 @@ async function renderSettlement(params) {
     return `
       <div class="card p-5" id="settle-pending">
         <div class="flex items-center justify-between gap-2 mb-1 flex-wrap">
-          <h4 class="font-bold text-sm flex items-center gap-2">${icon('help-circle', 'w-4 h-4')} ${th('ยังไม่ระบุเจ้าภาพ','Payer not assigned')}
-            <span class="badge badge-pending text-[10px]">${pending.length}</span></h4>
-          <span class="font-bold text-sm">${moneyPair(total)}</span>
+          <h4 class="font-semibold text-sm flex items-center gap-2">${th('ยังไม่ระบุเจ้าภาพ','Payer not assigned')}
+            <span class="badge badge-pending text-xs">${pending.length}</span></h4>
+          <span class="font-semibold text-sm">${moneyPair(total)}</span>
         </div>
-        <p class="text-[11px] text-[var(--text-secondary)] mb-3">${th('รายการประมาณการที่ยังไม่มีใครอาสาสำรองจ่าย — ยังไม่ถูกนับในยอดเคลียร์ของใคร จนกว่าจะระบุผู้จ่าย','Estimated items nobody has fronted yet — excluded from everyone’s balance until a payer is assigned')}</p>
+        <p class="text-xs text-[var(--text-secondary)] mb-3">${th('รายการประมาณการที่ยังไม่มีใครอาสาสำรองจ่าย — ยังไม่ถูกนับในยอดเคลียร์ของใคร จนกว่าจะระบุผู้จ่าย','Estimated items nobody has fronted yet — excluded from everyone’s balance until a payer is assigned')}</p>
         <div class="space-y-2">
           ${pending.map(e => `
             <div class="pending-row">
               <div class="min-w-0 flex-1">
-                <div class="text-sm font-bold truncate">${escapeHtml(e.title || '')}</div>
-                <div class="text-[10.5px] text-[var(--text-tertiary)]">${escapeHtml(e.date || '')} • ${escapeHtml(categoryLabel(e.category || 'general', lang))} • ${th('หาร','split')} ${(e.allocations || []).filter(a => a.amountMinor > 0).length} ${th('คน','pax')}</div>
+                <div class="text-sm font-semibold truncate">${escapeHtml(e.title || '')}</div>
+                <div class="text-xs text-[var(--text-tertiary)]">${escapeHtml(shortDay(e.date))} • ${escapeHtml(categoryLabel(e.category || 'general', lang))} • ${th('หาร','split')} ${(e.allocations || []).filter(a => a.amountMinor > 0).length} ${th('คน','pax')}</div>
               </div>
-              <span class="text-sm font-bold flex-shrink-0">${moneyPair(e.netTotalMinor || 0)}</span>
+              <span class="text-sm font-semibold flex-shrink-0">${moneyPair(e.netTotalMinor || 0)}</span>
               <button class="btn btn-secondary btn-sm no-export flex-shrink-0" data-assign-payer="${escapeHtml(e.id)}" type="button">${icon('user-plus', 'w-3.5 h-3.5')} ${th('ระบุผู้จ่าย','Assign')}</button>
             </div>`).join('')}
         </div>
@@ -9463,15 +9402,15 @@ async function renderSettlement(params) {
   function cardsSummaryHtml() {
     const cards = cardSummary(state.expenses, state.membersMap);
     if (!cards.length) {
-      return `<div class="mt-4 p-3 rounded-xl text-[11px] flex items-center gap-2" style="background:var(--bg-secondary); color:var(--text-secondary);">
+      return `<div class="mt-4 p-3 rounded-xl text-xs flex items-center gap-2" style="background:var(--bg-secondary); color:var(--text-secondary);">
         ${icon('credit-card', 'w-3.5 h-3.5')} ${th('ยังไม่มีรายการที่ระบุชื่อบัตรเครดิต — เพิ่มชื่อบัตรตอนบันทึกค่าใช้จ่าย แล้วสรุปบัตรจะขึ้นที่นี่','No expenses name a credit card yet — add the card name when saving an expense and the summary appears here')}
       </div>`;
     }
     const total = cards.reduce((sum, c) => sum + c.totalMinor, 0);
     return `
       <div class="mt-5">
-        <h4 class="font-bold text-sm mb-3 flex items-center gap-2">${icon('credit-card', 'w-4 h-4')} ${th('สรุปบัตรเครดิต','Credit card summary')}
-          <span class="badge badge-planned text-[10px]">${cards.length}</span>
+        <h4 class="font-semibold text-sm mb-3 flex items-center gap-2">${th('สรุปบัตรเครดิต','Credit card summary')}
+          <span class="badge badge-planned text-xs">${cards.length}</span>
         </h4>
         <div class="card-summary-grid">
           ${cards.map(c => `
@@ -9498,8 +9437,8 @@ async function renderSettlement(params) {
     return `
       <section class="card p-5" id="settle-net">
         <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
-          <h4 class="font-bold text-sm flex items-center gap-2">${icon('arrow-left-right', 'w-4 h-4')} ${th('สรุปการโอน — ใครจ่ายใคร ได้คืนเท่าไร','Transfer summary — who pays whom')}</h4>
-          <span class="badge badge-planned text-[10px]">${state.transactions.length} ${th('รายการโอน','transfers')} • ${money(totalMove)}</span>
+          <h4 class="font-semibold text-sm flex items-center gap-2">${th('สรุปการโอน — ใครจ่ายใคร ได้คืนเท่าไร','Transfer summary — who pays whom')}</h4>
+          <span class="badge badge-planned text-xs">${state.transactions.length} ${th('รายการโอน','transfers')} • ${money(totalMove)}</span>
         </div>
         <div class="net-summary-grid">
           ${people.map(m => `
@@ -9544,7 +9483,7 @@ async function renderSettlement(params) {
     return `
       <section class="card p-5" id="settle-overview">
         <div class="settle-overview-header mb-4">
-          <h4 class="font-bold text-sm flex items-center gap-2">${icon('scale', 'w-4 h-4')} ${th('ภาพรวมทั้งทริป','Trip overview')}</h4>
+          <h4 class="font-semibold text-sm flex items-center gap-2">${th('ภาพรวมทั้งทริป','Trip overview')}</h4>
           <button class="settle-overview-toggle no-export ${overviewDetailsExpanded ? 'is-expanded' : ''}" data-overview-details-toggle type="button" aria-expanded="${overviewDetailsExpanded}" aria-controls="settle-overview-details">
             <span data-overview-toggle-label>${overviewDetailsExpanded ? th('ซ่อนรายการใต้การ์ด','Hide details below cards') : th('แสดงรายการใต้การ์ด','Show details below cards')}</span>
             ${icon('chevron-down', 'w-3.5 h-3.5 settle-overview-chevron')}
@@ -9558,7 +9497,7 @@ async function renderSettlement(params) {
         </div>
         <div class="settle-overview-credit-cards">${cardsSummaryHtml()}</div>
         <div id="settle-overview-details" class="settle-overview-details" ${overviewDetailsExpanded ? '' : 'hidden'}>
-          <h5 class="font-bold text-xs mb-2">${th('สรุปค่าใช้จ่ายแยกตามสมาชิก','Member expense breakdown')}</h5>
+          <h5 class="font-semibold text-xs mb-2">${th('สรุปค่าใช้จ่ายแยกตามสมาชิก','Member expense breakdown')}</h5>
           <table class="receipt-table">
             <thead><tr>
               <th>${th('สมาชิก','Member')}</th>
@@ -9768,8 +9707,8 @@ async function renderSettlement(params) {
           ${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" alt="" class="w-full h-full rounded-full object-cover">` : escapeHtml((m.displayName || '?').trim().charAt(0).toUpperCase())}
         </div>
         <div class="min-w-0">
-          <h3 class="font-bold text-base leading-tight" style="font-family:var(--font-display);">${escapeHtml(m.displayName)}</h3>
-          <p class="text-[11px] text-[var(--text-secondary)]">${th('ใบเสร็จทั้งหมดของคนนี้', 'This person’s full receipt')} • ${m.items.length} ${th('รายการ', 'items')}</p>
+          <h3 class="font-semibold text-base leading-tight" style="font-family:var(--font-display);">${escapeHtml(m.displayName)}</h3>
+          <p class="text-xs text-[var(--text-secondary)]">${th('ใบเสร็จทั้งหมดของคนนี้', 'This person’s full receipt')} • ${m.items.length} ${th('รายการ', 'items')}</p>
         </div>
         <button class="btn btn-ghost btn-sm no-export" id="rd-close" style="margin-left:auto;">${icon('x', 'w-4 h-4')}</button>
       </div>
@@ -10010,12 +9949,12 @@ async function renderSettlement(params) {
     return `
       <div class="card p-5 debt-map-card">
         <div class="flex items-start justify-between gap-2 mb-3 flex-wrap">
-          <h3 class="font-bold flex items-center gap-2">
+          <h3 class="font-semibold flex items-center gap-2">
             <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('network', 'w-4 h-4')}</span>
             ${th('แผนที่หนี้ — เส้นเดียวต่อการโอนหนึ่งครั้ง', 'Debt map — one line per transfer')}
-            <span class="badge badge-planned text-[10px]">${txns.length} ${th('รายการ', 'transfers')}</span>
+            <span class="badge badge-planned text-xs">${txns.length} ${th('รายการ', 'transfers')}</span>
           </h3>
-          <span class="text-[10px] text-[var(--text-tertiary)]">${th('เส้นชี้จากผู้จ่ายไปยังผู้รับ • สีเส้นเป็นสีของผู้รับเงิน • กดชื่อเพื่อดูรายการค่าใช้จ่าย', 'Lines point from payer to receiver • each line uses the receiver’s colour • tap a name for the expense list')}</span>
+          <span class="text-xs text-[var(--text-tertiary)]">${th('เส้นชี้จากผู้จ่ายไปยังผู้รับ • สีเส้นเป็นสีของผู้รับเงิน • กดชื่อเพื่อดูรายการค่าใช้จ่าย', 'Lines point from payer to receiver • each line uses the receiver’s colour • tap a name for the expense list')}</span>
         </div>
         <div class="debt-map-legend">
           <span class="debt-legend-item is-out">${icon('circle-arrow-up', 'w-3 h-3')} ${th('จ่ายเงิน (ลูกศรออก)', 'Pays (arrow out)')}</span>
@@ -10239,8 +10178,8 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
       <div class="flex items-center gap-3">
         <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('layout-grid', 'w-5 h-5')}</div>
         <div>
-          <h3 class="font-bold text-base" style="font-family: var(--font-display);">${th('จัดการกลุ่มค่าใช้จ่าย','Expense groups')}</h3>
-          <p class="text-[11px] text-[var(--text-tertiary)]">${th('เพิ่ม/แก้ไข/ลบกลุ่มของทริปนี้ได้','Add, edit or delete groups for this trip')}</p>
+          <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${th('จัดการกลุ่มค่าใช้จ่าย','Expense groups')}</h3>
+          <p class="text-xs text-[var(--text-tertiary)]">${th('เพิ่ม/แก้ไข/ลบกลุ่มของทริปนี้ได้','Add, edit or delete groups for this trip')}</p>
         </div>
       </div>
       <div id="category-note" class="hidden"></div>
@@ -10261,7 +10200,7 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
     const offline = categoriesLoadDenied() || localCategoryPending(tripId);
     const note = sheet.sheet.querySelector('#category-note');
     if (note) {
-      note.className = offline ? 'text-[11px] p-2.5 rounded-xl mb-2' : 'hidden';
+      note.className = offline ? 'text-xs p-2.5 rounded-xl mb-2' : 'hidden';
       note.innerHTML = offline
         ? `${icon('alert-triangle', 'w-3.5 h-3.5')} ${th('ยังไม่ได้ Publish firestore.rules — กลุ่มที่เพิ่ม/แก้ตอนนี้จะถูกเก็บไว้ในเครื่องนี้ก่อน แล้วค่อยซิงก์เมื่อกฎพร้อม', 'firestore.rules is not published yet — groups you add now are kept on this device and sync once the rules are live')}`
         : '';
@@ -10275,7 +10214,7 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
         </span>
         <div class="min-w-0 flex-1">
           <div class="font-semibold text-xs truncate">${escapeHtml(lang === 'th' ? (c.th || c.en) : (c.en || c.th))}</div>
-          <div class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(c.id)}${isCustomCategory(c.id) ? ` • ${th('กลุ่มของทริป','trip group')}` : ` • ${th('พื้นฐาน','built-in')}`}</div>
+          <div class="text-xs text-[var(--text-tertiary)]">${escapeHtml(c.id)}${isCustomCategory(c.id) ? ` • ${th('กลุ่มของทริป','trip group')}` : ` • ${th('พื้นฐาน','built-in')}`}</div>
         </div>
         <button class="icon-btn" data-cat-edit="${escapeHtml(c.id)}" title="${th('แก้ไข','Edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
         <button class="icon-btn icon-btn-danger" data-cat-del="${escapeHtml(c.id)}" title="${th('ลบ','Delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
@@ -10316,7 +10255,7 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
     const isNew = !id;
     const editor = showBottomSheet(`
       <div class="space-y-3">
-        <h3 class="font-bold text-base">${isNew ? th('เพิ่มกลุ่มค่าใช้จ่าย','New expense group') : th('แก้ไขกลุ่มค่าใช้จ่าย','Edit expense group')}</h3>
+        <h3 class="font-semibold text-base">${isNew ? th('เพิ่มกลุ่มค่าใช้จ่าย','New expense group') : th('แก้ไขกลุ่มค่าใช้จ่าย','Edit expense group')}</h3>
         <div class="grid grid-cols-2 gap-3">
           <div class="input-group"><label class="input-label">${th('ชื่อ (ไทย)','Name (Thai)')}</label><input id="cat-th" class="input" value="${escapeHtml(existing?.th || '')}" placeholder="${th('เช่น ค่ามาสสาจ','e.g. Massage')}"></div>
           <div class="input-group"><label class="input-label">${th('ชื่อ (อังกฤษ)','Name (English)')}</label><input id="cat-en" class="input" value="${escapeHtml(existing?.en || '')}" placeholder="Massage"></div>
@@ -10354,7 +10293,7 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
       box.innerHTML = `
         <span class="row-icon" style="width:32px;height:32px;border-radius:10px;background:${pick.color}22;color:${pick.color};">${icon(pick.icon, 'w-4 h-4')}</span>
         <div class="min-w-0"><div class="font-semibold text-xs">${escapeHtml(lang === 'th' ? labelTh : labelEn)}</div>
-        <div class="text-[10px] text-[var(--text-tertiary)]">${th('ตัวอย่างป้ายในรายการ','Preview in lists')}</div></div>`;
+        <div class="text-xs text-[var(--text-tertiary)]">${th('ตัวอย่างป้ายในรายการ','Preview in lists')}</div></div>`;
       queueIcons();
     };
     paintPreview();
@@ -10420,8 +10359,8 @@ function openCardManager(tripId, { members = [], onSaved = null } = {}) {
       <div class="flex items-center gap-3">
         <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('credit-card', 'w-5 h-5')}</div>
         <div class="min-w-0">
-          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${th('บัตรเครดิตของทริป', 'Trip credit cards')}</h3>
-          <p class="text-[11px] text-[var(--text-secondary)]">${th('เพิ่ม / แก้ไข / ลบ — ฟอร์มค่าใช้จ่ายจะเลือกได้จากบัตรที่ตั้งไว้เท่านั้น', 'Add / edit / delete — expense forms can only pick from these cards')}</p>
+          <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('บัตรเครดิตของทริป', 'Trip credit cards')}</h3>
+          <p class="text-xs text-[var(--text-secondary)]">${th('เพิ่ม / แก้ไข / ลบ — ฟอร์มค่าใช้จ่ายจะเลือกได้จากบัตรที่ตั้งไว้เท่านั้น', 'Add / edit / delete — expense forms can only pick from these cards')}</p>
         </div>
       </div>
 
@@ -10429,18 +10368,18 @@ function openCardManager(tripId, { members = [], onSaved = null } = {}) {
 
       <div class="p-3 rounded-xl space-y-3" style="background:var(--bg-secondary); border:1px solid var(--border);">
         <div class="flex items-center justify-between">
-          <label class="input-label text-[12px] m-0" id="card-form-title">${icon('plus', 'w-3.5 h-3.5')} ${th('เพิ่มบัตร', 'Add card')}</label>
-          <button type="button" id="card-edit-cancel" class="link-btn text-[11px] hidden">${th('ยกเลิกการแก้ไข', 'Cancel edit')}</button>
+          <label class="input-label text-[12px] m-0" id="card-form-title">${th('เพิ่มบัตร', 'Add card')}</label>
+          <button type="button" id="card-edit-cancel" class="link-btn text-xs hidden">${th('ยกเลิกการแก้ไข', 'Cancel edit')}</button>
         </div>
-        <div class="input-group"><label class="input-label text-[11px]">${th('ชื่อบัตร', 'Card name')} *</label>
+        <div class="input-group"><label class="input-label text-xs">${th('ชื่อบัตร', 'Card name')} *</label>
           <input id="card-name" class="input" autocomplete="off" placeholder="${th('เช่น KBank Visa','e.g. KBank Visa')}" maxlength="60"></div>
         <div class="grid grid-cols-2 gap-2">
-          <div class="input-group"><label class="input-label text-[11px]">${th('ธนาคาร (ไม่บังคับ)', 'Bank (optional)')}</label>
+          <div class="input-group"><label class="input-label text-xs">${th('ธนาคาร (ไม่บังคับ)', 'Bank (optional)')}</label>
             <input id="card-bank" class="input" autocomplete="off" placeholder="KBank" maxlength="40"></div>
-          <div class="input-group"><label class="input-label text-[11px]">${th('เลข 4 ตัวท้าย', 'Last 4 digits')}</label>
+          <div class="input-group"><label class="input-label text-xs">${th('เลข 4 ตัวท้าย', 'Last 4 digits')}</label>
             <input id="card-last4" class="input" inputmode="numeric" maxlength="4" placeholder="4321"></div>
         </div>
-        <div class="input-group"><label class="input-label text-[11px]">${icon('user', 'w-3 h-3')} ${th('เจ้าของบัตร', 'Card holder')}</label>
+        <div class="input-group"><label class="input-label text-xs">${th('เจ้าของบัตร', 'Card holder')}</label>
           <select id="card-holder" class="input">
             <option value="">${th('— ไม่ระบุ —', '— none —')}</option>
             ${members.map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.displayName)}</option>`).join('')}
@@ -10456,7 +10395,7 @@ function openCardManager(tripId, { members = [], onSaved = null } = {}) {
     const list = sheet.sheet.querySelector('#card-list');
     if (!list) return;
     if (!cards.length) {
-      list.innerHTML = `<div class="p-3 rounded-xl text-[11px] flex items-center gap-2" style="border:1px dashed var(--border); color:var(--text-secondary);">
+      list.innerHTML = `<div class="p-3 rounded-xl text-xs flex items-center gap-2" style="border:1px dashed var(--border); color:var(--text-secondary);">
         ${icon('credit-card', 'w-3.5 h-3.5')} ${th('ยังไม่มีบัตรในทริปนี้ — เพิ่มบัตรแรกด้านล่าง แล้วทุกฟอร์มจะเลือกจากที่นี่', 'No cards yet — add the first one below')}</div>`;
       queueIcons();
       return;
@@ -10465,8 +10404,8 @@ function openCardManager(tripId, { members = [], onSaved = null } = {}) {
       <div class="card-row" data-card="${escapeHtml(c.id)}">
         <span class="row-icon" style="width:34px;height:34px;border-radius:11px;background:var(--primary-light);color:var(--primary-strong);flex-shrink:0;">${icon('credit-card', 'w-4 h-4')}</span>
         <div class="min-w-0 flex-1">
-          <div class="text-sm font-bold truncate">${escapeHtml(tripCardLabel(c))}</div>
-          <div class="text-[10.5px] text-[var(--text-tertiary)] truncate">${escapeHtml([c.bank, holderName(c.holderId || c.id) ? th('เจ้าของ', 'holder') + ': ' + holderName(c.holderId || c.id) : ''].filter(Boolean).join(' • ') || th('ไม่ระบุเจ้าของ', 'no holder'))}</div>
+          <div class="text-sm font-semibold truncate">${escapeHtml(tripCardLabel(c))}</div>
+          <div class="text-xs text-[var(--text-tertiary)] truncate">${escapeHtml([c.bank, holderName(c.holderId || c.id) ? th('เจ้าของ', 'holder') + ': ' + holderName(c.holderId || c.id) : ''].filter(Boolean).join(' • ') || th('ไม่ระบุเจ้าของ', 'no holder'))}</div>
         </div>
         <button type="button" class="icon-btn" data-card-edit="${escapeHtml(c.id)}" title="${th('แก้ไข', 'Edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
         <button type="button" class="icon-btn icon-btn-danger" data-card-del="${escapeHtml(c.id)}" title="${th('ลบ', 'Delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
@@ -10568,46 +10507,46 @@ function openMemberForm(tripId, member = null, { onSaved, canSetRoles = true } =
       <div class="flex items-center gap-3">
         <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon(isEdit ? 'user-cog' : 'user-plus', 'w-5 h-5')}</div>
         <div class="min-w-0">
-          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขสมาชิก','Edit member') : th('เพิ่มสมาชิก','Add member')}</h3>
-          <p class="text-[11px] text-[var(--text-secondary)]">${isEdit ? escapeHtml(m.displayName || '') : th('กรอกชื่อ แล้วให้สมาชิกเข้าสู่ระบบด้วยบัญชี Google/อีเมลของตัวเอง','Add a name — the member signs in with their own Google/email account')}</p>
+          <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขสมาชิก','Edit member') : th('เพิ่มสมาชิก','Add member')}</h3>
+          <p class="text-xs text-[var(--text-secondary)]">${isEdit ? escapeHtml(m.displayName || '') : th('กรอกชื่อ แล้วให้สมาชิกเข้าสู่ระบบด้วยบัญชี Google/อีเมลของตัวเอง','Add a name — the member signs in with their own Google/email account')}</p>
         </div>
       </div>
       <form id="member-form" class="space-y-3">
-        <div class="input-group"><label class="input-label">${icon('user', 'w-3.5 h-3.5')} ${th('ชื่อที่แสดง','Display name')} *</label><input id="m-name" class="input" required autocomplete="off" value="${escapeHtml(m.displayName || '')}" placeholder="${th('เช่น นุ่น','e.g. Nun')}"></div>
+        <div class="input-group"><label class="input-label">${th('ชื่อที่แสดง','Display name')} *</label><input id="m-name" class="input" required autocomplete="off" value="${escapeHtml(m.displayName || '')}" placeholder="${th('เช่น นุ่น','e.g. Nun')}"></div>
         <div class="input-group">
-          <label class="input-label">${icon('mail', 'w-3.5 h-3.5')} ${th('อีเมล (ไม่บังคับ)','Email (optional)')}</label>
+          <label class="input-label">${th('อีเมล (ไม่บังคับ)','Email (optional)')}</label>
           <input id="m-email" class="input" type="email" autocomplete="off" value="${escapeHtml(m.email || '')}" placeholder="friend@example.com">
           <p class="input-hint">${th('สมาชิกเข้าสู่ระบบด้วยบัญชี Google/อีเมลของตัวเอง แล้วขอเข้าร่วมทริปด้วยรหัสเชิญ','Members sign in with their own Google/email account and join with the trip code.')}</p>
         </div>
         <div class="grid grid-cols-2 gap-3">
-          <div class="input-group"><label class="input-label">${icon('shield', 'w-3.5 h-3.5')} ${th('บทบาท','Role')}</label>
+          <div class="input-group"><label class="input-label">${th('บทบาท','Role')}</label>
             <select id="m-role" class="input" ${canSetRoles ? '' : 'disabled'}>
               ${MEMBER_ROLES.map(r => `<option value="${r.id}" ${(m.role || 'member') === r.id ? 'selected' : ''}>${lang==='th'?r.th:r.en}</option>`).join('')}
             </select>
           </div>
-          <div class="input-group"><label class="input-label">${icon('palette', 'w-3.5 h-3.5')} ${th('สีประจำตัว','Color')}</label><input id="m-color" type="color" value="${m.color || brandPrimary()}" class="w-full h-11 rounded-xl cursor-pointer border" style="border-color:var(--border);"></div>
+          <div class="input-group"><label class="input-label">${th('สีประจำตัว','Color')}</label><input id="m-color" type="color" value="${m.color || brandPrimary()}" class="w-full h-11 rounded-xl cursor-pointer border" style="border-color:var(--border);"></div>
         </div>
-        <div class="input-group"><label class="input-label">${icon('image', 'w-3.5 h-3.5')} ${th('รูปโปรไฟล์ (URL)','Photo URL')}</label><input id="m-photo" class="input" placeholder="https://..." autocomplete="off" value="${escapeHtml(m.photoURL || '')}"></div>
+        <div class="input-group"><label class="input-label">${th('รูปโปรไฟล์ (URL)','Photo URL')}</label><input id="m-photo" class="input" placeholder="https://..." autocomplete="off" value="${escapeHtml(m.photoURL || '')}"></div>
         ${isEdit ? `
-        <div class="input-group"><label class="input-label">${icon('toggle-right', 'w-3.5 h-3.5')} ${th('สถานะ','Status')}</label>
+        <div class="input-group"><label class="input-label">${th('สถานะ','Status')}</label>
           <select id="m-status" class="input">
             <option value="active" ${(m.status || 'active') === 'active' ? 'selected' : ''}>${th('ใช้งาน','Active')}</option>
             <option value="disabled" ${m.status === 'disabled' ? 'selected' : ''}>${th('ระงับการใช้งาน','Disabled')}</option>
           </select>
         </div>` : ''}
         <div class="p-3 rounded-xl space-y-2" style="background:var(--bg-secondary); border:1px solid var(--border);">
-          <p class="text-xs font-bold flex items-center gap-1.5">${icon('key-round', 'w-3.5 h-3.5')} ${th('สิทธิ์การใช้งาน','Permissions')}</p>
+          <p class="text-xs font-semibold flex items-center gap-1.5">${icon('key-round', 'w-3.5 h-3.5')} ${th('สิทธิ์การใช้งาน','Permissions')}</p>
           <label class="flex items-center gap-2 text-xs cursor-pointer"><input id="m-perm-itinerary" type="checkbox" class="accent-[var(--primary)] w-4 h-4" ${(m.permissions?.canEditItinerary ?? true) ? 'checked' : ''}> ${th('แก้ไขแผนการเดินทาง','Edit itinerary')}</label>
           <label class="flex items-center gap-2 text-xs cursor-pointer"><input id="m-perm-expense" type="checkbox" class="accent-[var(--primary)] w-4 h-4" ${(m.permissions?.canEditExpense ?? true) ? 'checked' : ''}> ${th('แก้ไขค่าใช้จ่าย','Edit expenses')}</label>
           <label class="flex items-center gap-2 text-xs cursor-pointer"><input id="m-perm-manage" type="checkbox" class="accent-[var(--primary)] w-4 h-4" ${m.permissions?.canManageMembers ? 'checked' : ''}> ${th('จัดการสมาชิก','Manage members')}</label>
-          ${canSetRoles ? '' : `<p class="text-[10px] text-[var(--text-tertiary)]">${th('บทบาทและสิทธิ์แก้ได้เฉพาะผู้ดูแลทริป — คุณแก้ชื่อ/รูป/สถานะได้','Only a trip admin can change the role and the permissions — you can still edit the name, photo and status.')}</p>`}
+          ${canSetRoles ? '' : `<p class="text-xs text-[var(--text-tertiary)]">${th('บทบาทและสิทธิ์แก้ได้เฉพาะผู้ดูแลทริป — คุณแก้ชื่อ/รูป/สถานะได้','Only a trip admin can change the role and the permissions — you can still edit the name, photo and status.')}</p>`}
         </div>
         <div class="flex gap-2">
           <button type="submit" id="m-submit" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${isEdit ? t('save') : t('add')}</button>
           ${isEdit ? `<button type="button" id="m-delete" class="btn" style="background:var(--danger-bg);color:var(--danger);border:1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
         </div>
         ${isEdit ? `
-          <div class="p-3 rounded-xl text-[11px] flex items-start gap-2" style="background:var(--bg-secondary); border:1px solid var(--border);">
+          <div class="p-3 rounded-xl text-xs flex items-start gap-2" style="background:var(--bg-secondary); border:1px solid var(--border);">
             ${icon('info', 'w-3.5 h-3.5 mt-0.5')}
             <span>${m.authType === 'account'
               ? th('สมาชิกคนนี้ล็อกอินด้วยบัญชี Google/อีเมลของตัวเอง และเข้าถึงทริปนี้ได้ทันที','This member signs in with their own Google/email account and already has access.')
@@ -10732,7 +10671,7 @@ async function renderMembers(params) {
       <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div>
           ${renderPageScene('members', { lang, title: `${icon('users', 'w-5 h-5')} ${t('members')}`,
-            subtitle: `${th('บทบาทของคุณ','Your role')}: <b>${escapeHtml(perms.role)}</b> • ${th('สมาชิกล็อกอินด้วย Google/อีเมล แล้วขอเข้าร่วมทริปได้','members sign in with Google/email and request to join')}` })}
+            subtitle: `${th('บทบาทของคุณ','Your role')}: <b>${escapeHtml(roleLabel(perms.role, lang))}</b> • ${th('สมาชิกล็อกอินด้วย Google/อีเมล แล้วขอเข้าร่วมทริปได้','members sign in with Google/email and request to join')}` })}
         </div>
         ${canApprove
           ? `<button id="add-member-btn" class="btn btn-primary btn-sm">${icon('user-plus', 'w-4 h-4')} ${th('เพิ่มสมาชิก','Add member')}</button>`
@@ -10740,7 +10679,7 @@ async function renderMembers(params) {
       </div>
 
       <div class="card p-5 space-y-3 mb-5" id="account-members-card">
-        <h3 class="font-bold flex items-center gap-2">${icon('user-check', 'w-4 h-4')} ${th('สมาชิกที่ล็อกอินด้วยบัญชี (Google / อีเมล)','Members with an account (Google / email)')}</h3>
+        <h3 class="font-semibold flex items-center gap-2">${icon('user-check', 'w-4 h-4')} ${th('สมาชิกที่ล็อกอินด้วยบัญชี (Google / อีเมล)','Members with an account (Google / email)')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('สมาชิกสมัครบัญชีเองได้ แล้วส่งคำขอเข้าร่วมด้วยรหัสเชิญ — แอดมินกดอนุมัติได้เลย (ไม่ต้องใช้ Cloud Functions)','Members create their own account and ask to join with the invite code — approve them here (no Cloud Functions needed).')}</p>
         <div id="join-requests" class="space-y-2"><div class="skeleton h-10"></div></div>
         <div class="btn-row">
@@ -10751,17 +10690,17 @@ async function renderMembers(params) {
       <div class="card p-5 space-y-3 mb-5" id="groups-card">
         <div class="flex flex-wrap items-start justify-between gap-2">
           <div class="min-w-0">
-            <h3 class="font-bold flex items-center gap-2">${icon('users-round', 'w-4 h-4')} ${th('กลุ่มย่อยในทริป','Trip sub-groups')}
-              <span class="badge badge-planned text-[10px]" id="groups-count">0</span></h3>
+            <h3 class="font-semibold flex items-center gap-2">${icon('users-round', 'w-4 h-4')} ${th('กลุ่มย่อยในทริป','Trip sub-groups')}
+              <span class="badge badge-planned text-xs" id="groups-count">0</span></h3>
             <p class="text-xs text-[var(--text-secondary)] mt-0.5">${th('จัดแก๊งเพื่อนเป็นกลุ่ม A / B — ใครกลับก่อน ใครมาเที่ยวช่วงหลัง แล้วดูงบประมาณแยกกลุ่มได้','Split the gang into groups A / B — who leaves early, who joins later — and read the budget per group.')}</p>
           </div>
-          ${canManageGroups ? `<button id="add-group-btn" class="btn btn-primary btn-sm">${icon('plus', 'w-4 h-4')} ${th('เพิ่มกลุ่ม','New group')}</button>` : ''}
+          ${canManageGroups ? `<button id="add-group-btn" class="btn btn-secondary btn-sm">${icon('plus', 'w-4 h-4')} ${th('เพิ่มกลุ่ม','New group')}</button>` : ''}
         </div>
         <div id="groups-board" class="groups-board"><div class="skeleton h-16"></div></div>
         <div id="groups-budget"></div>
       </div>
 
-      <div id="members-list" class="grid gap-3 stagger"></div>
+      <div id="members-list" class="people-list"></div>
     </div>
   `;
   queueIcons();
@@ -10771,32 +10710,32 @@ async function renderMembers(params) {
     const box = document.getElementById('join-requests');
     if (!box) return;
     if (!canApprove) {
-      box.innerHTML = `<p class="text-[11px] text-[var(--text-tertiary)]">${th('เฉพาะแอดมินทริปเท่านั้นที่ดูคำขอเข้าร่วมได้','Only trip admins can see join requests.')}</p>`;
+      box.innerHTML = `<p class="text-xs text-[var(--text-tertiary)]">${th('เฉพาะแอดมินทริปเท่านั้นที่ดูคำขอเข้าร่วมได้','Only trip admins can see join requests.')}</p>`;
       return;
     }
     box.innerHTML = `<div class="skeleton h-10"></div>`;
     let requests = [];
     try { requests = await listJoinRequests(tripId); } catch (e) {
-      box.innerHTML = `<p class="text-[11px]" style="color:var(--danger);">${escapeHtml(e.message)}</p>`;
+      box.innerHTML = `<p class="text-xs" style="color:var(--danger);">${escapeHtml(e.message)}</p>`;
       return;
     }
     if (isStale(token)) return;
     const pending = requests.filter(r => r.status !== 'rejected');
     box.innerHTML = pending.length ? pending.map(r => `
       <div class="diag-row" data-request="${escapeHtml(r.uid || r.id)}">
-        <div class="w-9 h-9 rounded-full grid place-items-center overflow-hidden flex-shrink-0 text-xs font-bold text-white" style="background:var(--gradient-primary);">
+        <div class="w-9 h-9 rounded-full grid place-items-center overflow-hidden flex-shrink-0 text-xs font-semibold text-white" style="background:var(--gradient-primary);">
           ${r.photoURL ? `<img decoding="async" src="${escapeHtml(r.photoURL)}" class="w-full h-full object-cover rounded-full" alt="">` : escapeHtml(getInitials(r.displayName || 'M'))}
         </div>
         <div class="min-w-0 flex-1">
           <div class="font-semibold truncate">${escapeHtml(r.displayName || 'Member')}</div>
-          <div class="text-[11px] text-[var(--text-secondary)] truncate">${escapeHtml(r.email || '')}</div>
+          <div class="text-xs text-[var(--text-secondary)] truncate">${escapeHtml(r.email || '')}</div>
         </div>
         <div class="btn-row" style="grid-template-columns: repeat(2, minmax(0,1fr)); max-width:200px;">
           <button class="btn btn-primary btn-sm" data-approve="${escapeHtml(r.uid || r.id)}">${icon('check', 'w-3.5 h-3.5')} ${th('อนุมัติ','Approve')}</button>
           <button class="btn btn-ghost btn-sm" data-reject="${escapeHtml(r.uid || r.id)}">${th('ปฏิเสธ','Decline')}</button>
         </div>
       </div>`).join('') : `
-      <p class="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1.5">${icon('inbox', 'w-3.5 h-3.5')} ${th('ยังไม่มีคำขอเข้าร่วม — แชร์รหัสเชิญให้เพื่อนได้ที่หน้าตั้งค่า','No pending requests — share the invite code from Settings.')}</p>`;
+      <p class="text-xs text-[var(--text-tertiary)] flex items-center gap-1.5">${icon('inbox', 'w-3.5 h-3.5')} ${th('ยังไม่มีคำขอเข้าร่วม — แชร์รหัสเชิญให้เพื่อนได้ที่หน้าตั้งค่า','No pending requests — share the invite code from Settings.')}</p>`;
 
     box.querySelectorAll('[data-approve]').forEach(btn => btn.addEventListener('click', async () => {
       const req = pending.find(x => (x.uid || x.id) === btn.dataset.approve);
@@ -10902,36 +10841,36 @@ async function renderMembers(params) {
         return;
       }
       list.innerHTML = members.map(m => `
-        <div class="card card-hover p-4 flex items-center justify-between gap-3" data-member="${m.id}">
+        <div class="card people-row" data-member="${m.id}">
           <div class="flex items-center gap-3 min-w-0">
-            <div class="w-11 h-11 rounded-full grid place-items-center text-sm font-bold text-white flex-shrink-0 overflow-hidden" style="background:${m.color || 'var(--primary)'}">
+            <div class="people-avatar" style="background:${m.color || 'var(--primary)'}">
               ${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}
             </div>
             <div class="min-w-0">
-              <div class="font-semibold text-sm flex items-center gap-2">
+              <div class="people-name">
                 <span class="truncate">${escapeHtml(m.displayName || 'Member')}</span>
-                ${m.id === currentUser.uid ? `<span class="text-[10px] px-2 py-0.5 rounded-full text-white flex-shrink-0" style="background:var(--gradient-primary);">${th('คุณ','You')}</span>` : ''}
+                ${m.id === currentUser.uid ? `<span class="you-badge">${th('คุณ','You')}</span>` : ''}
               </div>
-              <div class="meta-line mt-0.5 flex-wrap">
-                ${icon(m.status === 'disabled' ? 'user-x' : 'circle-check', 'w-3 h-3')} ${escapeHtml(m.status || 'active')}
-                ${m.username ? ` • ${icon('at-sign', 'w-3 h-3')} ${escapeHtml(m.username)}` : ''}
-                ${m.authType === 'account' ? ` • <span style="color:var(--success);">${icon('shield-check','w-3 h-3')} ${th('บัญชี Google/อีเมล','Google/email account')}</span>` : ''}
-                ${m.email ? ` • ${escapeHtml(m.email)}` : ''}
-                ${m.authType === 'local' ? ` • <span style="color:var(--warning);">${th('ไม่มีล็อกอิน','no login')}</span>` : ''}
-              </div>
-              ${memberGroupBadges(groups, m.id).length ? `<div class="flex items-center gap-1.5 mt-1 flex-wrap" data-member-groups>
-                ${memberGroupBadges(groups, m.id).map(b => `<span class="badge text-[10px]" style="background:color-mix(in srgb, ${escapeHtml(b.color)} 18%, var(--surface)); border:1px solid color-mix(in srgb, ${escapeHtml(b.color)} 45%, transparent); color:color-mix(in srgb, ${escapeHtml(b.color)} 72%, var(--text-strong));">${icon(b.icon || 'users', 'w-2.5 h-2.5')} ${escapeHtml(b.name)}</span>`).join('')}
+              <div class="people-sub">${[
+                escapeHtml(memberStateLabel(m.status, lang)),
+                m.username ? `@${escapeHtml(m.username)}` : '',
+                m.authType === 'account' ? th('บัญชี Google/อีเมล','Google/email account') : '',
+                m.email ? escapeHtml(m.email) : '',
+                m.authType === 'local' ? th('ไม่มีล็อกอิน','no login') : ''
+              ].filter(Boolean).join(' · ')}</div>
+              ${memberGroupBadges(groups, m.id).length ? `<div class="people-groups" data-member-groups>
+                ${memberGroupBadges(groups, m.id).map(b => `<span class="group-tag"><span class="group-tag-dot" style="background:${escapeHtml(b.color)}"></span>${escapeHtml(b.name)}</span>`).join('')}
               </div>` : ''}
-              <div class="flex items-center gap-1.5 mt-1 flex-wrap">
-                <span class="badge badge-planned text-[10px]">${icon(ROLE_ICONS[m.role] || 'user', 'w-2.5 h-2.5')} ${escapeHtml(m.role || 'member')}</span>
-                ${m.permissions?.canEditExpense ? `<span class="badge badge-planned text-[10px]">${icon('wallet', 'w-2.5 h-2.5')} ${th('แก้ค่าใช้จ่าย','expenses')}</span>` : ''}
-                ${m.permissions?.canManageMembers ? `<span class="badge badge-planned text-[10px]">${icon('shield', 'w-2.5 h-2.5')} ${th('จัดการสมาชิก','manage')}</span>` : ''}
-              </div>
+              <div class="people-tags">${[
+                escapeHtml(roleLabel(m.role, lang)),
+                m.permissions?.canEditExpense ? th('แก้ค่าใช้จ่ายได้','can edit expenses') : '',
+                m.permissions?.canManageMembers ? th('จัดการสมาชิกได้','can manage members') : ''
+              ].filter(Boolean).join(' · ')}</div>
             </div>
           </div>
-          <div class="flex items-center gap-1 flex-shrink-0">
-            <button class="icon-btn" data-act="edit" data-id="${m.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
-            <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${m.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
+          <div class="people-actions">
+            <button class="icon-btn" data-act="edit" data-id="${m.id}" title="${t('edit')}" aria-label="${t('edit')} ${escapeHtml(m.displayName || '')}">${icon('pencil', 'w-4 h-4')}</button>
+            <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${m.id}" title="${t('delete')}" aria-label="${t('delete')} ${escapeHtml(m.displayName || '')}">${icon('trash-2', 'w-4 h-4')}</button>
           </div>
         </div>
       `).join('');
@@ -10972,8 +10911,8 @@ async function renderMembers(params) {
         <div class="groups-empty">
           ${icon('users-round', 'w-5 h-5')}
           <div class="min-w-0">
-            <p class="text-xs font-bold">${th('ยังไม่มีกลุ่มย่อย','No sub-groups yet')}</p>
-            <p class="text-[11px] text-[var(--text-secondary)]">${th('กด “เพิ่มกลุ่ม” เพื่อตั้งกลุ่ม A / B แล้วเลือกสมาชิกในกลุ่ม (แก้ไข/ลบได้ตลอด)','Tap “New group”, name it A / B and pick its members (edit or delete any time).')}</p>
+            <p class="text-xs font-semibold">${th('ยังไม่มีกลุ่มย่อย','No sub-groups yet')}</p>
+            <p class="text-xs text-[var(--text-secondary)]">${th('กด “เพิ่มกลุ่ม” เพื่อตั้งกลุ่ม A / B แล้วเลือกสมาชิกในกลุ่ม (แก้ไข/ลบได้ตลอด)','Tap “New group”, name it A / B and pick its members (edit or delete any time).')}</p>
           </div>
         </div>`;
       if (budgetBox) budgetBox.innerHTML = '';
@@ -11001,7 +10940,7 @@ async function renderMembers(params) {
               <span class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
               <span class="group-person-name">${escapeHtml((m.displayName || '').split(' ')[0])}</span>
             </span>`).join('')
-            : `<span class="text-[11px] text-[var(--text-tertiary)]">${th('ยังไม่ได้เลือกสมาชิก','No members picked yet')}</span>`}
+            : `<span class="text-xs text-[var(--text-tertiary)]">${th('ยังไม่ได้เลือกสมาชิก','No members picked yet')}</span>`}
         </div>
       </article>`;
     }).join('');
@@ -11044,8 +10983,8 @@ async function renderMembers(params) {
     box.innerHTML = `
       <div class="group-budget mt-4">
         <div class="flex items-center justify-between gap-2 flex-wrap mb-2">
-          <h4 class="font-bold text-sm flex items-center gap-2">${icon('chart-pie', 'w-4 h-4')} ${th('งบประมาณรายกลุ่ม','Budget per group')}</h4>
-          <span class="text-[10px] text-[var(--text-tertiary)]">${th('ค่าใช้จ่ายจริง + ประมาณการ (ตามยอดที่หารกัน)','Actual + estimated, by allocation')}</span>
+          <h4 class="font-semibold text-sm flex items-center gap-2">${icon('chart-pie', 'w-4 h-4')} ${th('งบประมาณรายกลุ่ม','Budget per group')}</h4>
+          <span class="text-xs text-[var(--text-tertiary)]">${th('ค่าใช้จ่ายจริง + ประมาณการ (ตามยอดที่หารกัน)','Actual + estimated, by allocation')}</span>
         </div>
         <div class="group-budget-table">
           <div class="group-budget-row group-budget-row--head">
@@ -11074,7 +11013,7 @@ async function renderMembers(params) {
             <span class="num">100%</span>
           </div>
         </div>
-        ${report.ungrouped.length ? `<p class="text-[11px] text-[var(--text-secondary)] mt-2">${icon('user-plus', 'w-3 h-3')} ${th('ยังไม่อยู่ในกลุ่ม','Not in any group')}: ${report.ungrouped.map(m => escapeHtml(m.displayName || '')).join(', ')}</p>` : ''}
+        ${report.ungrouped.length ? `<p class="text-xs text-[var(--text-secondary)] mt-2">${icon('user-plus', 'w-3 h-3')} ${th('ยังไม่อยู่ในกลุ่ม','Not in any group')}: ${report.ungrouped.map(m => escapeHtml(m.displayName || '')).join(', ')}</p>` : ''}
       </div>`;
     queueIcons();
   }
@@ -11096,29 +11035,29 @@ async function renderMembers(params) {
         <div class="flex items-center gap-3">
           <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('users-round', 'w-5 h-5')}</div>
           <div>
-            <h3 class="font-bold text-base" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขกลุ่มย่อย','Edit sub-group') : th('เพิ่มกลุ่มย่อย','New sub-group')}</h3>
-            <p class="text-[11px] text-[var(--text-tertiary)]">${th('ตั้งชื่อกลุ่ม แล้วเลือกสมาชิก (เลือกซ้ำได้หลายกลุ่ม)','Name the group, then pick its members (one person can be in several groups).')}</p>
+            <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขกลุ่มย่อย','Edit sub-group') : th('เพิ่มกลุ่มย่อย','New sub-group')}</h3>
+            <p class="text-xs text-[var(--text-tertiary)]">${th('ตั้งชื่อกลุ่ม แล้วเลือกสมาชิก (เลือกซ้ำได้หลายกลุ่ม)','Name the group, then pick its members (one person can be in several groups).')}</p>
           </div>
         </div>
-        <div class="input-group"><label class="input-label">${icon('tag', 'w-3.5 h-3.5')} ${th('ชื่อกลุ่ม','Group name')} *</label>
+        <div class="input-group"><label class="input-label">${th('ชื่อกลุ่ม','Group name')} *</label>
           <input id="group-name" class="input" value="${escapeHtml(g.name || '')}" placeholder="${th('เช่น กลุ่ม A / กลับก่อน','e.g. Group A / early leavers')}"></div>
-        <div class="input-group"><label class="input-label">${icon('palette', 'w-3.5 h-3.5')} ${th('สีประจำกลุ่ม','Group colour')}</label>
+        <div class="input-group"><label class="input-label">${th('สีประจำกลุ่ม','Group colour')}</label>
           <div class="swatch-row" id="group-colors">
             ${GROUP_COLORS.map(c => `<button type="button" class="swatch ${c === g.color ? 'is-active' : ''}" data-color="${c}" style="--swatch:${c};" aria-label="${c}"></button>`).join('')}
           </div></div>
-        <div class="input-group"><label class="input-label">${icon('shapes', 'w-3.5 h-3.5')} ${th('ไอคอน','Icon')}</label>
+        <div class="input-group"><label class="input-label">${th('ไอคอน','Icon')}</label>
           <div class="icon-pick-row" id="group-icons">
             ${GROUP_ICONS.map(i => `<button type="button" class="icon-pick ${i === (g.icon || 'users') ? 'is-active' : ''}" data-icon="${i}">${icon(i, 'w-4 h-4')}</button>`).join('')}
           </div></div>
-        <div class="input-group"><label class="input-label">${icon('users', 'w-3.5 h-3.5')} ${th('สมาชิกในกลุ่ม','Members')} <span id="group-picked-count" class="text-[10px] text-[var(--text-tertiary)]"></span></label>
+        <div class="input-group"><label class="input-label">${th('สมาชิกในกลุ่ม','Members')} <span id="group-picked-count" class="text-xs text-[var(--text-tertiary)]"></span></label>
           <div class="tile-grid" id="group-tiles">
             ${all.map(m => `
               <button type="button" class="tile ${picked.has(m.id) ? 'tile-selected' : ''}" data-member="${escapeHtml(m.id)}">
                 <span class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                 <span class="text-sm truncate">${escapeHtml(m.displayName || '')}</span>
-              </button>`).join('') || `<p class="text-[11px] text-[var(--text-tertiary)]">${th('ยังไม่มีสมาชิกในทริป','No members on the trip yet')}</p>`}
+              </button>`).join('') || `<p class="text-xs text-[var(--text-tertiary)]">${th('ยังไม่มีสมาชิกในทริป','No members on the trip yet')}</p>`}
           </div></div>
-        <div class="input-group"><label class="input-label">${icon('align-left', 'w-3.5 h-3.5')} ${th('โน้ต','Note')}</label>
+        <div class="input-group"><label class="input-label">${th('โน้ต','Note')}</label>
           <input id="group-note" class="input text-sm" value="${escapeHtml(g.note || '')}" placeholder="${th('เช่น กลับไทยวันที่ 12','e.g. fly home on the 12th')}"></div>
         <div class="flex gap-2">
           <button id="group-cancel" class="btn btn-secondary flex-1">${t('cancel')}</button>
@@ -11256,7 +11195,7 @@ async function renderDocuments(params) {
             <div class="flex items-start justify-between gap-2">
               <h3 class="font-semibold text-sm truncate">${escapeHtml(doc.title)}</h3>
               <div class="flex items-center gap-1 flex-shrink-0">
-                <span class="badge badge-planned text-[10px]">${icon(DOC_ICONS[doc.category] || 'file-text', 'w-2.5 h-2.5')} ${escapeHtml(catLabel ? (lang==='th'?catLabel.th:catLabel.en) : (doc.category || ''))}</span>
+                <span class="badge badge-planned text-xs">${icon(DOC_ICONS[doc.category] || 'file-text', 'w-2.5 h-2.5')} ${escapeHtml(catLabel ? (lang==='th'?catLabel.th:catLabel.en) : (doc.category || ''))}</span>
                 <button class="icon-btn" data-act="edit" data-id="${doc.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
                 <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${doc.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
               </div>
@@ -11325,22 +11264,22 @@ async function renderDocuments(params) {
         <div class="flex items-center gap-3">
           <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon(isEdit ? 'pencil' : 'folder-plus', 'w-5 h-5')}</div>
           <div>
-            <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขเอกสาร','Edit document') : th('เพิ่มเอกสาร','Add document')}</h3>
-            <p class="text-[11px] text-[var(--text-secondary)]">${th('พาสปอร์ต ตั๋ว โรงแรม ประกัน และอื่นๆ','Passport, tickets, hotel, insurance & more')}</p>
+            <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขเอกสาร','Edit document') : th('เพิ่มเอกสาร','Add document')}</h3>
+            <p class="text-xs text-[var(--text-secondary)]">${th('พาสปอร์ต ตั๋ว โรงแรม ประกัน และอื่นๆ','Passport, tickets, hotel, insurance & more')}</p>
           </div>
         </div>
         <form id="doc-form" class="space-y-3">
-          <div class="input-group"><label class="input-label">${icon('file-text', 'w-3.5 h-3.5')} ${th('ชื่อเอกสาร','Title')} *</label><input id="doc-title" class="input" required autocomplete="off" value="${escapeHtml(d.title || '')}" placeholder="${th('เช่น พาสปอร์ตสมชาย','e.g. Passport')}"></div>
+          <div class="input-group"><label class="input-label">${th('ชื่อเอกสาร','Title')} *</label><input id="doc-title" class="input" required autocomplete="off" value="${escapeHtml(d.title || '')}" placeholder="${th('เช่น พาสปอร์ตสมชาย','e.g. Passport')}"></div>
           <div class="grid grid-cols-2 gap-3">
-            <div class="input-group"><label class="input-label">${icon('folder', 'w-3.5 h-3.5')} ${th('หมวดหมู่','Category')}</label>
+            <div class="input-group"><label class="input-label">${th('หมวดหมู่','Category')}</label>
               <select id="doc-cat" class="input">${DOC_CATS.filter(c => c.id !== 'all').map(c => `<option value="${c.id}" ${(d.category || 'other') === c.id ? 'selected' : ''}>${lang==='th'?c.th:c.en}</option>`).join('')}</select>
             </div>
-            <div class="input-group"><label class="input-label">${icon('calendar', 'w-3.5 h-3.5')} ${th('วันที่ (ใช้ถึง/หมดอายุ)','Date')}</label><input id="doc-date" class="input" type="date" value="${escapeHtml(d.date || '')}"></div>
+            <div class="input-group"><label class="input-label">${th('วันที่ (ใช้ถึง/หมดอายุ)','Date')}</label><input id="doc-date" class="input" type="date" value="${escapeHtml(d.date || '')}"></div>
           </div>
-          <div class="input-group"><label class="input-label">${icon('align-left', 'w-3.5 h-3.5')} ${th('รายละเอียด','Description')}</label><textarea id="doc-desc" class="input" style="min-height:80px;">${escapeHtml(d.description || '')}</textarea></div>
-          <div class="input-group"><label class="input-label">${icon('link', 'w-3.5 h-3.5')} ${th('ลิงก์ไฟล์','File link')}</label><input id="doc-file-url" class="input" placeholder="https://..." autocomplete="off" value="${escapeHtml(d.fileUrl || '')}"></div>
+          <div class="input-group"><label class="input-label">${th('รายละเอียด','Description')}</label><textarea id="doc-desc" class="input" style="min-height:80px;">${escapeHtml(d.description || '')}</textarea></div>
+          <div class="input-group"><label class="input-label">${th('ลิงก์ไฟล์','File link')}</label><input id="doc-file-url" class="input" placeholder="https://..." autocomplete="off" value="${escapeHtml(d.fileUrl || '')}"></div>
           <div class="input-group">
-            <label class="input-label">${icon('image', 'w-3.5 h-3.5')} ${th('รูปภาพ (URL)','Image (URL)')}</label>
+            <label class="input-label">${th('รูปภาพ (URL)','Image (URL)')}</label>
             <input id="doc-image-url" class="input" placeholder="https://..." autocomplete="off" value="${escapeHtml(d.imageUrl || '')}">
             <div id="doc-img-preview" class="${d.imageUrl ? '' : 'hidden'} mt-2 rounded-xl overflow-hidden border" style="border-color: var(--border);"><img decoding="async" id="doc-preview-img" class="w-full object-cover" style="aspect-ratio:16/9;" src="${escapeHtml(d.imageUrl || '')}" alt=""></div>
           </div>
@@ -11431,7 +11370,7 @@ async function renderImportExport(params) {
         </div>` : ''}
 
       <div class="card card-accent p-5 space-y-4">
-        <h3 class="font-bold flex items-center gap-2">${icon('file-down', 'w-4 h-4')} ${th('เทมเพลต Excel','Excel templates')} <span class="badge badge-skipped text-[9px]">${th('แอดมิน','admin')}</span></h3>
+        <h3 class="font-semibold flex items-center gap-2">${icon('file-down', 'w-4 h-4')} ${th('เทมเพลต Excel','Excel templates')} <span class="badge badge-skipped text-xs">${th('แอดมิน','admin')}</span></h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('หัวตารางมีทั้งภาษาอังกฤษและไทย ระบบอ่านได้ทั้งสองแบบ','Headers include English + Thai rows — the importer accepts both.')}</p>
         <div class="btn-row">
           <button data-tpl="itinerary" class="btn btn-secondary btn-sm" ${isAdmin ? '' : 'disabled'}>${icon('map-pinned', 'w-4 h-4')} ${th('เทมเพลตแผนการเดินทาง','Itinerary template')}</button>
@@ -11441,17 +11380,17 @@ async function renderImportExport(params) {
       </div>
 
       <div class="card p-5 space-y-4">
-        <h3 class="font-bold flex items-center gap-2">${icon('upload', 'w-4 h-4')} ${th('นำเข้าข้อมูล','Import')} <span class="badge badge-skipped text-[9px]">${th('แอดมิน','admin')}</span></h3>
+        <h3 class="font-semibold flex items-center gap-2">${icon('upload', 'w-4 h-4')} ${th('นำเข้าข้อมูล','Import')} <span class="badge badge-skipped text-xs">${th('แอดมิน','admin')}</span></h3>
         <div class="grid sm:grid-cols-2 gap-3">
           <div class="p-3 rounded-xl" style="background:var(--bg-secondary); border:1px solid var(--border);">
             <p class="text-sm font-semibold flex items-center gap-2">${icon('map-pinned', 'w-4 h-4')} ${th('แผนการเดินทาง','Itinerary')}</p>
-            <p class="text-[11px] text-[var(--text-secondary)] mt-1 mb-2">Excel / CSV / JSON ${th('พร้อมสร้างค่าใช้จ่ายประมาณการอัตโนมัติ','with optional auto-created estimated expenses')}</p>
+            <p class="text-xs text-[var(--text-secondary)] mt-1 mb-2">Excel / CSV / JSON ${th('พร้อมสร้างค่าใช้จ่ายประมาณการอัตโนมัติ','with optional auto-created estimated expenses')}</p>
             <input id="import-itinerary-file" type="file" accept=".xlsx,.xls,.csv,.json" class="input text-xs mb-2" ${isAdmin ? '' : 'disabled'}>
             <button id="import-itinerary-btn" class="btn btn-primary btn-sm w-full" disabled>${icon('upload', 'w-4 h-4')} ${th('นำเข้าแผน','Import itinerary')}</button>
           </div>
           <div class="p-3 rounded-xl" style="background:var(--bg-secondary); border:1px solid var(--border);">
             <p class="text-sm font-semibold flex items-center gap-2">${icon('wallet', 'w-4 h-4')} ${th('ค่าใช้จ่าย','Expenses')}</p>
-            <p class="text-[11px] text-[var(--text-secondary)] mt-1 mb-2">${th('รวมผู้จ่าย ผู้ร่วมหาร และหมวดหมู่','with payer, participants and categories')}</p>
+            <p class="text-xs text-[var(--text-secondary)] mt-1 mb-2">${th('รวมผู้จ่าย ผู้ร่วมหาร และหมวดหมู่','with payer, participants and categories')}</p>
             <input id="import-expenses-file" type="file" accept=".xlsx,.xls,.csv,.json" class="input text-xs mb-2" ${isAdmin ? '' : 'disabled'}>
             <button id="import-expenses-btn" class="btn btn-primary btn-sm w-full" disabled>${icon('upload', 'w-4 h-4')} ${th('นำเข้าค่าใช้จ่าย','Import expenses')}</button>
           </div>
@@ -11460,7 +11399,7 @@ async function renderImportExport(params) {
       </div>
 
       <div class="card p-5 space-y-4">
-        <h3 class="font-bold flex items-center gap-2">${icon('download', 'w-4 h-4')} ${th('ส่งออกข้อมูล','Export')}</h3>
+        <h3 class="font-semibold flex items-center gap-2">${icon('download', 'w-4 h-4')} ${th('ส่งออกข้อมูล','Export')}</h3>
         <div class="btn-row">
           <button id="exp-full" class="btn btn-primary btn-sm" ${isAdmin ? '' : 'disabled'}>${icon('file-spreadsheet', 'w-4 h-4')} ${th('Excel ทั้งทริป','Full trip Excel')}</button>
           <button id="exp-itinerary-xl" class="btn btn-secondary btn-sm" ${isAdmin ? '' : 'disabled'}>${icon('map-pinned', 'w-4 h-4')} ${th('แผน (Excel)','Itinerary Excel')}</button>
@@ -11474,7 +11413,7 @@ async function renderImportExport(params) {
         </div>
         <div class="p-3 rounded-xl" style="background:var(--bg-secondary); border:1px solid var(--border);">
           <p class="text-sm font-semibold flex items-center gap-2">${icon('calendar-plus', 'w-4 h-4')} ${t('exportCalendar')}</p>
-          <p class="text-[11px] text-[var(--text-secondary)] mt-1 mb-2">${th('ไฟล์ .ics นำเข้า Google ปฏิทิน / Apple ปฏิทิน ได้ทันที — ทุกคนในทริปส่งออกได้','An .ics file you can import into Google / Apple Calendar — available to every member')}</p>
+          <p class="text-xs text-[var(--text-secondary)] mt-1 mb-2">${th('ไฟล์ .ics นำเข้า Google ปฏิทิน / Apple ปฏิทิน ได้ทันที — ทุกคนในทริปส่งออกได้','An .ics file you can import into Google / Apple Calendar — available to every member')}</p>
           <div class="btn-row">
             <button id="ics-all" class="btn btn-secondary btn-sm">${icon('layers', 'w-4 h-4')} ${th('ทั้งทริป','Everything')}</button>
             <button id="ics-itinerary" class="btn btn-secondary btn-sm">${icon('map-pinned', 'w-4 h-4')} ${t('itinerary')}</button>
@@ -11664,22 +11603,22 @@ async function renderImportExport(params) {
     if (!parsed.length) {
       toast.error(th('ไม่พบข้อมูลที่นำเข้าได้', 'No importable rows found'));
       const previewEl = document.getElementById('import-preview');
-      if (previewEl && errors.length) previewEl.innerHTML = `<pre class="p-2 rounded-xl text-[10px] overflow-auto" style="background:var(--bg-secondary);max-height:200px;">${escapeHtml(JSON.stringify(errors.slice(0, 10), null, 1))}</pre>`;
+      if (previewEl && errors.length) previewEl.innerHTML = `<pre class="p-2 rounded-xl text-xs overflow-auto" style="background:var(--bg-secondary);max-height:200px;">${escapeHtml(JSON.stringify(errors.slice(0, 10), null, 1))}</pre>`;
       return;
     }
     const sheet = showBottomSheet(`
-      <h3 class="font-bold mb-2 flex items-center gap-2">${icon('upload', 'w-4 h-4')} ${title}</h3>
+      <h3 class="font-semibold mb-2 flex items-center gap-2">${icon('upload', 'w-4 h-4')} ${title}</h3>
       <div class="flex gap-2 mb-3 flex-wrap">
         <span class="badge badge-completed">${icon('check', 'w-3 h-3')} ${parsed.length} ${th('รายการพร้อมนำเข้า','ready')}</span>
         ${errors.length ? `<span class="badge badge-cancelled">${icon('x', 'w-3 h-3')} ${errors.length} ${th('แถวมีปัญหา','errors')}</span>` : ''}
       </div>
       <div class="max-h-[240px] overflow-auto rounded-xl border" style="border-color:var(--border);">
-        <table class="w-full text-[11px]">
+        <table class="w-full text-xs">
           <thead style="background:var(--bg-secondary);"><tr>${columns.map((c, i) => `<th class="p-2 ${i === columns.length - 1 ? 'text-right' : 'text-left'}">${escapeHtml(c)}</th>`).join('')}</tr></thead>
           <tbody>${parsed.slice(0, 50).map(p => `<tr style="border-top:1px solid var(--border);">${rowFn(p).map((cell, i) => `<td class="p-2 ${i === columns.length - 1 ? 'text-right' : ''} truncate">${escapeHtml(String(cell ?? ''))}</td>`).join('')}</tr>`).join('')}</tbody>
         </table>
       </div>
-      ${errors.length ? `<details class="mt-2"><summary class="text-xs cursor-pointer" style="color:var(--danger);">${th('ดูแถวที่มีปัญหา','See problem rows')}</summary><pre class="mt-1 p-2 rounded-lg text-[10px] overflow-auto" style="background:var(--bg-secondary);max-height:160px;">${escapeHtml(JSON.stringify(errors.slice(0, 10), null, 1))}</pre></details>` : ''}
+      ${errors.length ? `<details class="mt-2"><summary class="text-xs cursor-pointer" style="color:var(--danger);">${th('ดูแถวที่มีปัญหา','See problem rows')}</summary><pre class="mt-1 p-2 rounded-lg text-xs overflow-auto" style="background:var(--bg-secondary);max-height:160px;">${escapeHtml(JSON.stringify(errors.slice(0, 10), null, 1))}</pre></details>` : ''}
       ${withSyncOption ? `<label class="flex items-center gap-2 text-xs mt-3 cursor-pointer">
         <input id="pi-sync" type="checkbox" class="accent-[var(--primary)] w-4 h-4" checked>
         ${th('สร้างรายการประมาณการในหน้าค่าใช้จ่ายด้วย','Also create the estimated expenses')}
@@ -11757,7 +11696,7 @@ async function renderSettings(params) {
       <div class="flex items-center justify-between gap-2">
         ${renderPageScene('settings', { lang, title: `${icon('settings', 'w-5 h-5')} ${t('settings')}`,
           subtitle: th('แก้ไขข้อมูลทริป งบประมาณ ธีม และโหมดการแสดงผล','Trip details, budget, theme and appearance') })}
-        <span class="badge ${perms.isAdmin ? 'badge-completed' : 'badge-planned'}">${icon(perms.isAdmin ? 'shield-check' : 'eye', 'w-3 h-3')} ${escapeHtml(perms.role)}</span>
+        <span class="badge ${perms.isAdmin ? 'badge-completed' : 'badge-planned'}">${escapeHtml(roleLabel(perms.role))}</span>
       </div>
 
       <div class="settings-tabs" id="settings-tabs">
@@ -11770,47 +11709,46 @@ async function renderSettings(params) {
 
       <div class="settings-section" data-settings-section="trip">
         <div class="settings-section-head">
-          <h4>${icon('compass', 'w-4 h-4')} ${th('ข้อมูลทริป', 'Trip details')}</h4>
-          <span class="text-[10px] text-[var(--text-tertiary)]">${escapeHtml(tripId.slice(0,8))}</span>
+          <h4>${th('ข้อมูลทริป', 'Trip details')}</h4>
+          <span class="text-xs text-[var(--text-tertiary)]">${escapeHtml(tripId.slice(0,8))}</span>
         </div>
         <div class="settings-grid cols-2">
-          <div class="input-group"><label class="input-label">${icon('sparkles', 'w-3 h-3')} ${t('tripName')}</label><input id="s-name" class="input" value="${escapeHtml(trip?.name || '')}"></div>
-          <div class="input-group"><label class="input-label">${icon('flag', 'w-3 h-3')} ${th('สถานะทริป','Trip status')}</label>
-            <select id="trip-status" class="input">${['draft','active','completed','archived'].map(st => `<option value="${st}" ${(trip?.status || 'draft') === st ? 'selected' : ''}>${st}</option>`).join('')}</select>
+          <div class="input-group"><label class="input-label">${t('tripName')}</label><input id="s-name" class="input" value="${escapeHtml(trip?.name || '')}"></div>
+          <div class="input-group"><label class="input-label">${th('สถานะทริป','Trip status')}</label>
+            <select id="trip-status" class="input">${['draft','active','completed','archived'].map(st => `<option value="${st}" ${(trip?.status || 'draft') === st ? 'selected' : ''}>${tripStatusLabel(st)}</option>`).join('')}</select>
           </div>
         </div>
-        <div class="input-group mt-2"><label class="input-label">${icon('align-left', 'w-3 h-3')} ${th('รายละเอียด','Description')}</label><textarea id="s-desc" class="input" style="min-height:56px;">${escapeHtml(trip?.description || '')}</textarea></div>
+        <div class="input-group mt-2"><label class="input-label">${th('รายละเอียด','Description')}</label><textarea id="s-desc" class="input" style="min-height:56px;">${escapeHtml(trip?.description || '')}</textarea></div>
         <div class="settings-grid cols-2 mt-2">
-          <div class="input-group"><label class="input-label">${icon('globe', 'w-3 h-3')} ${t('country')}</label><input id="s-country" class="input" value="${escapeHtml(trip?.country || '')}"></div>
-          <div class="input-group"><label class="input-label">${icon('building-2', 'w-3 h-3')} ${t('city')}</label><input id="s-city" class="input" value="${escapeHtml(trip?.city || '')}"></div>
-          <div class="input-group"><label class="input-label">${icon('calendar', 'w-3 h-3')} ${t('startDate')}</label><input id="s-start" class="input" type="date" value="${escapeHtml(trip?.startDate || '')}"></div>
-          <div class="input-group"><label class="input-label">${icon('calendar-check', 'w-3 h-3')} ${t('endDate')}</label><input id="s-end" class="input" type="date" value="${escapeHtml(trip?.endDate || '')}"></div>
+          <div class="input-group"><label class="input-label">${t('country')}</label><input id="s-country" class="input" value="${escapeHtml(trip?.country || '')}"></div>
+          <div class="input-group"><label class="input-label">${t('city')}</label><input id="s-city" class="input" value="${escapeHtml(trip?.city || '')}"></div>
+          <div class="input-group"><label class="input-label">${t('startDate')}</label><input id="s-start" class="input" type="date" value="${escapeHtml(trip?.startDate || '')}"></div>
+          <div class="input-group"><label class="input-label">${t('endDate')}</label><input id="s-end" class="input" type="date" value="${escapeHtml(trip?.endDate || '')}"></div>
           <div class="input-group">
-            <label class="input-label">${icon('banknote', 'w-3 h-3')} ${t('baseCurrency')}</label>
+            <label class="input-label">${t('baseCurrency')}</label>
             <select id="s-currency" class="input">${currencies.map(c => `<option value="${c.code}" ${trip?.baseCurrency === c.code ? 'selected' : ''}>${c.code} — ${c.name}</option>`).join('')}</select>
           </div>
           <div class="input-group">
-            <label class="input-label">${icon('clock', 'w-3 h-3')} ${t('timezone')}</label>
+            <label class="input-label">${t('timezone')}</label>
             <select id="s-tz" class="input">${TRIP_TIMEZONES.map(tz => `<option value="${tz}" ${trip?.timezone === tz ? 'selected' : ''}>${tz.replace('_',' ')}</option>`).join('')}</select>
           </div>
-          <div class="input-group"><label class="input-label">${icon('arrow-left-right', 'w-3 h-3')} ${th('เรทแลกเป็น THB','Rate to THB')}</label><input id="s-thb-rate" class="input" type="number" step="0.0001" value="${trip?.exchangeRateToTHB || 1}"><p class="input-hint">1 ${trip?.baseCurrency || 'THB'} = ? THB</p></div>
-          <div class="input-group"><label class="input-label">${icon('image', 'w-3 h-3')} ${t('coverImage')}</label><input id="s-cover-url" class="input text-[12px]" placeholder="https://..." value="${trip?.coverImage && String(trip.coverImage).startsWith('http') ? escapeHtml(trip.coverImage) : ''}"></div>
+          <div class="input-group"><label class="input-label">${th('เรทแลกเป็น THB','Rate to THB')}</label><input id="s-thb-rate" class="input" type="number" step="0.0001" value="${trip?.exchangeRateToTHB || 1}"><p class="input-hint">1 ${trip?.baseCurrency || 'THB'} = ? THB</p></div>
         </div>
         <div class="settings-grid cols-2 mt-3">
           <div class="input-group">
-            <label class="input-label">${icon('coins', 'w-3.5 h-3.5')} ${th('สกุลเงินที่ใช้ในทริป','Currencies used')}</label>
+            <label class="input-label">${th('สกุลเงินที่ใช้ในทริป','Currencies used')}</label>
             <div id="trip-currency-rows" class="space-y-1.5"></div>
-            <button type="button" id="add-trip-currency" class="btn btn-secondary btn-sm mt-1.5 text-[11px]">${icon('plus', 'w-3 h-3')} ${th('เพิ่มสกุลเงิน','Add currency')}</button>
+            <button type="button" id="add-trip-currency" class="btn btn-secondary btn-sm mt-1.5 text-xs">${icon('plus', 'w-3 h-3')} ${th('เพิ่มสกุลเงิน','Add currency')}</button>
           </div>
           <div class="input-group">
-            <label class="input-label">${icon('image', 'w-3.5 h-3.5')} ${t('coverImage')}</label>
+            <label class="input-label">${t('coverImage')}</label>
             <div class="flex gap-2">
               <div class="rounded-xl overflow-hidden border flex-1" style="border-color:var(--border); max-height:92px;">
                 <img decoding="async" id="s-cover-preview" class="w-full h-full object-cover" style="aspect-ratio:16/9; max-height:90px;" src="${escapeHtml(trip?.coverImage || '')}" onerror="this.style.display='none'" alt="">
               </div>
               <div class="flex-1 space-y-1.5">
-                <input id="s-cover-url" class="input text-[11px] !min-h-[32px]" placeholder="https://..." value="${trip?.coverImage && String(trip.coverImage).startsWith('http') ? escapeHtml(trip.coverImage) : ''}">
-                <input id="s-cover-file" type="file" accept="image/*" class="input text-[11px] !min-h-[32px]">
+                <input id="s-cover-url" class="input text-xs !min-h-[32px]" placeholder="https://..." value="${trip?.coverImage && String(trip.coverImage).startsWith('http') ? escapeHtml(trip.coverImage) : ''}">
+                <input id="s-cover-file" type="file" accept="image/*" class="input text-xs !min-h-[32px]">
               </div>
             </div>
             <p class="input-hint !mt-1">${th('อัปโหลดหรือวางลิงก์','Upload or paste URL')}</p>
@@ -11820,15 +11758,15 @@ async function renderSettings(params) {
       </div>
 
       <div class="settings-section" data-settings-section="trip">
-        <h3 class="font-bold flex items-center gap-2">${icon('piggy-bank', 'w-4 h-4')} ${th('งบประมาณ (บาท)','Budget (THB)')}</h3>
+        <h3 class="font-semibold flex items-center gap-2">${th('งบประมาณ (บาท)','Budget (THB)')}</h3>
         <div class="grid grid-cols-2 gap-3">
-          <div class="input-group"><label class="input-label">${icon('wallet', 'w-3.5 h-3.5')} ${th('งบประมาณรวม','Total budget')}</label><input id="s-budget-total" class="input money-input" type="text" inputmode="decimal" value="${fmtBudgetInput(trip?.budgetTotal)}" placeholder="50,000"><p class="input-hint">THB (บาท) • ${th('งบของทั้งทริป','whole-trip budget')}</p></div>
-          <div class="input-group"><label class="input-label">${icon('user', 'w-3.5 h-3.5')} ${th('งบต่อคน (ค่าเริ่มต้น)','Default per person')}</label><input id="s-budget-per-person" class="input money-input" type="text" inputmode="decimal" value="${fmtBudgetInput(trip?.budgetPerPerson)}" placeholder="10,000"><p class="input-hint">THB (บาท) • ${th('ใช้กับคนที่ไม่ได้ตั้งงบรายคน','applies to members without their own budget')}</p></div>
+          <div class="input-group"><label class="input-label">${th('งบประมาณรวม','Total budget')}</label><input id="s-budget-total" class="input money-input" type="text" inputmode="decimal" value="${fmtBudgetInput(trip?.budgetTotal)}" placeholder="50,000"><p class="input-hint">THB (บาท) • ${th('งบของทั้งทริป','whole-trip budget')}</p></div>
+          <div class="input-group"><label class="input-label">${th('งบต่อคน (ค่าเริ่มต้น)','Default per person')}</label><input id="s-budget-per-person" class="input money-input" type="text" inputmode="decimal" value="${fmtBudgetInput(trip?.budgetPerPerson)}" placeholder="10,000"><p class="input-hint">THB (บาท) • ${th('ใช้กับคนที่ไม่ได้ตั้งงบรายคน','applies to members without their own budget')}</p></div>
         </div>
 
         <div class="input-group">
           <div class="flex items-center justify-between gap-2 mb-1 flex-wrap">
-            <label class="input-label mb-0">${icon('users', 'w-3.5 h-3.5')} ${th('งบประมาณรายคน','Per-member budgets')}</label>
+            <label class="input-label mb-0">${th('งบประมาณรายคน','Per-member budgets')}</label>
             ${settingMembers.length > 0 ? `
               <button type="button" id="btn-distribute-budget" class="btn btn-secondary btn-sm text-xs" style="min-height:30px;padding:4px 10px;gap:5px;">
                 ${icon('divide', 'w-3.5 h-3.5')} ${th('กระจายงบเท่ากัน', 'Distribute equally')}
@@ -11842,7 +11780,7 @@ async function renderSettings(params) {
                 <span class="avatar" style="width:28px;height:28px;font-size:10px;background:${escapeHtml(m.color || 'var(--primary)')};flex-shrink:0;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                 <span class="text-xs font-medium truncate flex-1" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
                 <input id="s-mbudget-${escapeHtml(m.id)}" class="input money-input member-budget-input" type="text" inputmode="decimal" placeholder="0.00" value="${escapeHtml(fmtBudgetInput(memberBudgets[m.id]))}">
-                <span class="text-[10px] text-[var(--text-tertiary)] flex-shrink-0 font-medium">THB</span>
+                <span class="text-xs text-[var(--text-tertiary)] flex-shrink-0 font-medium">THB</span>
               </div>`).join('') || `<p class="text-xs text-[var(--text-secondary)]">${th('ยังไม่มีสมาชิกในทริป','No members yet')}</p>`}
           </div>
         </div>
@@ -11854,7 +11792,7 @@ async function renderSettings(params) {
       <!-- v34: FLAT STYLE CONTROLS — the three knobs that re-shape the whole app.
            Everything is CSS variables, so these buttons never reload the page. -->
       <div class="card p-5 space-y-3" id="settings-style-card" data-settings-section="appearance">
-        <h3 class="font-bold flex items-center gap-2">${icon('layout-panel-top', 'w-4 h-4')} ${th('สไตล์หน้าจอ (Flat)', 'Interface style (Flat)')}</h3>
+        <h3 class="font-semibold flex items-center gap-2">${th('สไตล์หน้าจอ (Flat)', 'Interface style (Flat)')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('ปรับมุมโค้ง ความแน่นของระยะห่าง และเงา — มีผลทุกหน้าทันที และจำไว้ในเครื่องนี้ ไม่ต้องรีเฟรช', 'Adjust corner radius, spacing density and shadows. It applies to every screen instantly and is remembered on this device.')}</p>
         <div class="appearance-style-grid">
           <div class="appearance-style-group">
@@ -11878,26 +11816,26 @@ async function renderSettings(params) {
         </div>
         <div class="appearance-style-preview" aria-hidden="true">
           <span class="row-icon" style="width:32px;height:32px;display:grid;place-items:center;">${icon('palette', 'w-4 h-4')}</span>
-          <span class="text-[11px] font-bold text-[var(--text-secondary)]">${th('ตัวอย่าง', 'Preview')}</span>
+          <span class="text-xs font-semibold text-[var(--text-secondary)]">${th('ตัวอย่าง', 'Preview')}</span>
           <span class="btn btn-primary btn-sm">${th('ปุ่มหลัก', 'Primary')}</span>
           <span class="btn btn-secondary btn-sm">${th('ปุ่มรอง', 'Secondary')}</span>
           <span class="chip">${th('ชิป', 'Chip')}</span>
         </div>
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <p id="ui-style-summary" class="text-[11px] text-[var(--text-tertiary)]"></p>
+          <p id="ui-style-summary" class="text-xs text-[var(--text-tertiary)]"></p>
           <button type="button" id="ui-style-reset" class="btn btn-ghost btn-sm">${icon('rotate-ccw', 'w-3.5 h-3.5')} ${th('คืนค่าเริ่มต้น', 'Reset look')}</button>
         </div>
       </div>
 
       <!-- v18: the colour theme picker lives here (LINE / Facebook / IG / custom) -->
       <div class="card p-5 space-y-3" id="settings-appearance-card" data-settings-section="appearance">
-        <h3 class="font-bold flex items-center gap-2">${icon('palette', 'w-4 h-4')} ${th('ชุดสี & การแสดงผล','Colour theme & display')}</h3>
+        <h3 class="font-semibold flex items-center gap-2">${th('ชุดสี & การแสดงผล','Colour theme & display')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เลือกธีมที่ถูกใจ แล้วปรับสี/ความสดใสเองได้ — มีผลทุกหน้า รวมถึงโหมดมืดและรูปที่ส่งออก','Pick a palette you like and fine-tune the colours — it applies everywhere, including dark mode and exported images.')}</p>
         ${themePickerHtml({ idPrefix: 'settings' })}
       </div>
 
       <div class="card p-5 space-y-3" id="map-default-card" data-settings-section="appearance">
-        <h3 class="font-bold flex items-center gap-2">${icon('map', 'w-4 h-4')} ${th('แผนที่เริ่มต้น','Default basemap')}</h3>
+        <h3 class="font-semibold flex items-center gap-2">${th('แผนที่เริ่มต้น','Default basemap')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เลือกประเภทแผนที่ที่จะเปิดเป็นค่าเริ่มต้นในหน้าแผนการเดินทางและหน้าไอเดีย การตั้งค่านี้ซิงก์ให้สมาชิกทุกอุปกรณ์','Choose which basemap opens by default on the itinerary and ideas maps. This setting syncs to every trip device.')}</p>
         <div class="map-default-options" id="map-default-options">
           ${BASE_LAYERS.map(layer => `<button type="button" class="map-default-option ${defaultMapLayer === layer.id ? 'is-selected' : ''}" data-map-default="${layer.id}" aria-pressed="${defaultMapLayer === layer.id}">
@@ -11907,7 +11845,7 @@ async function renderSettings(params) {
           </button>`).join('')}
         </div>
         <button id="save-map-default" type="button" class="btn btn-secondary btn-sm w-full">${icon('save', 'w-4 h-4')} ${th('บันทึกแผนที่เริ่มต้น','Save default map')}</button>
-        <p class="text-[10px] text-[var(--text-tertiary)]">${th('การกดเปลี่ยนชั้นแผนที่บนแผนที่จริงจะมีผลเฉพาะการดูครั้งนั้น หากต้องการเปลี่ยนค่าเริ่มต้นให้บันทึกที่นี่','Switching layers on a live map is temporary; save your preferred default here.')}</p>
+        <p class="text-xs text-[var(--text-tertiary)]">${th('การกดเปลี่ยนชั้นแผนที่บนแผนที่จริงจะมีผลเฉพาะการดูครั้งนั้น หากต้องการเปลี่ยนค่าเริ่มต้นให้บันทึกที่นี่','Switching layers on a live map is temporary; save your preferred default here.')}</p>
         <label class="settings-toggle-row" for="map-labels-toggle">
           <span class="min-w-0">
             <b>${icon('tags', 'w-3.5 h-3.5')} ${th('แสดงชื่อสถานที่บนแผนที่','Show place names on the map')}</b>
@@ -11919,12 +11857,12 @@ async function renderSettings(params) {
 
       <!-- v18: the profile picture lands here, so the account lives with it -->
       <div class="card p-5 space-y-3" id="settings-account-card" data-settings-section="appearance">
-        <h3 class="font-bold flex items-center gap-2">${icon('user-cog', 'w-4 h-4')} ${th('บัญชีและอุปกรณ์','Account & device')}</h3>
+        <h3 class="font-semibold flex items-center gap-2">${th('บัญชีและอุปกรณ์','Account & device')}</h3>
         <div class="flex items-center gap-3">
           <div class="avatar" style="width:44px;height:44px;background:var(--gradient-primary);">${avatarInitialHtml(currentUser)}</div>
           <div class="min-w-0 flex-1">
-            <p class="text-sm font-bold truncate">${escapeHtml(currentUser?.displayName || currentUser?.email || 'User')}</p>
-            <p class="text-[11px] text-[var(--text-tertiary)] truncate">${escapeHtml(currentUser?.email || '')}</p>
+            <p class="text-sm font-semibold truncate">${escapeHtml(currentUser?.displayName || currentUser?.email || 'User')}</p>
+            <p class="text-xs text-[var(--text-tertiary)] truncate">${escapeHtml(currentUser?.email || '')}</p>
           </div>
         </div>
         <div class="grid grid-cols-2 gap-2">
@@ -11935,36 +11873,36 @@ async function renderSettings(params) {
           <button id="account-cache" class="btn btn-ghost btn-sm">${icon('eraser', 'w-3.5 h-3.5')} ${th('ล้างแคชอุปกรณ์','Clear device cache')}</button>
           <button id="account-logout" class="btn btn-sm" style="background:var(--danger-bg);color:var(--danger);border:1.5px solid color-mix(in srgb, var(--danger) 32%, transparent);">${icon('log-out', 'w-3.5 h-3.5')} ${t('logout')}</button>
         </div>
-        <p class="text-[10px] text-[var(--text-tertiary)] font-mono">${escapeHtml(currentUser?.uid?.slice(0, 12) || '')}</p>
+        <p class="text-xs text-[var(--text-tertiary)] font-mono">${escapeHtml(currentUser?.uid?.slice(0, 12) || '')}</p>
       </div>
 
       <div class="card p-5 space-y-3" id="expense-groups-card" data-settings-section="system">
-        <h3 class="font-bold flex items-center gap-2">${icon('layout-grid', 'w-4 h-4')} ${th('กลุ่มค่าใช้จ่าย','Expense groups')}</h3>
+        <h3 class="font-semibold flex items-center gap-2">${th('กลุ่มค่าใช้จ่าย','Expense groups')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เพิ่ม แก้ไขชื่อ/สี/ไอคอน หรือลบกลุ่มของทริปนี้ได้ ทุกหน้าจะใช้กลุ่มใหม่ทันที','Add, rename, recolour or delete groups for this trip — every screen picks them up.')}</p>
         <div id="settings-cat-list" class="flex flex-wrap gap-1.5"></div>
         <button id="settings-manage-cats" class="btn btn-secondary btn-sm w-full">${icon('settings-2', 'w-4 h-4')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage groups')}</button>
       </div>
 
       <div class="card p-5 space-y-3" id="trip-cards-card" data-settings-section="system">
-        <h3 class="font-bold flex items-center gap-2">${icon('credit-card', 'w-4 h-4')} ${th('บัตรเครดิตของทริป','Trip credit cards')}</h3>
+        <h3 class="font-semibold flex items-center gap-2">${th('บัตรเครดิตของทริป','Trip credit cards')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('ฟอร์มค่าใช้จ่ายจะเลือกบัตรได้จากรายการนี้เท่านั้น — เพิ่ม/แก้ไข/ลบที่นี่ได้ เพื่อป้องกันการกรอกบัตรมั่ว','Expense forms can only pick cards from this list — add/edit/delete here to stop random card names.')}</p>
         <div id="settings-cards-list" class="flex flex-wrap gap-1.5"></div>
         <button id="settings-manage-cards" class="btn btn-secondary btn-sm w-full">${icon('settings-2', 'w-4 h-4')} ${th('จัดการบัตรเครดิต','Manage cards')}</button>
       </div>
 
       <div class="card p-5 space-y-3" id="invite-card" data-settings-section="system">
-        <h3 class="font-bold flex items-center gap-2">${icon('ticket', 'w-4 h-4')} ${th('รหัสเชิญเข้าร่วมทริป','Trip invite code')}</h3>
+        <h3 class="font-semibold flex items-center gap-2">${th('รหัสเชิญเข้าร่วมทริป','Trip invite code')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('ส่งรหัสนี้ให้เพื่อน — พวกเขาล็อกอินด้วยบัญชี Google/อีเมล แล้วกรอกรหัสเพื่อขอเข้าร่วม จากนั้นกดอนุมัติได้ที่หน้าสมาชิก','Share this code with friends — they sign in with Google/email, enter it to request access, and you approve them on the Members page.')}</p>
         <div class="flex items-center gap-2 flex-wrap">
-          <span id="invite-code-value" class="font-mono text-xl font-bold tracking-[0.3em] px-4 py-2 rounded-xl" style="background:var(--bg-secondary); border:1px dashed var(--border);">${escapeHtml(formatInviteCode(trip?.inviteCode) || '—')}</span>
+          <span id="invite-code-value" class="font-mono text-xl font-semibold tracking-[0.3em] px-4 py-2 rounded-xl" style="background:var(--bg-secondary); border:1px dashed var(--border);">${escapeHtml(formatInviteCode(trip?.inviteCode) || '—')}</span>
           <button id="invite-code-copy" class="btn btn-secondary btn-sm">${icon('copy', 'w-4 h-4')} ${th('คัดลอก','Copy')}</button>
           <button id="invite-code-regen" class="btn btn-ghost btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${th('สร้างรหัสใหม่','New code')}</button>
         </div>
-        <p class="text-[10px] text-[var(--text-tertiary)]">${th('รหัสจะสุ่มใหม่ได้ทุกเมื่อ — คนที่ยังไม่ได้อนุมัติจะใช้รหัสเดิมไม่ได้อีก','You can rotate the code anytime — old codes stop working immediately.')}</p>
+        <p class="text-xs text-[var(--text-tertiary)]">${th('รหัสจะสุ่มใหม่ได้ทุกเมื่อ — คนที่ยังไม่ได้อนุมัติจะใช้รหัสเดิมไม่ได้อีก','You can rotate the code anytime — old codes stop working immediately.')}</p>
       </div>
 
       <div class="card p-5 space-y-3" data-settings-section="system">
-        <h3 class="font-bold flex items-center gap-2">${icon('stethoscope', 'w-4 h-4')} ${th('ตรวจสอบระบบ','System check')}</h3>
+        <h3 class="font-semibold flex items-center gap-2">${th('ตรวจสอบระบบ','System check')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เช็กว่าล็อกอินสมาชิก, Cloud Functions และ Firestore Rules พร้อมใช้งานไหม (ใช้เวลาไม่กี่วินาที)','Checks member login, Cloud Functions and Firestore rules (a few seconds).')}</p>
         <button id="run-diagnostics" class="btn btn-secondary w-full">${icon('play', 'w-4 h-4')} ${th('เริ่มตรวจสอบ','Run check')}</button>
         <div id="diag-results" class="space-y-2"></div>
@@ -11973,17 +11911,17 @@ async function renderSettings(params) {
       ${notificationSettingsCardsHtml({ lang, perms, tripSettings: notifyState.tripSettings, prefs: readNotifyPrefs() })}
 
       <div class="card p-5 space-y-3" style="border-color: color-mix(in srgb, var(--danger) 35%, var(--border));" data-settings-section="advanced">
-        <h3 class="font-bold flex items-center gap-2" style="color:var(--danger);">${icon('alert-triangle', 'w-4 h-4')} ${th('เขตอันตราย','Danger zone')}</h3>
+        <h3 class="font-semibold flex items-center gap-2" style="color:var(--danger);">${th('เขตอันตราย','Danger zone')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('ลบทริปจะลบแผนการเดินทาง ค่าใช้จ่าย สมาชิก และเอกสารทั้งหมดอย่างถาวร','Deleting a trip removes its itinerary, expenses, members and documents permanently.')}</p>
         <div class="btn-row">
           <button id="dup-trip" class="btn btn-secondary btn-sm">${icon('copy', 'w-4 h-4')} ${th('ทำสำเนาทริป','Duplicate trip')}</button>
           <button id="del-trip" class="btn btn-sm" style="background:var(--danger);color:#fff;">${icon('trash-2', 'w-4 h-4')} ${th('ลบทริปนี้','Delete this trip')}</button>
         </div>
-        <p class="text-[10px] text-[var(--text-tertiary)] font-mono">Trip ID: ${escapeHtml(tripId)}</p>
+        <p class="text-xs text-[var(--text-tertiary)] font-mono">Trip ID: ${escapeHtml(tripId)}</p>
       </div>
 
       <div class="card p-5 space-y-2" id="about-card" data-settings-section="advanced">
-        <h3 class="font-bold flex items-center gap-2">${icon('info', 'w-4 h-4')} ${th('เกี่ยวกับแอป','About')}</h3>
+        <h3 class="font-semibold flex items-center gap-2">${th('เกี่ยวกับแอป','About')}</h3>
         <div class="app-wordmark">
           <span class="app-wordmark-logo">${icon('mount-snow', 'w-4 h-4')}</span>
           <span class="min-w-0">
@@ -12005,7 +11943,7 @@ async function renderSettings(params) {
         <div class="btn-row">
           <a class="btn btn-ghost btn-sm" href="${appBaseUrl()}docs/ARCHITECTURE.md" target="_blank" rel="noopener">${icon('file-text', 'w-4 h-4')} ${th('เอกสารระบบ','Docs')}</a>
         </div>
-        <p class="text-[10px] text-[var(--text-tertiary)] font-mono">build ${escapeHtml(APP_UPDATED_ISO)} • ${escapeHtml(APP_VERSION)} • ${escapeHtml(APP_NAME_BY)}</p>
+        <p class="text-xs text-[var(--text-tertiary)] font-mono">build ${escapeHtml(APP_UPDATED_ISO)} • ${escapeHtml(APP_VERSION)} • ${escapeHtml(APP_NAME_BY)}</p>
       </div>
     </div>
   `;
@@ -12277,7 +12215,7 @@ async function renderSettings(params) {
             const left = bThb - r.spent;
             const pct = bThb > 0 ? Math.min(100, Math.round(r.spent / bThb * 100)) : 0;
             return `<div class="budget-member-row">
-              <span class="budget-member-name">${moodFaceHtml(budgetMood(r.spent, bThb), { size: 22, lang })} ${escapeHtml(r.m.displayName)}${r.typed > 0 ? '' : ` <i>(${th('ค่าเริ่มต้น','default')})</i>`}</span>
+              <span class="budget-member-name">${escapeHtml(r.m.displayName)}${r.typed > 0 ? '' : ` <i>(${th('ค่าเริ่มต้น','default')})</i>`}</span>
               <span class="budget-member-nums">${th('งบ','budget')} <b>${formatCurrency(bThb, 'THB')}</b> • ${th('ใช้','used')} ${formatCurrency(r.spent, 'THB')} • ${left >= 0 ? `${th('เหลือ','left')} <b style="color:var(--success);">${formatCurrency(left, 'THB')}</b>` : `<b style="color:var(--danger);">${th('เกิน','over')} ${formatCurrency(-left, 'THB')}</b>`} (${pct}%)</span>
               <div class="progress" style="height:5px;"><div class="progress-bar" style="width:${pct}%; ${left < 0 ? 'background: var(--danger);' : ''}"></div></div>
             </div>`;
@@ -12464,7 +12402,7 @@ async function renderSettings(params) {
     const box = document.getElementById('settings-cat-list');
     if (!box) return;
     box.innerHTML = getAllExpenseCategories().map(c => `
-      <span class="chip text-[10px]" style="background:${escapeHtml(c.color || 'var(--primary)')}22; border-color:${escapeHtml(c.color || 'var(--primary)')};">
+      <span class="chip text-xs" style="background:${escapeHtml(c.color || 'var(--primary)')}22; border-color:${escapeHtml(c.color || 'var(--primary)')};">
         ${icon(c.icon || 'package', 'w-3 h-3')} ${escapeHtml(lang === 'th' ? (c.th || c.en) : (c.en || c.th))}
       </span>`).join('');
     queueIcons();
@@ -12479,7 +12417,7 @@ async function renderSettings(params) {
     if (!box) return;
     const cards = tripCards(currentTrip);
     box.innerHTML = cards.length ? cards.map(c => `
-      <span class="chip text-[10px]" style="background:var(--primary-light); border-color:color-mix(in srgb, var(--primary-raw) 35%, transparent);">
+      <span class="chip text-xs" style="background:var(--primary-light); border-color:color-mix(in srgb, var(--primary-raw) 35%, transparent);">
         ${icon('credit-card', 'w-3 h-3')} ${escapeHtml(tripCardLabel(c))}</span>`).join('')
       : `<span class="text-xs text-[var(--text-tertiary)]">${th('ยังไม่มีบัตร — กด “จัดการบัตรเครดิต” เพื่อเพิ่ม','No cards yet — tap “Manage cards” to add the first one')}</span>`;
     queueIcons();
@@ -12536,7 +12474,7 @@ async function renderSettings(params) {
           <i data-lucide="${glyph[r.status] || 'circle'}" class="w-4 h-4 shrink-0" style="color:${color[r.status] || 'var(--text-secondary)'};"></i>
           <div class="min-w-0">
             <div class="font-semibold" style="color:${color[r.status] || 'inherit'};">${escapeHtml(r.label)}</div>
-            <div class="text-[11px] text-[var(--text-secondary)]">${escapeHtml(r.detail || '')}</div>
+            <div class="text-xs text-[var(--text-secondary)]">${escapeHtml(r.detail || '')}</div>
             ${r.fix ? `<div class="diag-fix">${escapeHtml(r.fix)}</div>` : ''}
           </div>
         </div>`).join('') + `
@@ -12553,7 +12491,7 @@ async function renderSettings(params) {
       });
       document.getElementById('diag-rerun')?.addEventListener('click', () => document.getElementById('run-diagnostics')?.click());
       toast[report.ok ? 'success' : 'error'](report.ok
-        ? th('ระบบพร้อมใช้งาน ✅','All checks passed ✅')
+        ? th('ระบบพร้อมใช้งาน','All checks passed')
         : th('พบปัญหาที่ต้องแก้ — ดูรายละเอียดด้านล่าง','Problems found — see details below'));
     } catch (e) {
       box.innerHTML = `<div class="diag-row" data-status="fail"><div><div class="font-semibold" style="color:var(--danger);">${escapeHtml(e.message)}</div></div></div>`;
@@ -12622,25 +12560,32 @@ async function paintDashboardTools({ tripId, trip, members = [], items = [], lan
     const topIdeas = trendingIdeas(ideas, 5);
     if (!ideasBox.isConnected) return;
     if (!topIdeas.length) {
-      ideasBox.innerHTML = `<div class="text-center py-6"><p class="text-sm text-[var(--text-secondary)]">${th('ยังไม่มีสถานที่ที่อยากไป — ชวนเพื่อนเพิ่มไอเดีย','No wishlist yet — invite friends to add places')}</p><a href="#/trip/${tripId}/ideas" class="btn btn-primary btn-sm mt-3">${icon('plus','w-4 h-4')} ${th('เพิ่มที่อยากไป','Add wishlist')}</a></div>`;
+      ideasBox.innerHTML = `<div class="dash-empty"><p>${th('ยังไม่มีสถานที่ที่อยากไป','No wishlist places yet')}</p><a href="#/trip/${tripId}/ideas" class="btn btn-secondary btn-sm">${icon('plus','w-4 h-4')} ${th('เพิ่มที่อยากไป','Add a place')}</a></div>`;
       queueIcons();
       return;
     }
-    ideasBox.innerHTML = `<div class="space-y-2">
+    // v35: a plain list — thumbnail only when there is a real photo, votes as quiet text.
+    ideasBox.innerHTML = `<ul class="dash-idea-list">
       ${topIdeas.map(i => {
         const imgs = Array.isArray(i.imageUrls) ? i.imageUrls.filter(u=>/^https?:\/\//i.test(String(u||''))) : (i.imageUrl ? [i.imageUrl] : []);
         const hasImg = imgs.length > 0;
-        return `<div class="flex items-center gap-3 p-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] hover:bg-[var(--surface-2)] transition-colors cursor-pointer" data-idea-id="${escapeHtml(i.id)}">
-          <span class="vote-pill flex-shrink-0">${icon('chevron-up','w-3 h-3')} ${voteCount(i)}</span>
-          ${hasImg ? `<img decoding="async" src="${escapeHtml(imgs[0])}" alt="" class="w-10 h-10 rounded-lg object-cover flex-shrink-0 cursor-zoom-in" data-idea-img="${escapeHtml(imgs[0])}">` : `<span class="w-10 h-10 rounded-lg bg-[var(--brand-yellow-tint)] grid place-items-center flex-shrink-0">${icon('map-pin','w-4 h-4')}</span>`}
-          <span class="min-w-0 flex-1"><span class="block text-[13px] font-semibold truncate">${escapeHtml(i.title||'')}</span><span class="block text-[11px] text-[var(--text-secondary)] truncate">${escapeHtml(i.address||'')}${i.category ? ' • '+escapeHtml(placeCategoryLabel(ideaCategoryId(i.category), lang)) : ''}</span></span>
-          ${icon('chevron-right','w-4 h-4 text-[var(--text-tertiary)]')}
-        </div>`;
+        const votes = voteCount(i);
+        const sub = [i.address || '', i.category ? placeCategoryLabel(ideaCategoryId(i.category), lang) : ''].filter(Boolean).join(' · ');
+        return `<li class="dash-idea-row" data-idea-id="${escapeHtml(i.id)}" role="link" tabindex="0">
+          ${hasImg ? `<img decoding="async" src="${escapeHtml(imgs[0])}" alt="" class="dash-idea-thumb" data-idea-img="${escapeHtml(imgs[0])}">` : ''}
+          <span class="dash-idea-main"><span class="dash-idea-title">${escapeHtml(i.title||'')}</span>${sub ? `<span class="dash-idea-sub">${escapeHtml(sub)}</span>` : ''}</span>
+          <span class="dash-idea-votes">${votes} ${th('โหวต', votes === 1 ? 'vote' : 'votes')}</span>
+        </li>`;
       }).join('')}
-    </div>`;
+    </ul>`;
     queueIcons();
     ideasBox.querySelectorAll('[data-idea-id]').forEach(row => row.addEventListener('click', (e)=>{
       if (e.target.closest('[data-idea-img]')) return;
+      location.hash = `#/trip/${tripId}/ideas`;
+    }));
+    ideasBox.querySelectorAll('[data-idea-id]').forEach(row => row.addEventListener('keydown', (e)=>{
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
       location.hash = `#/trip/${tripId}/ideas`;
     }));
     ideasBox.querySelectorAll('[data-idea-img]').forEach(img => img.addEventListener('click', (e)=>{
@@ -12771,8 +12716,8 @@ async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
     const tip = weatherTip(days, lang);
     el.innerHTML = `
       <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
-        <h3 class="font-bold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);">${icon('cloud-sun', 'w-4 h-4')}</span> ${t('weather')}</h3>
-        <button class="btn btn-ghost btn-sm text-[11px]" data-wx="manage" style="min-height:28px;padding:2px 8px;">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการเมือง', 'Cities')}</button>
+        <h3 class="font-semibold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);">${icon('cloud-sun', 'w-4 h-4')}</span> ${t('weather')}</h3>
+        <button class="btn btn-ghost btn-sm text-xs" data-wx="manage" style="min-height:28px;padding:2px 8px;">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการเมือง', 'Cities')}</button>
       </div>
       ${cities.length > 1 ? `<div class="chip-row chip-row-scroll mb-2">${cities.map((c, k) => `
         <button class="chip ${k === activeIdx ? 'chip-active' : ''}" data-wx="city" data-k="${k}">${escapeHtml(c.name || '?')}</button>`).join('')}</div>` : ''}
@@ -12783,7 +12728,7 @@ async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
       </div>` : ''}
       ${!loading && city && loadFailed ? `<div class="wx-empty">
         <p class="text-xs font-semibold mb-1">${th('โหลดอากาศไม่สำเร็จ', 'Weather failed to load')}</p>
-        <p class="text-[11px] text-[var(--text-tertiary)] mb-2">${th('เช็กเน็ตแล้วลองใหม่', 'Check your connection and retry.')}</p>
+        <p class="text-xs text-[var(--text-tertiary)] mb-2">${th('เช็กเน็ตแล้วลองใหม่', 'Check your connection and retry.')}</p>
         <button class="btn btn-secondary btn-sm" data-wx="retry">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่', 'Retry')}</button>
       </div>` : ''}
       ${!loading && city && !loadFailed && today ? `
@@ -12799,15 +12744,15 @@ async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
         ${days.slice(1).map(d => {
           const t2 = weatherTone(d.tone);
           return `<div class="weather-chip" style="background:${t2.bg}; border-color:${t2.line}; color:${t2.fg};" title="${escapeHtml(forecastLabel(d, lang))}${d.rainChance != null ? ` • ${d.rainChance}%` : ''}">
-            <span class="weather-chip-day">${dayjs(d.date).format('DD MMM')}</span>
+            <span class="weather-chip-day">${thaiDate(d.date, { year: false })}</span>
             ${icon(d.icon, 'w-4 h-4')}
             <span class="weather-chip-temp">${Math.round(d.max ?? 0)}°<small>${Math.round(d.min ?? 0)}°</small></span>
             ${d.rainChance != null && d.rainChance >= 40 ? `<span class="weather-chip-rain">${icon('droplets', 'w-2.5 h-2.5')}${d.rainChance}%</span>` : ''}
           </div>`;
         }).join('')}
       </div>
-      ${tip ? `<p class="text-[11px] text-[var(--text-secondary)] mt-2">${icon('info', 'w-3 h-3')} ${escapeHtml(tip)}</p>` : ''}` : ''}
-      <p class="text-[10px] text-[var(--text-tertiary)] mt-2 text-right">Open-Meteo</p>
+      ${tip ? `<p class="text-xs text-[var(--text-secondary)] mt-2">${icon('info', 'w-3 h-3')} ${escapeHtml(tip)}</p>` : ''}` : ''}
+      <p class="text-xs text-[var(--text-tertiary)] mt-2 text-right">Open-Meteo</p>
     `;
     queueIcons();
     el.querySelectorAll('[data-wx]').forEach(btn => btn.addEventListener('click', () => {
@@ -12825,7 +12770,7 @@ async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
         <div class="flex items-start gap-3">
           <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--gradient-primary);color:#fff;flex-shrink:0;">${icon('cloud-sun', 'w-5 h-5')}</div>
           <div class="min-w-0">
-            <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${th('เมืองที่ติดตาม', 'Tracked cities')}</h3>
+            <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('เมืองที่ติดตาม', 'Tracked cities')}</h3>
             <p class="text-xs text-[var(--text-secondary)] mt-0.5">${th(`สูงสุด ${WX_MAX_CITIES} เมือง`, `Up to ${WX_MAX_CITIES} cities`)}</p>
           </div>
         </div>
@@ -12848,10 +12793,10 @@ async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
         <div class="dash-pop-row" style="cursor:default;">
           <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('map-pin', 'w-3.5 h-3.5')}</span>
           <span class="min-w-0 flex-1 text-left">
-            <span class="block text-xs font-bold truncate">${escapeHtml(c.name || '?')}${k === activeIdx ? ` <span class="text-[10px] font-bold" style="color:var(--primary-strong);">• ${th('กำลังดู', 'viewing')}</span>` : ''}</span>
-            <span class="block text-[10px] text-[var(--text-tertiary)] truncate">${escapeHtml([c.admin, c.country].filter(Boolean).join(', ')) || `${Number(c.lat)?.toFixed?.(2) ?? ''} ${Number(c.lon)?.toFixed?.(2) ?? ''}`}</span>
+            <span class="block text-xs font-semibold truncate">${escapeHtml(c.name || '?')}${k === activeIdx ? ` <span class="text-xs font-semibold" style="color:var(--primary-strong);">• ${th('กำลังดู', 'viewing')}</span>` : ''}</span>
+            <span class="block text-xs text-[var(--text-tertiary)] truncate">${escapeHtml([c.admin, c.country].filter(Boolean).join(', ')) || `${Number(c.lat)?.toFixed?.(2) ?? ''} ${Number(c.lon)?.toFixed?.(2) ?? ''}`}</span>
           </span>
-          ${k !== activeIdx ? `<button class="btn btn-ghost btn-sm text-[11px]" data-wx-pick="${k}">${th('ดู', 'View')}</button>` : ''}
+          ${k !== activeIdx ? `<button class="btn btn-ghost btn-sm text-xs" data-wx-pick="${k}">${th('ดู', 'View')}</button>` : ''}
           <button class="icon-btn" data-wx-del="${k}" aria-label="${th('ลบ', 'Remove')}" style="width:30px;height:30px;">${icon('x', 'w-3.5 h-3.5')}</button>
         </div>`).join('')
         : `<p class="text-xs text-[var(--text-tertiary)]">${th('ยังไม่มีเมือง — ค้นหาด้านบนเพื่อเพิ่ม', 'No cities yet — search above to add one.')}</p>`;
@@ -12877,19 +12822,19 @@ async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
       timer = setTimeout(async () => {
         const my = ++seq;
         if (!String(q || '').trim()) { if (resultsEl) resultsEl.innerHTML = ''; return; }
-        if (resultsEl) resultsEl.innerHTML = `<p class="text-[11px] text-[var(--text-tertiary)]">${th('กำลังค้นหา…', 'Searching…')}</p>`;
+        if (resultsEl) resultsEl.innerHTML = `<p class="text-xs text-[var(--text-tertiary)]">${th('กำลังค้นหา…', 'Searching…')}</p>`;
         const hits = await searchCities(q, 6);
         if (my !== seq || !resultsEl?.isConnected) return;
         resultsEl.innerHTML = hits.length ? hits.map((h, k) => `
           <button class="dash-pop-row w-full" data-wx-hit="${k}">
             <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--bg-secondary);color:var(--text-secondary);">${icon('map-pin', 'w-3.5 h-3.5')}</span>
             <span class="min-w-0 flex-1 text-left">
-              <span class="block text-xs font-bold truncate">${escapeHtml(h.name || '')}</span>
-              <span class="block text-[10px] text-[var(--text-tertiary)] truncate">${escapeHtml([h.admin, h.country].filter(Boolean).join(', '))}</span>
+              <span class="block text-xs font-semibold truncate">${escapeHtml(h.name || '')}</span>
+              <span class="block text-xs text-[var(--text-tertiary)] truncate">${escapeHtml([h.admin, h.country].filter(Boolean).join(', '))}</span>
             </span>
             ${icon('plus', 'w-4 h-4')}
           </button>`).join('')
-          : `<p class="text-[11px] text-[var(--text-tertiary)]">${th('ไม่เจอเมืองนี้ — ลองสะกดแบบอังกฤษ', 'No matches — try the English spelling.')}</p>`;
+          : `<p class="text-xs text-[var(--text-tertiary)]">${th('ไม่เจอเมืองนี้ — ลองสะกดแบบอังกฤษ', 'No matches — try the English spelling.')}</p>`;
         queueIcons();
         resultsEl.querySelectorAll('[data-wx-hit]').forEach(b => b.addEventListener('click', () => {
           const h = hits[Number(b.dataset.wxHit)];
@@ -12941,7 +12886,7 @@ function toolDayOptions(trip, selected = '', lang = getLang(), th = (a) => a) {
   }
   return days.map((d, i) => {
     const ds = dayjs(d).format('YYYY-MM-DD');
-    const label = `${th('วันที่','Day')} ${i + 1} • ${dayjs(d).format('DD MMM')}${ds === dayjs().format('YYYY-MM-DD') ? ` ${th('(วันนี้)','(today)')}` : ''}`;
+    const label = `${th('วันที่','Day')} ${i + 1} • ${thaiDate(d, { year: false })}${ds === dayjs().format('YYYY-MM-DD') ? ` ${th('(วันนี้)','(today)')}` : ''}`;
     return `<option value="${ds}" ${ds === selected ? 'selected' : ''}>${escapeHtml(label)}</option>`;
   }).join('');
 }
@@ -12995,12 +12940,12 @@ function copyFallbackSheet(text, label = '') {
       <div class="flex items-start gap-3">
         <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);">${icon('clipboard-copy', 'w-5 h-5')}</div>
         <div class="min-w-0">
-          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${th('คัดลอกอัตโนมัติไม่ได้','Automatic copy is blocked')}</h3>
+          <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('คัดลอกอัตโนมัติไม่ได้','Automatic copy is blocked')}</h3>
           <p class="text-xs text-[var(--text-secondary)] mt-0.5">${th('เลือกข้อความด้านล่างแล้วกด “คัดลอก” อีกครั้งได้เลย','The text below is already selected — copy it from the menu')}</p>
         </div>
       </div>
       <div class="input-group">
-        <label class="input-label">${icon('link', 'w-3.5 h-3.5')} ${escapeHtml(label || th('ข้อความ','Text'))}</label>
+        <label class="input-label">${escapeHtml(label || th('ข้อความ','Text'))}</label>
         <textarea id="copy-fallback-text" class="input import-textarea" readonly style="min-height:120px;"></textarea>
       </div>
       <button class="btn btn-primary w-full" id="copy-fallback-close">${th('ปิด','Close')}</button>
@@ -13029,18 +12974,18 @@ function openAddToPlanSheet({ trip, title, subtitle, defaultDate, defaultTime, c
       <div class="flex items-start gap-3">
         <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('calendar-plus', 'w-5 h-5')}</div>
         <div class="min-w-0">
-          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${t('addToPlan')}</h3>
+          <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${t('addToPlan')}</h3>
           <p class="text-xs text-[var(--text-secondary)] mt-0.5">${escapeHtml(title || '')}</p>
         </div>
       </div>
-      ${subtitle ? `<p class="text-[11px] text-[var(--text-secondary)] p-3 rounded-xl" style="background:var(--bg-secondary); border:1px solid var(--border);">${subtitle}</p>` : ''}
+      ${subtitle ? `<p class="text-xs text-[var(--text-secondary)] p-3 rounded-xl" style="background:var(--bg-secondary); border:1px solid var(--border);">${subtitle}</p>` : ''}
       <div class="grid grid-cols-2 gap-3">
-        <div class="input-group"><label class="input-label">${icon('calendar', 'w-3.5 h-3.5')} ${th('วัน','Day')}</label>
+        <div class="input-group"><label class="input-label">${th('วัน','Day')}</label>
           <select id="atp-date" class="input">${toolDayOptions(trip, defaultDate || trip?.startDate || '', lang, th)}</select></div>
-        <div class="input-group"><label class="input-label">${icon('clock', 'w-3.5 h-3.5')} ${th('เวลาเริ่ม','Start')}</label>
+        <div class="input-group"><label class="input-label">${th('เวลาเริ่ม','Start')}</label>
           <input id="atp-time" type="time" class="input" value="${escapeHtml(defaultTime || '09:00')}"></div>
       </div>
-      <div class="input-group"><label class="input-label">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('หมวดหมู่','Category')}</label>
+      <div class="input-group"><label class="input-label">${th('หมวดหมู่','Category')}</label>
         <select id="atp-cat" class="input">${ITINERARY_CATEGORIES.map(c => `<option value="${c.id}" ${c.id === category ? 'selected' : ''}>${escapeHtml(lang === 'th' ? c.th : c.en)}</option>`).join('')}</select></div>
       <div class="flex gap-2">
         <button id="atp-cancel" class="btn btn-secondary flex-1">${t('cancel')}</button>
@@ -13111,11 +13056,11 @@ async function renderPrep(params) {
     box.innerHTML = `
       <div class="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h3 class="font-bold flex items-center gap-2">${icon('list-checks', 'w-4 h-4')} ${t('progress')}</h3>
+          <h3 class="font-semibold flex items-center gap-2">${icon('list-checks', 'w-4 h-4')} ${t('progress')}</h3>
           <p class="text-xs text-[var(--text-secondary)] mt-0.5">${p.done}/${p.total} ${t('items')} • ${th('เสร็จแล้ว','done')} ${p.percent}%</p>
         </div>
         <div class="flex items-center gap-2">
-          <span class="badge badge-planned text-[10px]">${p.lists} ${t('checklists')}</span>
+          <span class="badge badge-planned text-xs">${p.lists} ${t('checklists')}</span>
           <span class="brand-ribbon">${icon('sparkles', 'w-3 h-3')} ${p.remaining} ${th('เหลือ','left')}</span>
         </div>
       </div>
@@ -13147,8 +13092,8 @@ async function renderPrep(params) {
           <div class="flex items-center gap-2 min-w-0">
             <span class="row-icon" style="width:36px;height:36px;border-radius:12px;background:${escapeHtml(list.color || brandPrimary())}1f;color:${escapeHtml(list.color || brandPrimary())};">${icon(list.icon || (list.kind === 'todo' ? 'list-checks' : 'luggage'), 'w-4 h-4')}</span>
             <div class="min-w-0">
-              <h3 class="font-bold text-sm truncate">${escapeHtml(list.title || '')}</h3>
-              <p class="text-[11px] text-[var(--text-secondary)]">${p.done}/${p.total} • ${list.kind === 'todo' ? t('todo') : t('packing')}</p>
+              <h3 class="font-semibold text-sm truncate">${escapeHtml(list.title || '')}</h3>
+              <p class="text-xs text-[var(--text-secondary)]">${p.done}/${p.total} • ${list.kind === 'todo' ? t('todo') : t('packing')}</p>
             </div>
           </div>
           <div class="flex items-center gap-1">
@@ -13170,7 +13115,7 @@ async function renderPrep(params) {
               <button class="icon-btn icon-btn-danger" data-act="remove-item" data-id="${list.id}" data-item="${escapeHtml(item.id)}" title="${t('delete')}">${icon('x', 'w-3 h-3')}</button>
             </li>`).join('')}
         </ul>
-        ${p.done ? `<button class="btn btn-ghost btn-sm text-[11px] mt-2" data-act="clear-done" data-id="${list.id}">${icon('eraser', 'w-3.5 h-3.5')} ${t('clearDone')}</button>` : ''}
+        ${p.done ? `<button class="btn btn-ghost btn-sm text-xs mt-2" data-act="clear-done" data-id="${list.id}">${icon('eraser', 'w-3.5 h-3.5')} ${t('clearDone')}</button>` : ''}
         <div class="add-item-row mt-2">
           <input class="input text-sm" data-add-input="${list.id}" placeholder="${t('itemPlaceholder')}" autocomplete="off">
           <button class="btn btn-primary btn-sm" data-act="add-item" data-id="${list.id}">${icon('plus', 'w-4 h-4')}</button>
@@ -13294,7 +13239,7 @@ async function renderPrep(params) {
         <div class="flex items-center gap-3">
           <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-sun);color:var(--on-accent);">${icon('sparkles', 'w-5 h-5')}</div>
           <div>
-            <h3 class="font-bold text-base" style="font-family: var(--font-display);">${t('templates')}</h3>
+            <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${t('templates')}</h3>
             <p class="text-xs text-[var(--text-secondary)]">${list ? th(`เพิ่มรายการจากเทมเพลตเข้า “${list.title}”`, `Add template items into “${list.title}”`) : th('เลือกเทมเพลตเพื่อสร้างเช็กลิสต์ใหม่','Pick a template to create a new checklist')}</p>
           </div>
         </div>
@@ -13304,7 +13249,7 @@ async function renderPrep(params) {
               <span class="row-icon" style="width:36px;height:36px;border-radius:12px;background:${tpl.color}1f;color:${tpl.color};">${icon(tpl.icon, 'w-4 h-4')}</span>
               <span class="flex-1 min-w-0">
                 <span class="block font-semibold text-sm truncate">${escapeHtml(lang === 'th' ? tpl.th : tpl.en)}</span>
-                <span class="block text-[11px] text-[var(--text-secondary)]">${tpl.items.length} ${t('items')} • ${tpl.kind === 'todo' ? t('todo') : t('packing')}</span>
+                <span class="block text-xs text-[var(--text-secondary)]">${tpl.items.length} ${t('items')} • ${tpl.kind === 'todo' ? t('todo') : t('packing')}</span>
               </span>
               ${icon('chevron-right', 'w-4 h-4')}
             </button>`).join('')}
@@ -13441,19 +13386,19 @@ async function renderIdeas(params) {
       <div id="idea-pending-slot"></div>
       <div class="card p-3" id="ideas-map-card">
         <div class="flex items-center justify-between gap-2 px-1 pb-2 flex-wrap">
-          <h3 class="font-bold text-sm flex items-center gap-2">${icon('map', 'w-4 h-4')} ${th('แผนที่ไอเดีย','Ideas map')}</h3>
+          <h3 class="font-semibold text-sm flex items-center gap-2">${icon('map', 'w-4 h-4')} ${th('แผนที่ไอเดีย','Ideas map')}</h3>
           <div class="flex items-center gap-2 flex-wrap">
             <div class="map-layer-bar" id="ideas-map-layers" style="display:flex; gap:4px;">
-              <button class="chip text-[10px]" data-ideas-layer="map" style="min-height:26px;padding:2px 8px;">${icon('map','w-3 h-3')} ${th('แผนที่','Map')}</button>
-              <button class="chip text-[10px]" data-ideas-layer="satellite" style="min-height:26px;padding:2px 8px;">${icon('satellite','w-3 h-3')} ${th('ดาวเทียม','Sat')}</button>
-              <button class="chip text-[10px]" data-ideas-layer="terrain" style="min-height:26px;padding:2px 8px;">${icon('mountain','w-3 h-3')} ${th('ภูมิประเทศ','Terrain')}</button>
-              <button class="chip text-[10px]" id="ideas-map-labels" aria-pressed="${getStoredLabelsVisible()}" style="min-height:26px;padding:2px 8px;">${icon('tags','w-3 h-3')} ${th('ชื่อสถานที่','Labels')}</button>
+              <button class="chip text-xs" data-ideas-layer="map" style="min-height:26px;padding:2px 8px;">${icon('map','w-3 h-3')} ${th('แผนที่','Map')}</button>
+              <button class="chip text-xs" data-ideas-layer="satellite" style="min-height:26px;padding:2px 8px;">${icon('satellite','w-3 h-3')} ${th('ดาวเทียม','Sat')}</button>
+              <button class="chip text-xs" data-ideas-layer="terrain" style="min-height:26px;padding:2px 8px;">${icon('mountain','w-3 h-3')} ${th('ภูมิประเทศ','Terrain')}</button>
+              <button class="chip text-xs" id="ideas-map-labels" aria-pressed="${getStoredLabelsVisible()}" style="min-height:26px;padding:2px 8px;">${icon('tags','w-3 h-3')} ${th('ชื่อสถานที่','Labels')}</button>
             </div>
-            <span id="ideas-map-count" class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:var(--bg-secondary);">0 ${th('หมุด','pins')}</span>
-            <button id="ideas-map-fit" class="btn btn-ghost btn-sm text-[10px]" style="min-height:26px;padding:2px 8px;">${icon('maximize', 'w-3 h-3')} ${th('พอดีจอ','Fit')}</button>
+            <span id="ideas-map-count" class="text-xs font-semibold px-2 py-0.5 rounded-full" style="background:var(--bg-secondary);">0 ${th('หมุด','pins')}</span>
+            <button id="ideas-map-fit" class="btn btn-ghost btn-sm text-xs" style="min-height:26px;padding:2px 8px;">${icon('maximize', 'w-3 h-3')} ${th('พอดีจอ','Fit')}</button>
           </div>
         </div>
-        <div id="ideas-map-wrap" class="relative rounded-2xl overflow-hidden" style="border:1px solid var(--border);">
+        <div id="ideas-map-wrap" class="relative rounded-xl overflow-hidden" style="border:1px solid var(--border);">
           <div id="ideas-map" class="map-frame w-full" style="height:min(38vh, 320px);"></div>
           <div id="ideas-map-status" class="map-status"><span class="skeleton" style="width:26px;height:26px;border-radius:50%;"></span> <span>${th('กำลังโหลดแผนที่...','Loading map...')}</span></div>
           <div id="ideas-map-empty" class="map-status hidden"><div class="text-center px-4">
@@ -13461,7 +13406,7 @@ async function renderIdeas(params) {
             <p class="text-xs text-[var(--text-secondary)]">${th('ใส่พิกัด (lat,lng) ให้ไอเดีย เพื่อให้แสดงหมุดบนแผนที่','Add coordinates (lat,lng) to an idea to see it here')}</p>
           </div></div>
         </div>
-        <p class="text-[10px] text-[var(--text-tertiary)] flex items-center gap-1 px-1 pt-2">${icon('info', 'w-3 h-3')} ${th('กดปุ่มหมุดบนการ์ด → แผนที่พาไปที่ไอเดียนั้น • หมุดเขียว = อยู่ในแผนแล้ว','Tap the pin button on a card → the map jumps to that idea • green pin = already in the plan')} • ${th('แผนที่มี 3 โหมดเหมือนหน้าแผนการเดินทาง','Map has 3 modes like itinerary')}</p>
+        <p class="text-xs text-[var(--text-tertiary)] flex items-center gap-1 px-1 pt-2">${icon('info', 'w-3 h-3')} ${th('กดปุ่มหมุดบนการ์ด → แผนที่พาไปที่ไอเดียนั้น • หมุดเขียว = อยู่ในแผนแล้ว','Tap the pin button on a card → the map jumps to that idea • green pin = already in the plan')} • ${th('แผนที่มี 3 โหมดเหมือนหน้าแผนการเดินทาง','Map has 3 modes like itinerary')}</p>
       </div>
       <div id="ideas-list" class="space-y-5 stagger"></div>
     </div>
@@ -13483,8 +13428,8 @@ async function renderIdeas(params) {
         <div class="flex items-start gap-3 flex-wrap">
           <span class="row-icon" style="width:38px;height:38px;border-radius:13px;background:color-mix(in srgb, var(--warning) 20%, #fff);color:var(--warning);flex-shrink:0;">${icon('cloud-off', 'w-4 h-4')}</span>
           <div class="flex-1 min-w-[180px]">
-            <p class="text-sm font-bold">${th(`บันทึกไว้ในเครื่องแล้ว ${pendingCount} ไอเดีย — ยังไม่ขึ้นคลาวด์`, `${pendingCount} idea(s) saved on this device — not on the cloud yet`)}</p>
-            <p class="text-[11px] mt-0.5 text-[var(--text-secondary)]">${th('Firestore ปฏิเสธการเขียน (กฎที่เผยแพร่อยู่เก่ากว่าโค้ด) — ข้อความไม่หาย ระบบจะซิงก์ให้อัตโนมัติเมื่อกฎถูกอัปเดต','Firestore denied the write (the published rules are older than the app) — nothing is lost, it syncs automatically once the rules are updated.')}</p>
+            <p class="text-sm font-semibold">${th(`บันทึกไว้ในเครื่องแล้ว ${pendingCount} ไอเดีย — ยังไม่ขึ้นคลาวด์`, `${pendingCount} idea(s) saved on this device — not on the cloud yet`)}</p>
+            <p class="text-xs mt-0.5 text-[var(--text-secondary)]">${th('Firestore ปฏิเสธการเขียน (กฎที่เผยแพร่อยู่เก่ากว่าโค้ด) — ข้อความไม่หาย ระบบจะซิงก์ให้อัตโนมัติเมื่อกฎถูกอัปเดต','Firestore denied the write (the published rules are older than the app) — nothing is lost, it syncs automatically once the rules are updated.')}</p>
           </div>
           <div class="btn-row">
             <button id="idea-sync-retry" class="btn btn-secondary btn-sm" type="button">${icon('refresh-cw', 'w-3.5 h-3.5')} ${th('ลองซิงก์อีกครั้ง','Retry sync')}</button>
@@ -13534,10 +13479,10 @@ async function renderIdeas(params) {
       <div class="card p-3 flex items-center gap-2">
         <span class="row-icon" style="width:34px;height:34px;border-radius:12px;${tile.tone === 'yellow' ? 'background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);' : 'background:var(--primary-light);color:var(--primary-strong);'}">${icon(tile.icon, 'w-4 h-4')}</span>
         <span class="min-w-0">
-          <span class="block text-[10px] font-bold uppercase tracking-wide text-[var(--text-tertiary)]">${tile.label}</span>
-          <span class="block text-lg font-bold" style="font-family:var(--font-display);">${escapeHtml(String(tile.value))}</span>
+          <span class="block text-xs font-semibold text-[var(--text-tertiary)]">${tile.label}</span>
+          <span class="block text-lg font-semibold" style="font-family:var(--font-display);">${escapeHtml(String(tile.value))}</span>
         </span>
-      </div>`).join('') + (budget ? `<p class="col-span-2 sm:col-span-4 text-[11px] text-[var(--text-secondary)]">${icon('coins', 'w-3 h-3')} ${th('งบประมาณรวมของไอเดียที่ยังไม่เข้าแผน','Estimated budget of the unplanned ideas')}: <b>${escapeHtml(formatCurrency(budget, trip?.baseCurrency || 'THB'))}</b></p>` : '');
+      </div>`).join('') + (budget ? `<p class="col-span-2 sm:col-span-4 text-xs text-[var(--text-secondary)]">${icon('coins', 'w-3 h-3')} ${th('งบประมาณรวมของไอเดียที่ยังไม่เข้าแผน','Estimated budget of the unplanned ideas')}: <b>${escapeHtml(formatCurrency(budget, trip?.baseCurrency || 'THB'))}</b></p>` : '');
     queueIcons();
   }
 
@@ -13619,10 +13564,10 @@ async function renderIdeas(params) {
           </button>
           <div class="flex-1 min-w-0">
             <div class="flex items-start justify-between gap-2">
-              <h3 class="font-bold text-sm leading-snug min-w-0"><span class="idea-num" title="${th('หมายเลขหมุดบนแผนที่','Pin number on the map')}">${idx + 1}</span> ${escapeHtml(idea.title || '')}</h3>
+              <h3 class="font-semibold text-sm leading-snug min-w-0"><span class="idea-num" title="${th('หมายเลขหมุดบนแผนที่','Pin number on the map')}">${idx + 1}</span> ${escapeHtml(idea.title || '')}</h3>
               <span class="flex items-center gap-1 flex-shrink-0">
-                ${queued ? `<span class="badge badge-pending text-[10px]" title="${th('บันทึกในเครื่องนี้ รอซิงก์ขึ้นคลาวด์','Saved on this device, waiting to sync')}">${icon('cloud-off', 'w-2.5 h-2.5')} ${th('รอซิงก์','pending')}</span>` : ''}
-                <span class="badge ${idea.status === 'planned' ? 'badge-completed' : 'badge-planned'} text-[10px]">${icon(status.icon, 'w-2.5 h-2.5')} ${lang === 'th' ? status.th : status.en}</span>
+                ${queued ? `<span class="badge badge-pending text-xs" title="${th('บันทึกในเครื่องนี้ รอซิงก์ขึ้นคลาวด์','Saved on this device, waiting to sync')}">${icon('cloud-off', 'w-2.5 h-2.5')} ${th('รอซิงก์','pending')}</span>` : ''}
+                <span class="badge ${idea.status === 'planned' ? 'badge-completed' : 'badge-planned'} text-xs">${icon(status.icon, 'w-2.5 h-2.5')} ${lang === 'th' ? status.th : status.en}</span>
               </span>
             </div>
             ${idea.note ? `<p class="text-xs text-[var(--text-secondary)] mt-1 idea-detail">${escapeHtml(idea.note)}</p>` : ''}
@@ -13633,22 +13578,22 @@ async function renderIdeas(params) {
               <span class="idea-img-hint">${icon('images', 'w-3 h-3')} ${imgs.length}/3</span>
             </div>` : ''}
             <div class="flex items-center gap-2 flex-wrap mt-1.5">
-              <span class="badge badge-planned text-[10px] idea-cat-badge" style="background:color-mix(in srgb, ${escapeHtml(placeCategoryColor(ideaCategoryId(idea.category)))} 14%, transparent);color:${escapeHtml(placeCategoryColor(ideaCategoryId(idea.category)))};">${icon(placeCategoryIcon(ideaCategoryId(idea.category)), 'w-2.5 h-2.5')} ${escapeHtml(placeCategoryLabel(ideaCategoryId(idea.category), lang))}</span>
+              <span class="badge badge-planned text-xs idea-cat-badge" style="background:color-mix(in srgb, ${escapeHtml(placeCategoryColor(ideaCategoryId(idea.category)))} 14%, transparent);color:${escapeHtml(placeCategoryColor(ideaCategoryId(idea.category)))};">${icon(placeCategoryIcon(ideaCategoryId(idea.category)), 'w-2.5 h-2.5')} ${escapeHtml(placeCategoryLabel(ideaCategoryId(idea.category), lang))}</span>
               ${idea.address ? `<span class="meta-line idea-detail">${icon('map-pin', 'w-3 h-3')} <span class="truncate" style="max-width:220px;">${escapeHtml(idea.address)}</span></span>` : ''}
-              ${Number(idea.estimatedCostMinor) > 0 ? `<span class="badge badge-skipped text-[10px] idea-detail">${icon('coins', 'w-2.5 h-2.5')} ${escapeHtml(formatCurrency(Number(idea.estimatedCostMinor), idea.currency || trip?.baseCurrency || 'THB'))}</span>` : ''}
+              ${Number(idea.estimatedCostMinor) > 0 ? `<span class="badge badge-skipped text-xs idea-detail">${icon('coins', 'w-2.5 h-2.5')} ${escapeHtml(formatCurrency(Number(idea.estimatedCostMinor), idea.currency || trip?.baseCurrency || 'THB'))}</span>` : ''}
             </div>
             ${pinned ? `<button type="button" class="idea-pin-line idea-detail" data-act="locate" data-id="${idea.id}" title="${th('พาแผนที่ไปที่ไอเดียนั้น','Show on the map')}">${icon('crosshair', 'w-3 h-3')} <span class="font-mono">${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}</span> <span class="idea-pin-go">${th('ดูบนแผนที่','View on map')}</span></button>` : ''}
             ${pinned && near ? `<button type="button" class="idea-near-line idea-detail" data-act="compare" data-id="${idea.id}" title="${th('เทียบระยะกับแผนแต่ละวัน','Compare with each day')}">${icon('route', 'w-3 h-3')} ${th('ห่างจากแผน','from the plan')} <b>~${ideaKmLabel(near.km)}</b> <span class="truncate" style="max-width:170px;">• ${escapeHtml(near.item.title || '')}</span></button>`
               : (pinned && !planPinned ? `<p class="idea-near-line is-muted idea-detail">${icon('route', 'w-3 h-3')} ${th('แผนยังไม่มีพิกัดให้เทียบระยะ','The plan has no pins to compare with yet')}</p>` : '')}
-            ${voters.length ? `<p class="text-[10px] text-[var(--text-tertiary)] mt-1.5 idea-detail">${icon('users', 'w-3 h-3')} ${escapeHtml(voters.join(', '))}${info.count > voters.length ? ` +${info.count - voters.length}` : ''}</p>` : ''}
+            ${voters.length ? `<p class="text-xs text-[var(--text-tertiary)] mt-1.5 idea-detail">${icon('users', 'w-3 h-3')} ${escapeHtml(voters.join(', '))}${info.count > voters.length ? ` +${info.count - voters.length}` : ''}</p>` : ''}
             <div class="flex items-center gap-1 flex-wrap mt-2">
-              ${sanitizeUrl(idea.url) ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(sanitizeUrl(idea.url))}" target="_blank" rel="noopener noreferrer">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
-              ${idea.address ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(googleMapsPlaceUrl(idea.address, idea.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
-              ${pinned ? `<button class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" data-act="locate" data-id="${idea.id}">${icon('crosshair', 'w-3.5 h-3.5')} ${th('หมุด','Pin')}</button>` : ''}
-              ${pinned && planPinned ? `<button class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" data-act="compare" data-id="${idea.id}">${icon('git-compare', 'w-3.5 h-3.5')} ${th('เทียบกับแผน','Compare')}</button>` : ''}
+              ${sanitizeUrl(idea.url) ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(sanitizeUrl(idea.url))}" target="_blank" rel="noopener noreferrer">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
+              ${idea.address ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(googleMapsPlaceUrl(idea.address, idea.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
+              ${pinned ? `<button class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" data-act="locate" data-id="${idea.id}">${icon('crosshair', 'w-3.5 h-3.5')} ${th('หมุด','Pin')}</button>` : ''}
+              ${pinned && planPinned ? `<button class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" data-act="compare" data-id="${idea.id}">${icon('git-compare', 'w-3.5 h-3.5')} ${th('เทียบกับแผน','Compare')}</button>` : ''}
               ${idea.status === 'planned'
-                ? `<span class="badge badge-completed text-[10px]">${icon('check', 'w-3 h-3')} ${th('อยู่ในแผน','In the plan')}${idea.plannedDate ? ` • ${escapeHtml(idea.plannedDate)}` : ''}</span>`
-                : `<button class="btn btn-accent btn-sm text-[11px]" style="min-height:30px;padding:2px 10px;" data-act="plan" data-id="${idea.id}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>`}
+                ? `<span class="badge badge-completed text-xs">${icon('check', 'w-3 h-3')} ${th('อยู่ในแผน','In the plan')}${idea.plannedDate ? ` • ${escapeHtml(idea.plannedDate)}` : ''}</span>`
+                : `<button class="btn btn-accent btn-sm text-xs" style="min-height:30px;padding:2px 10px;" data-act="plan" data-id="${idea.id}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>`}
               <button class="icon-btn" data-act="edit" data-id="${idea.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
               <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${idea.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
             </div>
@@ -13753,7 +13698,7 @@ async function renderIdeas(params) {
         <div class="flex items-start gap-3">
           <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('git-compare', 'w-5 h-5')}</div>
           <div class="min-w-0">
-            <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${th('เทียบไอเดียกับแผน','Compare with the plan')}</h3>
+            <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('เทียบไอเดียกับแผน','Compare with the plan')}</h3>
             <p class="text-xs text-[var(--text-secondary)] mt-0.5 truncate">${escapeHtml(idea.title || '')}${c ? ` • <span class="font-mono">${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}</span>` : ''}</p>
           </div>
         </div>
@@ -13767,13 +13712,13 @@ async function renderIdeas(params) {
         </div>` : ''}
         ${days.length ? `<div class="space-y-1.5">${days.map(([day, v]) => `
           <div class="idea-compare-row">
-            <span class="idea-compare-day">${dayjs(day).format('DD MMM')}</span>
+            <span class="idea-compare-day">${thaiDate(day, { year: false })}</span>
             <span class="min-w-0 flex-1">
               <span class="block text-xs font-semibold truncate">${escapeHtml(v.item.title || '')}</span>
-              <span class="block text-[10px] text-[var(--text-tertiary)]">${th('ใกล้สุดของวันนี้','nearest this day')}</span>
+              <span class="block text-xs text-[var(--text-tertiary)]">${th('ใกล้สุดของวันนี้','nearest this day')}</span>
             </span>
-            <b class="text-xs font-bold">~${ideaKmLabel(v.km)}</b>
-            <button class="btn btn-ghost btn-sm text-[11px]" data-day="${escapeHtml(day)}">${icon('arrow-right', 'w-3.5 h-3.5')}</button>
+            <b class="text-xs font-semibold">~${ideaKmLabel(v.km)}</b>
+            <button class="btn btn-ghost btn-sm text-xs" data-day="${escapeHtml(day)}">${icon('arrow-right', 'w-3.5 h-3.5')}</button>
           </div>`).join('')}</div>` : ''}
         <div class="flex gap-2">
           <button id="idea-compare-close" class="btn btn-secondary flex-1">${th('ปิด','Close')}</button>
@@ -13858,15 +13803,15 @@ async function renderIdeas(params) {
       <div class="space-y-4">
         <div class="flex items-center gap-3">
           <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('lightbulb', 'w-5 h-5')}</div>
-          <h3 class="font-bold text-base" style="font-family: var(--font-display);">${isEdit ? t('edit') : t('addIdea')}</h3>
+          <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${isEdit ? t('edit') : t('addIdea')}</h3>
         </div>
-        <div class="input-group"><label class="input-label">${icon('sparkles', 'w-3.5 h-3.5')} ${th('ชื่อสถานที่','Place name')} *</label>
+        <div class="input-group"><label class="input-label">${th('ชื่อสถานที่','Place name')} *</label>
           <input id="idea-title" class="input" value="${escapeHtml(idea?.title || '')}" placeholder="${th('เช่น ทะเลสาบคาวากุจิ','e.g. Lake Kawaguchi')}"></div>
-        <div class="input-group"><label class="input-label">${icon('align-left', 'w-3.5 h-3.5')} ${th('โน้ต / เหตุผลที่อยากไป','Note')}</label>
+        <div class="input-group"><label class="input-label">${th('โน้ต / เหตุผลที่อยากไป','Note')}</label>
           <textarea id="idea-note" class="input" style="min-height:70px;" placeholder="${th('ทำไมถึงอยากไป เปิดกี่โมง ฯลฯ','Why go, opening hours, tips…')}">${escapeHtml(idea?.note || '')}</textarea></div>
-        <div class="input-group"><label class="input-label">${icon('link', 'w-3.5 h-3.5')} ${th('ลิงก์','Link')}</label>
+        <div class="input-group"><label class="input-label">${th('ลิงก์','Link')}</label>
           <input id="idea-url" class="input text-sm" value="${escapeHtml(idea?.url || '')}" placeholder="https://..."></div>
-        <div class="input-group"><label class="input-label">${icon('images', 'w-3.5 h-3.5')} ${th('รูปภาพ (ลิงก์ URL สูงสุด 3 รูป)','Photos (up to 3 URLs)')}</label>
+        <div class="input-group"><label class="input-label">${th('รูปภาพ (ลิงก์ URL สูงสุด 3 รูป)','Photos (up to 3 URLs)')}</label>
           <div class="grid gap-2">
             ${[0, 1, 2].map(k => `
             <input id="idea-img-${k + 1}" class="input text-sm font-mono" value="${escapeHtml((ideaImages(idea || {})[k]) || '')}" placeholder="https://${th('ลิงก์รูปที่','image link ')}${k + 1} • https://..." autocomplete="off">`).join('')}
@@ -13874,15 +13819,15 @@ async function renderIdeas(params) {
           <div id="idea-img-previews" class="idea-form-previews"></div>
           <p class="input-hint">${th('วางลิงก์รูป (https://...) สูงสุด 3 รูป — สมาชิกกดดูรูปใหญ่ได้จากการ์ด','Paste up to 3 image links (https://...) — members tap the card to view them full-size.')}</p></div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div class="input-group"><label class="input-label">${icon('map-pin', 'w-3.5 h-3.5')} ${th('ที่อยู่','Address')}</label>
+          <div class="input-group"><label class="input-label">${th('ที่อยู่','Address')}</label>
             <input id="idea-address" class="input text-sm" value="${escapeHtml(idea?.address || '')}" placeholder="${th('ที่อยู่หรือชื่อสถานที่','Address or place')}"></div>
-          <div class="input-group"><label class="input-label">${icon('crosshair', 'w-3.5 h-3.5')} ${th('พิกัด (lat,lng)','Coordinates')}</label>
+          <div class="input-group"><label class="input-label">${th('พิกัด (lat,lng)','Coordinates')}</label>
             <input id="idea-coords" class="input text-sm font-mono" value="${escapeHtml(idea?.coordinates ? `${idea.coordinates.lat ?? idea.coordinates.latitude},${idea.coordinates.lng ?? idea.coordinates.longitude}` : '')}" placeholder="35.5171,138.7519"></div>
         </div>
         <div class="grid grid-cols-2 gap-3">
-          <div class="input-group"><label class="input-label">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('หมวดหมู่','Category')}</label>
+          <div class="input-group"><label class="input-label">${th('หมวดหมู่','Category')}</label>
             <select id="idea-cat" class="input">${categoryChoices(lang).map(c => `<option value="${c.id}" ${ideaCategoryId(idea?.category || 'sightseeing') === c.id ? 'selected' : ''}>${escapeHtml(categoryChoiceLabel(c, lang))}</option>`).join('')}</select></div>
-          <div class="input-group"><label class="input-label">${icon('coins', 'w-3.5 h-3.5')} ${th('ค่าใช้จ่ายประมาณ','Estimated cost')}</label>
+          <div class="input-group"><label class="input-label">${th('ค่าใช้จ่ายประมาณ','Estimated cost')}</label>
             <div class="flex gap-2">
               <input id="idea-cost" class="input money-input flex-1" type="text" inputmode="decimal" value="${escapeHtml(toolAmountValue(idea?.estimatedCostMinor, idea?.currency || trip?.baseCurrency || 'THB'))}" placeholder="0">
               <select id="idea-cur" class="input" style="max-width:92px;">${toolCurrencyOptions(trip, idea?.currency || trip?.baseCurrency || 'THB')}</select>
@@ -14147,8 +14092,8 @@ async function renderBookings(params) {
       box.innerHTML = `<div class="flex items-center gap-3">
         <span class="row-icon" style="width:38px;height:38px;border-radius:12px;">${icon('calendar-clock', 'w-4 h-4')}</span>
         <div>
-          <p class="text-xs font-bold">${th('ยังไม่มีการจองถัดไป','No upcoming booking')}</p>
-          <p class="text-[11px] text-[var(--text-secondary)]">${th('เพิ่มตั๋ว/ที่พัก แล้วระบบจะเตือนลำดับถัดไปไว้ตรงนี้','Add a ticket or hotel and the next one shows up here')}</p>
+          <p class="text-xs font-semibold">${th('ยังไม่มีการจองถัดไป','No upcoming booking')}</p>
+          <p class="text-xs text-[var(--text-secondary)]">${th('เพิ่มตั๋ว/ที่พัก แล้วระบบจะเตือนลำดับถัดไปไว้ตรงนี้','Add a ticket or hotel and the next one shows up here')}</p>
         </div>
       </div>`;
       queueIcons();
@@ -14160,9 +14105,9 @@ async function renderBookings(params) {
       <div class="flex items-center gap-3 flex-wrap">
         <span class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--primary-light);color:var(--primary-strong);">${icon(rt.icon, 'w-5 h-5')}</span>
         <div class="flex-1 min-w-0">
-          <p class="text-[10px] font-bold uppercase tracking-wide text-[var(--text-tertiary)]">${th('การจองถัดไป','Next booking')} ${countdown >= 0 ? `• ${th('อีก','in')} ${countdown} ${th('วัน','day(s)')}` : ''}</p>
-          <p class="font-bold text-sm truncate">${escapeHtml(upcoming.title || '')}</p>
-          <p class="text-[11px] text-[var(--text-secondary)]">${escapeHtml(upcoming.date || '')} ${escapeHtml(upcoming.startTime || '')} ${upcoming.confirmation ? `• ${t('confirmCode')}: <b>${escapeHtml(upcoming.confirmation)}</b>` : ''}</p>
+          <p class="text-xs font-semibold text-[var(--text-tertiary)]">${th('การจองถัดไป','Next booking')} ${countdown >= 0 ? `• ${th('อีก','in')} ${countdown} ${th('วัน','day(s)')}` : ''}</p>
+          <p class="font-semibold text-sm truncate">${escapeHtml(upcoming.title || '')}</p>
+          <p class="text-xs text-[var(--text-secondary)]">${escapeHtml(upcoming.date || '')} ${escapeHtml(upcoming.startTime || '')} ${upcoming.confirmation ? `• ${t('confirmCode')}: <b>${escapeHtml(upcoming.confirmation)}</b>` : ''}</p>
         </div>
         <button class="btn btn-secondary btn-sm" data-copy="${escapeHtml(upcoming.confirmation || '')}">${icon('copy', 'w-3.5 h-3.5')} ${th('คัดลอกรหัส','Copy code')}</button>
       </div>`;
@@ -14187,10 +14132,10 @@ async function renderBookings(params) {
     const groups = groupReservationsByDate(filtered);
     box.innerHTML = groups.map(group => `
       <div>
-        <h3 class="font-bold text-sm mb-2 flex items-center gap-2">
+        <h3 class="font-semibold text-sm mb-2 flex items-center gap-2">
           <span class="step-num">${group.date === 'unscheduled' ? icon('calendar-x', 'w-3 h-3') : dayjs(group.date).format('DD')}</span>
           ${group.date === 'unscheduled' ? th('ยังไม่ระบุวัน','Unscheduled') : formatDate(group.date, lang, trip?.timezone)}
-          <span class="badge badge-planned text-[10px]">${group.items.length}</span>
+          <span class="badge badge-planned text-xs">${group.items.length}</span>
         </h3>
         <div class="space-y-3">
           ${group.items.map(r => {
@@ -14204,31 +14149,31 @@ async function renderBookings(params) {
                 <div class="flex-1 min-w-0">
                   <div class="flex items-start justify-between gap-2">
                     <div class="min-w-0">
-                      <h4 class="font-bold text-sm truncate">${escapeHtml(r.title || '')}</h4>
-                      <p class="text-[11px] text-[var(--text-secondary)]">
+                      <h4 class="font-semibold text-sm truncate">${escapeHtml(r.title || '')}</h4>
+                      <p class="text-xs text-[var(--text-secondary)]">
                         ${icon('clock', 'w-3 h-3')} ${escapeHtml(r.startTime || '--:--')}${r.endTime ? ` – ${escapeHtml(r.endTime)}` : ''}
                         ${r.provider ? ` • ${escapeHtml(r.provider)}` : ''}
                       </p>
                     </div>
-                    <span class="badge badge-planned text-[10px] flex-shrink-0">${escapeHtml(lang === 'th' ? rt.th : rt.en)}</span>
+                    <span class="badge badge-planned text-xs flex-shrink-0">${escapeHtml(lang === 'th' ? rt.th : rt.en)}</span>
                   </div>
                   ${route ? `<p class="meta-line mt-1">${icon('arrow-left-right', 'w-3 h-3')} ${escapeHtml(route)}</p>` : ''}
                   <div class="flex items-center gap-2 flex-wrap mt-2">
-                    ${r.confirmation ? `<button class="chip text-[11px] chip-accent" data-copy="${escapeHtml(r.confirmation)}" title="${t('copied')}">${icon('hash', 'w-3 h-3')} ${escapeHtml(r.confirmation)} ${icon('copy', 'w-3 h-3')}</button>` : ''}
-                    ${r.seat ? `<span class="badge badge-planned text-[10px]">${icon('armchair', 'w-2.5 h-2.5')} ${escapeHtml(r.seat)}</span>` : ''}
-                    ${r.room ? `<span class="badge badge-planned text-[10px]">${icon('door-open', 'w-2.5 h-2.5')} ${escapeHtml(r.room)}</span>` : ''}
-                    ${Number(r.costMinor) > 0 ? `<span class="badge badge-skipped text-[10px]">${icon('coins', 'w-2.5 h-2.5')} ${escapeHtml(formatCurrency(Number(r.costMinor), r.currency || 'THB'))}</span>` : ''}
-                    ${r.linkedItemId ? `<span class="badge badge-completed text-[10px]">${icon('check', 'w-2.5 h-2.5')} ${t('inPlan')}</span>` : ''}
+                    ${r.confirmation ? `<button class="chip text-xs chip-accent" data-copy="${escapeHtml(r.confirmation)}" title="${t('copied')}">${icon('hash', 'w-3 h-3')} ${escapeHtml(r.confirmation)} ${icon('copy', 'w-3 h-3')}</button>` : ''}
+                    ${r.seat ? `<span class="badge badge-planned text-xs">${icon('armchair', 'w-2.5 h-2.5')} ${escapeHtml(r.seat)}</span>` : ''}
+                    ${r.room ? `<span class="badge badge-planned text-xs">${icon('door-open', 'w-2.5 h-2.5')} ${escapeHtml(r.room)}</span>` : ''}
+                    ${Number(r.costMinor) > 0 ? `<span class="badge badge-skipped text-xs">${icon('coins', 'w-2.5 h-2.5')} ${escapeHtml(formatCurrency(Number(r.costMinor), r.currency || 'THB'))}</span>` : ''}
+                    ${r.linkedItemId ? `<span class="badge badge-completed text-xs">${icon('check', 'w-2.5 h-2.5')} ${t('inPlan')}</span>` : ''}
                   </div>
-                  ${r.address ? `<p class="text-[11px] text-[var(--text-secondary)] mt-1.5">${icon('map-pin', 'w-3 h-3')} ${escapeHtml(r.address)}</p>` : ''}
-                  ${r.notes ? `<p class="text-[11px] text-[var(--text-secondary)] mt-1">${escapeHtml(r.notes)}</p>` : ''}
-                  ${warnings.length ? `<p class="text-[10px] mt-1.5" style="color:var(--warning);">${icon('alert-triangle', 'w-3 h-3')} ${escapeHtml(warnings.map(w => lang === 'th' ? w.th : w.en).join(' • '))}</p>` : ''}
+                  ${r.address ? `<p class="text-xs text-[var(--text-secondary)] mt-1.5">${icon('map-pin', 'w-3 h-3')} ${escapeHtml(r.address)}</p>` : ''}
+                  ${r.notes ? `<p class="text-xs text-[var(--text-secondary)] mt-1">${escapeHtml(r.notes)}</p>` : ''}
+                  ${warnings.length ? `<p class="text-xs mt-1.5" style="color:var(--warning);">${icon('alert-triangle', 'w-3 h-3')} ${escapeHtml(warnings.map(w => lang === 'th' ? w.th : w.en).join(' • '))}</p>` : ''}
                   <div class="flex items-center gap-1 flex-wrap mt-2">
-                    ${sanitizeUrl(r.url) ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(sanitizeUrl(r.url))}" target="_blank" rel="noopener noreferrer">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
-                    ${r.address ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(googleMapsPlaceUrl(r.address, r.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
-                    ${r.phone ? `<a class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 8px;" href="tel:${escapeHtml(String(r.phone).replace(/[^\d+#*,;]/g, ''))}">${icon('phone', 'w-3.5 h-3.5')} ${escapeHtml(r.phone)}</a>` : ''}
-                    ${r.expenseId ? `<a class="badge badge-completed text-[10px]" href="#/trip/${tripId}/expenses/add?id=${escapeHtml(r.expenseId)}">${icon('receipt', 'w-2.5 h-2.5')} ${th('อยู่ในค่าใช้จ่าย', 'In expenses')}</a>` : (Number(r.costMinor) > 0 ? `<button class="btn btn-ghost btn-sm text-[11px]" style="min-height:30px;padding:2px 10px;" data-act="expense" data-id="${escapeHtml(r.id)}">${icon('receipt', 'w-3.5 h-3.5')} ${th('เพิ่มเป็นค่าใช้จ่าย', 'Add as expense')}</button>` : '')}
-              ${!r.linkedItemId ? `<button class="btn btn-accent btn-sm text-[11px]" style="min-height:30px;padding:2px 10px;" data-act="plan" data-id="${r.id}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>` : ''}
+                    ${sanitizeUrl(r.url) ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(sanitizeUrl(r.url))}" target="_blank" rel="noopener noreferrer">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
+                    ${r.address ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(googleMapsPlaceUrl(r.address, r.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
+                    ${r.phone ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" href="tel:${escapeHtml(String(r.phone).replace(/[^\d+#*,;]/g, ''))}">${icon('phone', 'w-3.5 h-3.5')} ${escapeHtml(r.phone)}</a>` : ''}
+                    ${r.expenseId ? `<a class="badge badge-completed text-xs" href="#/trip/${tripId}/expenses/add?id=${escapeHtml(r.expenseId)}">${icon('receipt', 'w-2.5 h-2.5')} ${th('อยู่ในค่าใช้จ่าย', 'In expenses')}</a>` : (Number(r.costMinor) > 0 ? `<button class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 10px;" data-act="expense" data-id="${escapeHtml(r.id)}">${icon('receipt', 'w-3.5 h-3.5')} ${th('เพิ่มเป็นค่าใช้จ่าย', 'Add as expense')}</button>` : '')}
+              ${!r.linkedItemId ? `<button class="btn btn-accent btn-sm text-xs" style="min-height:30px;padding:2px 10px;" data-act="plan" data-id="${r.id}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>` : ''}
                     <button class="icon-btn" data-act="edit" data-id="${r.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
                     <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${r.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
                   </div>
@@ -14292,53 +14237,53 @@ async function renderBookings(params) {
       <div class="space-y-4">
         <div class="flex items-center gap-3">
           <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('ticket', 'w-5 h-5')}</div>
-          <h3 class="font-bold text-base" style="font-family: var(--font-display);">${isEdit ? t('edit') : t('addBooking')}</h3>
+          <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${isEdit ? t('edit') : t('addBooking')}</h3>
         </div>
-        <div class="input-group"><label class="input-label">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('ประเภท','Type')}</label>
+        <div class="input-group"><label class="input-label">${th('ประเภท','Type')}</label>
           <select id="bk-type" class="input">${RESERVATION_TYPES.map(rt => `<option value="${rt.id}" ${reservationTypeDef(existing?.type).id === rt.id ? 'selected' : ''}>${escapeHtml(lang === 'th' ? rt.th : rt.en)}</option>`).join('')}</select></div>
-        <div class="input-group"><label class="input-label">${icon('sparkles', 'w-3.5 h-3.5')} ${th('ชื่อรายการ','Title')} *</label>
+        <div class="input-group"><label class="input-label">${th('ชื่อรายการ','Title')} *</label>
           <input id="bk-title" class="input" value="${escapeHtml(existing?.title || '')}" placeholder="${th('เช่น TG676 BKK→NRT','e.g. TG676 BKK→NRT')}"></div>
         <div class="grid grid-cols-2 gap-3">
-          <div class="input-group"><label class="input-label">${icon('building', 'w-3.5 h-3.5')} ${th('ผู้ให้บริการ','Provider')}</label>
+          <div class="input-group"><label class="input-label">${th('ผู้ให้บริการ','Provider')}</label>
             <input id="bk-provider" class="input text-sm" value="${escapeHtml(existing?.provider || '')}" placeholder="${th('สายการบิน / โรงแรม','Airline / hotel')}"></div>
-          <div class="input-group"><label class="input-label">${icon('hash', 'w-3.5 h-3.5')} ${t('confirmCode')}</label>
+          <div class="input-group"><label class="input-label">${t('confirmCode')}</label>
             <input id="bk-confirm" class="input text-sm font-mono" value="${escapeHtml(existing?.confirmation || '')}" placeholder="ABC123"></div>
         </div>
         <div class="grid grid-cols-3 gap-2">
-          <div class="input-group"><label class="input-label">${icon('calendar', 'w-3.5 h-3.5')} ${th('วัน','Date')}</label>
+          <div class="input-group"><label class="input-label">${th('วัน','Date')}</label>
             <input id="bk-date" type="date" class="input text-sm" value="${escapeHtml(existing?.date || trip?.startDate || '')}"></div>
-          <div class="input-group"><label class="input-label">${icon('clock', 'w-3.5 h-3.5')} ${th('เริ่ม','Start')}</label>
+          <div class="input-group"><label class="input-label">${th('เริ่ม','Start')}</label>
             <input id="bk-start" type="time" class="input text-sm" value="${escapeHtml(existing?.startTime || '')}"></div>
-          <div class="input-group"><label class="input-label">${icon('clock', 'w-3.5 h-3.5')} ${th('สิ้นสุด','End')}</label>
+          <div class="input-group"><label class="input-label">${th('สิ้นสุด','End')}</label>
             <input id="bk-end" type="time" class="input text-sm" value="${escapeHtml(existing?.endTime || '')}"></div>
         </div>
         <div class="grid grid-cols-2 gap-3" id="bk-route-row">
-          <div class="input-group"><label class="input-label">${icon('plane-takeoff', 'w-3.5 h-3.5')} ${th('จาก','From')}</label>
+          <div class="input-group"><label class="input-label">${th('จาก','From')}</label>
             <input id="bk-from" class="input text-sm" value="${escapeHtml(existing?.from || '')}" placeholder="BKK"></div>
-          <div class="input-group"><label class="input-label">${icon('plane-landing', 'w-3.5 h-3.5')} ${th('ไป','To')}</label>
+          <div class="input-group"><label class="input-label">${th('ไป','To')}</label>
             <input id="bk-to" class="input text-sm" value="${escapeHtml(existing?.to || '')}" placeholder="NRT"></div>
         </div>
         <div class="grid grid-cols-2 gap-3">
-          <div class="input-group"><label class="input-label">${icon('armchair', 'w-3.5 h-3.5')} ${th('ที่นั่ง / ชั้น','Seat / class')}</label>
+          <div class="input-group"><label class="input-label">${th('ที่นั่ง / ชั้น','Seat / class')}</label>
             <input id="bk-seat" class="input text-sm" value="${escapeHtml(existing?.seat || '')}" placeholder="12A"></div>
-          <div class="input-group"><label class="input-label">${icon('door-open', 'w-3.5 h-3.5')} ${th('ห้อง / ประเภทห้อง','Room')}</label>
+          <div class="input-group"><label class="input-label">${th('ห้อง / ประเภทห้อง','Room')}</label>
             <input id="bk-room" class="input text-sm" value="${escapeHtml(existing?.room || '')}" placeholder="Deluxe"></div>
         </div>
-        <div class="input-group"><label class="input-label">${icon('map-pin', 'w-3.5 h-3.5')} ${th('ที่อยู่','Address')}</label>
+        <div class="input-group"><label class="input-label">${th('ที่อยู่','Address')}</label>
           <input id="bk-address" class="input text-sm" value="${escapeHtml(existing?.address || '')}" placeholder="${th('ที่อยู่สนามบิน/โรงแรม','Airport / hotel address')}"></div>
         <div class="grid grid-cols-2 gap-3">
-          <div class="input-group"><label class="input-label">${icon('phone', 'w-3.5 h-3.5')} ${th('เบอร์โทร','Phone')}</label>
+          <div class="input-group"><label class="input-label">${th('เบอร์โทร','Phone')}</label>
             <input id="bk-phone" class="input text-sm" value="${escapeHtml(existing?.phone || '')}" placeholder="+66 ..."></div>
-          <div class="input-group"><label class="input-label">${icon('link', 'w-3.5 h-3.5')} ${th('ลิงก์','Link')}</label>
+          <div class="input-group"><label class="input-label">${th('ลิงก์','Link')}</label>
             <input id="bk-url" class="input text-sm" value="${escapeHtml(existing?.url || '')}" placeholder="https://..."></div>
         </div>
         <div class="grid grid-cols-2 gap-3">
-          <div class="input-group"><label class="input-label">${icon('coins', 'w-3.5 h-3.5')} ${th('ค่าใช้จ่าย','Cost')}</label>
+          <div class="input-group"><label class="input-label">${th('ค่าใช้จ่าย','Cost')}</label>
             <input id="bk-cost" class="input money-input" type="text" inputmode="decimal" value="${escapeHtml(toolAmountValue(existing?.costMinor, existing?.currency || trip?.baseCurrency || 'THB'))}" placeholder="0"></div>
-          <div class="input-group"><label class="input-label">${icon('banknote', 'w-3.5 h-3.5')} ${th('สกุลเงิน','Currency')}</label>
+          <div class="input-group"><label class="input-label">${th('สกุลเงิน','Currency')}</label>
             <select id="bk-currency" class="input">${toolCurrencyOptions(trip, existing?.currency || trip?.baseCurrency || 'THB')}</select></div>
         </div>
-        <div class="input-group"><label class="input-label">${icon('align-left', 'w-3.5 h-3.5')} ${th('โน้ต','Notes')}</label>
+        <div class="input-group"><label class="input-label">${th('โน้ต','Notes')}</label>
           <textarea id="bk-notes" class="input" style="min-height:64px;">${escapeHtml(existing?.notes || '')}</textarea></div>
         <div class="flex gap-2">
           <button id="bk-cancel" class="btn btn-secondary flex-1">${t('cancel')}</button>
@@ -14557,14 +14502,14 @@ async function renderExplore(params) {
 
       <section id="explore-reco"></section>
       <section>
-        <h3 class="font-bold text-sm mb-2 flex items-center gap-2">
+        <h3 class="font-semibold text-sm mb-2 flex items-center gap-2">
           <span class="row-icon" style="width:28px;height:28px;border-radius:10px;">${icon('layout-grid', 'w-4 h-4')}</span>
-          ${th('สถานที่ทั้งหมด','All places')} <span id="explore-count" class="badge badge-planned text-[10px]">0</span>
+          ${th('สถานที่ทั้งหมด','All places')} <span id="explore-count" class="badge badge-planned text-xs">0</span>
         </h3>
         <div id="explore-list" class="guide-grid"></div>
       </section>
 
-      <p class="text-[10px] text-[var(--text-tertiary)] text-center">
+      <p class="text-xs text-[var(--text-tertiary)] text-center">
         ${icon('info', 'w-3 h-3 inline')}
         ${th('ไกด์ชุดนี้เก็บไว้ในแอป ใช้ได้แม้ไม่มีเน็ต • เพิ่มเมือง/สถานที่ของทีมเองได้ในหน้า “ไอเดียสถานที่”',
              'The guides ship with the app and work offline • Add your own places on the ideas board')}
@@ -14591,10 +14536,10 @@ async function renderExplore(params) {
     });
     if (!recos.length) { box.innerHTML = ''; return; }
     box.innerHTML = `
-      <h3 class="font-bold text-sm mb-2 flex items-center gap-2">
+      <h3 class="font-semibold text-sm mb-2 flex items-center gap-2">
         <span class="row-icon" style="width:28px;height:28px;border-radius:10px;background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);">${icon('wand-sparkles', 'w-4 h-4')}</span>
         ${th('แนะนำสำหรับทริปนี้','Suggested for this trip')}
-        <span class="text-[10px] text-[var(--text-tertiary)] font-medium">${th('เรียงจากใกล้จุดที่วางไว้','ranked by distance to your plan')}</span>
+        <span class="text-xs text-[var(--text-tertiary)] font-medium">${th('เรียงจากใกล้จุดที่วางไว้','ranked by distance to your plan')}</span>
       </h3>
       <div class="reco-strip">
         ${recos.map(r => `
@@ -14880,10 +14825,10 @@ async function renderCalendar(params) {
     box.innerHTML = `
       <div class="card p-4">
         <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
-          <h3 class="font-bold text-sm flex items-center gap-2">
+          <h3 class="font-semibold text-sm flex items-center gap-2">
             <span class="step-num">${dayjs(selected).format('DD')}</span>
             ${escapeHtml(formatDate(selected, lang, trip?.timezone))}
-            <span class="badge badge-planned text-[10px]">${th('วันที่','Day')} ${dayIdx + 1}</span>
+            <span class="badge badge-planned text-xs">${th('วันที่','Day')} ${dayIdx + 1}</span>
           </h3>
           <div class="btn-row">
             <a class="btn btn-secondary btn-sm" href="#/trip/${tripId}/itinerary?date=${selected}">${icon('map-pinned', 'w-4 h-4')} ${th('เปิดในแผน','Open in the plan')}</a>
@@ -14891,12 +14836,12 @@ async function renderCalendar(params) {
           </div>
         </div>
         ${dayItems.length ? `<div class="space-y-2">${dayItems.map(i => `
-          <div class="flex items-center gap-3 p-2.5 rounded-2xl" style="background:var(--bg-secondary);border:1px solid var(--border-light);">
-            <span class="text-[11px] font-mono font-bold w-12 flex-shrink-0" style="color:var(--primary-strong);">${escapeHtml(String(i.startAt || '').slice(11, 16) || '--:--')}</span>
+          <div class="flex items-center gap-3 p-2.5 rounded-xl" style="background:var(--bg-secondary);border:1px solid var(--border-light);">
+            <span class="text-xs font-mono font-semibold w-12 flex-shrink-0" style="color:var(--primary-strong);">${escapeHtml(String(i.startAt || '').slice(11, 16) || '--:--')}</span>
             <span class="row-icon" style="width:28px;height:28px;border-radius:10px;">${icon(placeCategoryIcon(ideaCategoryId(i.category)), 'w-3.5 h-3.5')}</span>
             <span class="min-w-0 flex-1">
               <b class="block text-[13px] truncate">${escapeHtml(i.title || '')}</b>
-              ${i.address ? `<span class="text-[11px] text-[var(--text-secondary)] truncate block">${escapeHtml(i.address)}</span>` : ''}
+              ${i.address ? `<span class="text-xs text-[var(--text-secondary)] truncate block">${escapeHtml(i.address)}</span>` : ''}
             </span>
             ${i.coordinates ? `<a class="icon-btn" href="${escapeHtml(googleMapsPlaceUrl(i.address, i.coordinates))}" target="_blank" rel="noopener" title="${t('map')}">${icon('navigation', 'w-3.5 h-3.5')}</a>` : ''}
           </div>`).join('')}</div>`
@@ -14951,15 +14896,15 @@ async function openShareSheet(trip = null) {
       <div class="flex items-start gap-3">
         <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--gradient-primary);color:#fff;">${icon('share-2', 'w-5 h-5')}</div>
         <div class="min-w-0">
-          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${th('ชวนเพื่อนเข้าทริป','Invite your friends')}</h3>
+          <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('ชวนเพื่อนเข้าทริป','Invite your friends')}</h3>
           <p class="text-xs text-[var(--text-secondary)] mt-0.5">${th('ทุกคนเห็นแผนเดียวกันแบบเรียลไทม์ — แชร์ค่าใช้จ่ายและโหวตที่เที่ยวได้ทันที','Everyone sees the same plan live — split costs and vote on places together')}</p>
         </div>
       </div>
 
       <div class="card p-4 text-center" style="background:var(--surface-2);">
-        <p class="text-[11px] font-bold uppercase tracking-wide text-[var(--text-tertiary)]">${th('รหัสเชิญเข้าร่วมทริป','Trip invite code')}</p>
+        <p class="text-xs font-semibold text-[var(--text-tertiary)]">${th('รหัสเชิญเข้าร่วมทริป','Trip invite code')}</p>
         <p class="share-code my-1">${escapeHtml(formatCode(code) || '—')}</p>
-        <p class="text-[11px] text-[var(--text-secondary)]">${th('ให้เพื่อนล็อกอิน แล้วกรอกรหัสนี้ที่หน้า “ทริปของฉัน”','Ask them to sign in and type this code on “My trips”')}</p>
+        <p class="text-xs text-[var(--text-secondary)]">${th('ให้เพื่อนล็อกอิน แล้วกรอกรหัสนี้ที่หน้า “ทริปของฉัน”','Ask them to sign in and type this code on “My trips”')}</p>
       </div>
 
       <div class="share-grid">
@@ -14975,7 +14920,7 @@ async function openShareSheet(trip = null) {
         <button class="btn btn-secondary flex-1" data-share="print">${icon('printer', 'w-4 h-4')} ${th('พิมพ์ / บันทึก PDF','Print / save PDF')}</button>
         <button class="btn btn-secondary flex-1" id="share-native">${icon('smartphone', 'w-4 h-4')} ${th('แชร์…','Share…')}</button>
       </div>
-      <p class="text-[10px] text-[var(--text-tertiary)] text-center">${icon('shield-check', 'w-3 h-3 inline')} ${th('ลิงก์ชี้มาที่แอปนี้ — คนที่ไม่มีสิทธิ์จะเข้าได้เฉพาะหน้าเข้าสู่ระบบ','The link points at this app — people without access only reach the sign-in screen')}</p>
+      <p class="text-xs text-[var(--text-tertiary)] text-center">${icon('shield-check', 'w-3 h-3 inline')} ${th('ลิงก์ชี้มาที่แอปนี้ — คนที่ไม่มีสิทธิ์จะเข้าได้เฉพาะหน้าเข้าสู่ระบบ','The link points at this app — people without access only reach the sign-in screen')}</p>
     </div>
   `);
   queueIcons();
@@ -15036,14 +14981,14 @@ function openBookingImport(tripId, { onSaved = null } = {}) {
       <div class="flex items-start gap-3">
         <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--gradient-duo);color:#fff;">${icon('mail-plus', 'w-5 h-5')}</div>
         <div class="min-w-0">
-          <h3 class="font-bold text-base leading-tight" style="font-family: var(--font-display);">${th('นำเข้าจากอีเมลยืนยันการจอง','Import from a confirmation e-mail')}</h3>
+          <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('นำเข้าจากอีเมลยืนยันการจอง','Import from a confirmation e-mail')}</h3>
           <p class="text-xs text-[var(--text-secondary)] mt-0.5">${th('คัดลอกข้อความจากอีเมล/แอปจอง แล้ววางที่นี่ ระบบจะอ่านวันเวลา รหัส และราคาให้','Paste the text of a booking e-mail — the app reads the dates, codes and price for you')}</p>
         </div>
       </div>
 
       <div class="import-drop">
         <div class="input-group">
-          <label class="input-label">${icon('clipboard-paste', 'w-3.5 h-3.5')} ${th('ข้อความยืนยันการจอง','Confirmation text')}</label>
+          <label class="input-label">${th('ข้อความยืนยันการจอง','Confirmation text')}</label>
           <textarea id="bi-text" class="input import-textarea" placeholder="${th('วางข้อความอีเมลตรงนี้…','Paste the e-mail text here…')}"></textarea>
         </div>
         <div class="flex gap-2 mt-2">
@@ -15058,7 +15003,7 @@ function openBookingImport(tripId, { onSaved = null } = {}) {
         <button class="btn btn-secondary flex-1" id="bi-cancel">${t('cancel')}</button>
         <button class="btn btn-primary flex-1" id="bi-save" disabled>${icon('save', 'w-4 h-4')} ${th('บันทึกเป็นการจอง','Save booking')}</button>
       </div>
-      <p class="text-[10px] text-[var(--text-tertiary)] text-center">${icon('lock', 'w-3 h-3 inline')} ${th('ข้อความถูกอ่านในเครื่องคุณเท่านั้น ไม่ถูกส่งไปที่ไหน','The text is parsed on your device only — nothing is uploaded')}</p>
+      <p class="text-xs text-[var(--text-tertiary)] text-center">${icon('lock', 'w-3 h-3 inline')} ${th('ข้อความถูกอ่านในเครื่องคุณเท่านั้น ไม่ถูกส่งไปที่ไหน','The text is parsed on your device only — nothing is uploaded')}</p>
     </div>
   `);
   queueIcons();
@@ -15091,7 +15036,7 @@ Total 24,500 THB`
       <div class="card p-3" style="border-color:color-mix(in srgb, ${toneVar} 40%, var(--border));">
         <div class="flex items-center justify-between gap-2 mb-2">
           <b class="text-xs">${icon('scan-text', 'w-3.5 h-3.5 inline')} ${th('พบข้อมูล','Recognised')}</b>
-          <span class="badge text-[10px]" style="background:color-mix(in srgb, ${toneVar} 14%, transparent); color:${toneVar}; border-color:color-mix(in srgb, ${toneVar} 30%, transparent);">${escapeHtml(lang === 'th' ? tone.th : tone.en)} • ${draft.confidence}%</span>
+          <span class="badge text-xs" style="background:color-mix(in srgb, ${toneVar} 14%, transparent); color:${toneVar}; border-color:color-mix(in srgb, ${toneVar} 30%, transparent);">${escapeHtml(lang === 'th' ? tone.th : tone.en)} • ${draft.confidence}%</span>
         </div>
         <div class="space-y-1.5">
           ${draft.recognised.map(r => `<div class="parsed-row"><span>${escapeHtml(r.label)}</span><b>${escapeHtml(r.value)}</b></div>`).join('')}
@@ -15196,60 +15141,55 @@ function renderMore(params) {
         { href: `#/trip/${tripId}/documents`, icon: 'folder', label: lang === 'th' ? 'เอกสารสำคัญ' : 'Documents' },
         { href: `#/trip/${tripId}/import`, icon: 'package', label: t('importExport') },
         { href: `#/trip/${tripId}/settings`, icon: 'settings', label: t('settings') },
-        { href: '#/trips', icon: 'compass', label: lang === 'th' ? 'สลับทริป / ทริปทั้งหมด' : 'Switch trip / All trips', highlight: true }
+        { href: '#/trips', icon: 'arrow-left-right', label: lang === 'th' ? 'สลับทริป / ทริปทั้งหมด' : 'Switch trip / All trips' }
       ]
     }
   ];
+  // v35: grouped lists (one card per group, rows on hairlines) instead of a stack
+  // of separate cards; no accent borders, no tinted logout box.
+  const row = (m) => `
+              <a href="${m.href}" class="more-row">
+                <span class="more-row-icon" aria-hidden="true">${icon(m.icon, 'w-4 h-4')}</span>
+                <span class="more-row-label">${escapeHtml(m.label)}</span>
+                <span class="more-row-chev" aria-hidden="true">${icon('chevron-right', 'w-4 h-4')}</span>
+              </a>`;
+  const who = currentUser?.displayName || currentUser?.email || 'User';
   appEl.innerHTML = `
-    <div class="page-enter max-w-[640px] mx-auto space-y-4">
-      ${renderPageScene('map', { lang, title: `${icon('more-horizontal', 'w-5 h-5')} ${t('more')}`,
+    <div class="page-enter max-w-[640px] mx-auto more-page">
+      ${renderPageScene('map', { lang, title: t('more'),
         subtitle: lang === 'th' ? 'ทุกเมนูของทริปนี้ อยู่ในที่เดียว' : 'Every menu for this trip, in one place' })}
-      ${groups.map((group, gi) => `
-        <section class="space-y-2" aria-label="${escapeHtml(group.title)}">
-          <h2 class="text-[11px] font-extrabold uppercase tracking-[0.08em] text-[var(--text-tertiary)] px-1">${escapeHtml(group.title)}</h2>
-          <div class="grid gap-2 stagger">
-            ${group.items.map(m => `
-              <a href="${m.href}" class="card card-hover px-4 py-3 flex items-center justify-between gap-3 group" style="text-decoration:none; color:inherit; ${m.highlight ? 'border-color: var(--primary);' : ''}">
-                <span class="flex items-center gap-3 min-w-0">
-                  <span class="row-icon" ${m.highlight ? 'style="background:var(--primary);color:var(--on-primary);"' : ''}>${icon(m.icon, 'w-4 h-4')}</span>
-                  <span class="font-semibold text-sm truncate">${escapeHtml(m.label)}</span>
-                </span>
-                <span class="text-[var(--text-tertiary)] group-hover:translate-x-0.5 transition-transform">${icon('chevron-right', 'w-4 h-4')}</span>
-              </a>
-            `).join('')}
+      ${groups.map(group => `
+        <section class="more-group" aria-label="${escapeHtml(group.title)}">
+          <h2 class="more-group-title">${escapeHtml(group.title)}</h2>
+          <div class="more-list">${group.items.map(row).join('')}
           </div>
         </section>
       `).join('')}
-      <a href="#/trip/${tripId}/settings" id="more-appearance" class="card card-hover px-4 py-3 flex items-center justify-between gap-3" style="text-decoration:none; color:inherit;">
-        <span class="flex items-center gap-3">
-          <span class="row-icon">${icon('palette', 'w-4 h-4')}</span>
-          <span class="font-semibold text-sm">${lang === 'th' ? 'ปรับหน้าตา (สี / มุมโค้ง / ระยะห่าง)' : 'Appearance (colour / corners / spacing)'}</span>
-        </span>
-        <span style="color: var(--primary-strong);">${icon('chevron-right', 'w-4 h-4')}</span>
-      </a>
-      <button id="share-more" class="card card-hover px-4 py-3 w-full flex items-center justify-between gap-3" style="text-decoration:none; border-color: var(--primary);">
-        <span class="flex items-center gap-3">
-          <span class="row-icon" style="background:var(--primary); color:var(--on-primary);">${icon('share-2', 'w-4 h-4')}</span>
-          <span class="font-semibold text-sm">${lang==='th' ? 'ชวนเพื่อนเข้าทริป / แชร์' : 'Invite friends / share'}</span>
-        </span>
-        <span style="color: var(--primary-strong);">${icon('chevron-right', 'w-4 h-4')}</span>
-      </button>
-      <button id="logout-more" class="card px-4 py-3 w-full flex items-center justify-between gap-3" style="text-decoration:none; border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); background: var(--danger-bg);">
-        <span class="flex items-center gap-3" style="color: var(--danger);">
-          <span class="row-icon" style="background: transparent; color: var(--danger);">${icon('log-out', 'w-4 h-4')}</span>
-          <span class="font-semibold text-sm">${t('logout')}</span>
-        </span>
-        <span style="color: var(--danger);">${icon('chevron-right', 'w-4 h-4')}</span>
-      </button>
-      <div class="card p-4 mt-6">
-        <h4 class="font-bold text-sm mb-1 flex items-center gap-2"><span class="row-icon" style="width:28px;height:28px;">${icon('user', 'w-3.5 h-3.5')}</span> ${escapeHtml(currentUser?.displayName || currentUser?.email || 'User')}</h4>
-        <p class="text-xs text-[var(--text-secondary)]">${escapeHtml(currentUser?.email || '')}</p>
-        <p class="text-[10px] text-[var(--text-tertiary)] mt-1 font-mono">UID: ${escapeHtml(currentUser?.uid?.slice(0,12) || '')}...</p>
-      </div>
-      <p class="text-center text-[10px] text-[var(--text-tertiary)]">${icon('info', 'w-3 h-3 inline')} ${lang==='th' ? 'แตะโลโก้ซ้ายบนเพื่อไปหน้ารายการทริป • แตะรูปโปรไฟล์ขวบนเพื่อเปิด “ตั้งค่า”' : 'Tap the logo (top-left) for your trips • tap the profile picture (top-right) for Settings'}</p>
-      <p class="build-stamp text-center" data-build-stamp>
-        ${icon('sparkles', 'w-3 h-3')} ${escapeHtml(appBuildLabel(lang))}
-      </p>
+      <section class="more-group" aria-label="${lang === 'th' ? 'บัญชี' : 'Account'}">
+        <h2 class="more-group-title">${lang === 'th' ? 'บัญชี' : 'Account'}</h2>
+        <div class="more-list">
+          <div class="more-account">
+            <span class="more-account-name">${escapeHtml(who)}</span>
+            ${currentUser?.email && currentUser.email !== who ? `<span class="more-account-sub">${escapeHtml(currentUser.email)}</span>` : ''}
+            <span class="more-account-uid">UID ${escapeHtml(currentUser?.uid?.slice(0, 12) || '')}…</span>
+          </div>
+          <a href="#/trip/${tripId}/settings" id="more-appearance" class="more-row">
+            <span class="more-row-icon" aria-hidden="true">${icon('palette', 'w-4 h-4')}</span>
+            <span class="more-row-label">${lang === 'th' ? 'ปรับหน้าตา (สี / มุมโค้ง / ระยะห่าง)' : 'Appearance (colour / corners / spacing)'}</span>
+            <span class="more-row-chev" aria-hidden="true">${icon('chevron-right', 'w-4 h-4')}</span>
+          </a>
+          <button id="share-more" type="button" class="more-row">
+            <span class="more-row-icon" aria-hidden="true">${icon('share-2', 'w-4 h-4')}</span>
+            <span class="more-row-label">${lang === 'th' ? 'ชวนเพื่อนเข้าทริป / แชร์' : 'Invite friends / share'}</span>
+            <span class="more-row-chev" aria-hidden="true">${icon('chevron-right', 'w-4 h-4')}</span>
+          </button>
+          <button id="logout-more" type="button" class="more-row is-danger">
+            <span class="more-row-icon" aria-hidden="true">${icon('log-out', 'w-4 h-4')}</span>
+            <span class="more-row-label">${t('logout')}</span>
+          </button>
+        </div>
+      </section>
+      <p class="more-tip">${lang === 'th' ? 'แตะโลโก้ซ้ายบนเพื่อไปหน้ารายการทริป · แตะรูปโปรไฟล์ขวาบนเพื่อเปิดตั้งค่า' : 'Tap the logo (top left) for your trips · tap your profile picture (top right) for Settings'}</p>
     </div>
   `;
   bind('share-more', 'click', () => openShareSheet(currentTrip));

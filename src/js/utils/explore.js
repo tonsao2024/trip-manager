@@ -405,7 +405,7 @@ export function placeToIdeaPayload(place = {}, { baseCurrency = 'THB', rate = nu
   const name = place.name || {};
   return {
     title: name.th || name.en || '',
-    note: [note.th, place.area ? `📍 ${place.area}` : ''].filter(Boolean).join(' · '),
+    note: [note.th, place.area || ''].filter(Boolean).join(' · '),
     category: place.category || 'sightseeing',
     coordinates: place.coordinates || null,
     address: place.area || '',

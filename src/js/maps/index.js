@@ -745,7 +745,7 @@ export function addIdeaMarkers(map, L, ideas, opts = {}) {
     const planned = idea.status === 'planned';
     // Pins are colored by category (the legend is the group headers on the ideas board).
     const color = placeCategoryColor(ideaCategoryId(idea.category));
-    const label = opts.numbered === false ? '💡' : String(idx + 1);
+    const label = opts.numbered === false ? '' : String(idx + 1);   // v35: no emoji pins
     const icon = L.divIcon({
       className: 'custom-marker',
       html: `<div class="map-pin-marker${planned ? ' map-pin-marker--planned' : ''}" style="background:${color};"><span>${label}</span></div>`,

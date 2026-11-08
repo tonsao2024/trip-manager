@@ -380,8 +380,8 @@ export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeout
       const snap = await withTimeout(d.getDoc(d.doc(d.db, 'loginAccounts', '__diagnostic_probe__')), timeoutMs, 'loginAccounts');
       // Reading `loginAccounts` must always fail — the PIN hashes live there.
       add('security-pins', pick(lang, 'ความปลอดภัยของ PIN', 'PIN security'), DIAG.warn,
-        pick(lang, `⚠️ อ่านเอกสาร loginAccounts จากฝั่งเว็บได้ (${snap.exists() ? 'พบเอกสาร' : 'ไม่พบเอกสาร'}) ควรปิดด้วย rules`,
-                   `⚠️ loginAccounts is client readable (${snap.exists() ? 'document found' : 'no document'}) — lock it down with rules`),
+        pick(lang, `อ่านเอกสาร loginAccounts จากฝั่งเว็บได้ (${snap.exists() ? 'พบเอกสาร' : 'ไม่พบเอกสาร'}) ควรปิดด้วย rules`,
+                   `loginAccounts is client readable (${snap.exists() ? 'document found' : 'no document'}) — lock it down with rules`),
         FIX.deployRules);
     } catch (e) {
       const denied = String(e?.code || '').includes('permission-denied');
@@ -431,11 +431,11 @@ export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeout
       );
 
       if (probe.read.ok) {
-        add('notify-read', pick(lang, 'อ่านรายการแจ้งเตือน (🔔)', 'Notification feed (🔔)'), DIAG.ok,
+        add('notify-read', pick(lang, 'อ่านรายการแจ้งเตือน (กระดิ่ง)', 'Notification feed (bell)'), DIAG.ok,
           pick(lang, 'อ่านรายการของทริปนี้ได้ — กระดิ่งจะแสดงข้อความ', 'This trip’s feed is readable — the bell will show messages'));
       } else {
         const info = classifyFirestoreError(probe.read, pick(lang, 'รายการแจ้งเตือน', 'the notification feed'), lang);
-        add('notify-read', pick(lang, 'อ่านรายการแจ้งเตือน (🔔)', 'Notification feed (🔔)'), DIAG.fail,
+        add('notify-read', pick(lang, 'อ่านรายการแจ้งเตือน (กระดิ่ง)', 'Notification feed (bell)'), DIAG.fail,
           memberSession
             ? pick(lang, 'เซสชันสมาชิก (PIN) อ่านการแจ้งเตือนไม่ได้ เพราะไม่มีการล็อกอิน Firebase',
                 'A PIN member session cannot read the feed — there is no Firebase sign-in')
@@ -463,11 +463,11 @@ export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeout
             'Write probe skipped — only a trip admin can run it (the probe must be removable)'));
       }
     } catch (e) {
-      add('notify-read', pick(lang, 'อ่านรายการแจ้งเตือน (🔔)', 'Notification feed (🔔)'), DIAG.warn,
+      add('notify-read', pick(lang, 'อ่านรายการแจ้งเตือน (กระดิ่ง)', 'Notification feed (bell)'), DIAG.warn,
         pick(lang, `ตรวจสอบไม่สำเร็จ: ${e.message}`, `Check failed: ${e.message}`));
     }
   } else if (tripId && d.db) {
-    add('notify-read', pick(lang, 'อ่านรายการแจ้งเตือน (🔔)', 'Notification feed (🔔)'), DIAG.warn,
+    add('notify-read', pick(lang, 'อ่านรายการแจ้งเตือน (กระดิ่ง)', 'Notification feed (bell)'), DIAG.warn,
       pick(lang, 'ข้ามการทดสอบ (ไม่มีตัวตรวจการแจ้งเตือน)', 'Skipped (no notification probe available)'));
   }
 

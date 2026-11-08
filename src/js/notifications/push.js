@@ -141,8 +141,8 @@ export async function enablePush({ uid, tripIds = [], lang = 'th' } = {}) {
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') {
     throw new Error(th(
-      'ยังไม่ได้อนุญาตการแจ้งเตือน — เปิดสิทธิ์ในตั้งค่าเบราว์เซอร์ (ไอคอน 🔒 ข้างที่อยู่เว็บ) แล้วลองใหม่',
-      'Notification permission was not granted — allow it in the browser (🔒 icon in the address bar) and retry'
+      'ยังไม่ได้อนุญาตการแจ้งเตือน — เปิดสิทธิ์ในตั้งค่าเบราว์เซอร์ (ไอคอนแม่กุญแจข้างที่อยู่เว็บ) แล้วลองใหม่',
+      'Notification permission was not granted — allow it in the browser (the lock icon in the address bar) and retry'
     ));
   }
 

@@ -269,8 +269,8 @@ export function classifyNotifyError(error, lang = 'th', context = {}) {
       layer: 'rules',
       code: code || 'permission-denied',
       title: th('Firestore Rules ปฏิเสธการแจ้งเตือน (permission-denied)', 'Firestore rules deny the notifications (permission-denied)'),
-      message: th('กฎที่เผยแพร่อยู่ยังไม่มีคอลเลกชัน notifications ของทริปนี้ (หรือยังจำกัดสิทธิ์เกินไป) — 🔔 และ Web Push จะเงียบสนิทจนกว่าจะ deploy กฎรุ่นล่าสุด',
-        'The published rules do not allow this trip’s notifications collection yet (or are stricter than the app), so the 🔔 and Web Push stay silent until the newest rules are deployed.'),
+      message: th('กฎที่เผยแพร่อยู่ยังไม่มีคอลเลกชัน notifications ของทริปนี้ (หรือยังจำกัดสิทธิ์เกินไป) — กระดิ่งแจ้งเตือนและ Web Push จะเงียบสนิทจนกว่าจะ deploy กฎรุ่นล่าสุด',
+        'The published rules do not allow this trip’s notifications collection yet (or are stricter than the app), so the bell and Web Push stay silent until the newest rules are deployed.'),
       fix: th('Deploy กฎรุ่นล่าสุด: firebase deploy --only firestore:rules — หรือเปิด Firebase Console → Firestore Database → Rules → วางไฟล์ firestore.rules แล้วกด Publish',
         'Publish the current rules: firebase deploy --only firestore:rules — or open Firebase Console → Firestore Database → Rules, paste firestore.rules and press Publish'),
       retryable: true
@@ -309,8 +309,8 @@ export function classifyNotifyError(error, lang = 'th', context = {}) {
       layer: 'functions',
       code: code || 'functions/unavailable',
       title: th('Cloud Functions ยังไม่พร้อม (Web Push)', 'Cloud Functions are not ready (Web Push)'),
-      message: th('การแจ้งเตือนในแอป (🔔) ยังทำงานได้ แต่ Web Push ต้องมีฟังก์ชัน pushTripNotification ที่ deploy แล้วเท่านั้น',
-        'The in-app 🔔 still works, but Web Push needs the deployed pushTripNotification function.'),
+      message: th('การแจ้งเตือนในแอป (กระดิ่ง) ยังทำงานได้ แต่ Web Push ต้องมีฟังก์ชัน pushTripNotification ที่ deploy แล้วเท่านั้น',
+        'The in-app bell still works, but Web Push needs the deployed pushTripNotification function.'),
       fix: th('firebase deploy --only functions (โปรเจกต์ต้องอยู่แผน Blaze)', 'firebase deploy --only functions (the project must be on the Blaze plan)'),
       retryable: true
     };
