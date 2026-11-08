@@ -257,7 +257,7 @@ export const THEMES = [
     gradient: 'linear-gradient(135deg, #6d4df6 0%, #9271ff 55%, #c4b2ff 100%)'
   }),
   theme({
-    id: 'sunset', th: '夕阳 / ซันเซ็ต', en: 'Sunset',
+    id: 'sunset', th: 'ซันเซ็ต', en: 'Sunset',
     hint: 'ส้มทองอบอุ่น เหมือนพระอาทิตย์ตก',
     primary: '#f2662c', grad2: '#ff9f68', accent: '#ffcf5c',
     mist: '#f6c9a8', steel: '#d97b6c', sand: '#fff3e6', ink: '#3f1c0c',

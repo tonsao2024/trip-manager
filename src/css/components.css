@@ -411,11 +411,8 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease);
 }
 .mode-option svg { width: 20px; height: 20px; }
-.mode-option.active {
-  color: var(--primary-strong);
-}
-.mode-option.active svg { color: var(--primary-strong); }
-[data-theme="dark"] .mode-option.active, [data-theme="dark"] .mode-option.active svg { color: var(--primary); }
+.mode-option.active { color: var(--text-strong); }
+.mode-option.active svg { color: var(--text-strong); }
 
 /* ---------------- Section header (page titles) ---------------- */
 .page-title {
@@ -1244,7 +1241,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 }
 .itin-sheet-pin-label.is-flipped { transform: translate(calc(-100% - 22px), -50%); }
 .itin-sheet-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 8px 12px; border-top: 1px solid #e5e7eb; background: #ffffff; }
-.itin-sheet-legend span { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; color: #374151; font-weight: 600; }
+.itin-sheet-legend span { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: #374151; font-weight: 500; }
 .itin-sheet-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
 .itin-sheet-day { margin-top: 16px; border: 1px solid #e5e7eb; border-radius: 14px; overflow: hidden; page-break-inside: avoid; }
 .itin-sheet-day-head { display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
@@ -2289,10 +2286,11 @@ body.map-expanded-open { overflow: hidden; }
   padding: 0 4px;
   border-radius: 9999px;
   vertical-align: 1px;
-  background: var(--primary);
-  color: #fff;
+  background: var(--surface-2);
+  color: var(--text-strong);
+  border: 1px solid var(--border);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 /* Attached photos (max 3) */
@@ -2433,7 +2431,7 @@ body.map-expanded-open { overflow: hidden; }
 
 /* ---------- Dashboard: teams live inside the wallet + compact density ---------- */
 #dash-density-btn.is-active {
-  background: var(--primary) !important; color: #fff !important;
+  background: var(--surface-2) !important; color: var(--text-strong) !important;
 }
 /* Compact density: tighter cards, smaller gaps, trimmed subtitles. */
 #dashboard-view.dash-compact > * + * { margin-top: 8px; }
@@ -2515,8 +2513,8 @@ body.map-expanded-open { overflow: hidden; }
 .debt-map-node:focus-visible circle:nth-of-type(2) { stroke: var(--primary-strong); stroke-width: 3; }
 .debt-map-amount {
   font-family: var(--font-mono, monospace);
-  font-size: 10.5px;
-  font-weight: 850;
+  font-size: 11px;
+  font-weight: 600;
   fill: var(--text-strong);
   /* white halo keeps every amount readable where lines pass by */
   stroke: var(--surface);
@@ -2696,7 +2694,7 @@ body.map-expanded-open { overflow: hidden; }
 }
 .dash-pick-row.is-off .dash-pick-icon { background: var(--bg-tertiary, var(--bg-secondary)); color: var(--text-tertiary); }
 .dash-layout-status { min-width: 48px; color: var(--text-tertiary); font-size: 12px; text-align: right; }
-#dash-layout-edit-btn.is-active { background: var(--primary) !important; color: #fff !important; }
+#dash-layout-edit-btn.is-active { background: var(--surface-2) !important; color: var(--text-strong) !important; }
 #dashboard-view.dash-compact #dashboard-board { gap: 8px; }
 @media (max-width: 760px) {
   .dashboard-board { grid-template-columns: minmax(0, 1fr); }
@@ -2721,25 +2719,24 @@ body.map-expanded-open { overflow: hidden; }
   text-align: left;
   transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
 }
-.map-default-option:hover { border-color: var(--primary); }
+.map-default-option:hover { border-color: var(--border-strong); }
+/* Selected = the same surface step + stronger hairline as .chip-active. */
 .map-default-option.is-selected {
-  border-color: var(--primary);
-  background: color-mix(in srgb, var(--primary-raw) 9%, var(--surface));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-raw) 11%, transparent);
+  border-color: var(--text-secondary);
+  background: var(--surface-2);
+  box-shadow: none;
 }
 .map-default-option-icon {
   display: grid;
-  flex: 0 0 34px;
-  width: 34px;
-  height: 34px;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
   place-items: center;
-  border-radius: 11px;
-  background: var(--primary-light);
-  color: var(--primary-strong);
+  color: var(--text-secondary);
 }
-.map-default-option b { display: block; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.map-default-option b { display: block; overflow: hidden; font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .map-default-option small { display: block; margin-top: 2px; color: var(--text-tertiary); font-size: 12px; line-height: 1.3; }
-.map-default-check { flex: 0 0 auto; margin-left: auto; color: var(--primary-strong); }
+.map-default-check { flex: 0 0 auto; margin-left: auto; color: var(--text-strong); }
 @media (max-width: 640px) {
   .map-default-options { grid-template-columns: 1fr; }
   .map-default-option { min-height: 56px; }
@@ -3006,7 +3003,7 @@ body.map-expanded-open { overflow: hidden; }
   color: var(--text);
 }
 .notify-problem-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--warning, #d97706); }
-.notify-problem-text { font-size: 11.5px; line-height: 1.5; color: var(--text-secondary); margin: 0; }
+.notify-problem-text { font-size: 12px; line-height: 1.5; color: var(--text-secondary); margin: 0; }
 .notify-problem-fix {
   display: block;
   font-size: 12px;
@@ -3054,7 +3051,7 @@ body.map-expanded-open { overflow: hidden; }
 }
 .notify-row-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .notify-row-title { font-size: 13px; font-weight: 600; color: var(--text); }
-.notify-row-text { font-size: 11.5px; color: var(--text-secondary); line-height: 1.45; }
+.notify-row-text { font-size: 12px; color: var(--text-secondary); line-height: 1.45; }
 .notify-row-meta { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
 .notify-dot {
   width: 8px; height: 8px; border-radius: 50%; margin-top: 8px;

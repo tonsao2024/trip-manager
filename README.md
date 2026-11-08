@@ -39,6 +39,14 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > and dark mode; every margin/padding/gap (CSS, inline styles, Tailwind half steps) now sits on the 4px
 > grid; “ธุรกรรมที่ต้องทำ” is a single hairline list with a secondary “จ่ายแล้ว” button; and the map layer
 > toggles use the neutral `.chip-active` look instead of solid blue.
+> **Round 3 (same version):** Settings → การแสดงผล shows each theme as a flat swatch of its real colours
+> (no gradient art), a check only on the theme in use, neutral selected states for the style, light/dark and
+> default-map options, no icons in the section labels, and the sunset theme is just “ซันเซ็ต”; every screen
+> keeps ONE solid blue button (other add/empty-state/“plan” buttons became secondary, toggles such as แผนที่ /
+> ดูทั้งหมด / มุมมองกะทัดรัด / จัดลำดับ show “on” with `.is-active`, and on a phone the FAB is the primary while
+> the same action in the page header steps down); no rendered text is heavier than 600 (including `<b>` /
+> `<strong>` and SVG labels); and no UI text is under 12 px — phone KPI figures are 16 px with “≈ ¥” on its own
+> line, and below 1024 px the debt map is drawn in screen pixels so names, roles and amounts stay legible.
 >
 > **v34 — 4 Nov 2026, ออกแบบใหม่ทั้งระบบเป็น Flat design + ตรวจปุ่ม/เมนูทุกหน้า.** A ground-up repaint into
 > a flat design language plus a full button-and-menu audit. **Look:** every gradient, glow, glass blur and

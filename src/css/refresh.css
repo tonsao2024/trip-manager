@@ -205,7 +205,7 @@ select.input { border-radius: var(--radius); }
 .cal-pill--amber { background: var(--brand-yellow-tint); color: var(--brand-yellow-ink); }
 .cal-pill--mist { background: var(--mist-tint); color: var(--mist-ink); }
 .cal-more { font-size: 12px; font-weight: 600; color: var(--text-tertiary); }
-.cal-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--text-secondary); }
+.cal-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); }
 
 /* ---------------------------------------------------------------- *
  * 9. Booking import (paste a confirmation e-mail) + share sheet
@@ -306,13 +306,23 @@ select.input { border-radius: var(--radius); }
 }
 .theme-card {
   position: relative; display: flex; flex-direction: column; gap: 8px; padding: 8px;
-  cursor: pointer; text-align: left; overflow: hidden; transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+  cursor: pointer; text-align: left; overflow: hidden;
+  transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
 }
-.theme-card-name { font-family: var(--font-display); font-weight: 600; font-size: 13px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A flat swatch of the theme's colours: primary fill + its three supporting dots. */
+.theme-card-art { position: relative; display: block; height: 32px; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06); }
+.theme-swatch-row { position: absolute; left: 8px; bottom: 8px; display: inline-flex; gap: 4px; }
+.theme-swatch-dot { display: inline-block; border-radius: 50%; box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .9); }
+.theme-card-plus { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); display: grid; place-items: center; color: #fff; }
+.theme-card-name { font-family: var(--font-display); font-weight: 500; font-size: 13px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The check marks ONLY the theme in use. */
 .theme-card-check {
-  position: absolute; top: 6px; right: 6px; width: 20px; height: 20px;
-  background: var(--primary); color: #fff; display: grid; place-items: center; box-shadow: 0 2px 6px rgba(15,23,42,.25);
+  position: absolute; top: 12px; right: 12px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--surface); color: var(--text-strong); border: 1px solid var(--border-strong);
+  display: none; place-items: center;
 }
+.theme-card.is-active .theme-card-check { display: grid; }
+.theme-card.is-active .theme-card-plus { display: none; }
 .theme-custom { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
 .theme-custom-row { display: flex; align-items: center; gap: 8px; }
 .theme-custom-row > span { flex: 1; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
@@ -713,8 +723,8 @@ select.input { border-radius: var(--radius); }
   gap: 8px 16px;
   flex-wrap: wrap;
   margin-bottom: 8px;
-  font-size: 10.5px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
 }
 .debt-legend-item { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 999px; }
 .debt-legend-item.is-in { background: color-mix(in srgb, var(--success) 14%, var(--surface)); color: var(--success); border: 1px solid color-mix(in srgb, var(--success) 40%, transparent); }
@@ -814,12 +824,16 @@ select.input { border-radius: var(--radius); }
   border-radius: 13px;
   background: color-mix(in srgb, var(--surface) 88%, var(--primary-light));
 }
+/* Below 1024px the map is drawn in screen pixels (debtMapHtml), so it fits the
+   card without a forced width or sideways scroll, and every label is ≥ 12px. */
+.debt-map-svg--compact { min-width: 0; }
+.debt-map-svg--compact .debt-map-amount-label .debt-map-amount { font-size: 12.5px; }
 .debt-map-amount-label rect { vector-effect: non-scaling-stroke; }
 .debt-map-amount-label .debt-map-amount {
   fill: var(--text-strong);
   font-family: var(--font-mono, monospace);
-  font-size: 10.5px;
-  font-weight: 850;
+  font-size: 11px;
+  font-weight: 600;
   paint-order: normal;
   stroke: none !important;
 }
@@ -829,10 +843,9 @@ select.input { border-radius: var(--radius); }
 .debt-payer-list .debt-tx-row { min-width: 0; min-height: 42px; border-left: 4px solid var(--debt-edge-color, var(--primary)); }
 .debt-row-pays { display: inline-flex; align-items: center; gap: 4px; color: var(--text-tertiary); font-size: 12px; white-space: nowrap; }
 .debt-legend-item--unique { background: var(--surface); color: var(--text-secondary); border: 1px solid var(--border-light); }
-.debt-legend-swatch {
-  width: 16px; height: 4px; display: inline-block; border-radius: 999px;
-  background: linear-gradient(90deg, #1677ff, #e11d48, #059669, #d97706, #7c3aed, #0891b2);
-}
+/* The receivers' real line colours as flat dots (no rainbow gradient). */
+.debt-legend-swatch { display: inline-flex; gap: 2px; font-style: normal; }
+.debt-legend-swatch span { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
 @media (max-width: 600px) {
   .debt-map-card { padding: 12px !important; }
   .debt-payer-list .debt-tx-row { gap: 4px; padding: 8px; font-size: 12px; }
@@ -859,7 +872,7 @@ select.input { border-radius: var(--radius); }
 .expenses-compact .expense-day-title { font-size: 12px; }
 .expenses-compact .expense-day-total .money-primary { font-size: 12px; }
 .expenses-compact .expense-day .expense-card { box-shadow: none; }
-#exp-density-btn.is-active { color: var(--primary-strong); background: var(--primary-light); }
+#exp-density-btn.is-active { color: var(--text-strong); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--text-secondary); }
 @media (max-width: 540px) {
   .expense-day-head {
     display: grid;

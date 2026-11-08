@@ -41,7 +41,7 @@ function createToast({ type = 'success', title, message, duration = 4000, retryF
       ${ICONS[type] || ICONS.success}
     </div>
     <div style="flex:1;min-width:0;">
-      ${title ? `<div style="font-weight:700;font-size:13px;margin-bottom:1px;color:var(--text);">${escapeHtml(title)}</div>` : ''}
+      ${title ? `<div style="font-weight:600;font-size:13px;margin-bottom:1px;color:var(--text);">${escapeHtml(title)}</div>` : ''}
       <div style="font-size:13px;color:var(--text-secondary);line-height:1.45;word-break:break-word;">${escapeHtml(message || '')}</div>
       ${retryFn ? `<button class="btn btn-sm btn-secondary" style="margin-top:8px;min-height:30px;" data-retry>${escapeHtml(retryLabel)}</button>` : ''}
     </div>

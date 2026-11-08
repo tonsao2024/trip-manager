@@ -580,7 +580,8 @@ console.log('\n▶ itinerary: มุมมองกระทัดรัด (v23
   check(q('#itin-layout').classList.contains('itin-compact'), 'compact: the toggle folds the plan');
   check(q('#itinerary-view')?.classList.contains('view-compact'), 'compact: the page carries the state too');
   check(q('#itin-density-btn').getAttribute('aria-pressed') === 'true', 'compact: the toggle reports its state');
-  check(q('#itin-density-btn').classList.contains('btn-primary'), 'compact: the active view is highlighted');
+  // v35: "on" is a neutral surface step (.is-active), never a second primary button.
+  check(q('#itin-density-btn').classList.contains('is-active') && !q('#itin-density-btn').classList.contains('btn-primary'), 'compact: the active view is highlighted');
   check(window.localStorage.getItem('fuji_itin_density') === 'compact', 'compact: the choice is remembered on this device');
 
   // The essentials stay in the markup, the rest is folded by CSS at every width.

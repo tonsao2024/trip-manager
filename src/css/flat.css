@@ -146,6 +146,14 @@ hr, .divider { border: 0; border-top: 1px solid var(--border-light); }
   color: var(--text-strong);
   transform: none;
 }
+/* Toggle buttons show "on" as a surface step + stronger hairline — never as a
+   second solid primary on the screen (map, view-all, compact view, edit mode). */
+.btn-secondary.is-active,
+.btn-secondary.is-active:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--text-secondary);
+  color: var(--text-strong);
+}
 .btn-secondary:active:not(:disabled) { background: var(--surface-3); }
 
 .btn-ghost {
@@ -961,9 +969,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary-raw); 
   background: var(--surface);
 }
 .theme-card:hover { transform: none; border-color: var(--border-strong); }
-.theme-card.is-active { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
-.theme-card-swatch { border-radius: var(--radius-sm); box-shadow: none; height: 40px; }
-.theme-card-check { border-radius: var(--radius-xs); }
+.theme-card.is-active { background: var(--surface-2); border-color: var(--text-secondary); box-shadow: none; }
 .theme-custom { border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--surface-2); }
 .theme-color-input { border-radius: var(--radius-xs); border: 1px solid var(--border); }
 .theme-preview-chip { border-radius: var(--radius-xs); box-shadow: none; }
@@ -974,8 +980,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary-raw); 
   background: var(--surface);
 }
 .mode-option:hover { transform: none; border-color: var(--border-strong); }
-.mode-option.active { border-color: var(--primary); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--primary); }
-[data-theme="dark"] .mode-option.active { border-color: var(--primary); background: var(--surface-2); }
+.mode-option.active { border-color: var(--text-secondary); background: var(--surface-2); box-shadow: none; color: var(--text-strong); }
 
 /* --- Misc: map, brands, steps, timeline ------------------------------- */
 .map-frame { border-radius: var(--radius-md); border: 1px solid var(--border); }
@@ -1145,11 +1150,13 @@ html[data-depth="soft"] .kpi-tile { box-shadow: var(--shadow-xs); }
   white-space: nowrap;
   transition: border-color .14s ease, background-color .14s ease, color .14s ease;
 }
-.appearance-style-option:hover { border-color: var(--primary-raw); color: var(--primary-strong); }
-.appearance-style-option.is-active {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: var(--on-primary);
+.appearance-style-option:hover { border-color: var(--border-strong); color: var(--text-strong); }
+/* Selected = surface step + stronger hairline (same as .chip-active), not solid blue. */
+.appearance-style-option.is-active,
+.appearance-style-option.is-active:hover {
+  background: var(--surface-2);
+  border-color: var(--text-secondary);
+  color: var(--text-strong);
 }
 .appearance-style-preview {
   display: flex;
@@ -1242,6 +1249,13 @@ html[data-depth="soft"] .kpi-tile { box-shadow: var(--shadow-xs); }
   .kpi-strip .kpi-mini-label { font-size: 12px; line-height: 1.25; }
   .kpi-strip .kpi-mini b { font-size: 14px; }
   .kpi-strip .kpi-mini { padding: 8px; }
+  /* v35: the figure is the biggest thing in the tile (16px), never a shrunken
+     10px clamp; "≈ ¥…" drops to its own line under it. */
+  .kpi-strip { grid-auto-columns: minmax(132px, 1fr); }
+  .kpi-strip .kpi-mini .money-dual { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 4px; row-gap: 2px; }
+  .kpi-strip .kpi-mini .money-primary { flex: 0 0 100%; font-size: 16px; font-weight: 500; line-height: 1.3; }
+  .kpi-strip .kpi-mini .money-eq,
+  .kpi-strip .kpi-mini .money-orig { font-size: 12px; }
 }
 
 /* ========================================================================== *
@@ -1253,6 +1267,9 @@ html[data-depth="soft"] .kpi-tile { box-shadow: var(--shadow-xs); }
 /* --- Type ------------------------------------------------------------- */
 b, strong { font-weight: 600; }
 body .font-bold, body .font-extrabold, body .font-black { font-weight: 600; }
+/* <b>/<strong> follow the same 400/500/600 scale (Tailwind's preflight makes them
+   "bolder" — 700, or 900 inside a 600 parent). */
+body b, body strong { font-weight: 600; }
 body .uppercase { text-transform: none; }
 body .tracking-wide, body .tracking-wider, body .tracking-widest { letter-spacing: 0; }
 .tabular-nums, .num, td.num { font-variant-numeric: tabular-nums; }
@@ -1272,6 +1289,19 @@ body.is-signed-out #header-more { display: none !important; }
 /* B2: no floating button on wide screens — every page has its own add action. */
 @media (min-width: 1024px) {
   .fab { display: none !important; }
+}
+/* Below 1024px the FAB is the screen's one primary action, so the same "add"
+   action in the page header steps down to a secondary button. */
+@media (max-width: 1023px) {
+  body:has(#fab:not(.hidden)) :is(#add-itinerary-btn, #add-expense-btn, #add-doc-btn) {
+    background: var(--surface);
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+  body:has(#fab:not(.hidden)) :is(#add-itinerary-btn, #add-expense-btn, #add-doc-btn):hover:not(:disabled) {
+    background: var(--surface-2);
+    color: var(--text-strong);
+  }
 }
 
 /* --- Page header (scenes.js renderPageScene) --------------------------- */
