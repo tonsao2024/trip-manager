@@ -1813,7 +1813,8 @@ console.log('\n▶ v12: จอเล็ก (iPhone) — header ไม่ดั�
   //    browsers zoom out (\"หน้าจอแสดงผลไม่สมบูรณ์\", right edge cut off).
   check(/html, body \{ max-width: 100%; overflow-x: clip; \}/.test(css),
     'phone: the page can never be wider than the screen (no zoom-out, no cut-off edge)');
-  check(/@media \(max-width: 520px\)[\s\S]{0,400}#app-header \.flex\.items-center\.gap-3 \{ gap: 6px; min-width: 0; \}/.test(css),
+  // v35: spacing sits on the 4px grid (was 6px).
+  check(/@media \(max-width: 520px\)[\s\S]{0,400}#app-header \.flex\.items-center\.gap-3 \{ gap: 8px; min-width: 0; \}/.test(css),
     'phone: the header row shrinks instead of pushing the layout wider');
 
   // 2) The avatar stands in for the name on phones; desktop keeps only the

@@ -345,7 +345,7 @@ async function openActivitySheet(tripId, { isAdmin = false } = {}) {
           <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('ประวัติการแก้ไข','Activity log')}</h3>
           <p class="text-xs text-[var(--text-secondary)]">${th('ใครเพิ่ม/แก้ไข/ลบ อะไร และเมื่อไร','Who added, edited or deleted what')}</p>
         </div>
-        ${isAdmin ? `<button id="activity-clear-all" class="btn btn-ghost btn-sm text-xs" style="min-height:28px;padding:2px 10px;color:var(--danger);">${icon('trash-2', 'w-3.5 h-3.5')} ${th('ล้างทั้งหมด','Clear all')}</button>` : ''}
+        ${isAdmin ? `<button id="activity-clear-all" class="btn btn-ghost btn-sm text-xs" style="min-height:28px;padding:2px 8px;color:var(--danger);">${icon('trash-2', 'w-3.5 h-3.5')} ${th('ล้างทั้งหมด','Clear all')}</button>` : ''}
       </div>
       <div id="activity-list"><div class="skeleton h-16"></div><div class="skeleton h-16"></div></div>
     </div>
@@ -2098,10 +2098,10 @@ function openUserSheet(user) {
 
       <div class="card p-3 space-y-3">
         <div class="flex items-center justify-between">
-          <h4 class="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">${icon('user','w-3.5 h-3.5')} ${th('บัญชี','Account')}</h4>
+          <h4 class="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-2">${icon('user','w-3.5 h-3.5')} ${th('บัญชี','Account')}</h4>
           <span class="text-xs text-[var(--text-tertiary)]">${escapeHtml(user.uid.slice(0,10))}…</span>
         </div>
-        <div class="grid gap-2.5">
+        <div class="grid gap-2">
           <div class="input-group"><label class="input-label text-xs">${icon('user','w-3 h-3')} Display Name</label><input id="edit-display-name" class="input text-[13px] !min-h-[36px]" value="${escapeHtml(user.displayName || '')}" placeholder="ชื่อที่แสดง"></div>
           <div class="input-group"><label class="input-label text-xs">${icon('image','w-3 h-3')} Photo URL</label><input id="edit-photo-url" class="input text-[13px] !min-h-[36px]" value="${escapeHtml(user.photoURL || '')}" placeholder="https://..."></div>
           <button id="save-profile" class="btn btn-primary btn-sm w-full !min-h-[38px]">${icon('save','w-4 h-4')} ${th('บันทึกโปรไฟล์','Save profile')}</button>
@@ -2110,7 +2110,7 @@ function openUserSheet(user) {
 
       <div class="card p-3 space-y-3">
         <div class="flex items-center justify-between">
-          <h4 class="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">${icon('smartphone','w-3.5 h-3.5')} ${th('อุปกรณ์ & แคช','Device & cache')}</h4>
+          <h4 class="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-2">${icon('smartphone','w-3.5 h-3.5')} ${th('อุปกรณ์ & แคช','Device & cache')}</h4>
           <span class="text-xs px-2 py-0.5 rounded-full bg-[var(--bg-secondary)] border border-[var(--border)]">${cacheKeys} keys • ~${cacheSizeKb}KB</span>
         </div>
         <div class="grid grid-cols-2 gap-2">
@@ -2297,7 +2297,7 @@ async function showRulesHelpSheet({ lang, trip = null, action = 'join' } = {}) {
       </ol>
       <div class="p-3 rounded-xl" style="background:var(--bg-secondary); border:1px solid var(--border);">
         <p class="text-xs font-semibold mb-1">${th('คอลเลกชันที่กฎยังขาด','Collections missing from the rules')}</p>
-        <div class="flex flex-wrap gap-1.5">${help.missing.map(m => `<code class="text-xs px-2 py-0.5 rounded-md" style="background:var(--surface); border:1px solid var(--border);">${escapeHtml(m)}</code>`).join('')}</div>
+        <div class="flex flex-wrap gap-2">${help.missing.map(m => `<code class="text-xs px-2 py-0.5 rounded-md" style="background:var(--surface); border:1px solid var(--border);">${escapeHtml(m)}</code>`).join('')}</div>
       </div>
       <div class="btn-row">
         <button id="rules-copy" class="btn btn-primary btn-sm">${icon('clipboard-copy', 'w-4 h-4')} ${th('คัดลอกกฎทั้งหมด','Copy all rules')}</button>
@@ -2926,12 +2926,12 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
             <input id="tf-cover" type="file" accept="image/*" class="hidden">
 
             <div id="cover-cropper-container" class="hidden mt-3">
-              <div class="flex gap-1.5 mb-2 flex-wrap items-center">
+              <div class="flex gap-2 mb-2 flex-wrap items-center">
                 <span class="text-xs font-semibold">${icon('crop', 'w-3.5 h-3.5 inline')} ${lang==='th' ? 'อัตราส่วน' : 'Aspect'}:</span>
-                <button type="button" data-aspect="16/9" class="chip chip-active text-xs aspect-btn" style="min-height:28px;padding:4px 10px;">16:9</button>
-                <button type="button" data-aspect="4/3" class="chip text-xs aspect-btn" style="min-height:28px;padding:4px 10px;">4:3</button>
-                <button type="button" data-aspect="1" class="chip text-xs aspect-btn" style="min-height:28px;padding:4px 10px;">1:1</button>
-                <button type="button" data-aspect="free" class="chip text-xs aspect-btn" style="min-height:28px;padding:4px 10px;">Free</button>
+                <button type="button" data-aspect="16/9" class="chip chip-active text-xs aspect-btn" style="min-height:28px;padding:4px 8px;">16:9</button>
+                <button type="button" data-aspect="4/3" class="chip text-xs aspect-btn" style="min-height:28px;padding:4px 8px;">4:3</button>
+                <button type="button" data-aspect="1" class="chip text-xs aspect-btn" style="min-height:28px;padding:4px 8px;">1:1</button>
+                <button type="button" data-aspect="free" class="chip text-xs aspect-btn" style="min-height:28px;padding:4px 8px;">Free</button>
               </div>
               <div id="cropper-wrapper" class="w-full rounded-xl overflow-hidden" style="min-height:180px;max-height:260px;background:#000;"></div>
               <div class="flex gap-2 mt-2">
@@ -2941,9 +2941,9 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
             </div>
 
             <div id="cover-preview" class="${trip.coverImage ? '' : 'hidden'} mt-3">
-              <div class="flex items-center justify-between mb-1.5">
+              <div class="flex items-center justify-between mb-2">
                 <span class="text-xs font-semibold flex items-center gap-1">${icon('eye', 'w-3.5 h-3.5')} ${lang==='th' ? 'ตัวอย่าง' : 'Preview'}</span>
-                <button type="button" id="change-image" class="btn btn-ghost btn-sm text-xs" style="min-height:26px;padding:4px 10px;">${icon('replace', 'w-3 h-3')} ${lang==='th' ? 'เปลี่ยน' : 'Change'}</button>
+                <button type="button" id="change-image" class="btn btn-ghost btn-sm text-xs" style="min-height:26px;padding:4px 8px;">${icon('replace', 'w-3 h-3')} ${lang==='th' ? 'เปลี่ยน' : 'Change'}</button>
               </div>
               <div class="w-full h-28 rounded-xl overflow-hidden border" style="border-color: var(--border);">
                 <img decoding="async" id="cover-img" class="w-full h-full object-cover" src="${escapeHtml(trip.coverImage || '')}" alt="">
@@ -3431,7 +3431,7 @@ async function renderTripSelector() {
         <div class="trip-card-cover ${trip.coverImage ? 'has-image' : 'is-empty'} ${compact ? 'h-28' : 'h-36'} relative overflow-hidden">
           ${trip.coverImage ? `<img decoding="async" src="${escapeHtml(trip.coverImage)}" class="w-full h-full object-cover" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.replace('has-image', 'is-empty')">
           <div class="absolute inset-0 trip-card-scrim"></div>` : ''}
-          ${!compact ? `<div class="absolute top-3 right-3 flex items-center gap-1.5">
+          ${!compact ? `<div class="absolute top-3 right-3 flex items-center gap-2">
             ${countdownText ? `<span class="badge bg-white/90 backdrop-blur text-xs" style="border-color:transparent;color:#333;">${icon('hourglass', 'w-3 h-3')} ${countdownText}</span>` : ''}
             <button class="trip-menu-btn" data-trip-menu="${trip.id}" aria-label="เมนูทริป" title="เมนู">${icon('more-vertical', 'w-4 h-4')}</button>
           </div>` : ''}
@@ -3442,9 +3442,9 @@ async function renderTripSelector() {
           <p class="meta-line ${compact ? 'mt-0.5' : 'mt-1'}">${escapeHtml(tripRangeLabel(trip) || (getLang() === 'th' ? 'ยังไม่กำหนดวัน' : 'No dates yet'))}</p>
           ${!compact ? `
           <div class="flex items-center gap-2 mt-3 flex-wrap">
-            <span class="text-xs px-2.5 py-1 rounded-full bg-[var(--bg-secondary)] font-semibold flex items-center gap-1">${icon('banknote', 'w-3 h-3')} ${escapeHtml(trip.baseCurrency || 'THB')}</span>
-            <span class="text-xs px-2.5 py-1 rounded-full bg-[var(--bg-secondary)] font-semibold flex items-center gap-1">${icon('users', 'w-3 h-3')} ${(trip.memberUids || []).length || 1}</span>
-            <span class="text-xs px-2.5 py-1 rounded-full font-semibold flex items-center gap-1 ml-auto" style="background: var(--primary-light); color: var(--primary-strong);">${icon('log-in', 'w-3 h-3')} ${lang==='th' ? 'เปิดทริป' : 'Open'}</span>
+            <span class="text-xs px-2 py-1 rounded-full bg-[var(--bg-secondary)] font-semibold flex items-center gap-1">${icon('banknote', 'w-3 h-3')} ${escapeHtml(trip.baseCurrency || 'THB')}</span>
+            <span class="text-xs px-2 py-1 rounded-full bg-[var(--bg-secondary)] font-semibold flex items-center gap-1">${icon('users', 'w-3 h-3')} ${(trip.memberUids || []).length || 1}</span>
+            <span class="text-xs px-2 py-1 rounded-full font-semibold flex items-center gap-1 ml-auto" style="background: var(--primary-light); color: var(--primary-strong);">${icon('log-in', 'w-3 h-3')} ${lang==='th' ? 'เปิดทริป' : 'Open'}</span>
           </div>` : ''}
         </div>
       </div>`;
@@ -3722,7 +3722,7 @@ async function renderDashboard(params) {
             </div>
             <div id="current-activity"><div class="skeleton h-14"></div></div>
             <div class="card-foot">
-              <div class="flex items-center justify-between text-sm mb-1.5">
+              <div class="flex items-center justify-between text-sm mb-2">
                 <span class="text-[var(--text-secondary)]">${th('ความคืบหน้าทริป','Trip progress')}</span>
                 <span class="font-medium tabular-nums" id="trip-progress-label">--</span>
               </div>
@@ -4959,10 +4959,10 @@ async function renderItinerary(params) {
             <div id="map-wrap" class="relative rounded-xl overflow-hidden" style="border:1px solid var(--border);">
               <div id="map" class="map-frame w-full" style="height:min(46vh, 420px);"></div>
               <div class="map-toolbar" id="map-layer-bar">
-                <button class="map-tool-btn" data-layer="map">${icon('map', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</button>
-                <button class="map-tool-btn" data-layer="satellite">${icon('satellite', 'w-3.5 h-3.5')} ${th('ดาวเทียม','Satellite')}</button>
-                <button class="map-tool-btn" data-layer="terrain">${icon('mountain', 'w-3.5 h-3.5')} ${th('ภูมิประเทศ','Terrain')}</button>
-                <button class="map-tool-btn" id="map-labels-btn" aria-pressed="${getStoredLabelsVisible()}">${icon('tags', 'w-3.5 h-3.5')} ${th('ชื่อสถานที่','Labels')}</button>
+                <button type="button" class="map-tool-btn" data-layer="map">${icon('map', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</button>
+                <button type="button" class="map-tool-btn" data-layer="satellite">${icon('satellite', 'w-3.5 h-3.5')} ${th('ดาวเทียม','Satellite')}</button>
+                <button type="button" class="map-tool-btn" data-layer="terrain">${icon('mountain', 'w-3.5 h-3.5')} ${th('ภูมิประเทศ','Terrain')}</button>
+                <button type="button" class="map-tool-btn" id="map-labels-btn" aria-pressed="${getStoredLabelsVisible()}">${icon('tags', 'w-3.5 h-3.5')} ${th('ชื่อสถานที่','Labels')}</button>
               </div>
               <div id="map-status" class="map-status"><span class="skeleton" style="width:26px;height:26px;border-radius:50%;"></span> <span>${th('กำลังโหลดแผนที่...','Loading map...')}</span></div>
               <div id="map-empty" class="map-status hidden"><div class="text-center px-4">
@@ -5427,6 +5427,7 @@ async function renderItinerary(params) {
     const active = activeMapLayer;
     document.querySelectorAll('#map-layer-bar [data-layer]').forEach(btn => {
       btn.classList.toggle('is-active', btn.dataset.layer === active);
+      btn.setAttribute('aria-pressed', String(btn.dataset.layer === active));
     });
     const labelsBtn = document.getElementById('map-labels-btn');
     if (labelsBtn) {
@@ -6015,7 +6016,7 @@ async function renderItinerary(params) {
                   <span class="badge badge-${it.status || 'planned'} text-xs itin-status-badge">${escapeHtml(statusDef ? (lang==='th'?statusDef.th:statusDef.en) : (it.status || 'planned'))}</span>
                 </span>
               </div>
-              <div class="flex items-center gap-2 flex-wrap mt-1.5">
+              <div class="flex items-center gap-2 flex-wrap mt-2">
                 ${it.isStay ? `<span class="badge badge-stay text-xs itin-quiet">${icon(isDeparture ? 'sunrise' : (isVirtual ? 'moon' : 'bed-double'), 'w-2.5 h-2.5')} ${isDeparture ? th(`ออกจากที่พัก • หลังคืนที่ ${it.stayNight}/${nights}`, `check-out • after night ${it.stayNight}/${nights}`) : (isVirtual ? th(`คืนที่ ${it.stayNight}/${nights}`, `night ${it.stayNight}/${nights}`) : th(`พัก ${nights} คืน`, `${nights} nights`))}</span>` : ''}
                 ${it.startAt || it.endAt ? `<span class="meta-line">${icon('clock', 'w-3 h-3')} ${timeRange(it.startAt, it.endAt, trip?.timezone)}</span>` : ''}
                 ${isVirtual ? '' : `<span class="meta-line itin-quiet">${icon('timer', 'w-3 h-3')} ${formatDuration(it.durationMinutes)}</span>`}
@@ -7525,7 +7526,7 @@ function expenseFormSectionsHtml({
               <input id="${p}ex-reservation" type="hidden" value="${escapeHtml(e.reservationId || '')}">
               ${lockItinerary
                 ? `<div class="input-group"><label class="input-label">${tx('ผูกกับแผนการเดินทาง','Linked place')}</label>
-                     <div class="input trail-input" style="display:flex;align-items:center;gap:6px;">${icon('map-pin', 'w-3.5 h-3.5')} <span class="truncate">${escapeHtml(planLabel || e.itineraryItemTitle || '')}</span></div>
+                     <div class="input trail-input" style="display:flex;align-items:center;gap:8px;">${icon('map-pin', 'w-3.5 h-3.5')} <span class="truncate">${escapeHtml(planLabel || e.itineraryItemTitle || '')}</span></div>
                      <input id="${p}ex-itinerary" type="hidden" value="${escapeHtml(e.itineraryItemId || '')}">
                    </div>`
                 : ''}
@@ -7912,7 +7913,7 @@ function mountExpenseForm({
     if (splitMethod === 'equal') {
       const equal = splitEqual(v.netMinor, ids.map(m => m.id));
       area.innerHTML = ids.map(m => `
-        <div class="split-equal-row flex justify-between items-center text-sm p-2.5 rounded-xl gap-2" style="background: var(--bg-secondary);">
+        <div class="split-equal-row flex justify-between items-center text-sm p-2 rounded-xl gap-2" style="background: var(--bg-secondary);">
           <span class="flex items-center gap-2 min-w-0">
             <span class="avatar w-7 h-7 text-xs" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
             <span class="truncate">${escapeHtml(m.displayName)}</span>
@@ -8935,7 +8936,7 @@ async function renderSettlement(params) {
     const isMe = m.memberId === currentUser.uid;
     return `${withAvatar ? `<div class="avatar" style="width:34px;height:34px;background:${escapeHtml(m.color || 'var(--primary)')};font-size:12px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</div>` : ''}
       <div class="min-w-0">
-        <div class="font-semibold text-sm truncate">${escapeHtml(m.displayName)} ${isMe ? `<span class="text-xs px-1.5 py-0.5 rounded-full text-white" style="background:var(--gradient-primary);">${th('คุณ','you')}</span>` : ''}</div>
+        <div class="font-semibold text-sm truncate">${escapeHtml(m.displayName)} ${isMe ? `<span class="text-xs px-2 py-0.5 rounded-full text-white" style="background:var(--gradient-primary);">${th('คุณ','you')}</span>` : ''}</div>
         <div class="text-xs text-[var(--text-tertiary)]">${th('จ่ายจริง','paid')} ${m.paidCount} • ${th('ร่วมหาร','shares')} ${m.shareCount}</div>
       </div>`;
   }
@@ -9307,20 +9308,20 @@ async function renderSettlement(params) {
           <button class="btn btn-ghost btn-sm tx-tool-btn" data-tx-toggle="close" type="button">${icon('fold-vertical', 'w-3.5 h-3.5')} ${th('ย่อทั้งหมด','Collapse all')}</button>
         </div>
       </div>
-      <div class="space-y-3 stagger" id="tx-list">${payerGroups.map(group => {
+      <div class="tx-list" id="tx-list">${payerGroups.map(group => {
         const from = state.membersMap[group.from] || {};
         const fromStatement = state.statements.find(x => x.memberId === group.from);
         const fallbackDetails = (fromStatement?.items || []).filter(i => i.role === 'share');
         return `<section class="tx-payer-group" data-tx-payer="${escapeHtml(group.from)}">
           <div class="tx-payer-head">
             <button type="button" class="tx-person-link tx-payer-person" data-settle-person="${escapeHtml(group.from)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${from.displayName || 'สมาชิก'}`, `View expenses for ${from.displayName || 'member'}`))}">
-              <span class="avatar" style="background:${escapeHtml(from.color || 'var(--primary)')};width:36px;height:36px;font-size:11px;">${from.photoURL ? `<img decoding="async" src="${escapeHtml(from.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(from.displayName || ''))}</span>
+              <span class="avatar" style="background:${escapeHtml(from.color || 'var(--primary)')};width:32px;height:32px;font-size:12px;">${from.photoURL ? `<img decoding="async" src="${escapeHtml(from.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(from.displayName || ''))}</span>
               <span class="min-w-0">
                 <b class="block truncate">${escapeHtml(from.displayName || th('สมาชิก','Member'))}</b>
                 <small>${th('ต้องโอนให้','Owes')} ${group.recipients.length} ${th('คน','people')}</small>
               </span>
             </button>
-            <div class="tx-payer-total"><span>${th('ยอดที่ต้องโอนรวม','Total to send')}</span><b>${moneyPair(group.totalMinor)}</b></div>
+            <div class="tx-payer-total"><span>${th('รวมที่ต้องโอน','Total to send')}</span><b>${moneyPair(group.totalMinor)}</b></div>
           </div>
           <div class="tx-payer-recipients">
             ${group.recipients.map(recipient => {
@@ -9336,29 +9337,29 @@ async function renderSettlement(params) {
               return `<div class="tx-row tx-recipient-row" data-tx-recipient="${escapeHtml(recipient.to)}">
                 <div class="tx-recipient-head">
                   <button type="button" class="tx-person-link tx-recipient-person" data-settle-person="${escapeHtml(recipient.to)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${to.displayName || 'สมาชิก'}`, `View expenses for ${to.displayName || 'member'}`))}">
-                    <span class="avatar" style="background:${escapeHtml(to.color || 'var(--primary)')};width:30px;height:30px;font-size:10px;">${to.photoURL ? `<img decoding="async" src="${escapeHtml(to.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(to.displayName || ''))}</span>
+                    <span class="avatar" style="background:${escapeHtml(to.color || 'var(--primary)')};width:28px;height:28px;font-size:12px;">${to.photoURL ? `<img decoding="async" src="${escapeHtml(to.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(to.displayName || ''))}</span>
                     <span class="min-w-0"><small>${th('โอนให้','Pay to')}</small><b class="block truncate">${escapeHtml(to.displayName || th('สมาชิก','Member'))}</b></span>
                   </button>
                   <div class="tx-recipient-amount">${moneyPair(recipient.amountMinor)}</div>
+                  <div class="tx-row-actions no-export">
+                  <button class="btn btn-secondary btn-sm no-export" type="button" data-settle-pay data-settle-from="${escapeHtml(group.from)}" data-settle-to="${escapeHtml(recipient.to)}" data-settle-amount="${recipient.amountMinor}">${th('จ่ายแล้ว', 'Mark paid')}</button>
+                  </div>
                 </div>
-                <div class="tx-row-actions no-export">
-                  <button class="btn btn-accent btn-sm text-xs no-export" style="min-height:30px;padding:2px 10px;" type="button" data-settle-pay data-settle-from="${escapeHtml(group.from)}" data-settle-to="${escapeHtml(recipient.to)}" data-settle-amount="${recipient.amountMinor}">${icon('badge-check', 'w-3 h-3')} ${th('จ่ายแล้ว', 'Mark paid')}</button>
-                </div>
-                <details class="tx-details mt-2">
-                  <summary class="text-xs cursor-pointer" style="color:var(--text-secondary);">${hasMatchedSources ? th('รายการที่ทำให้เกิดยอดโอน','Expenses behind this transfer') : th('รายการค่าใช้จ่ายของผู้จ่าย','Payer expense items')} (${sourceRows.length})</summary>
-                  ${sourceRows.length ? `<div class="tx-sources mt-2">
+                <details class="tx-details">
+                  <summary>${hasMatchedSources ? th('รายการที่ทำให้เกิดยอดโอน','Expenses behind this transfer') : th('รายการค่าใช้จ่ายของผู้จ่าย','Payer expense items')} (${sourceRows.length})</summary>
+                  ${sourceRows.length ? `<div class="tx-sources">
                     ${sourceRows.map(i => {
                       const payers = payersOf(i);
                       return `<div class="tx-source-row">
                         <div class="min-w-0">
-                          <div class="text-xs font-semibold">${expenseLink(i)}${i.estimated ? ` <span class="rcpt-mini-badge rcpt-mini-badge--est">${th('ประมาณการ','est.')}</span>` : ''}</div>
-                          <div class="text-xs text-[var(--text-tertiary)]">${escapeHtml(shortDay(i.date))} • ${th('จ่ายโดย','paid by')} ${payersLabel(payers) || escapeHtml(to.displayName || '')} (${methodLabel(i.method)})${payers.length > 1 && i.totalMinor ? ` • ${th('ยอดบิลรวม','bill total')} ${money(i.totalMinor)}` : ''}</div>
+                          <div class="tx-source-title">${expenseLink(i)}${i.estimated ? ` <span class="rcpt-mini-badge rcpt-mini-badge--est">${th('ประมาณการ','est.')}</span>` : ''}</div>
+                          <div class="tx-source-meta">${escapeHtml(shortDay(i.date))} · ${th('จ่ายโดย','paid by')} ${payersLabel(payers) || escapeHtml(to.displayName || '')} (${methodLabel(i.method)})${payers.length > 1 && i.totalMinor ? ` · ${th('ยอดบิลรวม','bill total')} ${money(i.totalMinor)}` : ''}</div>
                         </div>
-                        <span class="text-xs font-semibold flex-shrink-0">${moneyPair(i.amountMinor)}</span>
+                        <span class="tx-source-amount">${moneyPair(i.amountMinor)}</span>
                       </div>`;
                     }).join('')}
-                  </div>` : `<p class="text-xs mt-2" style="color:var(--text-tertiary);">${th('ไม่พบรายการต้นทางที่จับคู่ได้ — เปิดรายการค่าใช้จ่ายผู้จ่ายเพื่อดูรายละเอียดทั้งหมด','No matching source items were found — open the payer expense list for the full details.')}</p>`}
-                  ${hasMatchedSources ? `<p class="text-xs mt-2" style="color:var(--text-tertiary);">${th('ยอดโอนจริงถูกหักกลบกับรายการที่อีกฝ่ายจ่ายให้แล้ว จึงอาจไม่เท่ากับผลรวมรายการ','Recorded transfers are netted against prior payments, so this explanation may not add up to the transfer total.')}</p>` : ''}
+                  </div>` : `<p class="tx-details-note">${th('ไม่พบรายการต้นทางที่จับคู่ได้ — เปิดรายการค่าใช้จ่ายผู้จ่ายเพื่อดูรายละเอียดทั้งหมด','No matching source items were found — open the payer expense list for the full details.')}</p>`}
+                  ${hasMatchedSources ? `<p class="tx-details-note">${th('ยอดโอนจริงถูกหักกลบกับรายการที่อีกฝ่ายจ่ายให้แล้ว จึงอาจไม่เท่ากับผลรวมรายการ','Recorded transfers are netted against prior payments, so this explanation may not add up to the transfer total.')}</p>` : ''}
                 </details>
               </div>`;
             }).join('')}
@@ -10200,7 +10201,7 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
     const offline = categoriesLoadDenied() || localCategoryPending(tripId);
     const note = sheet.sheet.querySelector('#category-note');
     if (note) {
-      note.className = offline ? 'text-xs p-2.5 rounded-xl mb-2' : 'hidden';
+      note.className = offline ? 'text-xs p-2 rounded-xl mb-2' : 'hidden';
       note.innerHTML = offline
         ? `${icon('alert-triangle', 'w-3.5 h-3.5')} ${th('ยังไม่ได้ Publish firestore.rules — กลุ่มที่เพิ่ม/แก้ตอนนี้จะถูกเก็บไว้ในเครื่องนี้ก่อน แล้วค่อยซิงก์เมื่อกฎพร้อม', 'firestore.rules is not published yet — groups you add now are kept on this device and sync once the rules are live')}`
         : '';
@@ -10535,7 +10536,7 @@ function openMemberForm(tripId, member = null, { onSaved, canSetRoles = true } =
           </select>
         </div>` : ''}
         <div class="p-3 rounded-xl space-y-2" style="background:var(--bg-secondary); border:1px solid var(--border);">
-          <p class="text-xs font-semibold flex items-center gap-1.5">${icon('key-round', 'w-3.5 h-3.5')} ${th('สิทธิ์การใช้งาน','Permissions')}</p>
+          <p class="text-xs font-semibold flex items-center gap-2">${icon('key-round', 'w-3.5 h-3.5')} ${th('สิทธิ์การใช้งาน','Permissions')}</p>
           <label class="flex items-center gap-2 text-xs cursor-pointer"><input id="m-perm-itinerary" type="checkbox" class="accent-[var(--primary)] w-4 h-4" ${(m.permissions?.canEditItinerary ?? true) ? 'checked' : ''}> ${th('แก้ไขแผนการเดินทาง','Edit itinerary')}</label>
           <label class="flex items-center gap-2 text-xs cursor-pointer"><input id="m-perm-expense" type="checkbox" class="accent-[var(--primary)] w-4 h-4" ${(m.permissions?.canEditExpense ?? true) ? 'checked' : ''}> ${th('แก้ไขค่าใช้จ่าย','Edit expenses')}</label>
           <label class="flex items-center gap-2 text-xs cursor-pointer"><input id="m-perm-manage" type="checkbox" class="accent-[var(--primary)] w-4 h-4" ${m.permissions?.canManageMembers ? 'checked' : ''}> ${th('จัดการสมาชิก','Manage members')}</label>
@@ -10735,7 +10736,7 @@ async function renderMembers(params) {
           <button class="btn btn-ghost btn-sm" data-reject="${escapeHtml(r.uid || r.id)}">${th('ปฏิเสธ','Decline')}</button>
         </div>
       </div>`).join('') : `
-      <p class="text-xs text-[var(--text-tertiary)] flex items-center gap-1.5">${icon('inbox', 'w-3.5 h-3.5')} ${th('ยังไม่มีคำขอเข้าร่วม — แชร์รหัสเชิญให้เพื่อนได้ที่หน้าตั้งค่า','No pending requests — share the invite code from Settings.')}</p>`;
+      <p class="text-xs text-[var(--text-tertiary)] flex items-center gap-2">${icon('inbox', 'w-3.5 h-3.5')} ${th('ยังไม่มีคำขอเข้าร่วม — แชร์รหัสเชิญให้เพื่อนได้ที่หน้าตั้งค่า','No pending requests — share the invite code from Settings.')}</p>`;
 
     box.querySelectorAll('[data-approve]').forEach(btn => btn.addEventListener('click', async () => {
       const req = pending.find(x => (x.uid || x.id) === btn.dataset.approve);
@@ -11737,8 +11738,8 @@ async function renderSettings(params) {
         <div class="settings-grid cols-2 mt-3">
           <div class="input-group">
             <label class="input-label">${th('สกุลเงินที่ใช้ในทริป','Currencies used')}</label>
-            <div id="trip-currency-rows" class="space-y-1.5"></div>
-            <button type="button" id="add-trip-currency" class="btn btn-secondary btn-sm mt-1.5 text-xs">${icon('plus', 'w-3 h-3')} ${th('เพิ่มสกุลเงิน','Add currency')}</button>
+            <div id="trip-currency-rows" class="space-y-2"></div>
+            <button type="button" id="add-trip-currency" class="btn btn-secondary btn-sm mt-2 text-xs">${icon('plus', 'w-3 h-3')} ${th('เพิ่มสกุลเงิน','Add currency')}</button>
           </div>
           <div class="input-group">
             <label class="input-label">${t('coverImage')}</label>
@@ -11746,7 +11747,7 @@ async function renderSettings(params) {
               <div class="rounded-xl overflow-hidden border flex-1" style="border-color:var(--border); max-height:92px;">
                 <img decoding="async" id="s-cover-preview" class="w-full h-full object-cover" style="aspect-ratio:16/9; max-height:90px;" src="${escapeHtml(trip?.coverImage || '')}" onerror="this.style.display='none'" alt="">
               </div>
-              <div class="flex-1 space-y-1.5">
+              <div class="flex-1 space-y-2">
                 <input id="s-cover-url" class="input text-xs !min-h-[32px]" placeholder="https://..." value="${trip?.coverImage && String(trip.coverImage).startsWith('http') ? escapeHtml(trip.coverImage) : ''}">
                 <input id="s-cover-file" type="file" accept="image/*" class="input text-xs !min-h-[32px]">
               </div>
@@ -11768,7 +11769,7 @@ async function renderSettings(params) {
           <div class="flex items-center justify-between gap-2 mb-1 flex-wrap">
             <label class="input-label mb-0">${th('งบประมาณรายคน','Per-member budgets')}</label>
             ${settingMembers.length > 0 ? `
-              <button type="button" id="btn-distribute-budget" class="btn btn-secondary btn-sm text-xs" style="min-height:30px;padding:4px 10px;gap:5px;">
+              <button type="button" id="btn-distribute-budget" class="btn btn-secondary btn-sm text-xs" style="min-height:30px;padding:4px 8px;gap:4px;">
                 ${icon('divide', 'w-3.5 h-3.5')} ${th('กระจายงบเท่ากัน', 'Distribute equally')}
               </button>
             ` : ''}
@@ -11879,14 +11880,14 @@ async function renderSettings(params) {
       <div class="card p-5 space-y-3" id="expense-groups-card" data-settings-section="system">
         <h3 class="font-semibold flex items-center gap-2">${th('กลุ่มค่าใช้จ่าย','Expense groups')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เพิ่ม แก้ไขชื่อ/สี/ไอคอน หรือลบกลุ่มของทริปนี้ได้ ทุกหน้าจะใช้กลุ่มใหม่ทันที','Add, rename, recolour or delete groups for this trip — every screen picks them up.')}</p>
-        <div id="settings-cat-list" class="flex flex-wrap gap-1.5"></div>
+        <div id="settings-cat-list" class="flex flex-wrap gap-2"></div>
         <button id="settings-manage-cats" class="btn btn-secondary btn-sm w-full">${icon('settings-2', 'w-4 h-4')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage groups')}</button>
       </div>
 
       <div class="card p-5 space-y-3" id="trip-cards-card" data-settings-section="system">
         <h3 class="font-semibold flex items-center gap-2">${th('บัตรเครดิตของทริป','Trip credit cards')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('ฟอร์มค่าใช้จ่ายจะเลือกบัตรได้จากรายการนี้เท่านั้น — เพิ่ม/แก้ไข/ลบที่นี่ได้ เพื่อป้องกันการกรอกบัตรมั่ว','Expense forms can only pick cards from this list — add/edit/delete here to stop random card names.')}</p>
-        <div id="settings-cards-list" class="flex flex-wrap gap-1.5"></div>
+        <div id="settings-cards-list" class="flex flex-wrap gap-2"></div>
         <button id="settings-manage-cards" class="btn btn-secondary btn-sm w-full">${icon('settings-2', 'w-4 h-4')} ${th('จัดการบัตรเครดิต','Manage cards')}</button>
       </div>
 
@@ -12776,12 +12777,12 @@ async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
         </div>
         <div class="input-group" style="margin:0;">
           <div class="relative">
-            <input id="wx-search" class="input text-sm" style="padding-left:34px;" placeholder="${th('ค้นหาเมือง… เช่น โตเกียว เชียงใหม่', 'Search cities… e.g. Tokyo, Paris')}" autocomplete="off">
+            <input id="wx-search" class="input text-sm" style="padding-left:32px;" placeholder="${th('ค้นหาเมือง… เช่น โตเกียว เชียงใหม่', 'Search cities… e.g. Tokyo, Paris')}" autocomplete="off">
             <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-tertiary);">${icon('search', 'w-4 h-4')}</span>
           </div>
         </div>
-        <div id="wx-results" class="space-y-1.5"></div>
-        <div id="wx-list" class="space-y-1.5"></div>
+        <div id="wx-results" class="space-y-2"></div>
+        <div id="wx-list" class="space-y-2"></div>
         <button id="wx-done" class="btn btn-primary w-full">${th('เสร็จ', 'Done')}</button>
       </div>
     `);
@@ -13577,7 +13578,7 @@ async function renderIdeas(params) {
               </button>`).join('')}
               <span class="idea-img-hint">${icon('images', 'w-3 h-3')} ${imgs.length}/3</span>
             </div>` : ''}
-            <div class="flex items-center gap-2 flex-wrap mt-1.5">
+            <div class="flex items-center gap-2 flex-wrap mt-2">
               <span class="badge badge-planned text-xs idea-cat-badge" style="background:color-mix(in srgb, ${escapeHtml(placeCategoryColor(ideaCategoryId(idea.category)))} 14%, transparent);color:${escapeHtml(placeCategoryColor(ideaCategoryId(idea.category)))};">${icon(placeCategoryIcon(ideaCategoryId(idea.category)), 'w-2.5 h-2.5')} ${escapeHtml(placeCategoryLabel(ideaCategoryId(idea.category), lang))}</span>
               ${idea.address ? `<span class="meta-line idea-detail">${icon('map-pin', 'w-3 h-3')} <span class="truncate" style="max-width:220px;">${escapeHtml(idea.address)}</span></span>` : ''}
               ${Number(idea.estimatedCostMinor) > 0 ? `<span class="badge badge-skipped text-xs idea-detail">${icon('coins', 'w-2.5 h-2.5')} ${escapeHtml(formatCurrency(Number(idea.estimatedCostMinor), idea.currency || trip?.baseCurrency || 'THB'))}</span>` : ''}
@@ -13585,7 +13586,7 @@ async function renderIdeas(params) {
             ${pinned ? `<button type="button" class="idea-pin-line idea-detail" data-act="locate" data-id="${idea.id}" title="${th('พาแผนที่ไปที่ไอเดียนั้น','Show on the map')}">${icon('crosshair', 'w-3 h-3')} <span class="font-mono">${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}</span> <span class="idea-pin-go">${th('ดูบนแผนที่','View on map')}</span></button>` : ''}
             ${pinned && near ? `<button type="button" class="idea-near-line idea-detail" data-act="compare" data-id="${idea.id}" title="${th('เทียบระยะกับแผนแต่ละวัน','Compare with each day')}">${icon('route', 'w-3 h-3')} ${th('ห่างจากแผน','from the plan')} <b>~${ideaKmLabel(near.km)}</b> <span class="truncate" style="max-width:170px;">• ${escapeHtml(near.item.title || '')}</span></button>`
               : (pinned && !planPinned ? `<p class="idea-near-line is-muted idea-detail">${icon('route', 'w-3 h-3')} ${th('แผนยังไม่มีพิกัดให้เทียบระยะ','The plan has no pins to compare with yet')}</p>` : '')}
-            ${voters.length ? `<p class="text-xs text-[var(--text-tertiary)] mt-1.5 idea-detail">${icon('users', 'w-3 h-3')} ${escapeHtml(voters.join(', '))}${info.count > voters.length ? ` +${info.count - voters.length}` : ''}</p>` : ''}
+            ${voters.length ? `<p class="text-xs text-[var(--text-tertiary)] mt-2 idea-detail">${icon('users', 'w-3 h-3')} ${escapeHtml(voters.join(', '))}${info.count > voters.length ? ` +${info.count - voters.length}` : ''}</p>` : ''}
             <div class="flex items-center gap-1 flex-wrap mt-2">
               ${sanitizeUrl(idea.url) ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(sanitizeUrl(idea.url))}" target="_blank" rel="noopener noreferrer">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
               ${idea.address ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(googleMapsPlaceUrl(idea.address, idea.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
@@ -13593,7 +13594,7 @@ async function renderIdeas(params) {
               ${pinned && planPinned ? `<button class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" data-act="compare" data-id="${idea.id}">${icon('git-compare', 'w-3.5 h-3.5')} ${th('เทียบกับแผน','Compare')}</button>` : ''}
               ${idea.status === 'planned'
                 ? `<span class="badge badge-completed text-xs">${icon('check', 'w-3 h-3')} ${th('อยู่ในแผน','In the plan')}${idea.plannedDate ? ` • ${escapeHtml(idea.plannedDate)}` : ''}</span>`
-                : `<button class="btn btn-accent btn-sm text-xs" style="min-height:30px;padding:2px 10px;" data-act="plan" data-id="${idea.id}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>`}
+                : `<button class="btn btn-accent btn-sm text-xs" style="min-height:30px;padding:2px 8px;" data-act="plan" data-id="${idea.id}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>`}
               <button class="icon-btn" data-act="edit" data-id="${idea.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
               <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${idea.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
             </div>
@@ -13710,7 +13711,7 @@ async function renderIdeas(params) {
           <span class="truncate">${escapeHtml(best.item.title || '')} • ${escapeHtml(best.item.date || '')}</span>
           ${best.item.date ? `<button class="btn btn-secondary btn-sm" data-day="${escapeHtml(best.item.date)}">${icon('calendar-days', 'w-3.5 h-3.5')} ${th('ดูวันนี้','See day')}</button>` : ''}
         </div>` : ''}
-        ${days.length ? `<div class="space-y-1.5">${days.map(([day, v]) => `
+        ${days.length ? `<div class="space-y-2">${days.map(([day, v]) => `
           <div class="idea-compare-row">
             <span class="idea-compare-day">${thaiDate(day, { year: false })}</span>
             <span class="min-w-0 flex-1">
@@ -14165,15 +14166,15 @@ async function renderBookings(params) {
                     ${Number(r.costMinor) > 0 ? `<span class="badge badge-skipped text-xs">${icon('coins', 'w-2.5 h-2.5')} ${escapeHtml(formatCurrency(Number(r.costMinor), r.currency || 'THB'))}</span>` : ''}
                     ${r.linkedItemId ? `<span class="badge badge-completed text-xs">${icon('check', 'w-2.5 h-2.5')} ${t('inPlan')}</span>` : ''}
                   </div>
-                  ${r.address ? `<p class="text-xs text-[var(--text-secondary)] mt-1.5">${icon('map-pin', 'w-3 h-3')} ${escapeHtml(r.address)}</p>` : ''}
+                  ${r.address ? `<p class="text-xs text-[var(--text-secondary)] mt-2">${icon('map-pin', 'w-3 h-3')} ${escapeHtml(r.address)}</p>` : ''}
                   ${r.notes ? `<p class="text-xs text-[var(--text-secondary)] mt-1">${escapeHtml(r.notes)}</p>` : ''}
-                  ${warnings.length ? `<p class="text-xs mt-1.5" style="color:var(--warning);">${icon('alert-triangle', 'w-3 h-3')} ${escapeHtml(warnings.map(w => lang === 'th' ? w.th : w.en).join(' • '))}</p>` : ''}
+                  ${warnings.length ? `<p class="text-xs mt-2" style="color:var(--warning);">${icon('alert-triangle', 'w-3 h-3')} ${escapeHtml(warnings.map(w => lang === 'th' ? w.th : w.en).join(' • '))}</p>` : ''}
                   <div class="flex items-center gap-1 flex-wrap mt-2">
                     ${sanitizeUrl(r.url) ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(sanitizeUrl(r.url))}" target="_blank" rel="noopener noreferrer">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
                     ${r.address ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(googleMapsPlaceUrl(r.address, r.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
                     ${r.phone ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" href="tel:${escapeHtml(String(r.phone).replace(/[^\d+#*,;]/g, ''))}">${icon('phone', 'w-3.5 h-3.5')} ${escapeHtml(r.phone)}</a>` : ''}
-                    ${r.expenseId ? `<a class="badge badge-completed text-xs" href="#/trip/${tripId}/expenses/add?id=${escapeHtml(r.expenseId)}">${icon('receipt', 'w-2.5 h-2.5')} ${th('อยู่ในค่าใช้จ่าย', 'In expenses')}</a>` : (Number(r.costMinor) > 0 ? `<button class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 10px;" data-act="expense" data-id="${escapeHtml(r.id)}">${icon('receipt', 'w-3.5 h-3.5')} ${th('เพิ่มเป็นค่าใช้จ่าย', 'Add as expense')}</button>` : '')}
-              ${!r.linkedItemId ? `<button class="btn btn-accent btn-sm text-xs" style="min-height:30px;padding:2px 10px;" data-act="plan" data-id="${r.id}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>` : ''}
+                    ${r.expenseId ? `<a class="badge badge-completed text-xs" href="#/trip/${tripId}/expenses/add?id=${escapeHtml(r.expenseId)}">${icon('receipt', 'w-2.5 h-2.5')} ${th('อยู่ในค่าใช้จ่าย', 'In expenses')}</a>` : (Number(r.costMinor) > 0 ? `<button class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" data-act="expense" data-id="${escapeHtml(r.id)}">${icon('receipt', 'w-3.5 h-3.5')} ${th('เพิ่มเป็นค่าใช้จ่าย', 'Add as expense')}</button>` : '')}
+              ${!r.linkedItemId ? `<button class="btn btn-accent btn-sm text-xs" style="min-height:30px;padding:2px 8px;" data-act="plan" data-id="${r.id}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>` : ''}
                     <button class="icon-btn" data-act="edit" data-id="${r.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
                     <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${r.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
                   </div>
@@ -14545,7 +14546,7 @@ async function renderExplore(params) {
         ${recos.map(r => `
           <div class="reco-card">
             <span class="place-chip" style="background:var(--primary-light);color:var(--primary-strong);border-color:transparent;">${icon(categoryIcon(r.place.category), 'w-3 h-3')} ${escapeHtml(categoryLabel(r.place.category, lang))}</span>
-            <b class="mt-1.5">${escapeHtml(lang === 'th' ? r.place.name.th : r.place.name.en)}</b>
+            <b class="mt-2">${escapeHtml(lang === 'th' ? r.place.name.th : r.place.name.en)}</b>
             <p>${escapeHtml(lang === 'th' ? r.reasonTh : r.reasonEn)}</p>
             <div class="flex gap-2 mt-2">
               <button class="btn btn-primary btn-sm flex-1" style="min-height:32px;font-size:11.5px;" data-plan="${r.place.id}" data-dest="${destId}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>
@@ -14836,7 +14837,7 @@ async function renderCalendar(params) {
           </div>
         </div>
         ${dayItems.length ? `<div class="space-y-2">${dayItems.map(i => `
-          <div class="flex items-center gap-3 p-2.5 rounded-xl" style="background:var(--bg-secondary);border:1px solid var(--border-light);">
+          <div class="flex items-center gap-3 p-2 rounded-xl" style="background:var(--bg-secondary);border:1px solid var(--border-light);">
             <span class="text-xs font-mono font-semibold w-12 flex-shrink-0" style="color:var(--primary-strong);">${escapeHtml(String(i.startAt || '').slice(11, 16) || '--:--')}</span>
             <span class="row-icon" style="width:28px;height:28px;border-radius:10px;">${icon(placeCategoryIcon(ideaCategoryId(i.category)), 'w-3.5 h-3.5')}</span>
             <span class="min-w-0 flex-1">
@@ -15038,7 +15039,7 @@ Total 24,500 THB`
           <b class="text-xs">${icon('scan-text', 'w-3.5 h-3.5 inline')} ${th('พบข้อมูล','Recognised')}</b>
           <span class="badge text-xs" style="background:color-mix(in srgb, ${toneVar} 14%, transparent); color:${toneVar}; border-color:color-mix(in srgb, ${toneVar} 30%, transparent);">${escapeHtml(lang === 'th' ? tone.th : tone.en)} • ${draft.confidence}%</span>
         </div>
-        <div class="space-y-1.5">
+        <div class="space-y-2">
           ${draft.recognised.map(r => `<div class="parsed-row"><span>${escapeHtml(r.label)}</span><b>${escapeHtml(r.value)}</b></div>`).join('')}
         </div>
       </div>`;

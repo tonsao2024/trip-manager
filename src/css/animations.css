@@ -81,7 +81,7 @@
 /* ---------- Responsive sizing ---------- */
 @media (max-width: 640px) {
   .card-bento { padding: 16px; }
-  .btn-lg { min-height: 44px; padding: 10px 18px; }
+  .btn-lg { min-height: 44px; padding: 8px 16px; }
 }
 
 /* ---------- Confetti — kept for API compatibility; v35 calls it nowhere ---------- */

@@ -76,7 +76,7 @@
        to keep the same cascade order the CDN's injected <style> used to have. -->
   <link rel="stylesheet" href="./src/css/tailwind.css?v=35">
 
-  <!-- Lucide icons: local subset (277 icons) instead of the full ~1500-icon CDN
+  <!-- Lucide icons: local subset (276 icons) instead of the full ~1500-icon CDN
        bundle. Deferred so it never blocks first paint; runs before app.js. -->
   <script src="./src/js/vendor/lucide.js?v=35" defer></script>
 
@@ -116,7 +116,7 @@
       #app-header { height: auto; }
       .header-row { height: 56px; }
       .header-nav-row {
-        display: flex; align-items: center; gap: 10px;
+        display: flex; align-items: center; gap: 8px;
         height: 44px; padding-bottom: 8px;
       }
       .desktop-nav {
@@ -133,9 +133,9 @@
       .desktop-nav::-webkit-scrollbar { display: none; }
       .desktop-nav .menu-item {
         flex: 0 0 auto;
-        padding: 6px 10px;
+        padding: 4px 8px;
         font-size: 13px;
-        gap: 6px;
+        gap: 8px;
         white-space: nowrap;
         min-height: 34px;
       }
@@ -146,8 +146,8 @@
     }
     /* Roomy screens get the full-size chips back. */
     @media (min-width: 1280px) {
-      .desktop-nav { gap: 6px; }
-      .desktop-nav .menu-item { padding: 6px 12px; font-size: 14px; gap: 6px; min-height: 36px; }
+      .desktop-nav { gap: 8px; }
+      .desktop-nav .menu-item { padding: 4px 12px; font-size: 14px; gap: 8px; min-height: 36px; }
     }
     /* Compact laptops (768–1279) swap to SHORT labels — still words, never
        icon-only — so all eight menus stay readable on one line. */
@@ -163,8 +163,8 @@
 
     /* ---- Compact world clock + city picker ---- */
     .clock-chip {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 5px 10px; border-radius: var(--radius-sm);
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px 8px; border-radius: var(--radius-sm);
       background: var(--surface);
       border: 1px solid var(--border);
       color: var(--text-secondary);
@@ -184,18 +184,18 @@
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
       box-shadow: var(--overlay-shadow);
-      padding: 6px;
+      padding: 8px;
       z-index: 80;
     }
     .clock-menu-title {
-      display: flex; align-items: center; gap: 6px;
-      padding: 6px 10px 8px;
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px;
       font-size: 12px; font-weight: 500;
       color: var(--text-tertiary);
     }
     .clock-menu-item {
       display: flex; align-items: center; gap: 8px;
-      width: 100%; padding: 7px 10px; border-radius: var(--radius-sm);
+      width: 100%; padding: 8px; border-radius: var(--radius-sm);
       border: 0; background: transparent; cursor: pointer;
       font-size: 12px; color: var(--text-secondary); text-align: left;
     }
@@ -238,7 +238,7 @@
         padding-right: max(16px, env(safe-area-inset-right, 0px));
       }
       #header-subtitle { margin-top: 1px; font-size: 12px; }
-      #app { padding-top: 14px; }
+      #app { padding-top: 16px; }
     }
 
     /* v34: the decorative background wash/blobs are gone — flat design keeps
@@ -252,7 +252,7 @@
     /* “by TonSkywalker” — deliberately small next to the product name */
     .app-by {
       font-size: 12px; font-weight: 400;
-      margin-left: 6px; white-space: nowrap; color: var(--text-tertiary);
+      margin-left: 8px; white-space: nowrap; color: var(--text-tertiary);
     }
     /* The account name is useful on desktop; email is intentionally omitted so
        it cannot crowd the dashboard navigation. Long names truncate safely. */

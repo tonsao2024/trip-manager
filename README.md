@@ -32,6 +32,13 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > everything that needs an account, and a duplicate `#s-cover-url` field in Settings is gone. Verified: 184 unit
 > tests (the 3 mascot tests went with the mascot), the jsdom smoke test (814 checks; only assertions that encoded
 > the old visuals were updated) and the headless mobile + desktop layout checks.
+> **Round 2 (same version):** the legacy layers were cleaned at the source — 849 declarations that could
+> never win the cascade and 115 rules for classes the app no longer renders were deleted from
+> `components.css` (3,852 → 3,128 lines) and `refresh.css` (1,177 → 930 lines), verified as a no-op by
+> comparing every element's computed style on 16 screens + 12 menu/sheet states at 1440 and 390 px in light
+> and dark mode; every margin/padding/gap (CSS, inline styles, Tailwind half steps) now sits on the 4px
+> grid; “ธุรกรรมที่ต้องทำ” is a single hairline list with a secondary “จ่ายแล้ว” button; and the map layer
+> toggles use the neutral `.chip-active` look instead of solid blue.
 >
 > **v34 — 4 Nov 2026, ออกแบบใหม่ทั้งระบบเป็น Flat design + ตรวจปุ่ม/เมนูทุกหน้า.** A ground-up repaint into
 > a flat design language plus a full button-and-menu audit. **Look:** every gradient, glow, glass blur and

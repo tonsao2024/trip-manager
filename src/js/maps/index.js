@@ -158,14 +158,14 @@ function injectLeafletFallbackCss() {
     '.leaflet-top,.leaflet-bottom{position:absolute;z-index:400;pointer-events:none}',
     '.leaflet-top{top:0}.leaflet-bottom{bottom:0}.leaflet-left{left:0}.leaflet-right{right:0}',
     '.leaflet-control{pointer-events:auto}',
-    '.leaflet-container .leaflet-control-attribution{position:absolute;right:0;bottom:0;background:rgba(255,255,255,.75);font-size:10px;line-height:1.4;padding:1px 6px;color:#666}',
+    '.leaflet-container .leaflet-control-attribution{position:absolute;right:0;bottom:0;background:rgba(255,255,255,.75);font-size:10px;line-height:1.4;padding:1px 8px;color:#666}',
     '.leaflet-popup{position:absolute;margin-bottom:20px}',
     '.leaflet-popup-content-wrapper{background:#fff;color:#333;border-radius:12px;padding:1px;box-shadow:0 3px 14px rgba(0,0,0,.25)}',
     '.leaflet-popup-content{margin:12px 16px;line-height:1.5;font-size:13px;min-width:120px}',
     '.leaflet-popup-tip{background:#fff;box-shadow:0 3px 14px rgba(0,0,0,.25)}',
     '.leaflet-bar{box-shadow:0 1px 5px rgba(0,0,0,.3);border-radius:8px;overflow:hidden}',
     '.leaflet-bar a{background:#fff;color:#333;display:block;width:30px;height:30px;line-height:30px;text-align:center;text-decoration:none;font-size:18px}',
-    '.leaflet-control-zoom{margin:10px!important}'
+    '.leaflet-control-zoom{margin:8px!important}'
   ].join('\n');
   document.head.appendChild(style);
 }
@@ -393,7 +393,7 @@ export async function initMap(containerId, options = {}) {
     attr.style.color = 'var(--text-tertiary)';
     attr.style.fontSize = '10px';
     attr.style.borderRadius = '8px';
-    attr.style.padding = '2px 6px';
+    attr.style.padding = '2px 8px';
   }
 
   // Leaflet needs a size hint whenever the container becomes visible or resizes
