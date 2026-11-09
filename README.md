@@ -1,4 +1,4 @@
-# Trip Manager (Fuji Trip Planner & Group Expense Manager)
+# Trip Manager by TonSkywalker — trip planner & group expense manager
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
@@ -10,6 +10,64 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > คำแนะนำ Functions/Push ในบันทึกเวอร์ชันเก่าด้านล่างไม่ใช่ขั้นตอน deploy ปัจจุบัน
 > ดูขั้นตอนล่าสุดที่ [Deploy Guide](docs/DEPLOY.md)
 
+> **v35 — 8 Nov 2026, “calm pass” ตามแนวทาง [unslop](https://github.com/heydamir/unslop).** A design pass
+> that takes the generic “AI template” signs out of the interface without touching the information
+> architecture, the data or the features. Full audit, decisions and before/after redlines:
+> [UNSLOP-AUDIT-2026-11-08](docs/UNSLOP-AUDIT-2026-11-08.md). **Direction:** precise about money · warm · calm —
+> a Japanese rail ticket and a paper receipt under a morning Fuji sky. **Colour:** brand blue is the single accent;
+> neutral surfaces (#fafafa / #fff), three text roles, hairline borders; green and red only for money; no hue
+> gradients, glows or tinted cards (dashboard rows, settlement tiles, receipt notes and the PNG export included).
+> **Type:** one family — IBM Plex Sans Thai (+ Plex Mono for receipt figures), weights 400/500/600, 12px minimum,
+> tabular numbers, no tracked uppercase; summaries show whole baht (฿13,680), detail rows keep satang.
+> **Copy:** no “!”, no emoji in the UI, Buddhist-era dates everywhere (`thaiDate` / `thaiDateRange` in
+> `src/js/utils/date.js`), readable labels instead of raw keys (B10), the app is called “Trip Manager” everywhere.
+> **Removed:** the mascot “น้องฟูจิ” and the mood faces (`mascot.js`, `moodface.js`), the count-up animations,
+> the shine sweeps and the reveal-on-scroll; one 300 ms entrance at most, one easing curve. **Dashboard:** a plain
+> page head with one primary action and a “⋯” menu, stat cards (label · figure · one change line), a static
+> countdown card with a quiet Fuji line, list rows on hairlines; the old “กระเป๋าของฉัน” card is folded into
+> “ยอดของฉัน” and the team board became its own card. **Moments:** the settlement receipt reads like paper (dashed
+> rules, mono figures) and a member who owes nothing gets a “เคลียร์แล้ว” hanko stamp. **Also:** desktop nav is
+> words only with “เพิ่มเติม ▾” at the end, toolbars group exports into one menu, the FAB is phone-only, labels
+> lost their decorative icons, the “เพิ่มเติม” and สมาชิก pages became grouped lists, the signed-out screen hides
+> everything that needs an account, and a duplicate `#s-cover-url` field in Settings is gone. Verified: 184 unit
+> tests (the 3 mascot tests went with the mascot), the jsdom smoke test (814 checks; only assertions that encoded
+> the old visuals were updated) and the headless mobile + desktop layout checks.
+> **Round 2 (same version):** the legacy layers were cleaned at the source — 849 declarations that could
+> never win the cascade and 115 rules for classes the app no longer renders were deleted from
+> `components.css` (3,852 → 3,128 lines) and `refresh.css` (1,177 → 930 lines), verified as a no-op by
+> comparing every element's computed style on 16 screens + 12 menu/sheet states at 1440 and 390 px in light
+> and dark mode; every margin/padding/gap (CSS, inline styles, Tailwind half steps) now sits on the 4px
+> grid; “ธุรกรรมที่ต้องทำ” is a single hairline list with a secondary “จ่ายแล้ว” button; and the map layer
+> toggles use the neutral `.chip-active` look instead of solid blue.
+> **Round 3 (same version):** Settings → การแสดงผล shows each theme as a flat swatch of its real colours
+> (no gradient art), a check only on the theme in use, neutral selected states for the style, light/dark and
+> default-map options, no icons in the section labels, and the sunset theme is just “ซันเซ็ต”; every screen
+> keeps ONE solid blue button (other add/empty-state/“plan” buttons became secondary, toggles such as แผนที่ /
+> ดูทั้งหมด / มุมมองกะทัดรัด / จัดลำดับ show “on” with `.is-active`, and on a phone the FAB is the primary while
+> the same action in the page header steps down); no rendered text is heavier than 600 (including `<b>` /
+> `<strong>` and SVG labels); and no UI text is under 12 px — phone KPI figures are 16 px with “≈ ¥” on its own
+> line, and below 1024 px the debt map is drawn in screen pixels so names, roles and amounts stay legible.
+> **Round 4 (same version):** the last tinted surfaces are gone — toasts, notifications, idea groups, the
+> expense form and confirm dialogs use plain line icons (no coloured icon tiles); notices, status badges,
+> non-money chips (distance to plan, prices, categories, weather), calendar trip days, selected tiles and the
+> per-person verdict cards are neutral, so green/red appear only on money and red otherwise only on errors and
+> the new quiet destructive button (`.btn-danger-quiet`, used by every delete / log-out button); category colour
+> survives as a small dot because it matches the map pins; decorative sparkle / trophy / wand / eye icons were
+> removed; the import page no longer shows two blue buttons. It also fixes the explore header (its label,
+> tagline and city chips were white on white), the calendar day list's time column (now the trip's time zone),
+> and link-styled buttons that turned blue in dark mode.
+> **Round 5 (same version):** contrast and consistency pass. Text on a filled primary (buttons, FAB, badge,
+> avatars) picks its ink per mode, so dark mode no longer puts white on the light blue (3.05:1) and avatar
+> initials are dark on their pastel hues; the light tertiary grey is #6b6b6b; the receipt and itinerary
+> sheets keep light ink on their white paper in dark mode. Every date is Thai พ.ศ. (calendar heading, empty
+> states, bookings, activity log, idea compare, build stamp “build 8 พ.ย. 2569”); the dashboard shows exact
+> satang; admin terms read Thai first (“รหัสทริป (Trip ID)”, “คีย์เว็บพุช (VAPID)”). All motion uses the one
+> `--ease` curve. On phones/touch, small buttons are ≥36 px, chips ≥32 px and other tappable controls ≥32 px.
+> Form labels are linked to their fields, icon-only buttons get names (`src/js/utils/a11y.js`), and the
+> place cards in Explore keep their three actions on one row at 390 px. The new
+> `npm run test:browser:design` renders 43 screens × 1440/390 px × light/dark with IBM Plex and fails on
+> contrast, Mono 600, clipped Thai lines, CE years, English-only copy, targets <24 px or unnamed controls.
+>
 > **v34 — 4 Nov 2026, ออกแบบใหม่ทั้งระบบเป็น Flat design + ตรวจปุ่ม/เมนูทุกหน้า.** A ground-up repaint into
 > a flat design language plus a full button-and-menu audit. **Look:** every gradient, glow, glass blur and
 > card shadow is gone — surfaces are one solid colour separated by a 1px outline, the radius scale shrank from
@@ -726,6 +784,7 @@ Dashboard + misc:
 - An animated **Mt-Fuji buddy** (`src/js/components/mascot.js`) lives next to the countdown: fluffy, blinking,
   bobbing, with six moods read from the trip (over budget → worried, unsettled bills → wallet-watch, trip about
   to start → cheering, late night → sleepy) and a wiggle + encouragement when tapped.
+  — **removed in v35** (calm pass): the countdown card is static and the mood faces are gone too.
 - ค่าใช้จ่าย: the flat “เรียงรายการ” list now also shows the trip total, like the “แยกตามวัน” view does.
 - **ไอเดียสถานที่ saving was denied by the rules** (“Missing or insufficient permissions”): `ideas`,
   `checklists` and `reservations` no longer require `isTripMember()` for writes (same contract as

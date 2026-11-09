@@ -1,4 +1,4 @@
-// Toast v3 — clean SVG icons, theme-aware colors
+// Toast v4 — quiet line icons; colour only for errors (v35 round 4)
 import { escapeHtml } from '../utils/sanitize.js';
 
 let container = null;
@@ -15,45 +15,41 @@ function ensureContainer() {
   return container;
 }
 
+// v35 round 4: one icon language with the rest of the app — 18px line icons
+// (stroke 1.5, no tinted tile). Only an error is coloured; every other kind
+// is quiet ink, so a toast never competes with the screen's one accent.
+const svg = (body, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"${extra}>${body}</svg>`;
 const ICONS = {
-  success: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><circle cx="12" cy="12" r="10" opacity=".25" fill="currentColor" stroke="none"/><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
-  error: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
-  warning: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
-  loading: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" width="20" height="20" class="animate-spin-slow" style="animation: spinFast .9s linear infinite;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`,
-  info: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`
-};
-
-const ICON_COLORS = {
-  success: 'var(--success)',
-  error: 'var(--danger)',
-  warning: 'var(--warning)',
-  loading: 'var(--primary)',
-  info: 'var(--info)'
+  success: svg('<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>'),
+  error: svg('<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>'),
+  warning: svg('<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>'),
+  loading: svg('<path d="M21 12a9 9 0 1 1-6.219-8.56"/>', ' class="toast-spin"'),
+  info: svg('<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>')
 };
 
 function createToast({ type = 'success', title, message, duration = 4000, retryFn, retryLabel = 'ลองอีกครั้ง' }) {
   const c = ensureContainer();
   const el = document.createElement('div');
-  el.className = `toast toast-${type}`;
+  const kind = ICONS[type] ? type : 'success';
+  el.className = `toast toast-${kind}`;
+  el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
 
   el.innerHTML = `
-    <div class="toast-icon" style="color:${ICON_COLORS[type] || ICON_COLORS.success};flex-shrink:0;display:grid;place-items:center;width:34px;height:34px;border-radius:12px;background:color-mix(in srgb, ${ICON_COLORS[type] || ICON_COLORS.success} 14%, transparent);">
-      ${ICONS[type] || ICONS.success}
-    </div>
-    <div style="flex:1;min-width:0;">
-      ${title ? `<div style="font-weight:700;font-size:13px;margin-bottom:1px;color:var(--text);">${escapeHtml(title)}</div>` : ''}
-      <div style="font-size:13px;color:var(--text-secondary);line-height:1.45;word-break:break-word;">${escapeHtml(message || '')}</div>
-      ${retryFn ? `<button class="btn btn-sm btn-secondary" style="margin-top:8px;min-height:30px;" data-retry>${escapeHtml(retryLabel)}</button>` : ''}
+    <span class="toast-icon">${ICONS[kind]}</span>
+    <div class="toast-body">
+      ${title ? `<div class="toast-title">${escapeHtml(title)}</div>` : ''}
+      <div class="toast-msg">${escapeHtml(message || '')}</div>
+      ${retryFn ? `<button class="btn btn-sm btn-secondary toast-retry" data-retry>${escapeHtml(retryLabel)}</button>` : ''}
     </div>
     <button class="toast-close" aria-label="Close">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="15" height="15"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" width="16" height="16" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
   `;
 
   const closeBtn = el.querySelector('.toast-close');
   const close = () => {
-    el.style.animation = 'toastSlideOut 0.25s ease forwards';
-    setTimeout(() => el.remove(), 220);
+    el.style.animation = 'toastSlideOut 0.2s var(--ease) forwards';
+    setTimeout(() => el.remove(), 200);
   };
   closeBtn.onclick = close;
   const retryBtn = el.querySelector('[data-retry]');

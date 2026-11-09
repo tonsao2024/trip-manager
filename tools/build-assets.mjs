@@ -56,8 +56,10 @@ function buildTailwind() {
   theme: {
     extend: {
       fontFamily: {
-        display: ['Outfit', 'Plus Jakarta Sans', 'Noto Sans Thai', 'sans-serif'],
-        sans: ['Plus Jakarta Sans', 'Noto Sans Thai', 'sans-serif']
+        // v35: one family for everything (tokens.css --font-sans).
+        display: ['IBM Plex Sans Thai', 'system-ui', 'Noto Sans Thai', 'sans-serif'],
+        sans: ['IBM Plex Sans Thai', 'system-ui', 'Noto Sans Thai', 'sans-serif'],
+        mono: ['IBM Plex Mono', 'ui-monospace', 'SF Mono', 'Menlo', 'monospace']
       }
     }
   }

@@ -1,6 +1,6 @@
 {
   "name": "fuji-trip-functions",
-  "description": "Cloud Functions for Fuji Trip Planner",
+  "description": "Cloud Functions for Trip Manager by TonSkywalker",
   "engines": { "node": "20" },
   "main": "src/index.js",
   "type": "module",

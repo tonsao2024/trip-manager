@@ -34,11 +34,11 @@ export function showBottomSheet(htmlContent, { onClose } = {}) {
     backdrop.dataset.closing = '1';
     // Animate with the standalone `translate`/`scale` properties so the
     // CSS positioning transform (desktop centering) is never disturbed.
-    sheet.style.transition = 'opacity 0.22s ease, translate 0.22s ease, scale 0.22s ease';
+    sheet.style.transition = 'opacity 0.22s var(--ease), translate 0.22s var(--ease), scale 0.22s var(--ease)';
     sheet.style.opacity = '0';
     sheet.style.translate = '0 28px';
     sheet.style.scale = '0.98';
-    backdrop.style.transition = 'opacity 0.22s ease';
+    backdrop.style.transition = 'opacity 0.22s var(--ease)';
     backdrop.style.opacity = '0';
     setTimeout(() => {
       backdrop.remove();
@@ -81,9 +81,9 @@ export function showModal(htmlContent, { closable = true, onClose, className = '
   const close = () => {
     if (closed) return;
     closed = true;
-    backdrop.style.transition = 'opacity 0.2s ease';
+    backdrop.style.transition = 'opacity 0.2s var(--ease)';
     backdrop.style.opacity = '0';
-    modal.style.transition = 'opacity 0.2s ease, translate 0.2s ease, scale 0.2s ease';
+    modal.style.transition = 'opacity 0.2s var(--ease), translate 0.2s var(--ease), scale 0.2s var(--ease)';
     modal.style.opacity = '0';
     modal.style.translate = '0 14px';
     modal.style.scale = '0.96';

@@ -13,11 +13,11 @@ export const APP_NAME_BY = 'Trip Manager by TonSkywalker';
 /** Full <title> of the page. */
 export const APP_TITLE = 'Trip Manager by TonSkywalker — วางแผนทริป • แบ่งจ่าย • เคลียร์บิล';
 
-export const APP_VERSION = '34';
-export const APP_VERSION_LABEL = 'v34';
+export const APP_VERSION = '35';
+export const APP_VERSION_LABEL = 'v35';
 /** Name of the DEFAULT palette — a theme is chosen on top of it (utils/themes.js). */
 export const APP_PALETTE = 'Sky light';
-export const APP_UPDATED_ISO = '2026-11-04';
+export const APP_UPDATED_ISO = '2026-11-08';
 
 /** Copyright owner + the licence note asked for by the app owner. */
 export const APP_COPYRIGHT_HOLDER = 'TonSkywalker';
@@ -47,10 +47,14 @@ export function appUpdatedLabel(lang = 'th') {
   return lang === 'th' ? `อัปเดตล่าสุด ${appUpdatedShort('th')}` : `Updated ${appUpdatedShort('en')}`;
 }
 
-/** “v18 Sky light • อัปเดตล่าสุด 5 ต.ค. 2026” (palette name may be overridden). */
+/**
+ * “v35 · อัปเดตล่าสุด 8 พ.ย. 2569”. v35 dropped the palette name from the visible
+ * stamp (it is still in `<meta name="app-palette">` and Settings → About); the
+ * parameter stays so older callers keep working.
+ */
+// eslint-disable-next-line no-unused-vars
 export function appBuildLabel(lang = 'th', paletteName = APP_PALETTE) {
-  const palette = lang === 'th' ? `ชุดสี ${paletteName || APP_PALETTE}` : `${paletteName || APP_PALETTE} palette`;
-  return `${APP_VERSION_LABEL} ${palette} • ${appUpdatedLabel(lang)}`;
+  return `${APP_VERSION_LABEL} · ${appUpdatedLabel(lang)}`;
 }
 
 /** “Trip Manager v18 • อัปเดตล่าสุด 5 ต.ค. 2569 • © TonSkywalker” — the footer line. */

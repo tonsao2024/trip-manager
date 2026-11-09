@@ -1,38 +1,38 @@
-// Fuji Mascot v3 — theme-aware SVG (uses current theme gradient), no emoji
-let uid = 0;
+// Brand mark + empty state (v35).
+//
+// v35 removed the “Fuji mascot” (a gradient mountain with a pulsing snow cap) from
+// the loader, the login screen and the empty states — the owner asked for every
+// mascot and mood face to go (docs/UNSLOP-AUDIT-2026-11-08.md). What stays is the
+// product LOGO, drawn flat exactly like the header badge.
 
-export function renderFujiMascot(state = 'normal', size = 120) {
-  const gid = `fg-${++uid}`;
-  const snowAnimation = state === 'loading'
-    ? `<rect x="35" y="6" width="30" height="6" rx="3" fill="white" opacity="0.92"><animate attributeName="width" values="0;30;0" dur="1.5s" repeatCount="indefinite"/></rect>`
-    : '';
-  const bounceClass = state === 'success' ? 'animate-bounce-short' : state === 'loading' ? 'animate-pulse-soft' : '';
+/**
+ * The app logo: a rounded blue tile, white Mt. Fuji, the sun in the corner.
+ * Uses the live theme colour (`--primary-raw`) like the header badge.
+ * @param {number} size  edge length in px
+ */
+export function renderLogoMark(size = 48) {
+  const inner = Math.round(size * 0.64);
   return `
-  <div class="fuji-mascot ${state} ${bounceClass}" style="width:${size}px;height:${size * 0.7}px;display:inline-block;">
-    <svg viewBox="0 0 100 70" width="${size}" height="${size * 0.7}" role="img" aria-label="Fuji">
-      <defs>
-        <linearGradient id="${gid}" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style="stop-color:var(--grad-1)"/>
-          <stop offset="100%" style="stop-color:var(--grad-2)"/>
-        </linearGradient>
-      </defs>
-      <path d="M5 65 L50 2 L95 65 Z" fill="url(#${gid})" stroke="rgba(0,0,0,0.06)" stroke-width="0.5"/>
-      <path d="M38 22 L50 2 L62 22 L56 26 L50 20 L44 26 Z" fill="white" opacity="0.95"/>
-      ${snowAnimation}
-      <ellipse cx="50" cy="68" rx="40" ry="3" fill="black" opacity="0.08"/>
+  <span class="logo-badge logo-mark" style="width:${size}px;height:${size}px;" aria-hidden="true">
+    <svg viewBox="0 0 100 100" width="${inner}" height="${inner}" aria-hidden="true">
+      <circle cx="72" cy="28" r="15" fill="var(--brand-yellow-raw)"/>
+      <path d="M4 82 L46 18 L88 82 Z" fill="#fff"/>
+      <path d="M34 36 L46 18 L58 36 L52 41 L46 34 L40 41 Z" fill="color-mix(in srgb, var(--primary-raw) 32%, transparent)"/>
+      <rect x="4" y="84" width="92" height="6" rx="3" fill="var(--brand-yellow-raw)"/>
     </svg>
-  </div>`;
+  </span>`;
 }
 
+/**
+ * Empty state: one quiet icon, one line of title, an optional sentence and ONE action.
+ * @param {{icon?:string, title?:string, desc?:string, actionHtml?:string}} opts
+ */
 export function renderEmptyState({ icon = '', title = 'ไม่มีข้อมูล', desc = '', actionHtml = '' }) {
-  const visual = icon
-    ? `<div class="empty-icon-badge"><i data-lucide="${icon}" style="width:44px;height:44px;"></i></div>`
-    : `<div class="empty-state-icon">${renderFujiMascot('normal', 100)}</div>`;
   return `
   <div class="empty-state">
-    ${visual}
-    <h3 style="font-weight:700;font-size:18px;color:var(--text);margin-bottom:8px;">${title}</h3>
-    ${desc ? `<p style="font-size:14px;max-width:320px;margin:0 auto 16px;color:var(--text-secondary);">${desc}</p>` : ''}
-    ${actionHtml}
+    ${icon ? `<i data-lucide="${icon}" class="empty-state-ico" aria-hidden="true"></i>` : ''}
+    <h3 class="empty-state-title">${title}</h3>
+    ${desc ? `<p class="empty-state-desc">${desc}</p>` : ''}
+    ${actionHtml ? `<div class="empty-state-action">${actionHtml}</div>` : ''}
   </div>`;
 }

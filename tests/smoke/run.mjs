@@ -199,12 +199,13 @@ await waitFor(() => text$().includes('ทริปฟูจิ'), { label: 'seed
 check(text$().includes('ทริปฟูจิ'), 'trip list renders the seeded trip');
 check(qa('[data-trip], .trip-card').length > 0, 'trip card markup present');
 
-console.log('\n▶ dashboard (single page + animated countdown)');
+console.log('\n▶ dashboard (single page + static countdown card, v35)');
 await goto('#/trip/t1/dashboard');
-await waitFor(() => q('#countdown-scene .cd-runner'), { label: 'countdown scene' });
-check(!!q('#countdown-scene .cd-fuji'), 'countdown: Fuji scene rendered');
-check(!!q('#countdown-scene .cd-runner .runner-svg'), 'countdown: animated runner rendered');
-check(!!q('#countdown-scene .cd-progress-fill'), 'countdown: progress bar rendered');
+await waitFor(() => q('#countdown-scene [data-cd-days]'), { label: 'countdown scene' });
+check(!!q('#countdown-scene .cdc-fuji'), 'countdown: flat Fuji mark rendered');
+check(!!q('#countdown-scene [data-cd-days]') && !q('#countdown-scene .runner-svg'),
+  'countdown: one static day count — no animated runner (v35 calm pass)');
+check(!!q('#countdown-scene .cdc-track-fill'), 'countdown: progress track rendered');
 {
   const countdownCss = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8');
   const sceneRule = countdownCss.match(/\.countdown-scene\s*\{[^}]*\}/s)?.[0] || '';
@@ -212,7 +213,7 @@ check(!!q('#countdown-scene .cd-progress-fill'), 'countdown: progress bar render
   check(!/#dashboard-view\.dash-compact\s+#countdown-scene\s*\{[^}]*zoom\s*:/s.test(countdownCss),
     'countdown: compact mode does not scale the scene down inside its frame');
 }
-check(!!q('.hero-card'), 'dashboard: hero card');
+check(!!q('#dashboard-view .dash-head .page-title') && !q('.hero-card'), 'dashboard: plain page header with the trip name (no hero banner)');
 check(q('#countdown-scene')?.closest('[data-dashboard-widget="countdown"]')?.querySelector('a[href*="focus=dates"]')?.href.includes('tab=trip'),
   'countdown: date action opens trip settings focused on departure dates');
 check(!!q('.kpi-tile'), 'dashboard: KPI tiles');
@@ -238,7 +239,7 @@ console.log('\n▶ nav active-state follows the route without needless rebuilds 
   check(qa('#bottom-nav .bottom-nav-item.active').length === 1
     && q('#bottom-nav .bottom-nav-item.active')?.getAttribute('data-full-route')?.endsWith('/expenses'), 'nav: bottom bar highlights expenses');
   await goto('#/trip/t1/dashboard');
-  await waitFor(() => q('#countdown-scene .cd-runner'), { label: 'back to dashboard' });
+  await waitFor(() => q('#countdown-scene [data-cd-days]'), { label: 'back to dashboard' });
   check(navActive('#desktop-nav a[data-nav]').some(p => p.endsWith('/dashboard')), 'nav: dashboard highlighted again on return');
 }
 
@@ -579,7 +580,8 @@ console.log('\n▶ itinerary: มุมมองกระทัดรัด (v23
   check(q('#itin-layout').classList.contains('itin-compact'), 'compact: the toggle folds the plan');
   check(q('#itinerary-view')?.classList.contains('view-compact'), 'compact: the page carries the state too');
   check(q('#itin-density-btn').getAttribute('aria-pressed') === 'true', 'compact: the toggle reports its state');
-  check(q('#itin-density-btn').classList.contains('btn-primary'), 'compact: the active view is highlighted');
+  // v35: "on" is a neutral surface step (.is-active), never a second primary button.
+  check(q('#itin-density-btn').classList.contains('is-active') && !q('#itin-density-btn').classList.contains('btn-primary'), 'compact: the active view is highlighted');
   check(window.localStorage.getItem('fuji_itin_density') === 'compact', 'compact: the choice is remembered on this device');
 
   // The essentials stay in the markup, the rest is folded by CSS at every width.
@@ -732,7 +734,7 @@ await click('#view-all-btn');
 await waitFor(() => text$().includes('Lake Kawaguchi'), { timeout: 5000, label: 'imported place on the itinerary' }).catch(() => {});
 check(text$().includes('Lake Kawaguchi'), 'import: imported place shows on the itinerary page');
 
-console.log('\n▶ v5: animated page scenes on every menu');
+console.log('\n▶ v5 → v35: every menu page opens with a plain page header (the animated scenes were retired in the calm pass)');
 const scenePages = [
   ['#/trips', 'trips'], ['#/trip/t1/dashboard', null], ['#/trip/t1/itinerary', 'itinerary'],
   ['#/trip/t1/expenses', 'expenses'], ['#/trip/t1/members', 'members'],
@@ -741,12 +743,12 @@ const scenePages = [
   ['#/trip/t1/more', 'map']
 ];
 for (const [hash, kind] of scenePages) {
-  if (kind === null) continue;             // dashboard has its own hero + countdown scene
+  if (kind === null) continue;             // dashboard has its own header + countdown card
   await goto(hash);
-  await waitFor(() => q('.page-scene') || text$().length > 40, { label: `scene on ${hash}` }).catch(() => {});
-  const scene = q('.page-scene');
-  check(!!scene, `scene: ${kind} page shows an animated illustration`);
-  if (scene) check(scene.querySelectorAll('.ps-art svg *').length > 2, `scene: ${kind} illustration has animated parts`);
+  await waitFor(() => q('.page-head') || text$().length > 40, { label: `page head on ${hash}` }).catch(() => {});
+  const scene = q('.page-head');
+  check(!!scene && !!scene.querySelector('.page-title'), `page head: ${kind} page shows its title header`);
+  if (scene) check(!scene.querySelector('.ps-art, .ps-svg') && !q('.page-scene'), `page head: ${kind} carries no decorative illustration (v35)`);
 }
 
 console.log('\n▶ v5: Settings > system check explains broken member login');
@@ -1083,7 +1085,8 @@ console.log('\n▶ v9: clear-bill receipts (received / deducted / balance + per-
   const sharedListed = tripExpenseTitles.some(t => shareText.includes(t));
   check(paidListed, 'settlement: the items this member paid are listed');
   check(sharedListed || /ไม่มีส่วนที่ต้องรับผิดชอบ|ไม่ต้องรับผิดชอบ|No share/.test(me.querySelector('[data-receipt-section="deduct"]')?.textContent || '') || /จ่ายโดย|paid by/.test(shareText), 'settlement: shares show which bill they belong to');
-  check(/\d{4}-\d{2}-\d{2}/.test(txt), 'settlement: rows carry the expense date');
+  // v35: receipt rows use the Thai short date (“18 พ.ย.”) like every other screen.
+  check(/\d{4}-\d{2}-\d{2}|\d{1,2} (ม\.ค|ก\.พ|มี\.ค|เม\.ย|พ\.ค|มิ\.ย|ก\.ค|ส\.ค|ก\.ย|ต\.ค|พ\.ย|ธ\.ค)\./.test(txt), 'settlement: rows carry the expense date');
   check(/าจโดย|จ่ายโดย/.test(txt), 'settlement: shares name who paid');
   check(/THB|฿/.test(txt), 'settlement: baht equivalent present');
   check(!!me?.querySelector('[data-export-receipt]'), 'settlement: per-person PNG export button');
@@ -1463,7 +1466,7 @@ console.log('\n▶ v9: one simple login screen (Google + email only)');
   check(!!q('#google-signin-btn'), 'login: Google button is the primary action');
   check(!q('#admin-email') && !q('#admin-pass') && !q('#account-form'), 'login: Google-only — no email/password form');
   check(!q('#account-signup-btn') && !q('#account-reset-btn'), 'login: Google-only — no sign-up / forgot-password');
-  check(q('#google-signin-btn') && q('.login-steps'), 'login: Google button with Thai guide steps');
+  check(q('#google-signin-btn') && q('.login-note'), 'login: Google button with one Thai guidance note');
   check(!q('#member-form') && !q('#member-pin') && !q('#member-user'), 'login: username + PIN form removed');
   check(!q('#tab-member') && !q('#tab-admin'), 'login: no member/admin tabs to choose from');
   check(!/ชื่อผู้ใช้ \+ PIN/.test(html$()) && !/member-pin/.test(html$()), 'login: PIN wording gone from the page');
@@ -1811,7 +1814,8 @@ console.log('\n▶ v12: จอเล็ก (iPhone) — header ไม่ดั�
   //    browsers zoom out (\"หน้าจอแสดงผลไม่สมบูรณ์\", right edge cut off).
   check(/html, body \{ max-width: 100%; overflow-x: clip; \}/.test(css),
     'phone: the page can never be wider than the screen (no zoom-out, no cut-off edge)');
-  check(/@media \(max-width: 520px\)[\s\S]{0,400}#app-header \.flex\.items-center\.gap-3 \{ gap: 6px; min-width: 0; \}/.test(css),
+  // v35: spacing sits on the 4px grid (was 6px).
+  check(/@media \(max-width: 520px\)[\s\S]{0,400}#app-header \.flex\.items-center\.gap-3 \{ gap: 8px; min-width: 0; \}/.test(css),
     'phone: the header row shrinks instead of pushing the layout wider');
 
   // 2) The avatar stands in for the name on phones; desktop keeps only the
@@ -2525,41 +2529,48 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   check(!q('.group-card[data-group]'), 'groups: deleting removes the group (members stay)');
   check(qa('#members-list [data-member]').length >= 2, 'groups: the members themselves are untouched');
 
-  // ---- 6) the footer is a designed lock-up, not a text line ----
+  // ---- 6) the footer: v35 calm pass — one quiet line + the legal line ----
   const footer = window.document.getElementById('app-footer');
   check(!!footer?.classList.contains('app-footer'), 'footer: shell present');
-  check(!!footer.querySelector('.app-footer-brand-row'), 'footer: brand row rendered');
-  check(!!footer.querySelector('.app-footer-chips [data-footer-version]'), 'footer: version chip rendered');
-  check(!!footer.querySelector('.app-footer-chips [data-footer-updated]'), 'footer: updated chip rendered');
+  check(!!footer.querySelector('.app-footer-line .app-footer-wordmark'), 'footer: product name on the one-line footer');
+  check(!!footer.querySelector('.app-footer-line [data-footer-version]'), 'footer: version on the footer line');
+  check(!!footer.querySelector('.app-footer-line [data-footer-updated]'), 'footer: last-update date on the footer line');
+  check(!footer.querySelector('.app-footer-chips, .app-footer-chip'), 'footer: no chip lock-up (v35)');
   check(!!footer.querySelector('[data-build-stamp]'), 'footer: build stamp rendered');
   check((footer.querySelector('[data-build-stamp]')?.textContent || '').startsWith('build '), 'footer: the build stamp is filled in by the app');
   check(!!footer.querySelector('.app-footer-legal [data-footer-copyright]'), 'footer: the legal line carries the copyright');
   const footerCss = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
-  check(/\.app-footer-brand-row/.test(footerCss) && /\.app-footer-chip/.test(footerCss), 'footer: the new classes are actually styled');
+  check(/\.app-footer-line/.test(footerCss) && /\.app-footer-legal/.test(footerCss), 'footer: the new classes are actually styled');
 }
 
 console.log('\n▶ v17/v18 offline strip + colour themes');
 {
   check(!!window.document.getElementById('offline-strip-wrap'), 'offline: strip container exists in the shell');
   const css = fs.readFileSync(path.join(root, 'src/css/tokens.css'), 'utf8');
-  check(/#1e4bff/.test(css) && /#ff9e00/.test(css), 'palette: vivid v20 brand colours in tokens.css');
+  // v35 “Calm”: one brand-blue accent on neutral surfaces (docs/UNSLOP-AUDIT-2026-11-08.md).
+  check(/--primary-raw:\s*#0f5ef5/i.test(css) && !/#1e4bff/i.test(css), 'palette v35: the brand blue is the single accent in tokens.css');
   check(!/#2f6fe4/.test(css) && !/#f0ae52/.test(css), 'palette: the muted v17 hexes are gone from the tokens');
   check(!/#1d4ed8/.test(css) && !/#ffc81e/.test(css), 'palette: old True-tone colours gone');
   // v20 “Vivid & Deep”: jewel-saturated status colours + a deeper brand canvas
   // that lifts white cards, and quieter greys pushed out of the tokens.
-  check(/#00b368/.test(css) && /#f97316/.test(css) && /#f4113c/.test(css) && /#0090ff/.test(css),
-    'palette v20: success / warning / danger / info are fully saturated');
+  check(/--success:\s*#15803d/i.test(css) && /--danger:\s*#b91c1c/i.test(css),
+    'palette v35: green / red are AA-contrast money colours');
   check(!/#059669/.test(css) && !/#ea7317/.test(css) && !/#e63232/.test(css) && !/#1a8dd6/.test(css),
     'palette v20: the older, softer status hexes are gone from the tokens');
   check(!/#00a86b/.test(css) && !/#ef7d00/.test(css) && !/#ef2b3d/.test(css) && !/#0d8ce0/.test(css),
     'palette v20: the v19 status hexes are replaced, not mixed in');
-  check(/--page-bg:\s*#d9e9ff/i.test(css), 'palette v20: the canvas is brand-tinted so white cards separate');
-  check(/--text:\s*#101d33/i.test(css) && /--text-strong:\s*#060f22/i.test(css), 'palette v20: deeper ink for typography');
+  check(/--page-bg:\s*#fafafa/i.test(css) && /--bg:\s*#fafafa/i.test(css), 'palette v35: a neutral canvas — no brand tint behind the cards');
+  check(/--text:\s*#171717/i.test(css) && /--text-strong:\s*#0a0a0a/i.test(css), 'palette v35: neutral ink for typography');
   const refreshCss = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
-  check(/\.chip-active, \.chip-active:hover/.test(refreshCss) && /--gradient-primary/.test(refreshCss),
-    'palette v20: selected chips/tabs are saturated, not tinted');
-  check(/\.badge-completed \{[^}]*--success-light/.test(refreshCss) && /\.badge-cancelled \{[^}]*--danger-light/.test(refreshCss),
-    'palette v19: status badges carry vivid fills');
+  const flatCssV35 = fs.readFileSync(path.join(root, 'src/css/flat.css'), 'utf8');
+  check(/\.chip-active, \.chip-active:hover \{[^}]*var\(--surface-2\)/.test(flatCssV35),
+    'palette v35: a selected chip is a surface step + hairline, not a solid accent pill');
+  // v35 round 4: status is not money — badges are a neutral surface step; a
+  // cancelled item keeps red *ink* only (no tinted fill anywhere in the cascade).
+  check(/\.badge-planned, \.badge-completed, \.badge-skipped, \.badge-pending \{[^}]*var\(--surface-2\)/.test(flatCssV35)
+    && /\.badge-cancelled \{ background: transparent; color: var\(--danger\)/.test(flatCssV35)
+    && !/\.badge-completed \{[^}]*--success-light/.test(refreshCss) && !/\.badge-cancelled \{[^}]*--danger-light/.test(refreshCss),
+    'palette v35: status badges are neutral (cancelled = red ink, no fill)');
 
   // v18: colour themes are back (LINE / Facebook / Instagram …), each editable per user.
   const themesSrc = fs.readFileSync(path.join(root, 'src/js/utils/themes.js'), 'utf8');
@@ -2581,10 +2592,12 @@ console.log('\n▶ v17/v18 offline strip + colour themes');
   // v18: mascot + place details are real modules, not dead imports; v28 removed
   // the swipe-card receipt deck from the clear-bill page entirely.
   const shell = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  // v18.1: the dashboard mascot was removed (it rendered incompletely on real
-  // screens). The module stays for reuse, but the dashboard must not mount it.
-  check(fs.existsSync(path.join(root, 'src/js/components/mascot.js')) && !/dash-buddy/.test(appSrc),
-    'mascot: the dashboard buddy stays removed (module kept for reuse)');
+  // v18.1 took the mascot off the dashboard; v35 (owner decision during the calm
+  // redesign) removed the mascot and the mood faces from the system entirely.
+  check(!fs.existsSync(path.join(root, 'src/js/components/mascot.js'))
+    && !fs.existsSync(path.join(root, 'src/js/components/moodface.js'))
+    && !/dash-buddy|moodFaceHtml|renderFujiBuddy/.test(appSrc),
+    'mascot: the mascot and the mood faces are removed from the system (v35)');
   check(!fs.existsSync(path.join(root, 'src/js/utils/deck.js')) && !/rcpt-deck-card/.test(appSrc),
     'deck: the swipe-card receipts are removed from the system');
   check(fs.existsSync(path.join(root, 'src/js/utils/placeDetails.js')), 'details: the optional place lookup module exists');
@@ -2726,9 +2739,10 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
 
   // ---- 3) footer ขนาดเล็กลง ----
   const footCss = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
-  check(/\.app-footer \{[^}]*font-size: 10px/.test(footCss) && /\.app-footer-chip \{[^}]*font-size: 8\.5px/.test(footCss)
-    && /\.app-footer \{[^}]*margin-top: 10px/.test(footCss) && /\.app-footer \{[^}]*padding: 9px 14px/.test(footCss),
-    'footer: compact spacing + smaller type');
+  // v35: 12px is the smallest type anywhere; the footer is one quiet line.
+  check(/\.app-footer \{[^}]*font-size: 12px/.test(footCss) && !/\.app-footer-chip \{/.test(footCss)
+    && /\.app-footer \{[^}]*margin-top: 16px/.test(footCss) && /\.app-footer \{[^}]*padding: 12px 16px/.test(footCss),
+    'footer: one compact line at the 12px minimum type size');
   const flatCss = fs.readFileSync(path.join(root, 'src/css/flat.css'), 'utf8');
   check(/#app \{ padding-bottom: 32px; \}/.test(flatCss) && /body \{ padding-bottom: calc\(var\(--bottom-nav-h\) \+ 8px\); \}/.test(flatCss),
     'footer: excess desktop app padding and duplicate mobile safe-area gap are reduced');

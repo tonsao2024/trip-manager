@@ -13,7 +13,7 @@
 import { toMinor } from './currency.js';
 
 export const EXPLORE_CATEGORIES = [
-  { id: 'all', icon: 'sparkles', th: 'ทั้งหมด', en: 'All' },
+  { id: 'all', icon: 'layout-grid', th: 'ทั้งหมด', en: 'All' },
   { id: 'sightseeing', icon: 'camera', th: 'ท่องเที่ยว', en: 'Sightseeing' },
   { id: 'food', icon: 'utensils-crossed', th: 'อาหาร', en: 'Food' },
   { id: 'activity', icon: 'ferris-wheel', th: 'กิจกรรม', en: 'Activity' },
@@ -405,7 +405,7 @@ export function placeToIdeaPayload(place = {}, { baseCurrency = 'THB', rate = nu
   const name = place.name || {};
   return {
     title: name.th || name.en || '',
-    note: [note.th, place.area ? `📍 ${place.area}` : ''].filter(Boolean).join(' · '),
+    note: [note.th, place.area || ''].filter(Boolean).join(' · '),
     category: place.category || 'sightseeing',
     coordinates: place.coordinates || null,
     address: place.area || '',

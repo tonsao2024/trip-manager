@@ -1,6 +1,11 @@
-// Countdown v2 — animated "runner heading to Fuji" scene.
-// The closer the trip start date gets, the closer the runner gets to Mount Fuji.
-// Pure CSS animations (transform/opacity only) + a tiny tick to update numbers.
+// Countdown card (v35) — a calm, static “days to departure” card.
+//
+// v2–v34 drew an animated runner heading for Mt. Fuji with clouds, stars, dust
+// and a looping bob. The calm pass (docs/UNSLOP-AUDIT-2026-11-08.md, moment 1)
+// keeps the idea — the trip as a journey toward the mountain — but draws it the
+// way a rail ticket would: one big number, one line of context, a thin track
+// with a dot, and a flat silhouette of the mountain. Nothing moves; the number
+// is refreshed once a minute.
 
 const DAY_MS = 86400000;
 
@@ -39,8 +44,8 @@ export function computeCountdown({ startDate, endDate, createdAt, now = new Date
   let phase = 'before';
   if (totalMs <= 0) phase = (end && now.getTime() > end.getTime() + DAY_MS) ? 'after' : 'during';
 
-  // Planning window: from when the trip was created (fallback 180 days before start),
-  // clamped so the animation always looks alive.
+  // Planning window: from when the trip was created (fallback 180 days before
+  // start), clamped so the dot is never stuck at either end of the track.
   const rawWindow = created ? (start.getTime() - created.getTime()) : (180 * DAY_MS);
   const windowMs = Math.min(Math.max(rawWindow, 21 * DAY_MS), 400 * DAY_MS);
   let progress = 1 - (absMs / windowMs);
@@ -50,153 +55,144 @@ export function computeCountdown({ startDate, endDate, createdAt, now = new Date
   return { days, hours, minutes, seconds, totalMs, progress, phase, startDate: start, endDate: end };
 }
 
+/** One plain sentence — no exclamation marks, no emoji. */
 export function countdownHeadline(c, lang = 'th') {
   if (!c.startDate) return lang === 'th' ? 'ยังไม่กำหนดวันเดินทาง' : 'No date yet';
   if (c.phase === 'during') {
     const endDiff = c.endDate ? Math.ceil((c.endDate.getTime() - Date.now()) / DAY_MS) : 0;
-    if (endDiff > 0) return lang === 'th' ? `กำลังเดินทาง • เหลือ ${endDiff} วัน` : `On the trip • ${endDiff} days left`;
-    return lang === 'th' ? 'กำลังเดินทาง 🎒' : 'On the trip 🎒';
+    if (endDiff > 0) return lang === 'th' ? `กำลังเดินทาง · เหลือ ${endDiff} วัน` : `On the trip · ${endDiff} days left`;
+    return lang === 'th' ? 'กำลังเดินทาง' : 'On the trip';
   }
   if (c.phase === 'after') {
     const ago = Math.max(1, Math.floor((Date.now() - c.startDate.getTime()) / DAY_MS));
     return lang === 'th' ? `เดินทางไปแล้ว ${ago} วัน` : `${ago} days ago`;
   }
-  if (c.days === 0) return lang === 'th' ? `อีก ${c.hours} ชั่วโมง!` : `${c.hours} hours to go!`;
+  if (c.days === 0) return lang === 'th' ? `อีก ${c.hours} ชั่วโมง` : `${c.hours} hours to go`;
   return lang === 'th' ? `อีก ${c.days} วัน` : `${c.days} days to go`;
 }
 
-function paceLabel(c, lang = 'th') {
-  if (c.phase !== 'before') return lang === 'th' ? 'ถึงจุดหมายแล้ว!' : 'Arrived!';
-  if (c.days <= 1) return lang === 'th' ? '🏁 ใกล้ถึงฟูจิแล้ว!' : '🏁 Almost there!';
-  if (c.days <= 7) return lang === 'th' ? 'เร่งความเร็วเต็มที่!' : 'Full speed ahead!';
-  if (c.days <= 30) return lang === 'th' ? 'วิ่งขึ้นเนินแล้ว' : 'Climbing the hill';
-  if (c.days <= 90) return lang === 'th' ? 'ออกสตาร์ทแล้ว' : 'On the road';
-  return lang === 'th' ? 'เตรียมตัวออกเดินทาง' : 'Getting ready';
+/* ---------------- presentation ---------------- */
+
+function shortThai(d) {
+  if (!d) return '';
+  try { return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short' }).format(d); } catch { return ''; }
 }
 
-/** Inline SVG of the runner — limbs animate with CSS. */
-function runnerSvg() {
-  return `
-  <svg class="runner-svg" viewBox="0 0 64 88" aria-hidden="true">
-    <g class="runner-bob">
-      <ellipse class="runner-shadow" cx="30" cy="85" rx="17" ry="3.4"/>
-      <g class="runner-leg runner-leg-back">
-        <line x1="30" y1="56" x2="24" y2="72" stroke-width="6"/>
-        <line x1="24" y1="72" x2="16" y2="82" stroke-width="5.5"/>
-      </g>
-      <g class="runner-leg runner-leg-front">
-        <line x1="30" y1="56" x2="38" y2="70" stroke-width="6"/>
-        <line x1="38" y1="70" x2="46" y2="80" stroke-width="5.5"/>
-      </g>
-      <rect class="runner-body" x="24" y="30" width="14" height="27" rx="7"/>
-      <rect class="runner-pack" x="18" y="32" width="9" height="16" rx="4"/>
-      <g class="runner-arm runner-arm-back">
-        <line x1="31" y1="37" x2="21" y2="47" stroke-width="5"/>
-      </g>
-      <g class="runner-arm runner-arm-front">
-        <line x1="32" y1="36" x2="45" y2="44" stroke-width="5"/>
-      </g>
-      <circle class="runner-head" cx="32" cy="21" r="8.6"/>
-      <path class="runner-cap" d="M22.5 18.5 a9.6 9.6 0 0 1 19 0 z"/>
-      <line class="runner-cap-brim" x1="31" y1="14" x2="44" y2="15.4" stroke-width="3"/>
-    </g>
-  </svg>`;
+/** Day-of-trip progress while travelling (0–1), so the dot keeps moving on the trip. */
+function tripProgress(c, now = new Date()) {
+  if (c.phase !== 'during' || !c.startDate) return 1;
+  const end = c.endDate ? c.endDate.getTime() + DAY_MS : c.startDate.getTime() + DAY_MS;
+  const span = Math.max(DAY_MS, end - c.startDate.getTime());
+  return Math.min(1, Math.max(0, (now.getTime() - c.startDate.getTime()) / span));
 }
 
-function fujiSvg() {
+/** The figure, its unit and the caption under it, for the current phase. */
+function figureFor(c, lang = 'th') {
+  const th = lang === 'th';
+  if (!c.startDate) return { value: '—', unit: '', caption: th ? 'ยังไม่กำหนดวันเดินทาง' : 'No travel date yet', text: false };
+  if (c.phase === 'before') {
+    if (c.days === 0) return { value: String(c.hours), unit: th ? 'ชม.' : 'h', caption: th ? 'ก่อนออกเดินทาง' : 'until departure', text: false };
+    return { value: String(c.days), unit: th ? 'วัน' : c.days === 1 ? 'day' : 'days', caption: th ? 'ก่อนออกเดินทาง' : 'until departure', text: false };
+  }
+  if (c.phase === 'during') {
+    const dayNo = Math.floor((Date.now() - c.startDate.getTime()) / DAY_MS) + 1;
+    const total = c.endDate ? Math.round((c.endDate.getTime() - c.startDate.getTime()) / DAY_MS) + 1 : 0;
+    return {
+      value: String(Math.max(1, dayNo)),
+      unit: total ? (th ? `/ ${total} วัน` : `/ ${total} days`) : (th ? 'วัน' : 'days'),
+      caption: th ? 'วันที่ของทริป' : 'day of the trip',
+      text: false
+    };
+  }
+  return { value: th ? 'จบทริปแล้ว' : 'Trip finished', unit: '', caption: countdownHeadline(c, lang), text: true };
+}
+
+function trackEnds(c, createdAt, lang = 'th') {
+  const th = lang === 'th';
+  if (!c.startDate) return ['', ''];
+  if (c.phase === 'during' || c.phase === 'after') {
+    return [`${th ? 'เริ่ม' : 'Start'} ${shortThai(c.startDate)}`, `${th ? 'กลับ' : 'Back'} ${shortThai(c.endDate || c.startDate)}`];
+  }
+  const created = toDate(createdAt);
+  return [created ? `${th ? 'เริ่มวางแผน' : 'Planning since'} ${shortThai(created)}` : (th ? 'วันนี้' : 'Today'),
+    `${th ? 'ออกเดินทาง' : 'Departure'} ${shortThai(c.startDate)}`];
+}
+
+/** A flat silhouette of the mountain — one tint of the accent, a paper-white cap. */
+function fujiMark() {
   return `
-  <svg class="fuji-scene-svg" viewBox="0 0 320 142" preserveAspectRatio="none" aria-hidden="true">
-    <defs>
-      <linearGradient id="cnt-fuji" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="color-mix(in srgb, var(--grad-1) 42%, #ffffff)"/>
-        <stop offset="100%" stop-color="color-mix(in srgb, var(--grad-2) 60%, #ffffff)"/>
-      </linearGradient>
-      <linearGradient id="cnt-snow" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="rgba(255,255,255,0.98)"/>
-        <stop offset="100%" stop-color="rgba(255,255,255,0.72)"/>
-      </linearGradient>
-    </defs>
-    <path d="M8 142 C 70 138, 118 128, 160 44 C 202 128, 250 138, 312 142 Z" fill="url(#cnt-fuji)"/>
-    <path d="M132 84 C 142 62, 150 52, 160 44 C 170 52, 178 62, 188 84 L 176 78 L 168 88 L 160 78 L 152 88 L 144 78 Z" fill="url(#cnt-snow)"/>
-    <path d="M0 141 H320" stroke="color-mix(in srgb, var(--grad-1) 30%, var(--border))" stroke-width="2"/>
+  <svg class="cdc-fuji" viewBox="0 0 160 72" aria-hidden="true" focusable="false">
+    <path d="M2 70 C 40 66, 62 52, 80 10 C 98 52, 120 66, 158 70 Z" fill="var(--cdc-mountain)"/>
+    <path d="M66 31 C 71 22, 75 15, 80 10 C 85 15, 89 22, 94 31 L 88 28 L 84 33 L 80 28 L 76 33 L 72 28 Z" fill="var(--cdc-snow)"/>
   </svg>`;
 }
 
 /**
- * Full scene markup. Call mountCountdown() to keep the numbers + runner in sync.
+ * Card body markup. Call mountCountdown() to keep the number fresh.
  */
-export function renderCountdownScene({ startDate, endDate, createdAt, lang = 'th', compact = false } = {}) {
-  const c = computeCountdown({ startDate, endDate, createdAt, now: new Date() });
-  const pct = Math.round(c.progress * 100);
-  const arrived = c.phase !== 'before';
+export function renderCountdownScene({ startDate, endDate, createdAt, lang = 'th' } = {}) {
+  const now = new Date();
+  const c = computeCountdown({ startDate, endDate, createdAt, now });
+  const p = c.phase === 'during' ? tripProgress(c, now) : c.progress;
+  const pct = Math.round(p * 100);
+  const f = figureFor(c, lang);
+  const [left, right] = trackEnds(c, createdAt, lang);
   return `
-  <div class="countdown-scene ${arrived ? 'is-arrived' : ''} ${compact ? 'is-compact' : ''}" data-cd-root style="--cd-progress:${pct}%; --cd-runner:${(0.06 + c.progress * 0.6).toFixed(3)};">
-    <div class="cd-sky">
-      <span class="cd-sun"></span>
-      <span class="cd-cloud cd-cloud-1"></span>
-      <span class="cd-cloud cd-cloud-2"></span>
-      <span class="cd-cloud cd-cloud-3"></span>
-      <span class="cd-star cd-star-1"></span>
-      <span class="cd-star cd-star-2"></span>
-      <span class="cd-star cd-star-3"></span>
-    </div>
-    <div class="cd-ground"></div>
-    <div class="cd-fuji">${fujiSvg()}<span class="cd-flag ${arrived ? 'show' : ''}"></span></div>
-    <div class="cd-track">
-      <span class="cd-dust cd-dust-1"></span>
-      <span class="cd-dust cd-dust-2"></span>
-      <div class="cd-runner">${runnerSvg()}</div>
-    </div>
-    <div class="cd-hud">
-      <div class="cd-days" data-cd-days>--</div>
-      <div class="cd-meta">
-        <span class="cd-phase" data-cd-phase>${paceLabel(c, lang)}</span>
-        <span class="cd-eta" data-cd-eta>${countdownHeadline(c, lang)}</span>
+  <div class="countdown-scene cdc is-${c.phase}${c.startDate ? '' : ' is-empty'}" data-cd-root style="--cd-progress:${pct}%;">
+    <div class="cdc-top">
+      <div class="cdc-main">
+        <div class="cdc-figure${f.text ? ' is-text' : ''}">
+          <span class="cdc-days" data-cd-days>${f.value}</span>
+          ${f.unit ? `<span class="cdc-unit" data-cd-unit>${f.unit}</span>` : '<span class="cdc-unit" data-cd-unit></span>'}
+        </div>
+        <p class="cdc-caption" data-cd-eta>${f.caption}</p>
       </div>
+      ${fujiMark()}
     </div>
-    ${compact ? '' : `
-    <div class="cd-progress" aria-label="${pct}%">
-      <div class="cd-progress-bar"><div class="cd-progress-fill" data-cd-bar style="width:${pct}%"></div></div>
-      <span class="cd-progress-label" data-cd-pct>${pct}%</span>
-    </div>`}
+    ${c.startDate ? `
+    <div class="cdc-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"
+      aria-label="${lang === 'th' ? 'ความคืบหน้าสู่วันเดินทาง' : 'Progress to departure'}">
+      <span class="cdc-track-fill" data-cd-bar style="width:${pct}%"></span>
+      <span class="cdc-track-dot" data-cd-dot style="left:${pct}%"></span>
+    </div>
+    <div class="cdc-ends"><span data-cd-left>${left}</span><span data-cd-right>${right}</span></div>` : ''}
   </div>`;
 }
 
 /**
- * Mount (or refresh) the animated countdown inside #rootId.
- * Returns { update, destroy }.
+ * Mount (or refresh) the countdown inside #rootId. Returns { update, destroy }.
  */
-export function mountCountdown(rootId, { startDate, endDate, createdAt, lang = 'th', compact = false } = {}) {
+export function mountCountdown(rootId, { startDate, endDate, createdAt, lang = 'th' } = {}) {
   const root = document.getElementById(rootId);
   if (!root) return { update() {}, destroy() {} };
-  root.innerHTML = renderCountdownScene({ startDate, endDate, createdAt, lang, compact });
+  root.innerHTML = renderCountdownScene({ startDate, endDate, createdAt, lang });
 
   let timer = null;
+  const destroy = () => { if (timer) { clearInterval(timer); timer = null; } };
   const update = () => {
     const el = document.getElementById(rootId);
     if (!el || !el.isConnected) { destroy(); return; }
     const scene = el.querySelector('[data-cd-root]');
     if (!scene) return;
-    const c = computeCountdown({ startDate, endDate, createdAt, now: new Date() });
-    scene.style.setProperty('--cd-progress', `${Math.round(c.progress * 100)}%`);
-    scene.style.setProperty('--cd-runner', (0.06 + c.progress * 0.6).toFixed(3));
-    scene.classList.toggle('is-arrived', c.phase !== 'before');
-    scene.classList.toggle('is-close', c.phase === 'before' && c.days <= 30);
-    const p = (sel, txt) => { const n = scene.querySelector(sel); if (n) n.textContent = txt; };
-    p('[data-cd-phase]', paceLabel(c, lang));
-    p('[data-cd-eta]', countdownHeadline(c, lang));
-    p('[data-cd-days]', c.phase === 'before' ? String(c.days) : (c.phase === 'during' ? '🎒' : '✓'));
+    const now = new Date();
+    const c = computeCountdown({ startDate, endDate, createdAt, now });
+    const p = c.phase === 'during' ? tripProgress(c, now) : c.progress;
+    const pct = Math.round(p * 100);
+    const f = figureFor(c, lang);
+    scene.style.setProperty('--cd-progress', `${pct}%`);
+    ['before', 'during', 'after'].forEach(ph => scene.classList.toggle(`is-${ph}`, c.phase === ph));
+    const set = (sel, txt) => { const n = scene.querySelector(sel); if (n && n.textContent !== txt) n.textContent = txt; };
+    set('[data-cd-days]', f.value);
+    set('[data-cd-unit]', f.unit);
+    set('[data-cd-eta]', f.caption);
     const bar = scene.querySelector('[data-cd-bar]');
-    if (bar) bar.style.width = `${Math.round(c.progress * 100)}%`;
-    p('[data-cd-pct]', `${Math.round(c.progress * 100)}%`);
-    const flag = scene.querySelector('.cd-flag');
-    if (flag) flag.classList.toggle('show', c.phase !== 'before');
+    if (bar) bar.style.width = `${pct}%`;
+    const dot = scene.querySelector('[data-cd-dot]');
+    if (dot) dot.style.left = `${pct}%`;
+    scene.querySelector('.cdc-track')?.setAttribute('aria-valuenow', String(pct));
   };
-  const destroy = () => { if (timer) { clearInterval(timer); timer = null; } };
 
-  // Live big-number ("อีก N วัน") counter — refreshed every 30s is plenty and cheap.
-  timer = setInterval(update, 30000);
-  // Kick a frame later so entrance animations play after paint
-  setTimeout(update, 400);
+  // The figure is in days (hours on the last day) — once a minute is plenty.
+  timer = setInterval(update, 60000);
   return { update, destroy };
 }

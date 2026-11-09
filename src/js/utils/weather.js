@@ -49,13 +49,17 @@ export function weatherCodeInfo(code) {
   return WMO_CODES[code] || { th: 'ไม่ทราบสภาพอากาศ', en: 'Unknown', icon: 'cloud', tone: 'cloud' };
 }
 
-/** Tone → the colour tokens used by the weather chips. */
+/** Tone → the colour tokens used by the weather chips.
+ *  v35 round 4: every tone is the same neutral chip — the weather icon
+ *  (sun / cloud / rain / snow / storm) carries the meaning, not a tint.
+ *  The tone keys stay so callers and saved data keep working. */
+const NEUTRAL_WEATHER = { bg: 'var(--bg-secondary)', fg: 'var(--text-secondary)', line: 'var(--border)' };
 export const WEATHER_TONES = {
-  sun:   { bg: 'var(--brand-yellow-tint)', fg: 'var(--brand-yellow-ink)', line: 'var(--brand-yellow-line)' },
-  cloud: { bg: 'var(--bg-secondary)', fg: 'var(--text-secondary)', line: 'var(--border)' },
-  rain:  { bg: 'var(--info-bg, var(--primary-lighter))', fg: 'var(--info)', line: 'color-mix(in srgb, var(--info) 30%, transparent)' },
-  snow:  { bg: 'var(--primary-lighter)', fg: 'var(--primary-strong)', line: 'color-mix(in srgb, var(--primary) 30%, transparent)' },
-  storm: { bg: 'var(--warning-bg)', fg: 'var(--warning)', line: 'color-mix(in srgb, var(--warning) 35%, transparent)' }
+  sun: NEUTRAL_WEATHER,
+  cloud: NEUTRAL_WEATHER,
+  rain: NEUTRAL_WEATHER,
+  snow: NEUTRAL_WEATHER,
+  storm: NEUTRAL_WEATHER
 };
 
 export function weatherTone(tone = 'cloud') {

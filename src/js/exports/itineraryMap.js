@@ -47,7 +47,7 @@ export function schematicMap(placed, { dayColors = {}, width = 1000, height = 43
     return `
       <g>
         <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="15" fill="${colour}" opacity="0.96"/>
-        <text x="${p.x.toFixed(1)}" y="${(p.y + 4.5).toFixed(1)}" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" font-weight="700" fill="#ffffff">${p.i + 1}</text>
+        <text x="${p.x.toFixed(1)}" y="${(p.y + 4.5).toFixed(1)}" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#ffffff">${p.i + 1}</text>
       </g>`;
   }).join('');
 

@@ -15,7 +15,7 @@ export function testMobileHeaderIntegratesTheSafeArea() {
     'the header paints behind the status-bar safe area');
   assert(html.includes('#app-header .header-row {\n        height: 56px;\n        padding-left: max(16px, env(safe-area-inset-left, 0px));'),
     'the phone toolbar is compact and respects horizontal cutouts');
-  assert(html.includes('#app { padding-top: 14px; }'), 'mobile content starts closer to the top bar');
+  assert(html.includes('#app { padding-top: 16px; }'), 'mobile content starts close to the top bar (4px grid)');
 }
 
 export function testBrowserChromeMatchesTheHeaderTheme() {

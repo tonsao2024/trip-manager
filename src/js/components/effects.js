@@ -1,60 +1,35 @@
 import { confettiColors } from '../utils/brand.js';
-// Micro-interaction helpers — reveal on scroll, animated numbers, confetti bursts.
-// All effects respect prefers-reduced-motion.
+// Effect helpers (v35 — quiet by default).
+//
+// The calm pass (docs/UNSLOP-AUDIT-2026-11-08.md, pass 9) removed the decorative
+// motion: content no longer waits for a scroll reveal, numbers no longer count up
+// and saving a form no longer throws confetti. The exported names stay so every
+// caller keeps working — they now just show the final state immediately.
+//
+// The one celebration left is the settlement stamp (see renderSettlement in
+// app.js). `confetti({ milestone: true })` still works for a genuine milestone.
 
 export function prefersReducedMotion() {
   try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
 }
 
-/* ---------------- Reveal on scroll ---------------- */
-let revealObserver = null;
-
-export function initReveal(root = document, selector = '.reveal, .card, .card-bento, .kpi-tile') {
-  if (prefersReducedMotion()) return;
-  if (!('IntersectionObserver' in window)) {
-    root.querySelectorAll?.(selector).forEach(el => el.classList.add('is-visible'));
-    return;
-  }
-  if (!revealObserver) {
-    revealObserver = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('is-visible');
-          revealObserver.unobserve(entry.target);
-        }
-      });
-    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.04 });
-  }
-  root.querySelectorAll?.(selector).forEach(el => {
-    if (el.dataset.revealed === '1') return;
-    el.dataset.revealed = '1';
-    el.classList.add('reveal');
-    revealObserver.observe(el);
-  });
+/* ---------------- Reveal (no-op) ----------------
+ * Cards used to start at opacity 0 and fade in on scroll, which blanked print,
+ * screenshots and anything below the fold (audit B9). Content is always visible
+ * now; the function only marks elements so old selectors keep matching. */
+export function initReveal(root = document, selector = '.reveal') {
+  try { root.querySelectorAll?.(selector).forEach(el => el.classList.add('is-visible')); } catch {}
 }
 
-export function stopReveal() {
-  try { revealObserver?.disconnect(); } catch {}
-  revealObserver = null;
-}
+export function stopReveal() {}
 
-/* ---------------- Animated numbers ---------------- */
-export function countUp(el, to, { duration = 700, formatter = (v) => String(Math.round(v)) } = {}) {
+/* ---------------- Numbers: the final value, at once ---------------- */
+export function countUp(el, to, { formatter = (v) => String(Math.round(v)) } = {}) {
   if (!el) return;
-  if (prefersReducedMotion() || !to) { el.textContent = formatter(to || 0); return; }
-  const from = 0;
-  const start = performance.now();
-  const step = (now) => {
-    if (!el.isConnected) return;
-    const p = Math.min(1, (now - start) / duration);
-    const eased = 1 - Math.pow(1 - p, 3);
-    el.textContent = formatter(from + (to - from) * eased);
-    if (p < 1) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
+  el.textContent = formatter(to || 0);
 }
 
-/* ---------------- Confetti burst ---------------- */
+/* ---------------- Confetti — milestones only ---------------- */
 
 function confettiLayer() {
   let layer = document.getElementById('confetti-layer');
@@ -67,15 +42,19 @@ function confettiLayer() {
   return layer;
 }
 
-export function confetti({ x = window.innerWidth / 2, y = 90, count = 26, spread = 260 } = {}) {
-  if (prefersReducedMotion()) return;
+/**
+ * A short burst — ONLY when `milestone: true` is passed. Routine saves used to
+ * call this 15 times across the app; celebrating everything celebrates nothing.
+ */
+export function confetti({ x = window.innerWidth / 2, y = 90, count = 26, spread = 260, milestone = false } = {}) {
+  if (!milestone || prefersReducedMotion()) return;
   const layer = confettiLayer();
   const frag = document.createDocumentFragment();
   const palette = confettiColors();
   for (let i = 0; i < count; i++) {
     const piece = document.createElement('span');
     piece.className = 'confetti-piece';
-    const size = 6 + Math.random() * 7;
+    const size = 6 + Math.random() * 6;
     piece.style.width = `${size}px`;
     piece.style.height = `${size * (Math.random() > 0.5 ? 1 : 0.5)}px`;
     piece.style.background = palette[i % palette.length];
@@ -91,9 +70,11 @@ export function confetti({ x = window.innerWidth / 2, y = 90, count = 26, spread
   layer.appendChild(frag);
 }
 
+/** Kept for callers; a no-op unless `{ milestone: true }` is passed. */
 export function celebrateFrom(el, opts = {}) {
+  if (!opts.milestone) return;
   const rect = el?.getBoundingClientRect?.();
-  return confetti({
+  confetti({
     x: rect ? rect.left + rect.width / 2 : window.innerWidth / 2,
     y: rect ? rect.top + rect.height / 2 : 120,
     ...opts
@@ -101,23 +82,9 @@ export function celebrateFrom(el, opts = {}) {
 }
 
 /* ---------------- Misc ---------------- */
-export function pulse(el, className = 'pulse-once') {
-  if (!el) return;
-  el.classList.remove(className);
-  void el.offsetWidth;
-  el.classList.add(className);
-  setTimeout(() => el.classList.remove(className), 900);
-}
+export function pulse() {}
 
-/** Stagger a freshly rendered list so children animate in one after another. */
-export function restagger(container) {
-  if (!container) return;
-  container.classList.remove('stagger');
-  void container.offsetWidth;
-  container.classList.add('stagger');
-}
+/** Lists no longer stagger in; kept so callers need no change. */
+export function restagger() {}
 
-export function bumpElement(selectorOrEl) {
-  const el = typeof selectorOrEl === 'string' ? document.querySelector(selectorOrEl) : selectorOrEl;
-  pulse(el, 'bump');
-}
+export function bumpElement() {}

@@ -9,7 +9,7 @@ export const EXPENSE_CATEGORIES = [
   { id: 'shopping', th: 'ช้อปปิ้ง/ของฝาก', en: 'Shopping', icon: 'shopping-bag', color: '#e25f7d' },
   { id: 'insurance', th: 'ประกัน/วีซ่า', en: 'Insurance / Visa', icon: 'shield-check', color: '#3f9d94' },
   { id: 'fee', th: 'ค่าธรรมเนียม', en: 'Fees', icon: 'receipt', color: '#7d8b9c' },
-  { id: 'general', th: 'อื่นๆ', en: 'Others', icon: 'package', color: '#93a3b4' }
+  { id: 'general', th: 'อื่น ๆ', en: 'Others', icon: 'package', color: '#93a3b4' }
 ];
 
 export const ITINERARY_CATEGORIES = [
@@ -121,7 +121,17 @@ export function normalizeCategory(value) {
 export function categoryLabel(id, lang = 'th') {
   // Place-only ids (e.g. “sightseeing”) have no expense group — use the place name.
   const def = getCategoryDef(id) || ITINERARY_CATEGORIES.find(c => c.id === id);
-  if (!def) return id || 'general';
+  if (!def) {
+    // v35 (audit B10): never print a raw key such as “temple” or “general”.
+    // A known synonym maps to its group; free text a person typed (Thai letters
+    // or several words) is shown as typed; anything else reads “อื่น ๆ”.
+    const raw = String(id ?? '').trim();
+    const mapped = raw ? normalizeCategory(raw) : 'general';
+    const hit = mapped !== 'general' ? getCategoryDef(mapped) : null;
+    if (hit) return lang === 'th' ? (hit.th || hit.en) : (hit.en || hit.th);
+    if (raw && (/[\u0E00-\u0E7F]/.test(raw) || /\s/.test(raw))) return raw;
+    return lang === 'th' ? 'อื่น ๆ' : 'Other';
+  }
   return lang === 'th' ? (def.th || def.en) : (def.en || def.th);
 }
 

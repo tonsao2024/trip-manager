@@ -2,6 +2,7 @@
 // Instagram / … + per-user custom colours and a vividness slider).
 import {
   normalizeHex, hexToRgb, rgbToHex, mix, lighten, darken, intensify, rotate, contrastInk, contrastRatio,
+  onColorInk, darkModePrimary,
   THEMES, themeList, getTheme, themeName, DEFAULT_THEME_ID, CUSTOM_THEME_ID, CUSTOM_DEFAULTS,
   buildCustomPalette, paletteCompanion, themeVars, readStoredTheme, saveTheme, applyTheme, resetTheme,
   THEME_STORAGE_KEY
@@ -62,19 +63,49 @@ export function testThemeRegistry() {
   assert(themeName('line', 'th') !== themeName('line', 'en'), 'names are translated');
 
   const REQUIRED = ['--primary-raw', '--grad-1', '--grad-2', '--brand-yellow-raw', '--brand-ink-raw',
-    '--page-bg', '--page-bg-dark', '--on-primary'];
+    '--page-bg', '--page-bg-dark', '--on-primary-light', '--on-primary-dark'];
   for (const t of THEMES) {
     for (const key of REQUIRED) {
       assert(typeof t.vars[key] === 'string' && t.vars[key], `${t.id} is missing ${key}`);
     }
     assert(HEX.test(t.vars['--primary-raw']), `${t.id} must publish a raw hex (no color-mix() in the theme layer)`);
     assert(HEX.test(t.vars['--page-bg']) && HEX.test(t.vars['--page-bg-dark']), `${t.id} must ship both page backgrounds`);
-    assert(HEX.test(t.vars['--on-primary']), `${t.id} must say which ink sits on the brand colour`);
-    assert(contrastRatio(t.vars['--on-primary'], t.vars['--primary-raw']) >= 4.5, `${t.id} primary button ink must meet WCAG AA for normal text`);
+    assert(HEX.test(t.vars['--on-primary-light']), `${t.id} must say which ink sits on the brand colour`);
+    assert(contrastRatio(t.vars['--on-primary-light'], t.vars['--primary-raw']) >= 4.5, `${t.id} primary button ink must meet WCAG AA for normal text`);
+    assert(!('--on-primary' in t.vars), `${t.id} must not paint --on-primary inline (it would beat the dark-mode token)`);
     assert(t.th && t.en, `${t.id} needs both names`);
   }
   assert(themeList().length === THEMES.length && themeList() !== THEMES, 'themeList is a copy');
   console.log(`✓ ${THEMES.length} themes registered`);
+}
+
+// Round 5: dark mode lightens the primary (tokens.css mixes 68% raw + 32% white),
+// and the old single ink (white for every blue) fell to 3.0:1 on it. Every theme
+// — and the custom palette — must ship an ink that reads in BOTH modes.
+export function testOnPrimaryInkPerMode() {
+  assert(darkModePrimary('#000000') === mix('#000000', 68, '#ffffff'), 'dark primary = the same 68% mix tokens.css uses');
+  assert(onColorInk('#0f5ef5') === '#ffffff', 'white stays on the light-mode sky blue');
+  assert(onColorInk(darkModePrimary('#0f5ef5')) === '#0a0a0a', 'near-black ink on the lighter dark-mode sky blue');
+  assert(onColorInk('nonsense') === '#ffffff', 'an unparseable colour keeps the old white ink');
+  // the mid-grey where #0a0a0a alone would land under 4.5:1 falls back to black
+  for (let v = 0; v <= 255; v += 1) {
+    const hex = rgbToHex([v, v, v]);
+    assert(contrastRatio(onColorInk(hex), hex) >= 4.5, `ink on ${hex} must reach 4.5:1`);
+  }
+  const palettes = [
+    ...THEMES.map(t => [t.id, t.vars]),
+    ['custom-default', buildCustomPalette({})],
+    ['custom-violet', buildCustomPalette({ primary: '#7C3AED', accent: '#22C55E', intensity: 88 })],
+    ['custom-yellow', buildCustomPalette({ primary: '#facc15', accent: '#0ea5e9', intensity: 100 })],
+    ['custom-navy', buildCustomPalette({ primary: '#0b1f4d', accent: '#f97316', intensity: 0 })]
+  ];
+  for (const [id, vars] of palettes) {
+    const light = vars['--primary-raw'];
+    const dark = darkModePrimary(light);
+    assert(contrastRatio(vars['--on-primary-light'], light) >= 4.5, `${id}: light-mode on-primary ${vars['--on-primary-light']} on ${light} is under 4.5:1`);
+    assert(contrastRatio(vars['--on-primary-dark'], dark) >= 4.5, `${id}: dark-mode on-primary ${vars['--on-primary-dark']} on ${dark} is under 4.5:1`);
+  }
+  console.log(`✓ on-primary ink ≥4.5:1 in light + dark for ${palettes.length} palettes`);
 }
 
 export function testCustomPalette() {

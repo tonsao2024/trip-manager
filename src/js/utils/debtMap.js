@@ -46,7 +46,8 @@ export function layoutDebtMapAmountLabels(edges = [], obstacles = [], {
   height = 500,
   padding = 12,
   labelHeight = 22,
-  labelSpacing = 5
+  labelSpacing = 5,
+  charWidth = 6.6
 } = {}) {
   const placed = [];
   const positions = [];
@@ -57,7 +58,7 @@ export function layoutDebtMapAmountLabels(edges = [], obstacles = [], {
 
   for (const edge of edges || []) {
     const label = String(edge?.label ?? '');
-    const desiredWidth = Math.max(48, Math.ceil([...label].length * 6.6 + 16));
+    const desiredWidth = Math.max(48, Math.ceil([...label].length * charWidth + 16));
     const labelWidth = Math.min(Math.max(48, width - padding * 2), desiredWidth);
     let position = null;
     const candidates = [];

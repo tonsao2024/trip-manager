@@ -82,7 +82,7 @@ export function buildIcs(events = [], { calendarName = 'Trip', stamp = '' } = {}
   const head = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Fuji Trip Planner//TH//EN',
+    'PRODID:-//Trip Manager by TonSkywalker//TH//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     `X-WR-CALNAME:${escapeIcsText(calendarName)}`

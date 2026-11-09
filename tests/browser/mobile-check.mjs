@@ -165,7 +165,7 @@ async function main() {
       };
     });
     const shellOk = shell.rowHeight === 56 && shell.headerHeight >= shell.rowHeight
-      && shell.appTop === 14 && shell.themeColor === shell.chromeColor;
+      && shell.appTop === 16 && shell.themeColor === shell.chromeColor; // v35: 4px grid (was 14)
     console.log(`  ${shellOk ? '✓' : '✗'} compact top bar — row:${shell.rowHeight}px header:${shell.headerHeight}px content gap:${shell.appTop}px theme matches:${shell.themeColor === shell.chromeColor}`);
     if (!shellOk) problems.push(`${device.id}: mobile top bar is not compact or browser chrome does not match the header (${JSON.stringify(shell)})`);
 
