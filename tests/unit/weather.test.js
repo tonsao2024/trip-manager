@@ -1,7 +1,7 @@
 // Unit tests — weather helpers (WMO mapping, parsing, trip-window logic).
 import {
   WMO_CODES, weatherCodeInfo, parseForecast, forecastForDates, forecastLabel,
-  weatherTip, datesBetween, isForecastRelevant, weatherTone
+  weatherTip, datesBetween, isForecastRelevant, weatherTone, createLatestRequestGuard
 } from '../../src/js/utils/weather.js';
 
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
@@ -71,4 +71,13 @@ export function testWeather() {
   testForecastForDates();
   testTipsAndTones();
   console.log('All weather tests passed');
+}
+
+export function testWeatherLatestRequestWins() {
+  const guard = createLatestRequestGuard();
+  const oldCity = guard.begin();
+  const currentCity = guard.begin();
+  assert(!oldCity() && currentCity(), 'only the most recent city request can paint');
+  guard.invalidate();
+  assert(!currentCity(), 'invalidated requests cannot paint');
 }

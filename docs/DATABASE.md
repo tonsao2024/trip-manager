@@ -305,6 +305,22 @@ Trip-wide notification settings, admin-writable — `{ "dailySummary": true, "su
 ### Other subcollections
 - `cards`, `exchangeRates`, `settings`, `activityLogs`, `imports`, `settlements`
 
+### trips/{tripId}/transfers/{transferId}  (“จ่ายแล้ว”)
+A record of money actually sent between two members:
+`{ fromId, toId, amountMinor, currency: 'THB', date, note, createdBy, createdAt }`.
+Records are written once and can be undone, never edited.
+
+Writes are **guarded**: the client reads the server balance, refuses anything above what
+that pair still owes, then writes the transfer and bumps the version document in one
+transaction. Two devices paying at the same time therefore cannot both record the same
+debt; the second call fails with “กรุณาคำนวณใหม่”. A stale client that still writes a
+transfer without the matching guard bump is rejected by `firestore.rules`.
+
+### trips/{tripId}/settlements/_transferGuard
+A single reserved document `{ version, transferId, operation }` (never a settlement
+record). It serializes transfers and is only writable as part of a valid transfer
+create/delete, or deleted together with the whole trip by an admin.
+
 All money in minor units to avoid float errors.
 
 ## Indexes

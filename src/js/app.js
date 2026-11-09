@@ -131,7 +131,7 @@ import {
   deleteReservation, groupReservationsByDate, upcomingReservations, routeLabel,
   reservationToItineraryPayload, durationBetween, reservationWarnings
 } from './reservations/index.js';
-import { fetchDailyForecast, forecastForDates, forecastLabel, datesBetween, weatherTip, weatherTone, isForecastRelevant, geocodeCity, searchCities } from './utils/weather.js';
+import { fetchDailyForecast, forecastForDates, forecastLabel, datesBetween, weatherTip, weatherTone, isForecastRelevant, geocodeCity, searchCities, createLatestRequestGuard } from './utils/weather.js';
 // utils/explore.js (destination library) loads inside renderExplore only.
 // utils/bookingImport.js loads inside the booking-import sheet only.
 
@@ -3363,12 +3363,15 @@ async function renderTripSelector() {
   async function renderMyJoinRequests() {
     const box = document.getElementById('my-join-requests');
     if (!box) return;
+    // Read the box again AFTER the await: switching routes while the request is
+    // in flight replaces #my-join-requests, and the old node must not be written.
     const requests = await listMyJoinRequests(currentUser.uid);
-    if (isStale(token)) return;
+    const liveBox = document.getElementById('my-join-requests');
+    if (!liveBox || isStale(token)) return;
     // Once the admin approves, the trip shows up in the list — drop the badge.
     const joinedIds = new Set(tripsCache.map(t => t.id));
     const pending = requests.filter(r => !joinedIds.has(r.tripId || r.id));
-    box.innerHTML = pending.length ? pending.map(r => `
+    liveBox.innerHTML = pending.length ? pending.map(r => `
       <div class="diag-row" data-join-request="${escapeHtml(r.tripId || r.id)}">
         ${icon(r.status === 'rejected' ? 'x-circle' : 'clock', 'w-4 h-4 shrink-0')}
         <div class="min-w-0">
@@ -3379,7 +3382,7 @@ async function renderTripSelector() {
         </div>
         <button class="btn btn-ghost btn-sm ml-auto" data-cancel-request="${escapeHtml(r.tripId || r.id)}">${lang === 'th' ? 'ยกเลิก' : 'Cancel'}</button>
       </div>`).join('') : '';
-    box.querySelectorAll('[data-cancel-request]').forEach(btn => {
+    liveBox.querySelectorAll('[data-cancel-request]').forEach(btn => {
       btn.addEventListener('click', async () => {
         btn.disabled = true;
         try {
@@ -3456,7 +3459,7 @@ async function renderTripSelector() {
 
   const tripCardHtml = (trip, idx, compact = false) => {
     const baseColor = 'var(--primary-raw)';
-    const c = computeCountdown({ startDate: trip.startDate, endDate: trip.endDate, createdAt: trip.createdAt });
+    const c = computeCountdown({ startDate: trip.startDate, endDate: trip.endDate, createdAt: trip.createdAt, timezone: trip.timezone });
     const countdownText = trip.startDate
       ? (c.phase === 'before' ? (lang==='th' ? `อีก ${c.days} วัน` : `${c.days} days`) : (c.phase === 'during' ? (lang==='th' ? 'กำลังเดินทาง' : 'On trip') : (lang==='th' ? 'ผ่านมาแล้ว' : 'Past')))
       : '';
@@ -3503,7 +3506,10 @@ async function renderTripSelector() {
 
   // A background refresh (SWR) can land while the cached list is on screen.
   const onTripsUpdated = (e) => {
-    const fresh = e?.detail;
+    // Another account's refresh (or one that started before this session) must
+    // never repaint this list.
+    if (e?.detail?.userId && currentUser?.uid && e.detail.userId !== currentUser.uid) return;
+    const fresh = e?.detail?.trips || e?.detail;
     if (!Array.isArray(fresh) || !fresh.length) return;
     if (JSON.stringify(fresh.map(t => [t.id, t.updatedAt?.seconds || t.updatedAt])) ===
         JSON.stringify(tripsCache.map(t => [t.id, t.updatedAt?.seconds || t.updatedAt]))) return;
@@ -4135,7 +4141,7 @@ async function renderDashboard(params) {
 
   // Countdown scene (independent of Firestore so it always renders)
   const cd = mountCountdown('countdown-scene', {
-    startDate: trip?.startDate, endDate: trip?.endDate, createdAt: trip?.createdAt, lang
+    startDate: trip?.startDate, endDate: trip?.endDate, createdAt: trip?.createdAt, timezone: trip?.timezone, lang
   });
   document.addEventListener('routechange', () => cd.destroy(), { once: true });
   // Live "time left" text. Written once per minute as plain text — rebuilding the
@@ -4143,7 +4149,7 @@ async function renderDashboard(params) {
   const tickLive = () => {
     const node = document.getElementById('live-since');
     if (!node) return false;
-    const c = computeCountdown({ startDate: trip?.startDate, endDate: trip?.endDate, createdAt: trip?.createdAt, now: new Date() });
+    const c = computeCountdown({ startDate: trip?.startDate, endDate: trip?.endDate, createdAt: trip?.createdAt, timezone: trip?.timezone, now: new Date() });
     // v35: the card's big number already says “N วัน”, so this line gives the
     // departure date instead of repeating the count.
     const label = !c.startDate
@@ -4999,7 +5005,7 @@ async function renderItinerary(params) {
                 <button type="button" class="map-tool-btn" data-layer="terrain">${icon('mountain', 'w-3.5 h-3.5')} ${th('ภูมิประเทศ','Terrain')}</button>
                 <button type="button" class="map-tool-btn" id="map-labels-btn" aria-pressed="${getStoredLabelsVisible()}">${icon('tags', 'w-3.5 h-3.5')} ${th('ชื่อสถานที่','Labels')}</button>
               </div>
-              <div id="map-status" class="map-status"><span class="skeleton" style="width:26px;height:26px;border-radius:50%;"></span> <span>${th('กำลังโหลดแผนที่...','Loading map...')}</span></div>
+              <div id="map-status" class="map-status" role="status" aria-live="polite"><span class="skeleton" style="width:26px;height:26px;border-radius:50%;"></span> <span>${th('กำลังโหลดแผนที่...','Loading map...')}</span></div>
               <div id="map-empty" class="map-status hidden"><div class="text-center px-4">
                 <div class="row-icon mx-auto mb-2">${icon('map-pin', 'w-5 h-5')}</div>
                 <p class="text-xs text-[var(--text-secondary)]">${th('เพิ่มพิกัด (lat,lng) ให้สถานที่ เพื่อให้แสดงหมุดบนแผนที่','Add coordinates (lat,lng) to a place to see it here')}</p>
@@ -5254,19 +5260,28 @@ async function renderItinerary(params) {
     const statusEl = document.getElementById('map-status');
     const emptyEl = document.getElementById('map-empty');
     if (!statusEl || !emptyEl) return;
+    statusEl.dataset.state = state;
     statusEl.classList.toggle('hidden', state !== 'loading' && state !== 'error');
+    if (state === 'loading') statusEl.innerHTML = `<span class="skeleton" style="width:26px;height:26px;border-radius:50%;"></span> <span>${th('กำลังโหลดแผนที่...', 'Loading map...')}</span>`;
     emptyEl.classList.toggle('hidden', state !== 'empty');
     if (state === 'error' && message) {
       statusEl.innerHTML = `
         <div class="text-center px-4">
           <div class="row-icon mx-auto mb-2">${icon('map', 'w-5 h-5')}</div>
           <p class="text-xs font-semibold" style="color:var(--danger);">${th('โหลดแผนที่ไม่สำเร็จ','Map failed to load')}</p>
-          <p class="text-xs text-[var(--text-secondary)] mb-2">${escapeHtml(message)}</p>
+          <p class="text-xs text-[var(--text-secondary)] mb-2">${th('แผนการเดินทางยังดูได้ด้านล่าง ตรวจสอบการเชื่อมต่อแล้วลองใหม่', 'Your itinerary is still available below. Check your connection and retry.')}</p>
           <button id="map-retry" class="btn btn-secondary btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่','Retry')}</button>
         </div>`;
       bind('map-retry', 'click', () => refreshMap(visibleItems, { forceRecreate: true }));
     }
   }
+
+  document.getElementById('map')?.addEventListener('trip-map-tile-status', (event) => {
+    if (event.detail === 'error') mapStatus('error', 'tiles unavailable');
+    else if (event.detail === 'ready' && document.getElementById('map-status')?.dataset.state === 'error') {
+      mapStatus(visibleItems.some(i => i.coordinates && !i.virtualStay) ? 'ready' : 'empty');
+    }
+  });
 
   /**
    * "แผนที่พอดีจอเสมอ" — measure the viewport and give the map exactly that
@@ -6993,15 +7008,18 @@ async function renderExpenses(params) {
           <button type="button" class="segmented-item active" data-group="list">${icon('list', 'w-3.5 h-3.5')} ${th('เรียงรายการ','List')}</button>
           <button type="button" class="segmented-item" data-group="day">${icon('calendar-days', 'w-3.5 h-3.5')} ${th('แยกตามวัน','By day')}</button>
         </div>
-        <div class="btn-row">
+      </div>
+      <button type="button" id="expense-more-filters" class="btn btn-secondary btn-sm expense-more-filters" aria-expanded="false" aria-controls="expense-extra-controls">${icon('sliders-horizontal', 'w-4 h-4')} ${th('ตัวกรองและตัวเลือกเพิ่มเติม', 'More filters and options')} <span data-expense-filter-summary>${th('ทุกหมวด', 'All categories')}</span> ${icon('chevron-down', 'w-4 h-4')}</button>
+      <div id="expense-extra-controls" class="expense-extra-controls">
+        <div class="btn-row expense-extra-actions">
           <button id="exp-density-btn" class="btn btn-ghost btn-sm text-xs" type="button" aria-pressed="false">${icon('rows-3', 'w-3.5 h-3.5')} <span data-density-label>${th('มุมมองกระทัดรัด','Compact view')}</span></button>
           <button id="activity-btn" class="link-btn text-xs">${icon('history', 'w-3.5 h-3.5')} ${th('ประวัติการแก้ไข','Activity log')}</button>
           ${perms.canEditExpense ? `<button id="manage-cats-btn" class="link-btn text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage expense groups')}</button>` : ''}
         </div>
-      </div>
       <div class="chip-row mb-4" id="cat-filters">
         <button class="chip chip-active" data-cat="">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('ทุกหมวด','All categories')}</button>
         ${getAllExpenseCategories().map(c => `<button class="chip" data-cat="${escapeHtml(c.id)}">${icon(escapeHtml(c.icon), 'w-3.5 h-3.5')} ${escapeHtml(lang==='th'?(c.th||c.en):(c.en||c.th))}</button>`).join('')}
+      </div>
       </div>
 
       <div id="expense-list" class="space-y-3 stagger"></div>
@@ -7014,8 +7032,8 @@ async function renderExpenses(params) {
   bind('add-expense-btn', 'click', () => { location.hash = `#/trip/${tripId}/expenses/add`; });
   bind('manage-cats-btn', 'click', () => openCategoryManager(tripId, { onSaved: () => renderExpenses(params) }));
 
-  let lastDoc = null;
   let allLoaded = [];
+  let visibleExpenseCount = 30;
   let activeFilter = 'all';
   let catFilter = '';
   // How the list is presented: one flat list, or grouped per day (a request).
@@ -7054,6 +7072,14 @@ async function renderExpenses(params) {
     applyFilterRender();
   }));
 
+  bind('expense-more-filters', 'click', () => {
+    const panel = document.getElementById('expense-extra-controls');
+    const button = document.getElementById('expense-more-filters');
+    const expanded = panel.classList.toggle('is-open');
+    button.setAttribute('aria-expanded', String(expanded));
+  });
+  document.querySelectorAll('#expense-filters .chip, #cat-filters .chip').forEach(btn => btn.setAttribute('aria-pressed', String(btn.classList.contains('chip-active'))));
+
   bind('activity-btn', 'click', () => openActivitySheet(tripId, { isAdmin }));
 
   /** Comment button + badge for one expense row. */
@@ -7072,14 +7098,20 @@ async function renderExpenses(params) {
 
   document.querySelectorAll('#expense-filters [data-filter]').forEach(btn => btn.addEventListener('click', () => {
     activeFilter = btn.dataset.filter;
-    document.querySelectorAll('#expense-filters .chip').forEach(c => c.classList.remove('chip-active'));
+    visibleExpenseCount = 30;
+    document.querySelectorAll('#expense-filters .chip').forEach(c => { c.classList.remove('chip-active'); c.setAttribute('aria-pressed', 'false'); });
     btn.classList.add('chip-active');
+    btn.setAttribute('aria-pressed', 'true');
     applyFilterRender();
   }));
   document.querySelectorAll('#cat-filters [data-cat]').forEach(btn => btn.addEventListener('click', () => {
     catFilter = btn.dataset.cat;
-    document.querySelectorAll('#cat-filters .chip').forEach(c => c.classList.remove('chip-active'));
+    visibleExpenseCount = 30;
+    document.querySelectorAll('#cat-filters .chip').forEach(c => { c.classList.remove('chip-active'); c.setAttribute('aria-pressed', 'false'); });
     btn.classList.add('chip-active');
+    btn.setAttribute('aria-pressed', 'true');
+    const summary = document.querySelector('[data-expense-filter-summary]');
+    if (summary) summary.textContent = btn.textContent.trim();
     applyFilterRender();
   }));
 
@@ -7245,8 +7277,10 @@ async function renderExpenses(params) {
     const listEl = document.getElementById('expense-list');
     if (!listEl) return;
     renderSummary();
-    const items = filterItems(allLoaded);
-    renderGroupAverages(items);
+    const matchingItems = filterItems(allLoaded);
+    renderGroupAverages(matchingItems);
+    const items = matchingItems.slice(0, visibleExpenseCount);
+    document.getElementById('load-more')?.classList.toggle('hidden', matchingItems.length <= visibleExpenseCount);
     if (!items.length) {
       listEl.innerHTML = renderEmptyState({
         icon: 'wallet',
@@ -7269,8 +7303,9 @@ async function renderExpenses(params) {
       const days = [...byDay.keys()].sort((a, b) => String(b).localeCompare(String(a)));
       listEl.innerHTML = days.map(day => {
         const dayItems = byDay.get(day);
+        const fullDayItems = matchingItems.filter(e => (e.date || '—') === day);
         let dayTotal = null;
-        try { dayTotal = sumExpenses(expensesInThb(dayItems, trip)); } catch { /* missing rate */ }
+        try { dayTotal = sumExpenses(expensesInThb(fullDayItems, trip)); } catch { /* missing rate */ }
         const tripRate = resolveTripThbRate(trip, allLoaded, currency);
         const thbTotal = dayTotal != null && currency !== 'THB' && tripRate ? origTextChipHtml(formatCurrency(convertCurrency(dayTotal, 'THB', currency, 1 / tripRate), currency)) : '';
         return `
@@ -7279,12 +7314,12 @@ async function renderExpenses(params) {
               <span class="expense-day-num">${day === '—' ? icon('calendar-x', 'w-4 h-4') : dayjs(day).format('DD')}</span>
               <div class="min-w-0">
                 <div class="expense-day-title">${day === '—' ? th('ไม่ระบุวันที่','No date') : escapeHtml(formatDate(day, lang, trip?.timezone))}</div>
-                <div class="expense-day-sub">${dayItems.length} ${th('รายการ','items')}</div>
+                <div class="expense-day-sub">${fullDayItems.length} ${th('รายการ','items')}</div>
               </div>
               <div class="expense-day-total">
                 <b class="money-primary">${dayTotal == null ? th('ยังไม่มีเรท THB','THB rate needed') : formatCurrency(dayTotal, 'THB')}</b>
                 ${thbTotal}
-                ${dayTotal != null ? avgChipHtml(dayItems) : ''}
+                ${dayTotal != null ? avgChipHtml(fullDayItems) : ''}
               </div>
             </header>
             <div class="space-y-3 stagger">${dayItems.map(e => expenseCardHtml(e)).join('')}</div>
@@ -7294,18 +7329,18 @@ async function renderExpenses(params) {
       // v18 (requested): the flat list shows the same running total that the
       // “แยกตามวัน” view prints per day — so switching views never loses the sum.
       let listTotal = null;
-      try { listTotal = sumExpenses(expensesInThb(items, trip)); } catch { /* missing rate */ }
+      try { listTotal = sumExpenses(expensesInThb(matchingItems, trip)); } catch { /* missing rate */ }
       const listRate = resolveTripThbRate(trip, allLoaded, currency);
       const listThb = listTotal != null && currency !== 'THB' && listRate
         ? origTextChipHtml(formatCurrency(convertCurrency(listTotal, 'THB', currency, 1 / listRate), currency)) : '';
-      const dayCount = new Set(items.map(e => e.date).filter(Boolean)).size;
+      const dayCount = new Set(matchingItems.map(e => e.date).filter(Boolean)).size;
       listEl.innerHTML = `
         <div class="expense-day-total-bar">
           <span>${icon('wallet', 'w-3.5 h-3.5')} ${th('ยอดรวมทั้งทริป (ตามตัวกรองนี้)', 'Trip total (this filter)')}</span>
           <b class="money-primary">${listTotal == null ? th('ยังไม่มีเรท THB', 'THB rate needed') : formatCurrency(listTotal, 'THB')}</b>
           ${listThb}
-          ${listTotal == null ? '' : avgChipHtml(items)}
-          <i>${items.length} ${th('รายการ', 'items')}${dayCount ? ` • ${dayCount} ${th('วัน', 'days')}` : ''}</i>
+          ${listTotal == null ? '' : avgChipHtml(matchingItems)}
+          <i>${matchingItems.length} ${th('รายการ', 'items')}${dayCount ? ` • ${dayCount} ${th('วัน', 'days')}` : ''}</i>
         </div>
         ${items.map(e => expenseCardHtml(e)).join('')}`;
     }
@@ -7389,18 +7424,19 @@ async function renderExpenses(params) {
   }
 
   async function loadMore(reset = false) {
-    if (reset) { lastDoc = null; allLoaded = []; }
-    const listEl = document.getElementById('expense-list');
-    if (reset && listEl) listEl.innerHTML = `<div class="skeleton h-20"></div><div class="skeleton h-20"></div>`;
-    try {
-      const { items, lastDoc: newLast } = await fetchExpenses(tripId, { pageSize: 30, lastDoc });
-      if (isStale(token)) return;
-      lastDoc = newLast;
-      const seen = new Set(allLoaded.map(e => e.id));
-      allLoaded.push(...items.filter(e => !seen.has(e.id)));
+    if (!reset) {
+      visibleExpenseCount += 30;
       applyFilterRender();
-      const loadMoreBtn = document.getElementById('load-more');
-      if (loadMoreBtn) loadMoreBtn.classList.toggle('hidden', !newLast);
+      return;
+    }
+    visibleExpenseCount = 30;
+    const listEl = document.getElementById('expense-list');
+    if (listEl) listEl.innerHTML = `<div class="skeleton h-20"></div><div class="skeleton h-20"></div>`;
+    try {
+      const items = await fetchAllExpenses(tripId, { fresh: true });
+      if (isStale(token)) return;
+      allLoaded = items;
+      applyFilterRender();
     } catch (e) {
       if (isStale(token)) return;
       console.error(e);
@@ -8718,6 +8754,7 @@ async function openExpenseSheet({
       if (!editing) confetti({ y: 150 });
       onSaved?.(savedId, payload);
     } catch (err) {
+      console.warn('[Expense] save failed', err?.message);
       tLoad.close();
       toast.error(err.message);
       btn.disabled = false;
@@ -8907,6 +8944,11 @@ async function renderSettlement(params) {
   const th = (a, b) => (lang === 'th' ? a : b);
   const trip = currentTrip;
   const currency = trip?.baseCurrency || 'THB';
+  // A payment button must follow the same "may edit expenses" answer the rules
+  // enforce. Never fall back to "allowed" when the permission read fails.
+  const perms = await resolvePermsCached(tripId, trip).catch(() => null);
+  if (isStale(token)) return;
+  const canPay = !!perms?.canEditExpense;
 
   appEl.innerHTML = `
     <div class="page-enter">
@@ -9263,7 +9305,7 @@ async function renderSettlement(params) {
           <span class="text-xs min-w-0 truncate">${escapeHtml(from?.displayName || '?')} → ${escapeHtml(to?.displayName || '?')}
             <span class="text-[var(--text-tertiary)]">• ${escapeHtml(p.date || '')}${p.note ? ` • ${escapeHtml(p.note)}` : ''}</span></span>
           <span class="flex items-center gap-2 flex-shrink-0">${moneyPair(p.amountMinor)}
-            <button class="icon-btn icon-btn-danger no-export" type="button" data-settle-unpay="${escapeHtml(p.id)}" title="${th('ยกเลิกการบันทึก', 'Undo')}" aria-label="${th('ยกเลิกการบันทึก', 'Undo')}">${icon('undo-2', 'w-3.5 h-3.5')}</button></span>
+            ${canPay ? `<button class="icon-btn icon-btn-danger no-export" type="button" data-settle-unpay="${escapeHtml(p.id)}" title="${th('ยกเลิกการบันทึก', 'Undo')}" aria-label="${th('ยกเลิกการบันทึก', 'Undo')}">${icon('undo-2', 'w-3.5 h-3.5')}</button>` : ''}</span>
         </div>`;
       }).join('')}</div>
     </div>`;
@@ -9293,10 +9335,13 @@ async function renderSettlement(params) {
       </div>`);
     const root = sheet.sheet;
     queueIcons();
-    root.querySelector('#tr-save')?.addEventListener('click', async () => {
+    root.querySelector('#tr-save')?.addEventListener('click', async (event) => {
+      const saveButton = event.currentTarget;
+      if (saveButton.disabled) return;
       const amount = toMinor(parseCurrencyInput(root.querySelector('#tr-amount').value) || 0, dec);
       if (!(amount > 0)) { toast.error(th('ใส่จำนวนเงินที่โอน', 'Enter the amount sent')); return; }
       if (amount > amountMinor) { toast.error(th('จำนวนมากกว่าที่ค้างอยู่', 'That is more than is still owed')); return; }
+      saveButton.disabled = true;
       const tLoad = toast.loading(th('กำลังบันทึก...', 'Saving...'));
       try {
         await recordTransfer(tripId, {
@@ -9315,7 +9360,7 @@ async function renderSettlement(params) {
           lang
         }).catch(() => {});
         load();
-      } catch (e) { tLoad.close(); toast.error(e.message || String(e)); }
+      } catch (e) { tLoad.close(); saveButton.disabled = false; toast.error(e.message || String(e)); }
     });
   }
 
@@ -9376,7 +9421,7 @@ async function renderSettlement(params) {
                   </button>
                   <div class="tx-recipient-amount">${moneyPair(recipient.amountMinor)}</div>
                   <div class="tx-row-actions no-export">
-                  <button class="btn btn-secondary btn-sm no-export" type="button" data-settle-pay data-settle-from="${escapeHtml(group.from)}" data-settle-to="${escapeHtml(recipient.to)}" data-settle-amount="${recipient.amountMinor}">${th('จ่ายแล้ว', 'Mark paid')}</button>
+                  ${canPay ? `<button class="btn btn-secondary btn-sm no-export" type="button" data-settle-pay data-settle-from="${escapeHtml(group.from)}" data-settle-to="${escapeHtml(recipient.to)}" data-settle-amount="${recipient.amountMinor}">${th('จ่ายแล้ว', 'Mark paid')}</button>` : ''}
                   </div>
                 </div>
                 <details class="tx-details">
@@ -9560,7 +9605,7 @@ async function renderSettlement(params) {
 
   /** Reload the trip's comments and repaint the receipts. */
   async function refreshComments() {
-    commentsAll = await listComments(tripId, { limitCount: 400 }).catch(() => commentsAll);
+    commentsAll = await listComments(tripId).catch(() => commentsAll);
     commentMap = commentsByExpense(commentsAll);
     if (view === 'receipts') renderView();
   }
@@ -9972,7 +10017,7 @@ async function renderSettlement(params) {
       const nameY = above ? p.y - nodeR - 29 : p.y + nodeR + (compact ? 20 : 18);
       const roleY = above ? p.y - nodeR - 12 : p.y + nodeR + (compact ? 35 : 32);
       nodesHtml += `
-        <g class="debt-map-node debt-map-node--${role}" data-member="${escapeHtml(id)}" data-debt-person="${escapeHtml(id)}" role="button" tabindex="0" style="cursor:pointer;">
+        <g class="debt-map-node debt-map-node--${role}" data-member="${escapeHtml(id)}" data-debt-person="${escapeHtml(id)}" role="button" tabindex="0" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${person.displayName || id}`, `View expenses for ${person.displayName || id}`))}" style="cursor:pointer;">
           <title>${escapeHtml(person.displayName || '')}${out ? ` • ${th('จ่าย', 'pays')} ${money(out)}` : ''}${inc ? ` • ${th('รับ', 'gets')} ${money(inc)}` : ''}</title>
           <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${nodeR + 6}" fill="${escapeHtml(color)}" opacity=".13"/>
           <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${nodeR}" fill="${escapeHtml(color)}"/>
@@ -9982,45 +10027,55 @@ async function renderSettlement(params) {
         </g>`;
     });
 
-    /* ---- exact transfer rows under the map repeat each edge colour ---- */
-    const rowsHtml = edgeRows.map(({ tx, payer, receiver, color }) => `
+    /* Start with the actual transfer instructions. The diagram is an optional
+       overview; it should never be necessary to interpret crossing lines. */
+    const rowsHtml = edgeRows.map(({ tx, payer, receiver, color }, index) => `
       <div class="debt-tx-row" style="--debt-edge-color:${escapeHtml(color)};">
-        <button type="button" class="debt-person-link" data-settle-person="${escapeHtml(tx.from)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${payer.displayName || 'ผู้จ่าย'}`, `View expenses for ${payer.displayName || 'payer'}`))}">
-          <span class="avatar" style="width:24px;height:24px;font-size:12px;${avatarStyle(payer.color)};">${initial(payer)}</span>
-          <span class="debt-person-name">${escapeHtml(payer.displayName || '')}</span>
-        </button>
-        <span class="debt-row-pays">${icon('arrow-right', 'w-3 h-3')} ${th('จ่ายให้', 'pays')}</span>
-        <button type="button" class="debt-person-link" data-settle-person="${escapeHtml(tx.to)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${receiver.displayName || 'ผู้รับ'}`, `View expenses for ${receiver.displayName || 'receiver'}`))}">
-          <span class="avatar" style="width:24px;height:24px;font-size:12px;${avatarStyle(receiver.color)};">${initial(receiver)}</span>
-          <span class="debt-person-name">${escapeHtml(receiver.displayName || '')}</span>
-        </button>
-        <span class="debt-row-amount">${money(tx.amountMinor)}</span>
+        <span class="debt-step" aria-hidden="true">${index + 1}</span>
+        <div class="debt-route">
+          <button type="button" class="debt-person-link" data-settle-person="${escapeHtml(tx.from)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${payer.displayName || 'ผู้จ่าย'}`, `View expenses for ${payer.displayName || 'payer'}`))}">
+            <span class="avatar" style="width:36px;height:36px;font-size:14px;${avatarStyle(payer.color)};">${initial(payer)}</span>
+            <span class="debt-person-copy"><span class="debt-person-role">${th('ผู้โอน', 'From')}</span><span class="debt-person-name">${escapeHtml(payer.displayName || '')}</span></span>
+          </button>
+          <span class="debt-row-pays" aria-label="${th('โอนให้', 'pays')}" >${icon('arrow-right', 'w-4 h-4')}</span>
+          <button type="button" class="debt-person-link" data-settle-person="${escapeHtml(tx.to)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${receiver.displayName || 'ผู้รับ'}`, `View expenses for ${receiver.displayName || 'receiver'}`))}">
+            <span class="avatar" style="width:36px;height:36px;font-size:14px;${avatarStyle(receiver.color)};">${initial(receiver)}</span>
+            <span class="debt-person-copy"><span class="debt-person-role">${th('ผู้รับ', 'To')}</span><span class="debt-person-name">${escapeHtml(receiver.displayName || '')}</span></span>
+          </button>
+        </div>
+        <div class="debt-amount-block"><span>${th('ยอดที่ต้องโอน', 'Amount to transfer')}</span><b class="debt-row-amount">${money(tx.amountMinor)}</b></div>
+        ${canPay ? `<button type="button" class="btn btn-secondary btn-sm debt-pay-btn no-export" data-settle-pay data-settle-from="${escapeHtml(tx.from)}" data-settle-to="${escapeHtml(tx.to)}" data-settle-amount="${tx.amountMinor}" aria-label="${escapeHtml(th(`บันทึกว่า ${payer.displayName || 'ผู้โอน'} จ่ายให้ ${receiver.displayName || 'ผู้รับ'} แล้ว`, `Record payment from ${payer.displayName || 'payer'} to ${receiver.displayName || 'receiver'}`))}">${th('จ่ายแล้ว', 'Mark paid')}</button>` : ''}
       </div>`).join('');
+    const totalMove = txns.reduce((sum, tx) => sum + (tx.amountMinor || 0), 0);
 
     return `
       <div class="card p-5 debt-map-card">
-        <div class="flex items-start justify-between gap-2 mb-3 flex-wrap">
-          <h3 class="font-semibold flex items-center gap-2">
-            <span class="row-icon">${icon('network', 'w-4 h-4')}</span>
-            ${th('แผนที่หนี้ — เส้นเดียวต่อการโอนหนึ่งครั้ง', 'Debt map — one line per transfer')}
-            <span class="badge badge-planned text-xs">${txns.length} ${th('รายการ', 'transfers')}</span>
-          </h3>
-          <span class="text-xs text-[var(--text-tertiary)]">${th('เส้นชี้จากผู้จ่ายไปยังผู้รับ • สีเส้นเป็นสีของผู้รับเงิน • กดชื่อเพื่อดูรายการค่าใช้จ่าย', 'Lines point from payer to receiver • each line uses the receiver’s colour • tap a name for the expense list')}</span>
+        <div class="debt-map-heading">
+          <div><p class="debt-map-eyebrow">${th('สรุปการเคลียร์บิล', 'SETTLEMENT')}</p>
+            <h3>${th('ใครโอนให้ใคร', 'Who pays whom')}</h3>
+            <p>${th('โอนตามรายการด้านล่าง กดชื่อเพื่อดูรายละเอียดค่าใช้จ่าย', 'Follow the transfers below. Select a name to see their expenses.')}</p>
+          </div>
+          <div class="debt-map-total"><span>${th('ยอดที่ต้องโอนทั้งหมด', 'Total to transfer')}</span><strong>${money(totalMove)}</strong><small>${txns.length} ${th('รายการโอน', 'transfers')}</small></div>
         </div>
-        <div class="debt-map-legend">
-          <span class="debt-legend-item is-out">${icon('circle-arrow-up', 'w-3 h-3')} ${th('จ่ายเงิน (ลูกศรออก)', 'Pays (arrow out)')}</span>
-          <span class="debt-legend-item is-in">${icon('circle-arrow-down', 'w-3 h-3')} ${th('รับเงิน (ลูกศรเข้า)', 'Gets back (arrow in)')}</span>
-          <span class="debt-legend-item debt-legend-item--unique"><i class="debt-legend-swatch" aria-hidden="true">${order.filter(id => (recv.get(id) || 0) > 0).slice(0, 4).map(id => `<span style="background:${escapeHtml(nodeColors.get(id) || 'var(--primary)')}"></span>`).join('')}</i>${th('สีเส้น = สีของผู้รับเงินรายการนั้น','Line colour = the receiver’s colour')}</span>
-          <span class="debt-legend-hint">${th('ยอดแสดงบนป้ายที่ไม่ทับกัน และมีรายการด้านล่าง','Amount tags do not overlap; matching rows are listed below')}</span>
-        </div>
-        <div class="debt-map-container">
-          <svg class="debt-map-svg${compact ? ' debt-map-svg--compact' : ''}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected by money-transfer lines'))}">
-            <defs>${markerDefs.join('')}</defs>
-            ${edgesHtml}
-            ${nodesHtml}
-          </svg>
-        </div>
+        <p class="debt-total-explanation">${th('ผลรวมของทุกรายการโอน อาจต่างจากยอดสุทธิรวม หากสมาชิกคนเดียวกันทั้งโอนและรับเงิน', 'Sum of all transfers; this may differ from the net total when someone both pays and receives.')}</p>
+        <div class="debt-list-heading"><h4>${th('รายการโอนที่เหลือ', 'Remaining transfers')}</h4><span>${txns.length} ${th('รายการ', 'transfers')}</span></div>
         <div class="debt-payer-list">${rowsHtml}</div>
+        <p class="debt-map-action-hint">${th('หลังโอนเงินจริงแล้ว กด “จ่ายแล้ว” เพื่อบันทึกยอดเต็มหรือบางส่วน', 'After sending money, select “Mark paid” to record a full or partial payment.')}</p>
+        <details class="debt-graph-details">
+          <summary><span>${icon('network', 'w-4 h-4')} ${th('ดูแผนภาพความสัมพันธ์', 'View transfer diagram')}</span>${icon('chevron-down', 'w-4 h-4')}</summary>
+          <p class="debt-graph-help">${th('ลูกศรชี้จากผู้โอนไปยังผู้รับ กดที่ชื่อหรือวงกลมเพื่อดูรายละเอียด', 'Arrows point from payer to receiver. Select a person for details.')}</p>
+          ${n > 8 ? `<p class="debt-graph-help">${th('เมื่อมีสมาชิกหลายคน เส้นอาจอ่านยาก ใช้รายการโอนด้านบนเพื่อดูชื่อและยอดเต็ม', 'With many people, lines may be hard to follow. Use the transfer list above for full names and amounts.')}</p>` : ''}
+          <div class="debt-map-legend">
+            <span class="debt-legend-item is-out">${th('จ่ายเงิน', 'Pays')}</span>
+            <span class="debt-legend-item is-in">${th('รับเงิน', 'Receives')}</span>
+            <span class="debt-legend-item debt-legend-item--unique"><i class="debt-legend-swatch" aria-hidden="true">${order.filter(id => (recv.get(id) || 0) > 0).slice(0, 4).map(id => `<span style="background:${escapeHtml(nodeColors.get(id) || 'var(--primary)')}"></span>`).join('')}</i>${th('สีเส้น = สีของผู้รับเงินรายการนั้น','Line colour = the receiver’s colour')}</span>
+          </div>
+          <div class="debt-map-container">
+            <svg class="debt-map-svg${compact ? ' debt-map-svg--compact' : ''}" viewBox="0 0 ${W} ${H}" role="group" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected by money-transfer lines'))}">
+              <defs>${markerDefs.join('')}</defs>${edgesHtml}${nodesHtml}
+            </svg>
+          </div>
+        </details>
       </div>
       ${netSummaryHtml()}`;
   }
@@ -10080,7 +10135,7 @@ async function renderSettlement(params) {
       // The general 5-minute dashboard cache can otherwise omit another member's
       // recently-created expense on this device.
       const { expenses, members, transfers } = await fetchSettlementData(tripId, { fresh: true });
-      commentsAll = await listComments(tripId, { limitCount: 400 }).catch(() => []);
+      commentsAll = await listComments(tripId).catch(() => []);
       commentMap = commentsByExpense(commentsAll);
       if (!document.getElementById('settlement-content')) return;
       const membersMap = Object.fromEntries(members.map(m => [m.id, m]));
@@ -10103,7 +10158,7 @@ async function renderSettlement(params) {
       }
     } catch (e) {
       console.error(e);
-      content.innerHTML = `<div class="card p-5 text-center"><p class="text-sm font-semibold" style="color:var(--danger);">${escapeHtml(e.message)}</p><button id="settle-retry" class="btn btn-secondary btn-sm mt-3">${icon('refresh-cw', 'w-4 h-4')} ${lang==='th' ? 'ลองใหม่' : 'Retry'}</button></div>`;
+      content.innerHTML = `<div class="card p-5 text-center" role="alert"><p class="text-sm font-semibold" style="color:var(--danger);">${th('โหลดข้อมูลเคลียร์บิลไม่สำเร็จ', 'Could not load settlement')}</p><p class="text-sm text-[var(--text-secondary)] mt-2">${th('ยังไม่แสดงยอดเพราะข้อมูลอาจไม่ครบ ตรวจสอบการเชื่อมต่อหรือสิทธิ์เข้าถึง แล้วลองใหม่', 'Balances are hidden because data may be incomplete. Check your connection or access and retry.')}</p><button id="settle-retry" class="btn btn-secondary btn-sm mt-3">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่', 'Retry')}</button></div>`;
       document.getElementById('settle-retry')?.addEventListener('click', load);
       queueIcons();
     }
@@ -10187,12 +10242,12 @@ async function renderSettlement(params) {
   // Delegated: the transactions card is re-rendered by renderView, the container is not.
   document.getElementById('settlement-content')?.addEventListener('click', (e) => {
     const pay = e.target.closest?.('[data-settle-pay]');
-    if (pay) {
+    if (pay && canPay) {
       openPayTransferSheet({ fromId: pay.dataset.settleFrom, toId: pay.dataset.settleTo, amountMinor: Number(pay.dataset.settleAmount) });
       return;
     }
     const undo = e.target.closest?.('[data-settle-unpay]');
-    if (undo) undoTransfer(undo.dataset.settleUnpay);
+    if (undo && canPay) undoTransfer(undo.dataset.settleUnpay);
   });
 
   document.getElementById('recalc-settle').addEventListener('click', async () => {
@@ -12736,8 +12791,10 @@ async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
   let loading = true;
   let loadFailed = false;
   let days = [];
+  const weatherRequest = createLatestRequestGuard();
 
   async function loadActive() {
+    const isCurrent = weatherRequest.begin();
     const city = cities[activeIdx];
     days = [];
     loadFailed = false;
@@ -12747,13 +12804,16 @@ async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
     const start = dayjs().format('YYYY-MM-DD');
     const end = dayjs().add(7, 'day').format('YYYY-MM-DD');
     const place = (city.lat != null && city.lon != null) ? { lat: city.lat, lon: city.lon } : (city.name || '');
+    let result = [];
     try {
       const forecast = await fetchDailyForecast(place, { startDate: start, endDate: end });
-      days = forecastForDates(forecast, datesBetween(start, end, 8)).filter(d => !d.missing);
-      if (!days.length) loadFailed = true;
-    } catch { loadFailed = true; }
+      result = forecastForDates(forecast, datesBetween(start, end, 8)).filter(d => !d.missing);
+    } catch { /* show the retry state below */ }
+    if (!isCurrent() || !el.isConnected) return;
+    days = result;
+    loadFailed = !days.length;
     loading = false;
-    if (el.isConnected) paint();
+    paint();
   }
 
   function paint() {
@@ -12773,9 +12833,9 @@ async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
         <p class="text-xs text-[var(--text-secondary)] mb-2">${th('ยังไม่มีเมือง — เพิ่มเมืองแรกเพื่อดูอากาศวันนี้ + 7 วัน', 'No cities yet — add your first city for today + 7 days.')}</p>
         <button class="btn btn-secondary btn-sm" data-wx="manage">${icon('plus', 'w-4 h-4')} ${th('เพิ่มเมือง', 'Add city')}</button>
       </div>` : ''}
-      ${!loading && city && loadFailed ? `<div class="wx-empty">
+      ${!loading && city && loadFailed ? `<div class="wx-empty" role="status">
         <p class="text-xs font-semibold mb-1">${th('โหลดอากาศไม่สำเร็จ', 'Weather failed to load')}</p>
-        <p class="text-xs text-[var(--text-tertiary)] mb-2">${th('เช็กเน็ตแล้วลองใหม่', 'Check your connection and retry.')}</p>
+        <p class="text-xs text-[var(--text-tertiary)] mb-2">${th('ยังแสดงพยากรณ์ของเมืองนี้ไม่ได้ ข้อมูลทริปอื่นยังใช้งานได้ ตรวจสอบอินเทอร์เน็ตหรือชื่อเมืองแล้วลองใหม่', 'The forecast for this city is unavailable. Your trip data is still available; check your connection or city and retry.')}</p>
         <button class="btn btn-secondary btn-sm" data-wx="retry">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่', 'Retry')}</button>
       </div>` : ''}
       ${!loading && city && !loadFailed && today ? `

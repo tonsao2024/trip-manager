@@ -6,7 +6,7 @@
 // comment is kept on the device instead, exactly like the expense groups, so the
 // feature works before the rules are deployed.
 import { db, serverTimestamp } from '../firebase.js';
-import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, orderBy, limit, startAfter } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { cacheForget } from '../utils/datacache.js';
 
 const LOCAL_KEY = (tripId) => `fuji_comments:${tripId}`;
@@ -44,14 +44,30 @@ export function commentsPending(tripId) {
  * @returns {Promise<Array<{id:string, expenseId:string, text:string, uid:string,
  *   name:string, createdAt:Object, pending?:boolean}>>}
  */
-export async function listComments(tripId, { limitCount = 200 } = {}) {
+export async function listComments(tripId, { limitCount = 0 } = {}) {
   const local = readLocal(tripId);
   const localIds = new Set(local.map(c => c.id));
   let remote = [];
   try {
     if (!db) throw new Error('DB not ready');
-    const snap = await getDocs(query(collection(db, `trips/${tripId}/comments`), orderBy('createdAt', 'asc'), limit(limitCount)));
-    remote = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Page until the collection ends: a dispute on bill #201 must not disappear
+    // just because 200 other comments were written first. `limitCount` keeps the
+    // old capped behaviour for callers that genuinely want the newest slice.
+    const commentsCol = collection(db, `trips/${tripId}/comments`);
+    const PAGE = 300;
+    let cursor = null;
+    for (;;) {
+      const q = cursor
+        ? query(commentsCol, orderBy('createdAt', 'asc'), startAfter(cursor), limit(PAGE))
+        : query(commentsCol, orderBy('createdAt', 'asc'), limit(PAGE));
+      const snap = await getDocs(q);
+      remote.push(...snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      if (snap.docs.length < PAGE) break;
+      if (limitCount > 0 && remote.length >= limitCount) break;
+      cursor = snap.docs[snap.docs.length - 1];
+      if (!cursor) break;
+    }
+    if (limitCount > 0) remote = remote.slice(0, limitCount);
   } catch (e) {
     console.warn('listComments failed (using the device copy)', e?.code || e?.message);
   }

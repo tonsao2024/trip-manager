@@ -1,6 +1,7 @@
 import { db, storage, serverTimestamp, isStorageAvailable } from '../firebase.js';
 import { brandPrimary } from '../utils/brand.js';
-import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, query, where, limit, arrayUnion, arrayRemove, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { deleteTransfer } from '../settlement/transfers.js';
+import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, query, where, limit, startAfter, arrayUnion, arrayRemove, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { compressImage } from '../utils/helpers.js';
 import { generateInviteCode } from '../utils/invite.js';
@@ -38,19 +39,24 @@ function getCachedTripsTimestamp() {
   } catch { return 0; }
 }
 
-let tripsRefreshPromise = null;
+// One in-flight refresh per account. Sharing a single promise across users meant
+// a second account could be handed the first account's trip list while its own
+// read was still running — and then see trips it had never joined.
+const tripsRefreshPromises = new Map();
 /** Silent re-read of the trip list (used when the cached list is still shown). */
 function refreshTripsInBackground(userId, isSuperAdmin) {
-  if (tripsRefreshPromise) return tripsRefreshPromise;
-  tripsRefreshPromise = fetchTripsFromServer(userId, isSuperAdmin)
+  const key = String(userId || 'anon');
+  if (tripsRefreshPromises.has(key)) return tripsRefreshPromises.get(key);
+  const promise = fetchTripsFromServer(userId, isSuperAdmin)
     .then((trips) => {
       setCachedTrips(trips || [], userId);
-      window.dispatchEvent(new CustomEvent('trips:updated', { detail: trips || [] }));
+      window.dispatchEvent(new CustomEvent('trips:updated', { detail: { userId, trips: trips || [] } }));
       return trips;
     })
     .catch((e) => { console.warn('background trip refresh failed', e?.message || e); return null; })
-    .finally(() => { tripsRefreshPromise = null; });
-  return tripsRefreshPromise;
+    .finally(() => { tripsRefreshPromises.delete(key); });
+  tripsRefreshPromises.set(key, promise);
+  return promise;
 }
 
 function clearTripsCacheInternal() {
@@ -100,29 +106,33 @@ export async function listTrips(userId, isSuperAdmin = false, { maxAgeMs = 2 * 6
 
 async function fetchTripsFromServer(userId, isSuperAdmin = false) {
   const cached = getCachedTrips(userId);
-  const tryQuery = async (q, label, timeoutMs = 5000) => {
-    try {
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`Timeout ${label}`)), timeoutMs)
-      );
-      const snap = await Promise.race([getDocs(q), timeoutPromise]);
-      const trips = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (trips.length) setCachedTrips(trips, userId);
-      return trips;
-    } catch (e) {
-      // Permission errors are common on fresh joins — don't log as warning, just fallback
-      if (e.code === 'permission-denied' || /permission/i.test(e.message || '')) throw e;
-      console.warn(`listTrips ${label} failed:`, e.message, e.code);
-      throw e;
+  // Every write below is page-by-page, so someone in more than 30 trips still
+  // sees the oldest one. A trip list silently cut at 30 looked like lost data.
+  const PAGE = 30;
+  const readAllPages = async (baseQuery, label, timeoutMs) => {
+    const out = [];
+    let cursor = null;
+    for (;;) {
+      const q = cursor ? query(baseQuery, startAfter(cursor), limit(PAGE)) : query(baseQuery, limit(PAGE));
+      const snap = await Promise.race([
+        getDocs(q),
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout ${label}`)), timeoutMs))
+      ]);
+      out.push(...snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      if (snap.docs.length < PAGE) break;
+      cursor = snap.docs[snap.docs.length - 1];
+      if (!cursor) break;
     }
+    return out;
   };
 
   // Super admin can list all trips; regular users query only their own/member trips
   if (isSuperAdmin) {
     try {
-      const q = query(collection(db, 'trips'), limit(50));
-      const allTrips = await tryQuery(q, 'all', 4000);
-      if (allTrips.length) return allTrips;
+      // Paged as well: a super admin with more than 50 trips was seeing a
+      // silently truncated list.
+      const allTrips = await readAllPages(query(collection(db, 'trips')), 'all', 4000);
+      if (allTrips.length) { setCachedTrips(allTrips, userId); return allTrips; }
     } catch (e) {
       if (e.code === 'permission-denied' && cached?.length) return cached;
     }
@@ -130,17 +140,18 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false) {
 
   // Try 1: array-contains on memberUids (indexed, scoped to the signed-in user)
   try {
-    const q = query(collection(db, 'trips'), where('memberUids', 'array-contains', userId), limit(30));
-    const trips = await tryQuery(q, 'memberUids', 5000);
-    if (trips.length) return trips;
+    const trips = await readAllPages(query(collection(db, 'trips'), where('memberUids', 'array-contains', userId)), 'memberUids', 5000);
+
+    if (trips.length) { setCachedTrips(trips, userId); return trips; }
   } catch (e) {
     if (e.code === 'permission-denied' && cached?.length) return cached;
   }
 
-  // Try 2: createdBy (scoped to the signed-in user)
+  // Try 2: createdBy (scoped to the signed-in user). A brand-new account has no
+  // trips yet — that is an empty list, not a permission error.
   try {
-    const q = query(collection(db, 'trips'), where('createdBy', '==', userId), limit(30));
-    const trips = await tryQuery(q, 'createdBy', 5000);
+    const trips = await readAllPages(query(collection(db, 'trips'), where('createdBy', '==', userId)), 'createdBy', 5000);
+    if (trips.length) setCachedTrips(trips, userId);
     return trips;
   } catch (e) {
     if (e.code === 'permission-denied' && cached?.length) return cached;
@@ -396,6 +407,17 @@ export async function deleteTrip(tripId, { onProgress } = {}) {
   if (!tripId) throw new Error('Missing trip id');
   const warnings = [];
 
+  // Guarded transfer records must be removed before membership is cleaned up.
+  // Best-effort like the other sub-collections: a failed cleanup must not block
+  // deleting the trip itself.
+  try {
+    const transfers = await getDocs(collection(db, `trips/${tripId}/transfers`));
+    for (const transfer of transfers.docs) await deleteTransfer(tripId, transfer.id);
+  } catch (e) {
+    console.warn('[Trips] transfer cleanup failed:', e?.code || e?.message);
+    warnings.push('transfers');
+  }
+
   for (const sub of TRIP_SUBCOLLECTIONS) {
     try {
       onProgress?.(sub);
@@ -404,6 +426,7 @@ export async function deleteTrip(tripId, { onProgress } = {}) {
       let batch = writeBatch(db);
       let n = 0;
       for (const d of snap.docs) {
+        if (sub === 'settlements' && d.id === '_transferGuard') continue;
         // Nested line items under expenses
         if (sub === 'expenses') {
           try {
@@ -425,7 +448,10 @@ export async function deleteTrip(tripId, { onProgress } = {}) {
   cacheClear();
 
   try {
-    await deleteDoc(doc(db, 'trips', tripId));
+    const finalBatch = writeBatch(db);
+    finalBatch.delete(doc(db, `trips/${tripId}/settlements/_transferGuard`));
+    finalBatch.delete(doc(db, 'trips', tripId));
+    await finalBatch.commit();
   } catch (e) {
     if (e?.code === 'permission-denied') {
       throw new Error('ไม่มีสิทธิ์ลบทริปนี้ — ต้อง deploy Firestore Rules ใหม่ (ให้ trip admin ลบได้)');
