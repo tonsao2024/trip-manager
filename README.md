@@ -580,7 +580,9 @@ firebase emulators:start --only firestore,auth,functions,storage
 - **Booking tracker** — flights / hotels / trains / restaurants / cars with confirmation codes, seats,
   cost, “next booking” countdown, copy-code button and `.ics` export
 - **Weather at a glance** — Open-Meteo forecast chips on the dashboard and on each itinerary day header
-  (best-effort: hidden when the trip is out of the forecast window or the network is offline)
+  (best-effort: hidden when the trip is out of the forecast window or the network is offline). Japan trip
+  destinations can also show the official 気象庁 7-day card on the Weather page, with Visual Crossing as the
+  silent fallback when Open-Meteo fails
 - **Route optimiser** — “จัดลำดับเส้นทาง” reorders a day's places (nearest-neighbour, timed stops keep
   their slot), previews *before → after km* and saves real distance
 - **Calendar export** — itinerary, bookings or the whole trip as an RFC-5545 `.ics` file
@@ -664,7 +666,7 @@ document storage, Excel import/export. What was still missing became this releas
 | “Places to visit” ideas + voting | `/trip/:id/ideas` — `trips/{id}/ideas`, votes, statuses, trending sort, budget estimate, **“add to plan”** sheet that writes a real itinerary item |
 | Reservation / booking tracking | `/trip/:id/bookings` — `trips/{id}/reservations`, 7 booking types, confirmation code + copy button, seat, cost, check-in/out, “next booking” countdown, warnings for missing details |
 | Calendar export | `.ics` (RFC 5545, with folding + escaping) for the itinerary, the bookings or everything, on the Export page and on the bookings page |
-| Weather while planning | Open-Meteo forecast chips (3 h cache, never throws) on the dashboard and per itinerary day |
+| Weather while planning | Open-Meteo forecast chips (3 h cache, never throws) on the dashboard and per itinerary day; official 気象庁 7-day card on the Weather page for Japanese destinations; Visual Crossing silent fallback |
 | Route optimisation | Nearest-neighbour day reordering with a before/after km preview and a Google Maps deep link; timed stops never move |
 | Trip-tools home widgets | Dashboard `#dash-tools`: prep progress, weather strip, next bookings, top-voted ideas |
 

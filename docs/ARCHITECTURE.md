@@ -100,7 +100,10 @@ previews the result and writes it through `reorderItinerary()`.
 `src/js/prep`, `src/js/ideas`, `src/js/reservations` are thin Firestore CRUD layers; the pure logic
 (templates, voting, warnings, `.ics`/`weather`/`route` maths) lives in `src/js/utils/*.js` so the
 Node unit suites can import it without Firebase. `utils/weather.js` calls Open-Meteo (3 h cache,
-never throws) and `utils/ics.js` writes RFC-5545 calendars (escaping + 75-octet folding).
+never throws; Japan coordinates automatically request the JMA seamless model, and Visual Crossing is the
+silent last-resort fallback when Open-Meteo fails); `utils/jma.js` renders the official 気象庁 7-day card
+shown on the weather page for our curated Japan destinations (1 h cache, silent-hide on failure).
+`utils/ics.js` writes RFC-5545 calendars (escaping + 75-octet folding).
 
 ## Settlement Flow
 - `calculateNetBalances` sums paid - owed.

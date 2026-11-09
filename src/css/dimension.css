@@ -316,3 +316,40 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 .weather-confidence { color: var(--text-tertiary) !important; }
 .weather-confidence.is-long-range { color: #8e6822 !important; }
 [data-theme="dark"] .weather-confidence.is-long-range { color: #e4c27a !important; }
+/* Weather page — official 気象庁 (JMA) 7-day card. Flat v35 tokens only. */
+.jma-card { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border-light); border-radius: 14px; background: var(--surface); }
+.jma-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.jma-head-main { display: flex; min-width: 0; align-items: center; gap: 9px; color: var(--text-secondary); }
+.jma-head-copy { display: flex; min-width: 0; flex-direction: column; gap: 1px; }
+.jma-head-copy strong { color: var(--text-strong); font-size: 13px; font-weight: 600; }
+.jma-head-copy span { color: var(--text-tertiary); font-size: 11px; }
+.jma-credit { flex: 0 0 auto; color: var(--text-tertiary); font-size: 10px; }
+.jma-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.jma-day { display: flex; min-width: 0; min-height: 96px; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 6px 2px; border: 1px solid var(--border-light); border-radius: 12px; background: color-mix(in srgb, var(--surface) 88%, #ffffff 12%); text-align: center; }
+.jma-day--skeleton { background: var(--bg-secondary); }
+.jma-day-date { color: var(--text-strong); font-size: 10px; font-weight: 600; line-height: 1.25; }
+.jma-day-icon.tone-sun { color: #e7a027; }
+.jma-day-icon.tone-cloud { color: #6d91ac; }
+.jma-day-icon.tone-rain { color: #428fc7; }
+.jma-day-icon.tone-snow { color: #659fc5; }
+.jma-day-icon.tone-storm { color: #8a73c2; }
+.jma-day-temp { display: flex; align-items: baseline; gap: 3px; color: var(--text-strong); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.jma-day-temp small { color: var(--text-tertiary); font-size: 9px; font-weight: 400; }
+.jma-pop { display: inline-flex; align-items: center; gap: 2px; color: var(--text-secondary); font-size: 9px; font-variant-numeric: tabular-nums; }
+.jma-reli { display: grid; width: 14px; height: 14px; place-items: center; border: 1px solid transparent; border-radius: 4px; font-size: 8px; font-weight: 700; line-height: 1; }
+.jma-reli-a { color: color-mix(in srgb, #1d9e56 78%, var(--text-strong)); border-color: color-mix(in srgb, #1d9e56 36%, var(--border)); background: color-mix(in srgb, #1d9e56 13%, var(--surface)); }
+.jma-reli-b { color: color-mix(in srgb, #b07818 78%, var(--text-strong)); border-color: color-mix(in srgb, #c98a1e 36%, var(--border)); background: color-mix(in srgb, #d59b2a 14%, var(--surface)); }
+.jma-reli-c { color: color-mix(in srgb, #b4433a 78%, var(--text-strong)); border-color: color-mix(in srgb, #b4433a 34%, var(--border)); background: color-mix(in srgb, #b4433a 12%, var(--surface)); }
+.jma-note { margin: 8px 0 0; color: var(--text-tertiary); font-size: 10px; line-height: 1.5; }
+@media (max-width: 520px) {
+  .jma-grid { gap: 3px; }
+  .jma-day { min-height: 84px; border-radius: 9px; }
+  .jma-day-date { font-size: 9px; }
+  .jma-day-icon { width: 16px; height: 16px; }
+  .jma-note { font-size: 9px; }
+}
+[data-theme="dark"] .jma-day-icon.tone-sun { color: #f5c15a; }
+[data-theme="dark"] .jma-day-icon.tone-cloud { color: #93b7cd; }
+[data-theme="dark"] .jma-day-icon.tone-rain { color: #6fb2e0; }
+[data-theme="dark"] .jma-day-icon.tone-snow { color: #8fc3e0; }
+[data-theme="dark"] .jma-day-icon.tone-storm { color: #ab9ae2; }

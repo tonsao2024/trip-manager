@@ -15,6 +15,7 @@ export function createLatestRequestGuard() {
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const SEASONAL_URL = 'https://seasonal-api.open-meteo.com/v1/seasonal';
 const GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search';
+const VISUAL_CROSSING_URL = 'https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline';
 const CACHE_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
 const CACHE_PREFIX = 'fuji_weather_';
 
@@ -26,6 +27,86 @@ export const WEATHER_DESTINATIONS = Object.freeze([
   Object.freeze({ id: 'yuzawa', label: 'YUZAWA', lat: 36.9360, lon: 138.8080 }),
   Object.freeze({ id: 'hakuba', label: 'HAKUBA', lat: 36.6983, lon: 137.8610 })
 ]);
+
+/** Rough bounding box of Japan (Honshu / Hokkaido / Kyushu / Okinawa). */
+export function isJapanCoords(lat, lon) {
+  const la = Number(lat), lo = Number(lon);
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) return false;
+  return la >= 24 && la <= 46 && lo >= 122 && lo <= 154;
+}
+
+/** Open-Meteo daily URL. Japan coordinates get the JMA seamless model (best for Japan, still free, no key). */
+export function buildForecastUrl(lat, lon, { startDate, endDate } = {}) {
+  let url = `${FORECAST_URL}?latitude=${lat}&longitude=${lon}`
+    + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max'
+    + `&timezone=auto&start_date=${startDate}&end_date=${endDate}`;
+  if (isJapanCoords(lat, lon)) url += '&models=jma_seamless';
+  return url;
+}
+
+/**
+ * Visual Crossing keyless fair-use timeline — last-resort fallback when
+ * Open-Meteo is unreachable. 15-day horizon, global, no key for light use.
+ * Icon names: https://www.visualcrossing.com/resources/documentation/weather-api/timeline-weather-api/
+ */
+const VC_ICON_TO_WMO = Object.freeze({
+  'clear-day': 0, 'clear-night': 0,
+  'partly-cloudy-day': 2, 'partly-cloudy-night': 2,
+  'cloudy': 3, 'fog': 45, 'wind': 3,
+  'rain': 61, 'showers-day': 80, 'showers-night': 80,
+  'rain-snow': 66, 'rain-snow-showers-day': 66, 'rain-snow-showers-night': 66,
+  'snow': 71, 'snow-showers-day': 85, 'snow-showers-night': 85,
+  'sleet': 66,
+  'thunder': 95, 'thunder-rain': 95,
+  'thunder-showers-day': 95, 'thunder-showers-night': 95,
+  'rain-thunder': 95
+});
+
+function vcCodeForIcon(icon) {
+  const name = String(icon || '').toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(VC_ICON_TO_WMO, name)) return VC_ICON_TO_WMO[name];
+  if (name.startsWith('thunder')) return 95;
+  if (name.startsWith('snow')) return 71;
+  if (name.startsWith('rain-snow')) return 66;
+  if (name.startsWith('rain')) return 61;
+  if (name.startsWith('partly-cloudy')) return 2;
+  if (name.startsWith('clear')) return 0;
+  return 3;
+}
+
+const toNumOrNull = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+/** Visual Crossing timeline payload → the same day-object shape as parseForecast. */
+export function parseVisualCrossing(json = {}) {
+  const days = Array.isArray(json?.days) ? json.days : [];
+  return days.map(day => {
+    const code = vcCodeForIcon(day?.icon);
+    const info = weatherCodeInfo(code);
+    const chance = Number(day?.precipprob);
+    return {
+      date: String(day?.datetime || '').slice(0, 10),
+      code,
+      icon: info.icon,
+      tone: info.tone,
+      labelTh: info.th,
+      labelEn: info.en,
+      min: toNumOrNull(day?.tempmin),
+      max: toNumOrNull(day?.tempmax),
+      rainMm: toNumOrNull(day?.precip),
+      rainChance: Number.isFinite(chance) ? Math.round(chance) : null,
+      source: 'Visual Crossing'
+    };
+  }).filter(day => day.date);
+}
+
+async function fetchVisualCrossing(lat, lon, startDate, endDate) {
+  const url = `${VISUAL_CROSSING_URL}/${lat},${lon}/${startDate}/${endDate}`
+    + '?unitGroup=metric&include=days&elements=datetime,tempmax,tempmin,icon,precip,precipprob';
+  return parseVisualCrossing(await fetchJson(url));
+}
 
 /* ------------------------------------------------------------------ *
  * WMO weather codes → bilingual label + lucide icon + tone
@@ -234,11 +315,20 @@ export async function fetchDailyForecast(place, { startDate, endDate } = {}) {
     const key = `${Number(coords.lat).toFixed(2)}_${Number(coords.lon).toFixed(2)}_${startDate}_${endDate}`;
     const cached = cacheGet(key);
     if (cached) return cached;
-    const url = `${FORECAST_URL}?latitude=${coords.lat}&longitude=${coords.lon}`
-      + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max'
-      + `&timezone=auto&start_date=${startDate}&end_date=${endDate}`;
-    const json = await fetchJson(url);
-    const parsed = parseForecast(json);
+    const url = buildForecastUrl(coords.lat, coords.lon, { startDate, endDate });
+    let parsed = [];
+    try {
+      parsed = parseForecast(await fetchJson(url));
+    } catch (openMeteoError) {
+      console.warn('open-meteo forecast unavailable, trying Visual Crossing', openMeteoError?.message || openMeteoError);
+    }
+    if (!parsed.length) {
+      try {
+        parsed = await fetchVisualCrossing(coords.lat, coords.lon, startDate, endDate);
+      } catch (vcError) {
+        console.warn('visual crossing forecast unavailable', vcError?.message || vcError);
+      }
+    }
     if (parsed.length) cacheSet(key, parsed);
     return parsed;
   } catch (e) {
@@ -280,10 +370,10 @@ export async function fetchForecastWindow(place) {
   const endDate = new Date(`${start}T00:00:00Z`);
   endDate.setUTCDate(endDate.getUTCDate() + 15);
   const nearTerm = await fetchDailyForecast(coords, { startDate: start, endDate: dateKey(endDate) });
-  const nearMap = new Map(nearTerm.map(day => [day.date, { ...day, forecastBand: 'short', source: 'Open-Meteo daily forecast' }]));
+  const nearMap = new Map(nearTerm.map(day => [day.date, { ...day, forecastBand: 'short', source: day.source || 'Open-Meteo daily forecast' }]));
   const merged = seasonal.map(day => nearMap.get(day.date) || day);
   const seasonalDates = new Set(seasonal.map(day => day.date));
-  for (const day of nearTerm) if (!seasonalDates.has(day.date)) merged.push({ ...day, forecastBand: 'short', source: 'Open-Meteo daily forecast' });
+  for (const day of nearTerm) if (!seasonalDates.has(day.date)) merged.push({ ...day, forecastBand: 'short', source: day.source || 'Open-Meteo daily forecast' });
   merged.sort((a, b) => a.date.localeCompare(b.date));
   if (merged.length) cacheSet(key, merged);
   return merged;
