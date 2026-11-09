@@ -3521,6 +3521,28 @@ console.log('\n▶ v36: transfers need the same permission as the rules + concur
   await sleep(120);
 }
 
+console.log('\n▶ v36: the trip list is paged (no silent 30-trip cap)');
+{
+  await goto('#/trips');
+  await waitFor(() => text$().includes('ทริปฟูจิ'), { label: 'trip list before paging check' });
+  const tripsMod = await import(pathToFileURL(path.join(outDir, 'trips/index.js')).href);
+  const base = fsdb.__dump('trips/t1') || {};
+  for (let i = 0; i < 35; i++) {
+    fsdb.__seed(`trips/extra${i}`, {
+      ...base, name: `ทริปเสริม ${i}`, inviteCode: `EX${String(i).padStart(3, '0')}`, createdBy: 'u1',
+      memberUids: ['u1'], createdAt: { seconds: Math.floor(Date.now() / 1000) + i }
+    });
+  }
+  tripsMod.clearTripsCache?.();
+  const mine = await tripsMod.listTrips('u1', false);
+  check(mine.length >= 36, `trips: every trip is listed, not just the first 30 (${mine.length})`);
+  check(mine.some(t => t.id === 'extra34'), 'trips: the last page is included');
+  for (const key of [...fsdb.__store.keys()]) {
+    if (key.startsWith('trips/extra')) fsdb.__store.delete(key);
+  }
+  window.localStorage.removeItem('fuji_trips_cache');
+}
+
 console.log('\n▶ v36: reference checks and comments are not capped at 300/200 rows');
 {
   await goto('#/trips');

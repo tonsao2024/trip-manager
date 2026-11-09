@@ -79,7 +79,12 @@ export function doc(dbOrRef, ...segs) {
   return { __type: 'doc', path, id: path.split('/').pop() };
 }
 
-export function query(ref, ...constraints) { return { __type: 'query', ref, constraints: constraints.filter(Boolean) }; }
+export function query(ref, ...constraints) {
+  // Firestore allows query(queryRef, ...moreConstraints): keep the inner ones.
+  const base = ref && ref.__type === 'query' ? ref : { ref, constraints: [] };
+  const outer = Array.isArray(base.constraints) ? base.constraints : [];
+  return { __type: 'query', ref: base.ref, constraints: [...outer, ...constraints.filter(Boolean)] };
+}
 export function where(field, op, value) { return { __type: 'where', field, op, value }; }
 export function orderBy(field, direction = 'asc') { return { __type: 'orderBy', field, direction }; }
 export function limit(n) { return { __type: 'limit', n }; }
@@ -167,6 +172,14 @@ export async function getDocs(target) {
       const cmp = av < bv ? -1 : av > bv ? 1 : 0;
       return o.direction === 'desc' ? -cmp : cmp;
     });
+  }
+  // Cursor pagination: `startAfter(docSnapshotOrPath)` resumes after that row.
+  const after = constraints.find(c => c.__type === 'startAfter');
+  if (after) {
+    const cursor = after.cursor;
+    const cursorPath = typeof cursor === 'string' ? cursor : cursor?.ref?.path || cursor?.path;
+    const idx = entries.findIndex(e => e.path === cursorPath || e.id === cursor?.id);
+    if (idx >= 0) entries = entries.slice(idx + 1);
   }
   const lim = constraints.find(c => c.__type === 'limit');
   if (lim) entries = entries.slice(0, lim.n);

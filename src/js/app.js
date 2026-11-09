@@ -3363,12 +3363,15 @@ async function renderTripSelector() {
   async function renderMyJoinRequests() {
     const box = document.getElementById('my-join-requests');
     if (!box) return;
+    // Read the box again AFTER the await: switching routes while the request is
+    // in flight replaces #my-join-requests, and the old node must not be written.
     const requests = await listMyJoinRequests(currentUser.uid);
-    if (isStale(token)) return;
+    const liveBox = document.getElementById('my-join-requests');
+    if (!liveBox || isStale(token)) return;
     // Once the admin approves, the trip shows up in the list — drop the badge.
     const joinedIds = new Set(tripsCache.map(t => t.id));
     const pending = requests.filter(r => !joinedIds.has(r.tripId || r.id));
-    box.innerHTML = pending.length ? pending.map(r => `
+    liveBox.innerHTML = pending.length ? pending.map(r => `
       <div class="diag-row" data-join-request="${escapeHtml(r.tripId || r.id)}">
         ${icon(r.status === 'rejected' ? 'x-circle' : 'clock', 'w-4 h-4 shrink-0')}
         <div class="min-w-0">
@@ -3379,7 +3382,7 @@ async function renderTripSelector() {
         </div>
         <button class="btn btn-ghost btn-sm ml-auto" data-cancel-request="${escapeHtml(r.tripId || r.id)}">${lang === 'th' ? 'ยกเลิก' : 'Cancel'}</button>
       </div>`).join('') : '';
-    box.querySelectorAll('[data-cancel-request]').forEach(btn => {
+    liveBox.querySelectorAll('[data-cancel-request]').forEach(btn => {
       btn.addEventListener('click', async () => {
         btn.disabled = true;
         try {
@@ -3503,7 +3506,10 @@ async function renderTripSelector() {
 
   // A background refresh (SWR) can land while the cached list is on screen.
   const onTripsUpdated = (e) => {
-    const fresh = e?.detail;
+    // Another account's refresh (or one that started before this session) must
+    // never repaint this list.
+    if (e?.detail?.userId && currentUser?.uid && e.detail.userId !== currentUser.uid) return;
+    const fresh = e?.detail?.trips || e?.detail;
     if (!Array.isArray(fresh) || !fresh.length) return;
     if (JSON.stringify(fresh.map(t => [t.id, t.updatedAt?.seconds || t.updatedAt])) ===
         JSON.stringify(tripsCache.map(t => [t.id, t.updatedAt?.seconds || t.updatedAt]))) return;
