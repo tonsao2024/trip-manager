@@ -1,20 +1,11 @@
 import { expensePayments, validateExpensePayerState } from '../utils/payments.js';
 import { db, serverTimestamp } from '../firebase.js';
-import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, startAfter, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { toThbMinor, calculateNetTotal, getCurrencyDecimals, toMinor } from '../utils/currency.js';
 import { validateAllocations } from '../utils/split.js';
 import { normalizeCategory } from '../utils/categories.js';
 import { cachedRead, cacheInvalidate, cacheForget, cacheSet, persistSet } from '../utils/datacache.js';
 import { notifyExpenseCreated } from '../notifications/index.js';
-
-export function subscribeExpenses(tripId, cb) {
-  if (!db) return () => {};
-  const q = query(collection(db, `trips/${tripId}/expenses`), orderBy('date', 'desc'), limit(50));
-  return onSnapshot(q, snap => {
-    const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    cb(all.filter(e => e.status !== 'voided'));
-  }, err => console.warn('subscribeExpenses error', err));
-}
 
 /** Every expense of the trip, cached per trip (stale-while-revalidate). */
 async function loadAllExpensesUncached(tripId) {

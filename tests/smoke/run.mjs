@@ -3521,6 +3521,40 @@ console.log('\n▶ v36: transfers need the same permission as the rules + concur
   await sleep(120);
 }
 
+console.log('\n▶ v36: reference checks and comments are not capped at 300/200 rows');
+{
+  await goto('#/trips');
+  await waitFor(() => text$().includes('ทริปฟูจิ'), { label: 'trip list before reference check' });
+  const membersMod = await import(pathToFileURL(path.join(outDir, 'members/index.js')).href);
+  // 320 bills: only the last one references u3, so a 300-row cap returns 0.
+  for (let i = 0; i < 320; i++) {
+    fsdb.__seed(`trips/t1/expenses/ref${i}`, {
+      title: `อ้างอิงสมาชิก ${i}`, date: '2027-05-01', category: 'food', currency: 'THB', baseCurrency: 'THB',
+      subtotalMinor: 100, discountMinor: 0, serviceMinor: 0, taxMinor: 0, cardFeeMinor: 0, netTotalMinor: 100,
+      thbRate: 1, thbMinor: 100, payerId: i === 319 ? 'u3' : 'u1', status: 'active', isEstimated: false,
+      paymentMethod: 'cash', allocations: [{ memberId: 'u3', amountMinor: 100 }], createdAt: Date.now()
+    });
+  }
+  const refs = await membersMod.countMemberReferences('t1', 'u3');
+  check(refs.expensesPaid === 1 && refs.expensesShared === 320,
+    `members: references past the first 300 bills are still counted (${refs.expensesPaid}/${refs.expensesShared})`);
+
+  // 260 comments: one on bill #1 must survive the old 200-row cap.
+  const commentsMod = await import(pathToFileURL(path.join(outDir, 'comments/index.js')).href);
+  for (let i = 0; i < 260; i++) {
+    fsdb.__seed(`trips/t1/comments/cmt${i}`, {
+      expenseId: i === 0 ? 'e1' : `x${i}`, text: `ความเห็น ${i}`, uid: 'u2', name: 'นุ่น',
+      createdAt: new Date(Date.UTC(2027, 3, 1, 0, i))
+    });
+  }
+  const comments = await commentsMod.listComments('t1');
+  check(comments.length >= 261, `comments: every comment is read, not just the first 200 (${comments.length})`);
+  check(comments.some(c => c.expenseId === 'e1' && c.text === 'ความเห็น 0'), 'comments: a comment on the first bill is not dropped');
+  for (const key of [...fsdb.__store.keys()]) {
+    if (key.startsWith('trips/t1/expenses/ref') || key.startsWith('trips/t1/comments/cmt')) fsdb.__store.delete(key);
+  }
+}
+
 console.log('\n▶ delete the whole trip (UI)');
 // leave the member session so the admin flow runs with a "logged out" auth state
 window.localStorage.removeItem('fuji_member_session');

@@ -31,6 +31,9 @@ export async function recordTransfer(tripId, { fromId, toId, amountMinor, date =
     if (err?.code === 'unavailable' || /offline|network/i.test(err?.message || '')) {
       throw new Error('ต้องเชื่อมต่ออินเทอร์เน็ตเพื่อบันทึกการโอน / Stay online to record a transfer');
     }
+    if (err?.code === 'permission-denied') {
+      throw new Error('ยังไม่ได้ deploy Firestore Rules ใหม่ (v36) จึงบันทึกการโอนไม่ได้ — เปิด “ตรวจสอบระบบ” เพื่อดูวิธีแก้ / The v36 Firestore rules are not deployed yet, so transfers cannot be recorded');
+    }
     throw err;
   }
   if (!tripSnap.exists()) throw new Error('Trip not found');

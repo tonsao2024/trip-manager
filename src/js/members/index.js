@@ -218,13 +218,16 @@ async function reorderMembersInner(tripId, ids, userId) {
 export async function countMemberReferences(tripId, memberId) {
   const result = { expensesPaid: 0, expensesShared: 0, itemsEstimated: 0 };
   try {
-    const exps = await getDocs(query(collection(db, `trips/${tripId}/expenses`), limit(300)));
+    // No cap: a member referenced only by bill #301 must still be reported as
+    // “in use”, otherwise the delete confirmation understates the impact.
+    const exps = await getDocs(collection(db, `trips/${tripId}/expenses`));
     exps.docs.forEach(d => {
       const data = d.data();
+      if (data.status === 'voided') return;
       if (expensePayments(data).some(p => p.memberId === memberId)) result.expensesPaid++;
       if ((data.allocations || []).some(a => a.memberId === memberId && a.amountMinor)) result.expensesShared++;
     });
-    const items = await getDocs(query(collection(db, `trips/${tripId}/itineraryItems`), limit(300)));
+    const items = await getDocs(collection(db, `trips/${tripId}/itineraryItems`));
     items.docs.forEach(d => {
       const data = d.data();
       if (data.estimatePayerId === memberId || (data.estimateShareWith || []).includes(memberId)) result.itemsEstimated++;

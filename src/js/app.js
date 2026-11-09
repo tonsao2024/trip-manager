@@ -9599,7 +9599,7 @@ async function renderSettlement(params) {
 
   /** Reload the trip's comments and repaint the receipts. */
   async function refreshComments() {
-    commentsAll = await listComments(tripId, { limitCount: 400 }).catch(() => commentsAll);
+    commentsAll = await listComments(tripId).catch(() => commentsAll);
     commentMap = commentsByExpense(commentsAll);
     if (view === 'receipts') renderView();
   }
@@ -10129,7 +10129,7 @@ async function renderSettlement(params) {
       // The general 5-minute dashboard cache can otherwise omit another member's
       // recently-created expense on this device.
       const { expenses, members, transfers } = await fetchSettlementData(tripId, { fresh: true });
-      commentsAll = await listComments(tripId, { limitCount: 400 }).catch(() => []);
+      commentsAll = await listComments(tripId).catch(() => []);
       commentMap = commentsByExpense(commentsAll);
       if (!document.getElementById('settlement-content')) return;
       const membersMap = Object.fromEntries(members.map(m => [m.id, m]));
