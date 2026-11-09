@@ -98,13 +98,23 @@ select.input { border-radius: var(--radius); }
   align-items: center;
   gap: 4px;
   padding: 4px 12px;
+  min-height: 32px;
   border-radius: var(--radius-full);
-  background: rgba(255,255,255,0.18);
-  border: 1px solid rgba(255,255,255,0.3);
+  background: var(--surface);
+  border: 1px solid var(--border);
   font-size: 12px;
-  font-weight: 600;
-  color: #fff;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--t-fast, 150ms) var(--ease, ease), border-color var(--t-fast, 150ms) var(--ease, ease);
 }
+.explore-hero .eh-chip svg { color: var(--text-tertiary); }
+.explore-hero .eh-chip:hover { border-color: var(--border-strong); }
+/* The hero used to sit on a blue photo wash; on the neutral card the label,
+   tagline and destination chips need real text colours (were white-on-white). */
+.explore-hero .eh-chip--label { min-height: 0; padding: 2px 8px; background: var(--surface-2); cursor: default; }
+.explore-hero .eh-chip.is-active { background: var(--surface-2); border-color: var(--text-secondary); color: var(--text-strong); }
+.explore-hero-tagline { color: var(--text-secondary); }
 .explore-search { position: relative; }
 .explore-search .input { padding-left: 40px; background: var(--surface); }
 .explore-search svg {
@@ -122,13 +132,12 @@ select.input { border-radius: var(--radius); }
 .place-thumb {
   flex: 0 0 auto; width: 74px; height: 74px;
   display: grid; place-items: center;
-  background: var(--gradient-mist);
-  color: var(--steel-ink);
-  border: 1px solid color-mix(in srgb, var(--brand-mist-raw) 45%, var(--border));
+  /* v35 round 4: one neutral photo placeholder (no mist/amber/sky variants). */
+  background: var(--surface-2);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border);
 }
-.place-thumb svg { width: 26px; height: 26px; }
-.place-thumb--amber { color: var(--brand-yellow-ink); border-color: var(--brand-yellow-line); }
-.place-thumb--sky { color: var(--primary-strong); border-color: color-mix(in srgb, var(--primary-raw) 26%, var(--border)); }
+.place-thumb svg { width: 24px; height: 24px; }
 .place-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .place-title { font-weight: 600; font-size: 14px; color: var(--text-strong); line-height: 1.25; }
 .place-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.45; }
@@ -146,7 +155,7 @@ select.input { border-radius: var(--radius); }
   border: 1px solid var(--border-light);
 }
 .place-chip svg { width: 12px; height: 12px; }
-.place-chip--cost { background: var(--brand-yellow-tint); color: var(--brand-yellow-ink); border-color: var(--brand-yellow-line); }
+.place-chip--cost { color: var(--text-strong); font-variant-numeric: tabular-nums; }
 .place-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
 
 /* “Recommended for this trip” ribbon */
@@ -184,28 +193,31 @@ select.input { border-radius: var(--radius); }
   transition: transform 0.16s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   text-align: left;
 }
-.cal-cell:hover { border-color: color-mix(in srgb, var(--primary-raw) 30%, var(--border)); }
+.cal-cell:hover { border-color: var(--border-strong); }
 .cal-cell.is-outside { opacity: 0.42; background: var(--bg-secondary); }
-.cal-cell.is-trip { background: var(--primary-lighter); border-color: color-mix(in srgb, var(--primary-raw) 20%, var(--border)); }
-.cal-cell.is-today { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+.cal-cell.is-trip { background: var(--surface-2); border-color: var(--border-strong); }
+.cal-cell.is-today { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
 .cal-day { font-size: 12px; font-weight: 600; color: var(--text-strong); font-variant-numeric: tabular-nums; }
 .cal-cell.is-today .cal-day { color: var(--primary-strong); }
 .cal-cell.is-trip .cal-day::after { content: ''; }
 .cal-pill {
   display: block;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   padding: 2px 8px;
-  background: var(--primary-light);
-  color: var(--primary-strong);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-strong);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cal-pill--amber { background: var(--brand-yellow-tint); color: var(--brand-yellow-ink); }
-.cal-pill--mist { background: var(--mist-tint); color: var(--mist-ink); }
 .cal-more { font-size: 12px; font-weight: 600; color: var(--text-tertiary); }
-.cal-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); }
+.cal-legend { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--text-secondary); }
+.cal-legend > span { display: inline-flex; align-items: center; gap: 4px; }
+.cal-legend-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 4px; border: 1px solid var(--border-strong); background: var(--surface); }
+.cal-legend-swatch.is-trip { background: var(--surface-2); }
+.cal-legend-swatch.is-today { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
 
 /* ---------------------------------------------------------------- *
  * 9. Booking import (paste a confirmation e-mail) + share sheet
@@ -257,10 +269,10 @@ select.input { border-radius: var(--radius); }
 .offline-strip {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px; border-radius: var(--radius-full);
-  background: var(--warning-bg);
-  border: 1px solid color-mix(in srgb, var(--warning) 34%, transparent);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   color: var(--text);
-  font-size: 12px; font-weight: 600;
+  font-size: 12px; font-weight: 500;
 }
 .offline-strip svg { width: 15px; height: 15px; color: var(--warning); }
 
@@ -426,8 +438,8 @@ select.input { border-radius: var(--radius); }
   flex: 0 0 auto; display: inline-flex; padding: 4px; border: 1.5px solid var(--border); background: var(--surface);
   cursor: pointer; transition: border-color .16s ease, background .16s ease;
 }
-.rd-person:hover { border-color: var(--primary); }
-.rd-person.is-active { border-color: var(--primary); background: color-mix(in srgb, var(--primary-raw) 12%, var(--surface)); box-shadow: 0 4px 12px color-mix(in srgb, var(--primary-raw) 20%, transparent); }
+.rd-person:hover { border-color: var(--border-strong); }
+.rd-person.is-active { border-color: var(--text-secondary); background: var(--surface-2); box-shadow: none; }
 .rd-person .avatar { width: 24px; height: 24px; font-size: 12px; }
 .receipt-detail-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .receipt-detail-body { max-height: 62vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
@@ -473,7 +485,7 @@ select.input { border-radius: var(--radius); }
   font-weight: 600;
   text-decoration: none;
 }
-.place-details-link:hover { background: color-mix(in srgb, var(--primary-raw) 18%, transparent); }
+.place-details-link:hover { background: var(--surface-2); }
 .place-details-note { display: inline-flex; align-items: center; gap: 4px; }
 
 /* map popup: the two links under a place */
@@ -541,9 +553,9 @@ select.input { border-radius: var(--radius); }
   min-width: 560px;
 }
 .group-budget-row--head { background: transparent; border-color: transparent; font-size: 12px; font-weight: 600; color: var(--text-tertiary); }
-.group-budget-row--total { border-color: color-mix(in srgb, var(--primary-raw) 34%, transparent); color: var(--text-strong); }
+.group-budget-row--total { border-color: var(--border-strong); color: var(--text-strong); }
 .group-budget-row .num { text-align: right; font-family: var(--font-mono); }
-.group-budget-row .strong { font-weight: 600; color: var(--primary-strong); }
+.group-budget-row .strong { font-weight: 600; color: var(--text-strong); }
 .group-budget-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text-strong); min-width: 0; }
 .group-budget-name svg { color: color-mix(in srgb, var(--group-color, var(--primary)) 82%, var(--text-strong)); }
 
@@ -554,13 +566,13 @@ select.input { border-radius: var(--radius); }
   background: var(--swatch); border: 2px solid transparent;
   box-shadow: inset 0 0 0 2px rgba(255,255,255,.5), var(--shadow-xs);
 }
-.swatch.is-active { border-color: var(--text-strong); transform: scale(1.06); }
+.swatch.is-active { border-color: var(--text-strong); }
 .icon-pick {
   width: 38px; height: 38px; border-radius: 12px; cursor: pointer;
   display: grid; place-items: center;
   background: var(--surface-2); border: 1.5px solid var(--border); color: var(--text-secondary);
 }
-.icon-pick.is-active { border-color: var(--primary); background: var(--primary-light); color: var(--primary-strong); }
+.icon-pick.is-active { border-color: var(--text-secondary); background: var(--surface-2); color: var(--text-strong); }
 
 /* ==================================================================
    v18.2 — เคลียร์บิล: summary → detail, one picker, compact mode
@@ -594,9 +606,10 @@ select.input { border-radius: var(--radius); }
   gap: 8px;
   margin: 8px 0 0;
   font-size: 12px;
-  font-weight: 600;
-  color: var(--success);
+  font-weight: 500;
+  color: var(--text-secondary);
 }
+.settle-answer.is-clear svg { color: var(--text-tertiary); }
 
 .net-summary-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
 .net-chip {
@@ -619,7 +632,7 @@ select.input { border-radius: var(--radius); }
   flex-wrap: wrap;
   margin-top: 12px;
   padding-top: 8px;
-  border-top: 1px dashed color-mix(in srgb, var(--primary-raw) 24%, var(--border));
+  border-top: 1px dashed var(--border);
   font-size: 12px;
   color: var(--text-secondary);
 }
@@ -627,7 +640,7 @@ select.input { border-radius: var(--radius); }
 .net-summary-hint { margin-left: auto; color: var(--text-tertiary); }
 
 .receipt-table-row { cursor: pointer; }
-.receipt-table-row:hover td { background: color-mix(in srgb, var(--primary-raw) 6%, transparent); }
+.receipt-table-row:hover td { background: var(--surface-2); }
 
 .settle-person-verdict {
   display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
@@ -636,9 +649,9 @@ select.input { border-radius: var(--radius); }
 }
 .settle-person-verdict-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 .settle-person-verdict b { font-family: var(--font-mono); font-size: 18px; font-weight: 600; }
-.settle-person-verdict.is-in { border-color: color-mix(in srgb, var(--success) 42%, transparent); }
+.settle-person-verdict.is-in { border-color: var(--border); }
 .settle-person-verdict.is-in b { color: var(--success); }
-.settle-person-verdict.is-out { border-color: color-mix(in srgb, var(--danger) 42%, transparent); }
+.settle-person-verdict.is-out { border-color: var(--border); }
 .settle-person-verdict.is-out b { color: var(--danger); }
 .settle-person-verdict.is-clear b { color: var(--text-strong); }
 
@@ -775,12 +788,11 @@ select.input { border-radius: var(--radius); }
 }
 
 /* Badges = instantly readable status, each with its own hue */
-.badge-current { border-color: color-mix(in srgb, var(--warning) 45%, transparent); }
-.badge-completed { background: var(--success-light); color: color-mix(in srgb, var(--success) 86%, #000); border-color: color-mix(in srgb, var(--success) 40%, transparent); }
-.badge-cancelled { background: var(--danger-light); color: color-mix(in srgb, var(--danger) 88%, #000); border-color: color-mix(in srgb, var(--danger) 38%, transparent); }
+/* Status badges: flat.css owns them (neutral; “now” in accent ink, cancelled
+   in red ink) — no tinted fills here. */
 
 /* Icon buttons & row icons share the same accent language */
-.icon-btn-danger:hover { background: var(--danger-light); border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); }
+.icon-btn-danger:hover { background: var(--surface-2); border-color: color-mix(in srgb, var(--danger) 34%, var(--border)); color: var(--danger); }
 
 /* KPI tiles: the number is the hero, the label stays quiet */
 .kpi-mini { background: var(--surface-2); border: 1.5px solid var(--border-light); border-radius: var(--radius-sm); }
@@ -791,26 +803,24 @@ select.input { border-radius: var(--radius); }
 .net-chip.is-in .net-chip-amount { color: var(--success); }
 .net-chip.is-out .net-chip-amount { color: var(--danger); }
 
-.settle-answer.is-clear { background: var(--success-bg); color: color-mix(in srgb, var(--success) 82%, #000); border-color: color-mix(in srgb, var(--success) 30%, transparent); }
-.settle-person-verdict.is-in { background: var(--success-light); color: color-mix(in srgb, var(--success) 85%, #000); }
-.settle-person-verdict.is-out { background: var(--danger-light); color: color-mix(in srgb, var(--danger) 88%, #000); }
-.settle-person-verdict.is-clear { background: var(--surface-3); color: var(--text-secondary); }
+/* A zero balance is neither money in nor out: it reads as the neutral verdict.
+   Verdict cards stay neutral too — only the amount (b) carries green/red. */
+.settle-person-verdict.is-in, .settle-person-verdict.is-out, .settle-person-verdict.is-clear { background: var(--surface-2); color: var(--text-secondary); }
 .debt-legend-item.is-in { color: color-mix(in srgb, var(--success) 85%, #000); }
 .debt-legend-item.is-out { color: color-mix(in srgb, var(--danger) 88%, #000); }
 .debt-tx-row { border: 1.5px solid var(--border-light); }
-.debt-tx-row:hover { border-color: var(--primary-raw); background: var(--primary-lighter); }
+.debt-tx-row:hover { border-color: var(--border-strong); background: var(--surface-2); }
 
 /* Group board (fix v18.2): each group wears its colour on the edge + the badge */
 
 .group-budget-row--total { background: var(--surface-3); font-weight: 600; }
-.group-budget-row .num.strong { color: var(--primary-strong); }
+.group-budget-row .num.strong { color: var(--text-strong); }
 
 /* Dark mode: lift the borders and the ink (v35: no tinted chips/badges) */
 [data-theme="dark"] .chip { background: var(--surface); }
-[data-theme="dark"] .settle-answer.is-clear { background: color-mix(in srgb, var(--success) 22%, transparent); color: #b7f7d8; }
-[data-theme="dark"] .settle-person-verdict.is-in,
+[data-theme="dark"] .settle-person-verdict.is-in b,
 [data-theme="dark"] .debt-legend-item.is-in { color: #86efac; }
-[data-theme="dark"] .settle-person-verdict.is-out,
+[data-theme="dark"] .settle-person-verdict.is-out b,
 [data-theme="dark"] .debt-legend-item.is-out { color: #fda4af; }
 
 /* v28+ debt map: distinct transfer hues and collision-checked amount tags. */

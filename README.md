@@ -47,6 +47,15 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > the same action in the page header steps down); no rendered text is heavier than 600 (including `<b>` /
 > `<strong>` and SVG labels); and no UI text is under 12 px — phone KPI figures are 16 px with “≈ ¥” on its own
 > line, and below 1024 px the debt map is drawn in screen pixels so names, roles and amounts stay legible.
+> **Round 4 (same version):** the last tinted surfaces are gone — toasts, notifications, idea groups, the
+> expense form and confirm dialogs use plain line icons (no coloured icon tiles); notices, status badges,
+> non-money chips (distance to plan, prices, categories, weather), calendar trip days, selected tiles and the
+> per-person verdict cards are neutral, so green/red appear only on money and red otherwise only on errors and
+> the new quiet destructive button (`.btn-danger-quiet`, used by every delete / log-out button); category colour
+> survives as a small dot because it matches the map pins; decorative sparkle / trophy / wand / eye icons were
+> removed; the import page no longer shows two blue buttons. It also fixes the explore header (its label,
+> tagline and city chips were white on white), the calendar day list's time column (now the trip's time zone),
+> and link-styled buttons that turned blue in dark mode.
 >
 > **v34 — 4 Nov 2026, ออกแบบใหม่ทั้งระบบเป็น Flat design + ตรวจปุ่ม/เมนูทุกหน้า.** A ground-up repaint into
 > a flat design language plus a full button-and-menu audit. **Look:** every gradient, glow, glass blur and

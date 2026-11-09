@@ -22,7 +22,7 @@ export function confirmAction({
     const sheet = showBottomSheet(`
       <div class="space-y-4">
         <div class="flex items-start gap-3">
-          <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:${danger ? 'var(--danger-bg)' : 'var(--primary-light)'};color:${danger ? 'var(--danger)' : 'var(--primary-strong)'};">
+          <div class="row-icon">
             <i data-lucide="${safeIcon}" class="w-5 h-5"></i>
           </div>
           <div class="min-w-0 flex-1">
@@ -30,7 +30,7 @@ export function confirmAction({
             ${safeMessage ? `<p class="text-sm text-[var(--text-secondary)] mt-1 leading-relaxed">${safeMessage}</p>` : ''}
           </div>
         </div>
-        ${safeDetail ? `<div class="p-3 rounded-xl text-xs leading-relaxed" style="background: var(--bg-secondary); border:1px solid var(--border); color: var(--text-secondary);">${safeDetail}</div>` : ''}
+        ${safeDetail ? `<div class="notice p-3 rounded-xl text-xs leading-relaxed">${safeDetail}</div>` : ''}
         <div class="flex gap-2">
           <button id="confirm-cancel" class="btn btn-secondary flex-1">${safeCancel}</button>
           <button id="confirm-ok" class="btn ${danger ? 'btn-danger' : 'btn-primary'} flex-1">${safeConfirm}</button>
@@ -69,7 +69,7 @@ export function promptAction({
     const sheet = showBottomSheet(`
       <div class="space-y-4">
         <div class="flex items-center gap-3">
-          <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-primary);color:#fff;"><i data-lucide="${safeIcon}" class="w-5 h-5"></i></div>
+          <div class="row-icon"><i data-lucide="${safeIcon}" class="w-5 h-5"></i></div>
           <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${safeTitle}</h3>
         </div>
         <div class="input-group">

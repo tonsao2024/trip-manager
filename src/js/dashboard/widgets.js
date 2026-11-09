@@ -22,7 +22,7 @@ export const DASHBOARD_WIDGETS = Object.freeze([
   { key: 'weather', size: 'half', icon: 'cloud-sun', th: 'พยากรณ์อากาศ', en: 'Weather', hintTh: 'อากาศที่ปลายทางตามวันที่ไป', hintEn: 'Forecast for the destination' },
   { key: 'kpis', size: 'full', icon: 'gauge', th: 'ตัวเลขสำคัญ', en: 'Key numbers', hintTh: 'ยอดรวม ยอดของฉัน และงบคงเหลือ', hintEn: 'Total, my share and budget left' },
   { key: 'current', size: 'half', icon: 'target', th: 'กิจกรรมตอนนี้', en: 'Happening now', hintTh: 'กิจกรรมที่กำลังดำเนินอยู่', hintEn: 'What is on right now' },
-  { key: 'up-next', size: 'half', icon: 'sparkles', th: 'กิจกรรมถัดไป', en: 'Up next', hintTh: 'กิจกรรมที่กำลังจะถึง', hintEn: 'What comes next' },
+  { key: 'up-next', size: 'half', icon: 'clock', th: 'กิจกรรมถัดไป', en: 'Up next', hintTh: 'กิจกรรมที่กำลังจะถึง', hintEn: 'What comes next' },
   { key: 'bookings', size: 'half', icon: 'ticket', th: 'การจองที่กำลังจะถึง', en: 'Upcoming bookings', hintTh: 'ตั๋ว ที่พัก และการเดินทางที่ใกล้ถึง', hintEn: 'Tickets, stays and transport coming up' },
   { key: 'category', size: 'half', icon: 'pie-chart', th: 'ค่าใช้จ่ายตามหมวด', en: 'Spend by category', hintTh: 'สัดส่วนค่าใช้จ่ายแต่ละหมวด', hintEn: 'Spending split by category' },
   { key: 'estimate', size: 'half', icon: 'bar-chart-3', th: 'ประมาณการ vs จ่ายจริง', en: 'Estimated vs actual', hintTh: 'งบที่ประมาณไว้เทียบกับที่จ่ายจริง', hintEn: 'Planned budget vs actual' },

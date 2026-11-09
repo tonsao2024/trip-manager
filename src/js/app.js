@@ -259,7 +259,7 @@ function openCommentSheet({ tripId, expenseId, title = '', amount = '', comments
         <div class="comment-head">
           <b>${escapeHtml(c.name || '—')}</b>
           <span>${escapeHtml(fmtWhen(c.createdAt, lang))}</span>
-          ${c.pending ? `<span class="badge badge-current text-xs">${th('ในเครื่องนี้','on device')}</span>` : ''}
+          ${c.pending ? `<span class="badge badge-pending text-xs">${th('ในเครื่องนี้','on device')}</span>` : ''}
           ${(canDeleteAny || c.uid === me.uid) ? `<button class="comment-del" data-comment-del="${c.id}" title="${t('delete')}">${icon('trash-2', 'w-3 h-3')}</button>` : ''}
         </div>
         <div class="comment-text">${escapeHtml(c.text)}</div>
@@ -269,7 +269,7 @@ function openCommentSheet({ tripId, expenseId, title = '', amount = '', comments
   const sheet = showBottomSheet(`
     <div class="space-y-3">
       <div class="flex items-start gap-3">
-        <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--info-light);color:var(--info);">${icon('message-square', 'w-5 h-5')}</div>
+        <div class="row-icon">${icon('message-square', 'w-5 h-5')}</div>
         <div class="min-w-0">
           <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('ความเห็น / ทักท้วง','Comment / question')}</h3>
           <p class="text-xs text-[var(--text-secondary)] truncate">${escapeHtml(title)}${amount ? ` • ${escapeHtml(amount)}` : ''}</p>
@@ -340,12 +340,12 @@ async function openActivitySheet(tripId, { isAdmin = false } = {}) {
   const sheet = showBottomSheet(`
     <div class="space-y-3">
       <div class="flex items-center gap-3">
-        <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--bg-secondary);color:var(--text-secondary);">${icon('history', 'w-5 h-5')}</div>
+        <div class="row-icon">${icon('history', 'w-5 h-5')}</div>
         <div class="min-w-0 flex-1">
           <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('ประวัติการแก้ไข','Activity log')}</h3>
           <p class="text-xs text-[var(--text-secondary)]">${th('ใครเพิ่ม/แก้ไข/ลบ อะไร และเมื่อไร','Who added, edited or deleted what')}</p>
         </div>
-        ${isAdmin ? `<button id="activity-clear-all" class="btn btn-ghost btn-sm text-xs" style="min-height:28px;padding:2px 8px;color:var(--danger);">${icon('trash-2', 'w-3.5 h-3.5')} ${th('ล้างทั้งหมด','Clear all')}</button>` : ''}
+        ${isAdmin ? `<button id="activity-clear-all" class="btn btn-ghost btn-sm text-xs" style="min-height:32px;padding:4px 8px;color:var(--danger);">${icon('trash-2', 'w-3.5 h-3.5')} ${th('ล้างทั้งหมด','Clear all')}</button>` : ''}
       </div>
       <div id="activity-list"><div class="skeleton h-16"></div><div class="skeleton h-16"></div></div>
     </div>
@@ -1337,7 +1337,7 @@ async function showNotifyHelpSheet() {
   const sheet = showBottomSheet(`
     <div class="space-y-4" id="notify-help-sheet">
       <div class="flex items-center gap-3">
-        <div class="row-icon" style="width:44px;height:44px;border-radius:14px;background:var(--danger-bg);color:var(--danger);">${icon('bell-off', 'w-5 h-5')}</div>
+        <div class="row-icon">${icon('bell-off', 'w-5 h-5')}</div>
         <div class="min-w-0">
           <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${th('การแจ้งเตือนไม่ทำงาน — วิธีแก้', 'Notifications are down — how to fix')}</h3>
           <p class="text-xs text-[var(--text-tertiary)]">${escapeHtml(problem.title)}</p>
@@ -1549,7 +1549,7 @@ function notificationRowHtml(n, { uid, isAdmin, expanded = false }) {
   return `
     <article class="notify-entry ${unread ? 'is-unread' : ''} ${expanded ? 'is-expanded' : ''}" data-notify="${escapeHtml(n.id)}" data-notify-type="${escapeHtml(n.type || 'trip')}">
       <button type="button" class="notify-row ${unread ? 'is-unread' : ''}" data-notify="${escapeHtml(n.id)}" data-notify-type="${escapeHtml(n.type || 'trip')}" aria-expanded="${expanded}" ${expanded ? `aria-controls="notify-detail-${escapeHtml(n.id)}"` : ''}>
-        <span class="notify-row-icon" style="color:${meta.color};">${icon(meta.icon, 'w-4 h-4')}</span>
+        <span class="notify-row-icon" aria-hidden="true">${icon(meta.icon, 'w-4 h-4')}</span>
         <span class="notify-row-body">
           <span class="notify-row-title">${escapeHtml(n.title || meta.label)}</span>
           ${n.body ? `<span class="notify-row-text">${escapeHtml(n.body)}</span>` : ''}
@@ -1628,7 +1628,7 @@ async function openNotificationsSheet() {
   const sheet = showBottomSheet(`
     <div id="notify-sheet" class="notify-sheet">
       <div class="flex items-center gap-3 mb-2">
-        <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--surface-2);color:var(--text-secondary);">${icon('bell', 'w-5 h-5')}</div>
+        <div class="row-icon">${icon('bell', 'w-5 h-5')}</div>
         <div class="min-w-0 flex-1">
           <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${th('การแจ้งเตือน', 'Notifications')}</h3>
           <p class="text-xs text-[var(--text-tertiary)]" id="notify-subtitle">${th('กำลังโหลด...', 'Loading...')}</p>
@@ -1861,7 +1861,7 @@ function notificationSettingsCardsHtml({ lang = 'th', perms = {}, tripSettings =
       <h3 class="font-semibold flex items-center gap-2">${icon('calendar-clock', 'w-4 h-4')} ${th('สรุปค่าใช้จ่ายรายวันของทริปนี้', 'Daily summary of this trip')}</h3>
       <p class="text-xs text-[var(--text-secondary)]">${th('เวลาในเขตเวลาของทริป — สรุปสร้างเมื่อมีคนเปิดทริปหลังเวลาที่กำหนด แล้ว GitHub Actions ส่ง Push เป็นรอบ (ไม่มีงานสร้างสรุปฝั่งเซิร์ฟเวอร์)', 'Uses the trip timezone. A client creates the summary after the chosen hour, then GitHub Actions sends queued Push. There is no scheduled summary generator.')}</p>
       <label class="settings-toggle-row" for="notify-trip-daily">
-        <span class="min-w-0"><b>${icon('sparkles', 'w-3.5 h-3.5')} ${th('เปิดสรุปอัตโนมัติทุกวัน', 'Automatic daily summary')}</b>
+        <span class="min-w-0"><b>${th('เปิดสรุปอัตโนมัติทุกวัน', 'Automatic daily summary')}</b>
           <small>${th('ผู้ดูแลทริปตั้งค่าให้ทุกคนในทริปนี้', 'A trip-admin setting that applies to everybody in the trip')}</small></span>
         <input type="checkbox" id="notify-trip-daily" class="settings-toggle" ${tripSettings.dailySummary === false ? '' : 'checked'} ${isAdmin ? '' : 'disabled'}>
       </label>
@@ -2091,7 +2091,7 @@ function openUserSheet(user) {
         <div class="flex-1 min-w-0">
           <h3 class="font-semibold truncate text-[15px]">${escapeHtml(user.displayName || user.email || 'User')}</h3>
           <p class="text-xs text-[var(--text-secondary)] truncate">${escapeHtml(user.email || user.uid.slice(0,12))} ${tripInfo}</p>
-          <span class="inline-flex items-center gap-1 mt-1 text-xs px-2 py-0.5 rounded-full bg-[var(--primary-lighter)] border border-[color-mix(in_srgb,var(--primary-raw)_26%,transparent)] text-[var(--primary-strong)] font-semibold">${icon('shield-check','w-3 h-3')} ${th('บัญชีที่เข้าสู่ระบบ','Signed in')}</span>
+          <span class="badge badge-planned text-xs mt-1">${icon('shield-check','w-3 h-3')} ${th('บัญชีที่เข้าสู่ระบบ','Signed in')}</span>
         </div>
         <button id="close-user-sheet" class="btn btn-ghost btn-sm !p-2">${icon('x','w-4 h-4')}</button>
       </div>
@@ -2129,7 +2129,7 @@ function openUserSheet(user) {
       </div>
 
       <div class="space-y-2">
-        <button id="logout-btn" class="btn w-full !min-h-[44px] text-[14px] font-semibold" style="background: var(--danger-bg); color: var(--danger); border: 1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('log-out','w-5 h-5')} ${t('logout')}</button>
+        <button id="logout-btn" class="btn btn-danger-quiet w-full !min-h-[44px] text-[14px] font-medium">${icon('log-out','w-5 h-5')} ${t('logout')}</button>
         <p class="text-xs text-center text-[var(--text-tertiary)]">${th('ออกจากระบบจะลบเซสชันบนอุปกรณ์นี้','Sign out clears session on this device')}</p>
       </div>
     </div>
@@ -2285,7 +2285,7 @@ async function showRulesHelpSheet({ lang, trip = null, action = 'join' } = {}) {
   const sheet = showBottomSheet(`
     <div class="space-y-4">
       <div class="flex items-center gap-3">
-        <div class="row-icon" style="width:44px;height:44px;border-radius:14px;background:var(--danger-bg);color:var(--danger);">${icon('shield-alert', 'w-5 h-5')}</div>
+        <div class="row-icon">${icon('shield-alert', 'w-5 h-5')}</div>
         <div>
           <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${escapeHtml(help.title)}</h3>
           <p class="text-xs text-[var(--text-tertiary)]">Missing or insufficient permissions</p>
@@ -2481,11 +2481,11 @@ function themePickerHtml({ idPrefix = 'tp', showModes = true } = {}) {
 
       <div class="theme-custom ${active.id === CUSTOM_THEME_ID ? '' : 'hidden'}" data-theme-custom>
         <div class="theme-custom-row">
-          <label class="theme-custom-label">${icon('droplet', 'w-3.5 h-3.5')} ${th('สีหลัก', 'Primary')}
+          <label class="theme-custom-label">${th('สีหลัก', 'Primary')}
             <input type="color" class="theme-color-input" data-theme-part="primary" value="${escapeHtml(custom.primary || '#1f6bfb')}">
             <input type="text" class="input text-xs theme-hex-input" data-theme-part-hex="primary" value="${escapeHtml(custom.primary || '#1f6bfb')}" maxlength="7" spellcheck="false">
           </label>
-          <label class="theme-custom-label">${icon('sparkles', 'w-3.5 h-3.5')} ${th('สีเน้น', 'Accent')}
+          <label class="theme-custom-label">${th('สีเน้น', 'Accent')}
             <input type="color" class="theme-color-input" data-theme-part="accent" value="${escapeHtml(custom.accent || '#ffb02e')}">
             <input type="text" class="input text-xs theme-hex-input" data-theme-part-hex="accent" value="${escapeHtml(custom.accent || '#ffb02e')}" maxlength="7" spellcheck="false">
           </label>
@@ -2615,7 +2615,7 @@ function showAppearanceSheet() {
   const lang = getLang();
   const sheet = showBottomSheet(`
     <div class="flex items-center gap-3 mb-1">
-      <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--surface-2);color:var(--text-secondary);">${icon('palette', 'w-5 h-5')}</div>
+      <div class="row-icon">${icon('palette', 'w-5 h-5')}</div>
       <div>
         <h3 class="font-semibold text-lg leading-tight" style="font-family: var(--font-display);">${t('appearance')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${lang === 'th' ? 'เลือกชุดสีที่ชอบ แล้วปรับต่อเองได้' : 'Pick a palette — then fine-tune it yourself'}</p>
@@ -2903,7 +2903,7 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
   const sheet = showBottomSheet(`
     <div class="space-y-3">
       <div class="flex items-center gap-3">
-        <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--surface-2);color:var(--text-secondary);">${icon(isEdit ? 'pencil' : 'compass', 'w-5 h-5')}</div>
+        <div class="row-icon">${icon(isEdit ? 'pencil' : 'compass', 'w-5 h-5')}</div>
         <div class="min-w-0">
           <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? (lang==='th' ? 'แก้ไขทริป' : 'Edit trip') : t('createTrip')}</h3>
           <p class="text-xs text-[var(--text-secondary)]">${isEdit ? (lang==='th' ? 'แก้ชื่อ วันเดินทาง รายละเอียด ฯลฯ' : 'Change name, dates, details…') : (lang==='th' ? 'กรอกข้อมูลทริปใหม่ของคุณ' : 'Fill in your new trip details')}</p>
@@ -2919,7 +2919,7 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
           <label class="input-label">${t('coverImage')}</label>
           <div class="p-3 rounded-xl border-2 border-dashed" style="border-color: var(--border); background: var(--bg-secondary);">
             <div id="cover-dropzone" class="text-center cursor-pointer py-3 transition-colors ${trip.coverImage ? 'hidden' : ''}">
-              <div class="row-icon mx-auto mb-2" style="width:42px;height:42px;">${icon('camera', 'w-5 h-5')}</div>
+              <div class="row-icon mx-auto mb-2">${icon('camera', 'w-5 h-5')}</div>
               <p class="text-xs font-semibold">${lang==='th' ? 'คลิกหรือลากรูปมาวาง' : 'Click or drop an image'}</p>
               <p class="text-xs text-[var(--text-tertiary)] mt-0.5">JPG / PNG • ≤ 10MB • ${lang==='th' ? 'ครอปได้' : 'croppable'}</p>
             </div>
@@ -2942,8 +2942,8 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
 
             <div id="cover-preview" class="${trip.coverImage ? '' : 'hidden'} mt-3">
               <div class="flex items-center justify-between mb-2">
-                <span class="text-xs font-semibold flex items-center gap-1">${icon('eye', 'w-3.5 h-3.5')} ${lang==='th' ? 'ตัวอย่าง' : 'Preview'}</span>
-                <button type="button" id="change-image" class="btn btn-ghost btn-sm text-xs" style="min-height:26px;padding:4px 8px;">${icon('replace', 'w-3 h-3')} ${lang==='th' ? 'เปลี่ยน' : 'Change'}</button>
+                <span class="text-xs font-medium text-[var(--text-secondary)]">${lang==='th' ? 'ตัวอย่าง' : 'Preview'}</span>
+                <button type="button" id="change-image" class="btn btn-ghost btn-sm text-xs" style="min-height:32px;padding:4px 8px;">${icon('replace', 'w-3 h-3')} ${lang==='th' ? 'เปลี่ยน' : 'Change'}</button>
               </div>
               <div class="w-full h-28 rounded-xl overflow-hidden border" style="border-color: var(--border);">
                 <img decoding="async" id="cover-img" class="w-full h-full object-cover" src="${escapeHtml(trip.coverImage || '')}" alt="">
@@ -2993,7 +2993,7 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
 
         <button id="tf-submit" type="submit" class="btn btn-primary w-full">${icon(isEdit ? 'save' : 'plus', 'w-4 h-4')} ${isEdit ? t('save') : t('createTrip')}</button>
         ${isEdit ? `<div class="flex gap-2">
-          <button type="button" id="tf-delete" class="btn flex-1" style="background: var(--danger-bg); color: var(--danger); border:1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('trash-2', 'w-4 h-4')} ${lang==='th' ? 'ลบทริปนี้' : 'Delete trip'}</button>
+          <button type="button" id="tf-delete" class="btn btn-danger-quiet flex-1">${icon('trash-2', 'w-4 h-4')} ${lang==='th' ? 'ลบทริปนี้' : 'Delete trip'}</button>
           <button type="button" id="tf-duplicate" class="btn btn-secondary flex-1">${icon('copy', 'w-4 h-4')} ${lang==='th' ? 'ทำสำเนาทริป' : 'Duplicate'}</button>
         </div>` : ''}
       </form>
@@ -3215,7 +3215,7 @@ function openTripActions(trip, { onChanged } = {}) {
   const sheet = showBottomSheet(`
     <div class="space-y-4">
       <div class="flex items-center gap-3">
-        <div class="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0" style="background: var(--gradient-primary);">
+        <div class="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0" style="background: var(--surface-2); border: 1px solid var(--border);">
           ${trip.coverImage ? `<img decoding="async" src="${escapeHtml(trip.coverImage)}" class="w-full h-full object-cover" alt="">` : ''}
         </div>
         <div class="min-w-0">
@@ -3228,7 +3228,7 @@ function openTripActions(trip, { onChanged } = {}) {
         <button id="ta-edit" class="btn btn-secondary w-full">${icon('pencil', 'w-4 h-4')} ${lang==='th' ? 'แก้ไขข้อมูลทริป' : 'Edit trip'}</button>
         <button id="ta-dup" class="btn btn-secondary w-full">${icon('copy', 'w-4 h-4')} ${lang==='th' ? 'ทำสำเนาทริป' : 'Duplicate'}</button>
         <button id="ta-id" class="btn btn-ghost w-full text-xs">${icon('clipboard-copy', 'w-3.5 h-3.5')} ${lang==='th' ? 'คัดลอก Trip ID' : 'Copy Trip ID'}</button>
-        <button id="ta-del" class="btn w-full" style="background: var(--danger-bg); color: var(--danger); border:1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('trash-2', 'w-4 h-4')} ${lang==='th' ? 'ลบทริป' : 'Delete trip'}</button>
+        <button id="ta-del" class="btn btn-danger-quiet w-full">${icon('trash-2', 'w-4 h-4')} ${lang==='th' ? 'ลบทริป' : 'Delete trip'}</button>
       </div>
     </div>
   `);
@@ -3444,7 +3444,7 @@ async function renderTripSelector() {
           <div class="flex items-center gap-2 mt-3 flex-wrap">
             <span class="text-xs px-2 py-1 rounded-full bg-[var(--bg-secondary)] font-semibold flex items-center gap-1">${icon('banknote', 'w-3 h-3')} ${escapeHtml(trip.baseCurrency || 'THB')}</span>
             <span class="text-xs px-2 py-1 rounded-full bg-[var(--bg-secondary)] font-semibold flex items-center gap-1">${icon('users', 'w-3 h-3')} ${(trip.memberUids || []).length || 1}</span>
-            <span class="text-xs px-2 py-1 rounded-full font-semibold flex items-center gap-1 ml-auto" style="background: var(--primary-light); color: var(--primary-strong);">${icon('log-in', 'w-3 h-3')} ${lang==='th' ? 'เปิดทริป' : 'Open'}</span>
+            <span class="trip-open-hint">${lang==='th' ? 'เปิดทริป' : 'Open'} ${icon('arrow-right', 'w-3.5 h-3.5')}</span>
           </div>` : ''}
         </div>
       </div>`;
@@ -3514,7 +3514,7 @@ async function renderTripSelector() {
     let hint = '';
     if (e.code === 'permission-denied' || msg.includes('permission') || msg.includes('Missing') || msg.includes('insufficient')) {
       hint = `
-        <div class="text-left mt-3 p-3 rounded-xl text-xs leading-relaxed" style="background: var(--warning-bg); border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);">
+        <div class="notice text-left mt-3 p-3 rounded-xl text-xs leading-relaxed">
           <strong class="flex items-center gap-1">${icon('alert-triangle', 'w-3.5 h-3.5')} Firestore Rules ยังไม่ deploy</strong>
           ต้อง publish กฎใหม่ที่ Firebase Console &gt; Firestore &gt; Rules<br>
           <button id="trips-rules-help" class="btn btn-secondary btn-sm mt-2">${icon('shield-alert', 'w-4 h-4')} ดูวิธีแก้ทีละขั้น</button>
@@ -3522,7 +3522,7 @@ async function renderTripSelector() {
       msg = 'ไม่มีสิทธิ์เข้าถึง — ต้อง deploy Firestore Rules';
     }
     if (msg.includes('index') || e.code === 'failed-precondition') {
-      hint = `<div class="text-left mt-3 p-3 rounded-xl text-xs" style="background: var(--info-light); border: 1px solid color-mix(in srgb, var(--info) 35%, transparent);"><strong class="flex items-center gap-1">${icon('database', 'w-3.5 h-3.5')} ต้องสร้าง Firestore Index</strong>รัน <code>firebase deploy --only firestore:indexes</code></div>`;
+      hint = `<div class="notice text-left mt-3 p-3 rounded-xl text-xs"><strong class="flex items-center gap-1">${icon('database', 'w-3.5 h-3.5')} ต้องสร้าง Firestore Index</strong>รัน <code>firebase deploy --only firestore:indexes</code></div>`;
       msg = 'ต้องสร้าง Index — ดูคำสั่งใน Console';
     }
     bind('trips-rules-help', 'click', () => showRulesHelpSheet({ lang }));
@@ -3533,8 +3533,8 @@ async function renderTripSelector() {
         if (data?.length) {
           tripsCache = data;
           grid.innerHTML = `
-            <div class="col-span-full flex items-start gap-2 p-3 rounded-xl text-xs" style="background: var(--warning-bg); border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);">
-              <span style="color: var(--warning); margin-top:1px;">${icon('cloud-off', 'w-4 h-4')}</span>
+            <div class="notice col-span-full flex items-start gap-2 p-3 rounded-xl text-xs">
+              <span style="margin-top:1px;">${icon('cloud-off', 'w-4 h-4')}</span>
               <span>${lang==='th' ? 'แสดงข้อมูลจากแคช' : 'Showing cached trips'} • ${data.length} ${lang==='th' ? 'ทริป' : 'trips'}</span>
             </div>
             ${data.map((trip, idx) => tripCardHtml(trip, idx, true)).join('')}
@@ -3552,7 +3552,7 @@ async function renderTripSelector() {
     } catch {}
 
     grid.innerHTML = `<div class="col-span-full card p-6 text-center">
-      <div class="row-icon mx-auto mb-3" style="width:52px;height:52px;border-radius:16px;background:var(--danger-bg);color:var(--danger);">${icon('cloud-off', 'w-6 h-6')}</div>
+      <div class="row-icon mx-auto mb-3">${icon('cloud-off', 'w-6 h-6')}</div>
       <p class="text-sm font-semibold mb-1" style="color: var(--danger);">${escapeHtml(msg)}</p>
       ${hint}
       <div class="flex gap-2 justify-center mt-4 flex-wrap">
@@ -4726,7 +4726,7 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
     const it = upcomingList[Number(row.dataset.ui)];
     if (!it) return;
     openDashPopup({
-      icon: 'sparkles', title: it.title || t('upNext'),
+      icon: 'clock', title: it.title || t('upNext'),
       subtitle: `${formatDate(it.date, lang, trip?.timezone)} • ${formatTime(it.startAt, trip?.timezone)}`,
       body: `<div class="dash-pop-card">
           ${it.address ? dashRow(th('สถานที่','Place'), escapeHtml(it.address)) : ''}
@@ -4921,7 +4921,7 @@ async function renderItinerary(params) {
       <div class="card p-4 mb-5" id="notes-card">
         <div class="flex items-center justify-between gap-2 flex-wrap">
           <h3 class="font-semibold flex items-center gap-2 text-sm">
-            <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--warning-light);color:var(--warning);">${icon('sticky-note', 'w-4 h-4')}</span>
+            <span class="row-icon">${icon('sticky-note', 'w-4 h-4')}</span>
             ${th('โน้ตติดเตือนความจำ','Sticky notes')}
             <span id="notes-count" class="text-xs font-semibold px-2 py-0.5 rounded-full" style="background:var(--bg-secondary);">0</span>
           </h3>
@@ -4966,7 +4966,7 @@ async function renderItinerary(params) {
               </div>
               <div id="map-status" class="map-status"><span class="skeleton" style="width:26px;height:26px;border-radius:50%;"></span> <span>${th('กำลังโหลดแผนที่...','Loading map...')}</span></div>
               <div id="map-empty" class="map-status hidden"><div class="text-center px-4">
-                <div class="row-icon mx-auto mb-2" style="width:40px;height:40px;">${icon('map-pin', 'w-5 h-5')}</div>
+                <div class="row-icon mx-auto mb-2">${icon('map-pin', 'w-5 h-5')}</div>
                 <p class="text-xs text-[var(--text-secondary)]">${th('เพิ่มพิกัด (lat,lng) ให้สถานที่ เพื่อให้แสดงหมุดบนแผนที่','Add coordinates (lat,lng) to a place to see it here')}</p>
               </div></div>
             </div>
@@ -5224,7 +5224,7 @@ async function renderItinerary(params) {
     if (state === 'error' && message) {
       statusEl.innerHTML = `
         <div class="text-center px-4">
-          <div class="row-icon mx-auto mb-2" style="width:40px;height:40px;background:var(--danger-bg);color:var(--danger);">${icon('map', 'w-5 h-5')}</div>
+          <div class="row-icon mx-auto mb-2">${icon('map', 'w-5 h-5')}</div>
           <p class="text-xs font-semibold" style="color:var(--danger);">${th('โหลดแผนที่ไม่สำเร็จ','Map failed to load')}</p>
           <p class="text-xs text-[var(--text-secondary)] mb-2">${escapeHtml(message)}</p>
           <button id="map-retry" class="btn btn-secondary btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่','Retry')}</button>
@@ -5533,7 +5533,7 @@ async function renderItinerary(params) {
     if (!active.length) {
       board.innerHTML = `
         <div class="notes-empty" style="grid-column:1/-1;">
-          <div class="row-icon mx-auto mb-2" style="width:38px;height:38px;background:var(--warning-light);color:var(--warning);">${icon('party-popper', 'w-4 h-4')}</div>
+          <div class="row-icon mx-auto mb-2">${icon('party-popper', 'w-4 h-4')}</div>
           <p class="text-xs font-semibold">${th('ไม่มีโน้ตค้างแล้ว','Nothing left to do')}</p>
           <p class="text-xs text-[var(--text-secondary)] mt-1">${th('โน้ตที่เก็บไว้ยังอยู่ใน “เก็บแล้ว” ด้านล่าง กดนำกลับมาได้ทุกเมื่อ','Filed notes stay under “Done” below — bring any of them back any time')}</p>
         </div>`;
@@ -5608,7 +5608,7 @@ async function renderItinerary(params) {
     const sheet = showBottomSheet(`
       <div class="space-y-3">
         <div class="flex items-center gap-3">
-          <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--warning-light);color:var(--warning);">${icon('sticky-note', 'w-5 h-5')}</div>
+          <div class="row-icon">${icon('sticky-note', 'w-5 h-5')}</div>
           <div>
             <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขโน้ต','Edit note') : th('เพิ่มโน้ต','New note')}</h3>
             <p class="text-xs text-[var(--text-secondary)]">${th('ข้อความสำคัญที่อยากเห็นทุกครั้งที่เปิดแผน','A reminder you want to see on the itinerary')}</p>
@@ -5626,7 +5626,7 @@ async function renderItinerary(params) {
           <label class="flex items-center gap-2 text-sm cursor-pointer"><input id="note-pinned" type="checkbox" class="accent-[var(--primary)] w-4 h-4" ${n.pinned ? 'checked' : ''}> ${th('ปักหมุดไว้บนสุด','Pin to top')}</label>
           <div class="flex gap-2">
             <button type="submit" id="note-submit" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${t('save')}</button>
-            ${isEdit ? `<button type="button" id="note-delete" class="btn" style="background:var(--danger-bg);color:var(--danger);border:1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
+            ${isEdit ? `<button type="button" id="note-delete" class="btn btn-danger-quiet">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
           </div>
         </form>
       </div>
@@ -6336,7 +6336,7 @@ async function renderItinerary(params) {
     const sheet = showBottomSheet(`
       <div class="space-y-3">
         <div class="flex items-center gap-3">
-          <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--surface-2);color:var(--text-secondary);">${icon(isEdit ? 'pencil' : 'map-pin', 'w-5 h-5')}</div>
+          <div class="row-icon">${icon(isEdit ? 'pencil' : 'map-pin', 'w-5 h-5')}</div>
           <div class="min-w-0">
             <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขสถานที่','Edit place') : t('addPlace')}</h3>
             <p class="text-xs text-[var(--text-secondary)]">${isEdit ? escapeHtml(it.title || '') : th('เพิ่มสถานที่ลงในแผนการเดินทาง','Add a place to your itinerary')}</p>
@@ -6395,7 +6395,7 @@ async function renderItinerary(params) {
           <div class="input-group"><label class="input-label">${th('หมวดหมู่ (ใช้ได้ทั้งสถานที่และค่าใช้จ่าย)','Category — place and money, one list')}</label>
             <select id="it-category" class="input">${categoryChoices(lang).map(c => `<option value="${c.id}" ${(it.category || 'general') === c.id ? 'selected' : ''}>${escapeHtml(categoryChoiceLabel(c, lang))}</option>`).join('')}</select>
             <p class="input-hint mt-1">${th('เลือกครั้งเดียวจบ — กลุ่มค่าใช้จ่ายของสถานที่นี้จะถูกกำหนดให้อัตโนมัติ ไม่ต้องเลือกซ้ำ','One pick only — the expense group of this place follows automatically, no second field to fill')}
-              <span id="it-category-group" class="font-semibold" style="color:var(--primary-strong);"></span></p>
+              <span id="it-category-group" class="font-semibold text-[var(--text-strong)]"></span></p>
           </div>
 
           <div class="input-group" id="it-groups-wrap">
@@ -6498,7 +6498,7 @@ async function renderItinerary(params) {
 
           <div class="flex gap-2">
             <button type="submit" id="it-submit" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${isEdit ? t('save') : t('add')}</button>
-            ${isEdit ? `<button type="button" id="it-delete" class="btn" style="background:var(--danger-bg);color:var(--danger);border:1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
+            ${isEdit ? `<button type="button" id="it-delete" class="btn btn-danger-quiet">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
           </div>
         </form>
       </div>
@@ -7135,7 +7135,7 @@ async function renderExpenses(params) {
     const methodText = method === 'card' ? th('บัตรเครดิต','Card') : method === 'transfer' ? th('โอนเงิน','Transfer') : th('เงินสด','Cash');
     return `
       <div class="expense-card card card-hover" data-expense="${e.id}">
-        <div class="row-icon" style="width:44px;height:44px;border-radius:14px;background:color-mix(in srgb, ${categoryColor(e.category)} 16%, transparent);color:${categoryColor(e.category)};">
+        <div class="row-icon">
           ${icon(categoryIcon(e.category), 'w-5 h-5')}
         </div>
         <div class="flex-1 min-w-0">
@@ -7148,7 +7148,7 @@ async function renderExpenses(params) {
           <div class="flex items-center gap-2 flex-wrap mt-1">
             <span class="badge badge-planned text-xs">${icon(categoryIcon(e.category), 'w-2.5 h-2.5')} ${escapeHtml(catLabel)}</span>
             ${e.isEstimated ? `<span class="badge badge-skipped text-xs">${icon('hourglass', 'w-2.5 h-2.5')} ${th('ประมาณการ','est.')}</span>` : ''}
-            ${e.source === 'itinerary-estimate' ? `<span class="badge badge-current text-xs">${icon('map-pinned', 'w-2.5 h-2.5')} ${th('จากแผน','from itinerary')}</span>` : ''}
+            ${e.source === 'itinerary-estimate' ? `<span class="badge badge-skipped text-xs">${icon('map-pinned', 'w-2.5 h-2.5')} ${th('จากแผน','from itinerary')}</span>` : ''}
             <span class="meta-line">${icon('calendar', 'w-3 h-3')} ${escapeHtml(shortDay(e.date))}</span>
             ${e.payerPending
               ? `<span class="badge badge-pending text-xs" title="${th('ยังไม่รู้ว่าจะใครสำรองจ่าย — ยอดยังไม่ถูกนับเป็นหนี้ของใคร','Nobody is hosting this bill yet — it stays out of balances until assigned')}">${icon('help-circle', 'w-2.5 h-2.5')} ${th('ยังไม่ระบุเจ้าภาพ','payer TBD')}</span>`
@@ -7498,7 +7498,6 @@ function expenseFormSectionsHtml({
         <!-- 1) รายละเอียดรายการ -->
         <section class="form-section">
           <div class="form-section-head">
-            <span class="form-section-icon">${icon('receipt-text', 'w-4 h-4')}</span>
             <h3>${tx('รายละเอียดรายการ', 'Item details')}</h3>
           </div>
           <div class="space-y-3">
@@ -7537,7 +7536,6 @@ function expenseFormSectionsHtml({
         <!-- 2) จำนวนเงิน -->
         <section class="form-section">
           <div class="form-section-head">
-            <span class="form-section-icon">${icon('banknote', 'w-4 h-4')}</span>
             <h3>${tx('จำนวนเงิน', 'Amount')}</h3>
           </div>
           <div class="space-y-3">
@@ -7557,14 +7555,13 @@ function expenseFormSectionsHtml({
             <div class="input-group"><label class="input-label">${tx('เรทเป็น THB','Rate to THB')}</label><input id="${p}ex-thb-rate" class="input" type="number" step="0.0001" min="0" value="${e.thbRate || resolveTripThbRate(trip, expenseRates, currency) || ''}"></div>
 
             <div id="${p}net-preview" class="p-4 rounded-xl text-sm font-semibold border flex items-center gap-2" style="border-color: var(--border); background: var(--bg-secondary);">${icon('calculator', 'w-4 h-4')} ${t('netTotal')}: --</div>
-            <div id="${p}thb-preview" class="p-3 rounded-xl border text-sm flex items-center gap-2" style="border-color: color-mix(in srgb, var(--success) 35%, transparent); background: var(--success-bg); color: var(--success);">${icon('banknote', 'w-4 h-4')} THB: --</div>
+            <div id="${p}thb-preview" class="p-3 rounded-xl border text-sm flex items-center gap-2" style="border-color: var(--border); background: var(--bg-secondary);">${icon('banknote', 'w-4 h-4')} THB: --</div>
           </div>
         </section>
 
         <!-- 3) คนจ่ายและการแบ่ง -->
         <section class="form-section">
           <div class="form-section-head">
-            <span class="form-section-icon">${icon('users', 'w-4 h-4')}</span>
             <h3>${tx('คนจ่ายและการแบ่งจ่าย', 'Payer & split')}</h3>
           </div>
           <div class="space-y-4">
@@ -7636,7 +7633,6 @@ function expenseFormSectionsHtml({
         <!-- 4) ข้อมูลเพิ่มเติม -->
         <section class="form-section">
           <div class="form-section-head">
-            <span class="form-section-icon">${icon('info', 'w-4 h-4')}</span>
             <h3>${tx('หลักฐานและข้อมูลเพิ่มเติม (ไม่บังคับ)', 'Receipt & extra details (optional)')}</h3>
           </div>
           <div class="space-y-3">
@@ -8192,7 +8188,8 @@ function mountExpenseForm({
     }
     const payments = readPayments(v);
     const diff = v.netMinor - payments.reduce((n, p) => n + p.amountMinor, 0);
-    hint.className = validatePayments(v.netMinor, payments) ? 'input-hint' : 'split-warning';
+    // Nothing to reconcile until there is a bill: an empty form is not an error.
+    hint.className = (v.netMinor <= 0 || validatePayments(v.netMinor, payments)) ? 'input-hint' : 'split-warning';
     hint.textContent = `${tx('ยอดผู้จ่ายรวม','Total paid')} ${fmt(v.netMinor - diff)} / ${fmt(v.netMinor)}` + (diff ? ` • ${tx('ยอดยังไม่ตรง ส่วนต่าง','Mismatch, difference')} ${fmt(Math.abs(diff))}` : ` • ${tx('ตรงกับยอดบิล','matches the bill')}`);
   }
 
@@ -8417,7 +8414,7 @@ async function renderExpenseAdd(params) {
       <form id="expense-form" class="expense-form card card-accent p-6">
         ${expenseFormSectionsHtml({ prefix: '', e, members, items, trip, lang, currency, expenseRates })}
         <div class="flex gap-3 form-submit-row">
-          ${isEdit ? `<button type="button" id="ex-delete" class="btn" style="background:var(--danger-bg);color:var(--danger);border:1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
+          ${isEdit ? `<button type="button" id="ex-delete" class="btn btn-danger-quiet">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
           <button type="button" id="cancel-expense" class="btn btn-secondary flex-1">${t('cancel')}</button>
           <button type="submit" id="submit-expense" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${t('save')}</button>
         </div>
@@ -8576,7 +8573,7 @@ async function openExpenseSheet({
   const sheet = showBottomSheet(`
     <div class="space-y-4">
       <div class="flex items-start gap-3">
-        <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--surface-2);color:var(--text-secondary);">${icon('receipt', 'w-5 h-5')}</div>
+        <div class="row-icon">${icon('receipt', 'w-5 h-5')}</div>
         <div class="min-w-0 flex-1">
           <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${editing ? th('แก้ไขค่าใช้จ่าย','Edit expense') : (item ? th('เพิ่มค่าใช้จ่ายให้สถานที่นี้','Add a cost to this place') : th('เพิ่มค่าใช้จ่าย','Add expense'))}</h3>
           <p class="text-xs text-[var(--text-secondary)] flex items-center gap-1 flex-wrap">
@@ -8590,7 +8587,7 @@ async function openExpenseSheet({
         ${expenseFormSectionsHtml({ prefix: 'sh-', e, members, items, trip, lang, currency: e.currency || baseCurrency, expenseRates: rates, lockItinerary, planLabel: item?.title || '' })}
         <div class="btn-row form-submit-row">
           ${editing && item ? `<button type="button" id="sh-open-page" class="btn btn-ghost btn-sm">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดหน้าเต็ม','Open full page')}</button>` : ''}
-          ${editing && allowDelete ? `<button type="button" id="sh-delete" class="btn" title="${t('delete')}" style="background:var(--danger-bg);color:var(--danger);border:1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
+          ${editing && allowDelete ? `<button type="button" id="sh-delete" class="btn btn-danger-quiet" title="${t('delete')}">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
           <button type="button" id="sh-cancel" class="btn btn-secondary flex-1">${t('cancel')}</button>
           <button type="submit" id="sh-save" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${t('save')}</button>
         </div>
@@ -8936,7 +8933,7 @@ async function renderSettlement(params) {
     const isMe = m.memberId === currentUser.uid;
     return `${withAvatar ? `<div class="avatar" style="width:34px;height:34px;background:${escapeHtml(m.color || 'var(--primary)')};font-size:12px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</div>` : ''}
       <div class="min-w-0">
-        <div class="font-semibold text-sm truncate">${escapeHtml(m.displayName)} ${isMe ? `<span class="text-xs px-2 py-0.5 rounded-full text-white" style="background:var(--gradient-primary);">${th('คุณ','you')}</span>` : ''}</div>
+        <div class="font-semibold text-sm truncate">${escapeHtml(m.displayName)} ${isMe ? `<span class="badge badge-planned text-xs">${th('คุณ','you')}</span>` : ''}</div>
         <div class="text-xs text-[var(--text-tertiary)]">${th('จ่ายจริง','paid')} ${m.paidCount} • ${th('ร่วมหาร','shares')} ${m.shareCount}</div>
       </div>`;
   }
@@ -8989,7 +8986,7 @@ async function renderSettlement(params) {
       const m = state.membersMap[id] || {};
       return `<button type="button" class="settle-answer-row ${direction} no-export" data-settle-person="${escapeHtml(id)}">
         <span class="settle-answer-dir">${icon(direction === 'out' ? 'arrow-up-right' : 'arrow-down-left', 'w-3.5 h-3.5')}</span>
-        ${showNames ? `<span class="avatar" style="width:22px;height:22px;font-size:11px;background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName || '?'))}</span>` : ''}
+        ${showNames ? `<span class="avatar" style="width:24px;height:24px;font-size:12px;background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName || '?'))}</span>` : ''}
         <span class="settle-answer-who">${direction === 'out' ? th('จ่ายให้','Pay') : th('รับจาก','Receive from')} ${escapeHtml(m.displayName || '')}</span>
         <b class="settle-answer-amount">${direction === 'out' ? '−' : '+'}${money(amountMinor)}</b>
         ${icon('chevron-right', 'w-3 h-3')}
@@ -9967,7 +9964,7 @@ async function renderSettlement(params) {
       <div class="card p-5 debt-map-card">
         <div class="flex items-start justify-between gap-2 mb-3 flex-wrap">
           <h3 class="font-semibold flex items-center gap-2">
-            <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('network', 'w-4 h-4')}</span>
+            <span class="row-icon">${icon('network', 'w-4 h-4')}</span>
             ${th('แผนที่หนี้ — เส้นเดียวต่อการโอนหนึ่งครั้ง', 'Debt map — one line per transfer')}
             <span class="badge badge-planned text-xs">${txns.length} ${th('รายการ', 'transfers')}</span>
           </h3>
@@ -10193,7 +10190,7 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
   const sheet = showBottomSheet(`
     <div class="space-y-4">
       <div class="flex items-center gap-3">
-        <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--surface-2);color:var(--text-secondary);">${icon('layout-grid', 'w-5 h-5')}</div>
+        <div class="row-icon">${icon('layout-grid', 'w-5 h-5')}</div>
         <div>
           <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${th('จัดการกลุ่มค่าใช้จ่าย','Expense groups')}</h3>
           <p class="text-xs text-[var(--text-tertiary)]">${th('เพิ่ม/แก้ไข/ลบกลุ่มของทริปนี้ได้','Add, edit or delete groups for this trip')}</p>
@@ -10226,7 +10223,7 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
     }
     box.innerHTML = rows.map(c => `
       <div class="diag-row" data-cat-row="${escapeHtml(c.id)}">
-        <span class="row-icon" style="width:32px;height:32px;border-radius:10px;background:${escapeHtml(c.color || 'var(--primary)')}22;color:${escapeHtml(c.color || 'var(--primary)')};">
+        <span class="row-icon">
           ${icon(c.icon || 'package', 'w-4 h-4')}
         </span>
         <div class="min-w-0 flex-1">
@@ -10308,7 +10305,7 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
       const labelEn = editor.sheet.querySelector('#cat-en')?.value || existing?.en || '';
       if (!box) return;
       box.innerHTML = `
-        <span class="row-icon" style="width:32px;height:32px;border-radius:10px;background:${pick.color}22;color:${pick.color};">${icon(pick.icon, 'w-4 h-4')}</span>
+        <span class="row-icon">${icon(pick.icon, 'w-4 h-4')}</span>
         <div class="min-w-0"><div class="font-semibold text-xs">${escapeHtml(lang === 'th' ? labelTh : labelEn)}</div>
         <div class="text-xs text-[var(--text-tertiary)]">${th('ตัวอย่างป้ายในรายการ','Preview in lists')}</div></div>`;
       queueIcons();
@@ -10374,7 +10371,7 @@ function openCardManager(tripId, { members = [], onSaved = null } = {}) {
   const sheet = showBottomSheet(`
     <div class="space-y-4">
       <div class="flex items-center gap-3">
-        <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--surface-2);color:var(--text-secondary);">${icon('credit-card', 'w-5 h-5')}</div>
+        <div class="row-icon">${icon('credit-card', 'w-5 h-5')}</div>
         <div class="min-w-0">
           <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('บัตรเครดิตของทริป', 'Trip credit cards')}</h3>
           <p class="text-xs text-[var(--text-secondary)]">${th('เพิ่ม / แก้ไข / ลบ — ฟอร์มค่าใช้จ่ายจะเลือกได้จากบัตรที่ตั้งไว้เท่านั้น', 'Add / edit / delete — expense forms can only pick from these cards')}</p>
@@ -10419,7 +10416,7 @@ function openCardManager(tripId, { members = [], onSaved = null } = {}) {
     }
     list.innerHTML = cards.map(c => `
       <div class="card-row" data-card="${escapeHtml(c.id)}">
-        <span class="row-icon" style="width:34px;height:34px;border-radius:11px;background:var(--primary-light);color:var(--primary-strong);flex-shrink:0;">${icon('credit-card', 'w-4 h-4')}</span>
+        <span class="row-icon">${icon('credit-card', 'w-4 h-4')}</span>
         <div class="min-w-0 flex-1">
           <div class="text-sm font-semibold truncate">${escapeHtml(tripCardLabel(c))}</div>
           <div class="text-xs text-[var(--text-tertiary)] truncate">${escapeHtml([c.bank, holderName(c.holderId || c.id) ? th('เจ้าของ', 'holder') + ': ' + holderName(c.holderId || c.id) : ''].filter(Boolean).join(' • ') || th('ไม่ระบุเจ้าของ', 'no holder'))}</div>
@@ -10522,7 +10519,7 @@ function openMemberForm(tripId, member = null, { onSaved, canSetRoles = true } =
   const sheet = showBottomSheet(`
     <div class="space-y-3">
       <div class="flex items-center gap-3">
-        <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--surface-2);color:var(--text-secondary);">${icon(isEdit ? 'user-cog' : 'user-plus', 'w-5 h-5')}</div>
+        <div class="row-icon">${icon(isEdit ? 'user-cog' : 'user-plus', 'w-5 h-5')}</div>
         <div class="min-w-0">
           <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขสมาชิก','Edit member') : th('เพิ่มสมาชิก','Add member')}</h3>
           <p class="text-xs text-[var(--text-secondary)]">${isEdit ? escapeHtml(m.displayName || '') : th('กรอกชื่อ แล้วให้สมาชิกเข้าสู่ระบบด้วยบัญชี Google/อีเมลของตัวเอง','Add a name — the member signs in with their own Google/email account')}</p>
@@ -10560,7 +10557,7 @@ function openMemberForm(tripId, member = null, { onSaved, canSetRoles = true } =
         </div>
         <div class="flex gap-2">
           <button type="submit" id="m-submit" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${isEdit ? t('save') : t('add')}</button>
-          ${isEdit ? `<button type="button" id="m-delete" class="btn" style="background:var(--danger-bg);color:var(--danger);border:1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
+          ${isEdit ? `<button type="button" id="m-delete" class="btn btn-danger-quiet">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
         </div>
         ${isEdit ? `
           <div class="p-3 rounded-xl text-xs flex items-start gap-2" style="background:var(--bg-secondary); border:1px solid var(--border);">
@@ -11050,7 +11047,7 @@ async function renderMembers(params) {
     const sheet = showBottomSheet(`
       <div class="space-y-4">
         <div class="flex items-center gap-3">
-          <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--surface-2);color:var(--text-secondary);">${icon('users-round', 'w-5 h-5')}</div>
+          <div class="row-icon">${icon('users-round', 'w-5 h-5')}</div>
           <div>
             <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขกลุ่มย่อย','Edit sub-group') : th('เพิ่มกลุ่มย่อย','New sub-group')}</h3>
             <p class="text-xs text-[var(--text-tertiary)]">${th('ตั้งชื่อกลุ่ม แล้วเลือกสมาชิก (เลือกซ้ำได้หลายกลุ่ม)','Name the group, then pick its members (one person can be in several groups).')}</p>
@@ -11207,7 +11204,7 @@ async function renderDocuments(params) {
       return `
       <div class="card card-hover p-4" data-doc="${doc.id}">
         <div class="flex gap-3">
-          <div class="row-icon" style="width:46px;height:46px;border-radius:14px;">${icon(DOC_ICONS[doc.category] || 'file-text', 'w-5 h-5')}</div>
+          <div class="row-icon">${icon(DOC_ICONS[doc.category] || 'file-text', 'w-5 h-5')}</div>
           <div class="flex-1 min-w-0">
             <div class="flex items-start justify-between gap-2">
               <h3 class="font-semibold text-sm truncate">${escapeHtml(doc.title)}</h3>
@@ -11279,7 +11276,7 @@ async function renderDocuments(params) {
     const sheet = showBottomSheet(`
       <div class="space-y-3">
         <div class="flex items-center gap-3">
-          <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--surface-2);color:var(--text-secondary);">${icon(isEdit ? 'pencil' : 'folder-plus', 'w-5 h-5')}</div>
+          <div class="row-icon">${icon(isEdit ? 'pencil' : 'folder-plus', 'w-5 h-5')}</div>
           <div>
             <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${isEdit ? th('แก้ไขเอกสาร','Edit document') : th('เพิ่มเอกสาร','Add document')}</h3>
             <p class="text-xs text-[var(--text-secondary)]">${th('พาสปอร์ต ตั๋ว โรงแรม ประกัน และอื่นๆ','Passport, tickets, hotel, insurance & more')}</p>
@@ -11302,7 +11299,7 @@ async function renderDocuments(params) {
           </div>
           <div class="flex gap-2">
             <button type="submit" id="doc-submit" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${t('save')}</button>
-            ${isEdit ? `<button type="button" id="doc-delete" class="btn" style="background:var(--danger-bg);color:var(--danger);border:1.5px solid color-mix(in srgb, var(--danger) 35%, transparent);">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
+            ${isEdit ? `<button type="button" id="doc-delete" class="btn btn-danger-quiet">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
           </div>
         </form>
       </div>
@@ -11381,7 +11378,7 @@ async function renderImportExport(params) {
       </div>
 
       ${!isAdmin ? `
-        <div class="card p-4 text-xs flex items-start gap-2" style="background: var(--warning-bg); border-color: color-mix(in srgb, var(--warning) 35%, transparent);">
+        <div class="card notice p-4 text-xs flex items-start gap-2">
           ${icon('info', 'w-4 h-4')}
           <span>${th('การส่งออก/นำเข้า Excel (เทมเพลตและข้อมูล) เปิดให้เฉพาะผู้ดูแลทริปเท่านั้น — สมาชิกยังส่งออก PNG ได้ตามปกติ','Excel template export/import is available to trip admins only. Members can still export PNG.')}</span>
         </div>` : ''}
@@ -11403,13 +11400,13 @@ async function renderImportExport(params) {
             <p class="text-sm font-semibold flex items-center gap-2">${icon('map-pinned', 'w-4 h-4')} ${th('แผนการเดินทาง','Itinerary')}</p>
             <p class="text-xs text-[var(--text-secondary)] mt-1 mb-2">Excel / CSV / JSON ${th('พร้อมสร้างค่าใช้จ่ายประมาณการอัตโนมัติ','with optional auto-created estimated expenses')}</p>
             <input id="import-itinerary-file" type="file" accept=".xlsx,.xls,.csv,.json" class="input text-xs mb-2" ${isAdmin ? '' : 'disabled'}>
-            <button id="import-itinerary-btn" class="btn btn-primary btn-sm w-full" disabled>${icon('upload', 'w-4 h-4')} ${th('นำเข้าแผน','Import itinerary')}</button>
+            <button id="import-itinerary-btn" class="btn btn-secondary btn-sm w-full" disabled>${icon('upload', 'w-4 h-4')} ${th('นำเข้าแผน','Import itinerary')}</button>
           </div>
           <div class="p-3 rounded-xl" style="background:var(--bg-secondary); border:1px solid var(--border);">
             <p class="text-sm font-semibold flex items-center gap-2">${icon('wallet', 'w-4 h-4')} ${th('ค่าใช้จ่าย','Expenses')}</p>
             <p class="text-xs text-[var(--text-secondary)] mt-1 mb-2">${th('รวมผู้จ่าย ผู้ร่วมหาร และหมวดหมู่','with payer, participants and categories')}</p>
             <input id="import-expenses-file" type="file" accept=".xlsx,.xls,.csv,.json" class="input text-xs mb-2" ${isAdmin ? '' : 'disabled'}>
-            <button id="import-expenses-btn" class="btn btn-primary btn-sm w-full" disabled>${icon('upload', 'w-4 h-4')} ${th('นำเข้าค่าใช้จ่าย','Import expenses')}</button>
+            <button id="import-expenses-btn" class="btn btn-secondary btn-sm w-full" disabled>${icon('upload', 'w-4 h-4')} ${th('นำเข้าค่าใช้จ่าย','Import expenses')}</button>
           </div>
         </div>
         <div id="import-preview" class="text-sm"></div>
@@ -11887,7 +11884,7 @@ async function renderSettings(params) {
         </div>
         <div class="grid grid-cols-2 gap-2">
           <button id="account-cache" class="btn btn-ghost btn-sm">${icon('eraser', 'w-3.5 h-3.5')} ${th('ล้างแคชอุปกรณ์','Clear device cache')}</button>
-          <button id="account-logout" class="btn btn-sm" style="background:var(--danger-bg);color:var(--danger);border:1.5px solid color-mix(in srgb, var(--danger) 32%, transparent);">${icon('log-out', 'w-3.5 h-3.5')} ${t('logout')}</button>
+          <button id="account-logout" class="btn btn-sm btn-danger-quiet">${icon('log-out', 'w-3.5 h-3.5')} ${t('logout')}</button>
         </div>
         <p class="text-xs text-[var(--text-tertiary)] font-mono">${escapeHtml(currentUser?.uid?.slice(0, 12) || '')}</p>
       </div>
@@ -11926,12 +11923,12 @@ async function renderSettings(params) {
 
       ${notificationSettingsCardsHtml({ lang, perms, tripSettings: notifyState.tripSettings, prefs: readNotifyPrefs() })}
 
-      <div class="card p-5 space-y-3" style="border-color: color-mix(in srgb, var(--danger) 35%, var(--border));" data-settings-section="advanced">
-        <h3 class="font-semibold flex items-center gap-2" style="color:var(--danger);">${th('เขตอันตราย','Danger zone')}</h3>
+      <div class="card p-5 space-y-3 danger-zone" data-settings-section="advanced">
+        <h3 class="font-semibold flex items-center gap-2">${th('เขตอันตราย','Danger zone')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('ลบทริปจะลบแผนการเดินทาง ค่าใช้จ่าย สมาชิก และเอกสารทั้งหมดอย่างถาวร','Deleting a trip removes its itinerary, expenses, members and documents permanently.')}</p>
         <div class="btn-row">
           <button id="dup-trip" class="btn btn-secondary btn-sm">${icon('copy', 'w-4 h-4')} ${th('ทำสำเนาทริป','Duplicate trip')}</button>
-          <button id="del-trip" class="btn btn-sm" style="background:var(--danger);color:#fff;">${icon('trash-2', 'w-4 h-4')} ${th('ลบทริปนี้','Delete this trip')}</button>
+          <button id="del-trip" class="btn btn-sm btn-danger-quiet">${icon('trash-2', 'w-4 h-4')} ${th('ลบทริปนี้','Delete this trip')}</button>
         </div>
         <p class="text-xs text-[var(--text-tertiary)] font-mono">Trip ID: ${escapeHtml(tripId)}</p>
       </div>
@@ -12418,9 +12415,7 @@ async function renderSettings(params) {
     const box = document.getElementById('settings-cat-list');
     if (!box) return;
     box.innerHTML = getAllExpenseCategories().map(c => `
-      <span class="chip text-xs" style="background:${escapeHtml(c.color || 'var(--primary)')}22; border-color:${escapeHtml(c.color || 'var(--primary)')};">
-        ${icon(c.icon || 'package', 'w-3 h-3')} ${escapeHtml(lang === 'th' ? (c.th || c.en) : (c.en || c.th))}
-      </span>`).join('');
+      <span class="chip text-xs"><span class="cat-dot" style="--dot:${escapeHtml(c.color || 'var(--text-tertiary)')};" aria-hidden="true"></span> ${escapeHtml(lang === 'th' ? (c.th || c.en) : (c.en || c.th))}</span>`).join('');
     queueIcons();
   })();
   bind('settings-manage-cats', 'click', () => openCategoryManager(tripId, {
@@ -12433,8 +12428,7 @@ async function renderSettings(params) {
     if (!box) return;
     const cards = tripCards(currentTrip);
     box.innerHTML = cards.length ? cards.map(c => `
-      <span class="chip text-xs" style="background:var(--primary-light); border-color:color-mix(in srgb, var(--primary-raw) 35%, transparent);">
-        ${icon('credit-card', 'w-3 h-3')} ${escapeHtml(tripCardLabel(c))}</span>`).join('')
+      <span class="chip text-xs">${escapeHtml(tripCardLabel(c))}</span>`).join('')
       : `<span class="text-xs text-[var(--text-tertiary)]">${th('ยังไม่มีบัตร — กด “จัดการบัตรเครดิต” เพื่อเพิ่ม','No cards yet — tap “Manage cards” to add the first one')}</span>`;
     queueIcons();
   }
@@ -12732,7 +12726,7 @@ async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
     const tip = weatherTip(days, lang);
     el.innerHTML = `
       <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
-        <h3 class="font-semibold flex items-center gap-2"><span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);">${icon('cloud-sun', 'w-4 h-4')}</span> ${t('weather')}</h3>
+        <h3 class="font-semibold flex items-center gap-2"><span class="row-icon">${icon('cloud-sun', 'w-4 h-4')}</span> ${t('weather')}</h3>
         <button class="btn btn-ghost btn-sm text-xs" data-wx="manage" style="min-height:28px;padding:2px 8px;">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการเมือง', 'Cities')}</button>
       </div>
       ${cities.length > 1 ? `<div class="chip-row chip-row-scroll mb-2">${cities.map((c, k) => `
@@ -12784,7 +12778,7 @@ async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
     const sheet = showBottomSheet(`
       <div class="space-y-3">
         <div class="flex items-start gap-3">
-          <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--surface-2);color:var(--text-secondary);flex-shrink:0;">${icon('cloud-sun', 'w-5 h-5')}</div>
+          <div class="row-icon">${icon('cloud-sun', 'w-5 h-5')}</div>
           <div class="min-w-0">
             <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('เมืองที่ติดตาม', 'Tracked cities')}</h3>
             <p class="text-xs text-[var(--text-secondary)] mt-0.5">${th(`สูงสุด ${WX_MAX_CITIES} เมือง`, `Up to ${WX_MAX_CITIES} cities`)}</p>
@@ -12807,7 +12801,7 @@ async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
       if (!listEl) return;
       listEl.innerHTML = cities.length ? cities.map((c, k) => `
         <div class="dash-pop-row" style="cursor:default;">
-          <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--primary-light);color:var(--primary-strong);">${icon('map-pin', 'w-3.5 h-3.5')}</span>
+          <span class="row-icon">${icon('map-pin', 'w-3.5 h-3.5')}</span>
           <span class="min-w-0 flex-1 text-left">
             <span class="block text-xs font-semibold truncate">${escapeHtml(c.name || '?')}${k === activeIdx ? ` <span class="text-xs font-semibold" style="color:var(--primary-strong);">• ${th('กำลังดู', 'viewing')}</span>` : ''}</span>
             <span class="block text-xs text-[var(--text-tertiary)] truncate">${escapeHtml([c.admin, c.country].filter(Boolean).join(', ')) || `${Number(c.lat)?.toFixed?.(2) ?? ''} ${Number(c.lon)?.toFixed?.(2) ?? ''}`}</span>
@@ -12843,7 +12837,7 @@ async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
         if (my !== seq || !resultsEl?.isConnected) return;
         resultsEl.innerHTML = hits.length ? hits.map((h, k) => `
           <button class="dash-pop-row w-full" data-wx-hit="${k}">
-            <span class="row-icon" style="width:30px;height:30px;border-radius:10px;background:var(--bg-secondary);color:var(--text-secondary);">${icon('map-pin', 'w-3.5 h-3.5')}</span>
+            <span class="row-icon">${icon('map-pin', 'w-3.5 h-3.5')}</span>
             <span class="min-w-0 flex-1 text-left">
               <span class="block text-xs font-semibold truncate">${escapeHtml(h.name || '')}</span>
               <span class="block text-xs text-[var(--text-tertiary)] truncate">${escapeHtml([h.admin, h.country].filter(Boolean).join(', '))}</span>
@@ -12954,7 +12948,7 @@ function copyFallbackSheet(text, label = '') {
   const sheet = showBottomSheet(`
     <div class="space-y-3">
       <div class="flex items-start gap-3">
-        <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);">${icon('clipboard-copy', 'w-5 h-5')}</div>
+        <div class="row-icon">${icon('clipboard-copy', 'w-5 h-5')}</div>
         <div class="min-w-0">
           <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('คัดลอกอัตโนมัติไม่ได้','Automatic copy is blocked')}</h3>
           <p class="text-xs text-[var(--text-secondary)] mt-0.5">${th('เลือกข้อความด้านล่างแล้วกด “คัดลอก” อีกครั้งได้เลย','The text below is already selected — copy it from the menu')}</p>
@@ -12973,9 +12967,9 @@ function copyFallbackSheet(text, label = '') {
 }
 
 /** Small progress bar used by the prep page + dashboard widget. */
-function toolProgressHtml(percent = 0, { tone = 'blue' } = {}) {
+function toolProgressHtml(percent = 0) {
   const p = Math.max(0, Math.min(100, Math.round(percent)));
-  const bg = tone === 'yellow' ? 'var(--gradient-sun)' : 'var(--gradient-primary)';
+  const bg = 'var(--primary)';   // one accent for every progress bar (v35 round 4)
   return `<div class="tool-progress" role="progressbar" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100">
     <span style="width:${p}%; background:${bg};"></span>
   </div>`;
@@ -12988,7 +12982,7 @@ function openAddToPlanSheet({ trip, title, subtitle, defaultDate, defaultTime, c
   const sheet = showBottomSheet(`
     <div class="space-y-4">
       <div class="flex items-start gap-3">
-        <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--surface-2);color:var(--text-secondary);">${icon('calendar-plus', 'w-5 h-5')}</div>
+        <div class="row-icon">${icon('calendar-plus', 'w-5 h-5')}</div>
         <div class="min-w-0">
           <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${t('addToPlan')}</h3>
           <p class="text-xs text-[var(--text-secondary)] mt-0.5">${escapeHtml(title || '')}</p>
@@ -13053,13 +13047,13 @@ async function renderPrep(params) {
           subtitle: th('เช็กลิสต์ของที่ต้องเตรียมและสิ่งที่ต้องทำ — ติ๊กได้ ทุกคนเห็นตรงกัน','Packing + to-do checklists — tick as you go, everyone sees the same list')
         })}
         <div class="btn-row">
-          <button id="prep-template-btn" class="btn btn-secondary btn-sm">${icon('sparkles', 'w-4 h-4')} ${t('templates')}</button>
+          <button id="prep-template-btn" class="btn btn-secondary btn-sm">${icon('list-plus', 'w-4 h-4')} ${t('templates')}</button>
           <button id="prep-add-btn" class="btn btn-primary btn-sm">${icon('plus', 'w-4 h-4')} ${t('checklists')}</button>
         </div>
       </div>
 
       <div class="card card-accent p-5" id="prep-progress"></div>
-      ${loadError ? `<div class="card p-4 text-xs" style="background:var(--warning-bg); border-color:color-mix(in srgb, var(--warning) 35%, transparent);">${icon('info', 'w-4 h-4')} ${escapeHtml(loadError)}</div>` : ''}
+      ${loadError ? `<div class="card notice p-4 text-xs">${icon('info', 'w-4 h-4')} ${escapeHtml(loadError)}</div>` : ''}
       <div id="prep-lists" class="space-y-4 stagger"></div>
     </div>
   `;
@@ -13077,7 +13071,7 @@ async function renderPrep(params) {
         </div>
         <div class="flex items-center gap-2">
           <span class="badge badge-planned text-xs">${p.lists} ${t('checklists')}</span>
-          <span class="brand-ribbon">${icon('sparkles', 'w-3 h-3')} ${p.remaining} ${th('เหลือ','left')}</span>
+          <span class="badge badge-planned text-xs">${th('เหลือ','left')} ${p.remaining}</span>
         </div>
       </div>
       <div class="mt-3">${toolProgressHtml(p.percent)}</div>
@@ -13093,7 +13087,7 @@ async function renderPrep(params) {
         icon: 'clipboard-check',
         title: th('ยังไม่มีเช็กลิสต์','No checklists yet'),
         desc: th('เริ่มจากเทมเพลตสำเร็จรูป (ทะเล หน้าหนาว งานก่อนเดินทาง ฯลฯ) แล้วปรับได้ตามใจ','Start from a ready template (beach, winter, before-you-go …) and edit it freely'),
-        actionHtml: `<button id="prep-empty-template" class="btn btn-secondary btn-sm mt-2">${icon('sparkles', 'w-4 h-4')} ${t('useTemplate')}</button>`
+        actionHtml: `<button id="prep-empty-template" class="btn btn-secondary btn-sm mt-2">${icon('list-plus', 'w-4 h-4')} ${t('useTemplate')}</button>`
       });
       bind('prep-empty-template', 'click', () => openTemplateSheet());
       queueIcons();
@@ -13106,20 +13100,20 @@ async function renderPrep(params) {
       <div class="card p-4" data-list="${list.id}">
         <div class="flex items-start justify-between gap-2 flex-wrap">
           <div class="flex items-center gap-2 min-w-0">
-            <span class="row-icon" style="width:36px;height:36px;border-radius:12px;background:${escapeHtml(list.color || brandPrimary())}1f;color:${escapeHtml(list.color || brandPrimary())};">${icon(list.icon || (list.kind === 'todo' ? 'list-checks' : 'luggage'), 'w-4 h-4')}</span>
+            <span class="row-icon">${icon(list.icon || (list.kind === 'todo' ? 'list-checks' : 'luggage'), 'w-4 h-4')}</span>
             <div class="min-w-0">
               <h3 class="font-semibold text-sm truncate">${escapeHtml(list.title || '')}</h3>
               <p class="text-xs text-[var(--text-secondary)]">${p.done}/${p.total} • ${list.kind === 'todo' ? t('todo') : t('packing')}</p>
             </div>
           </div>
           <div class="flex items-center gap-1">
-            <button class="icon-btn" data-act="template" data-id="${list.id}" title="${t('templates')}">${icon('sparkles', 'w-3.5 h-3.5')}</button>
+            <button class="icon-btn" data-act="template" data-id="${list.id}" title="${t('templates')}">${icon('list-plus', 'w-3.5 h-3.5')}</button>
             <button class="icon-btn" data-act="reset" data-id="${list.id}" title="${t('resetChecks')}">${icon('rotate-ccw', 'w-3.5 h-3.5')}</button>
             <button class="icon-btn" data-act="rename" data-id="${list.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
             <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${list.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
           </div>
         </div>
-        <div class="mt-3">${toolProgressHtml(p.percent, { tone: list.kind === 'todo' ? 'yellow' : 'blue' })}</div>
+        <div class="mt-3">${toolProgressHtml(p.percent)}</div>
         <ul class="check-list mt-3">
           ${items.map(item => `
             <li class="check-item ${item.done ? 'is-done' : ''}" data-item="${escapeHtml(item.id)}">
@@ -13253,7 +13247,7 @@ async function renderPrep(params) {
     const sheet = showBottomSheet(`
       <div class="space-y-3">
         <div class="flex items-center gap-3">
-          <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--gradient-sun);color:var(--on-accent);">${icon('sparkles', 'w-5 h-5')}</div>
+          <div class="row-icon">${icon('list-plus', 'w-5 h-5')}</div>
           <div>
             <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${t('templates')}</h3>
             <p class="text-xs text-[var(--text-secondary)]">${list ? th(`เพิ่มรายการจากเทมเพลตเข้า “${list.title}”`, `Add template items into “${list.title}”`) : th('เลือกเทมเพลตเพื่อสร้างเช็กลิสต์ใหม่','Pick a template to create a new checklist')}</p>
@@ -13262,7 +13256,7 @@ async function renderPrep(params) {
         <div class="space-y-2" id="tpl-list">
           ${CHECKLIST_TEMPLATES.map(tpl => `
             <button class="card card-hover p-3 w-full text-left flex items-center gap-3" data-tpl="${tpl.id}" style="cursor:pointer;">
-              <span class="row-icon" style="width:36px;height:36px;border-radius:12px;background:${tpl.color}1f;color:${tpl.color};">${icon(tpl.icon, 'w-4 h-4')}</span>
+              <span class="row-icon">${icon(tpl.icon, 'w-4 h-4')}</span>
               <span class="flex-1 min-w-0">
                 <span class="block font-semibold text-sm truncate">${escapeHtml(lang === 'th' ? tpl.th : tpl.en)}</span>
                 <span class="block text-xs text-[var(--text-secondary)]">${tpl.items.length} ${t('items')} • ${tpl.kind === 'todo' ? t('todo') : t('packing')}</span>
@@ -13379,7 +13373,7 @@ async function renderIdeas(params) {
 
       <div class="flex items-center justify-between gap-2 flex-wrap">
         <div class="chip-row" id="idea-filters">
-          <button class="chip chip-active" data-filter="open">${icon('sparkles', 'w-3.5 h-3.5')} ${th('ยังไม่อยู่ในแผน','Not planned')}</button>
+          <button class="chip chip-active" data-filter="open">${icon('circle-dashed', 'w-3.5 h-3.5')} ${th('ยังไม่อยู่ในแผน','Not planned')}</button>
           <button class="chip" data-filter="planned">${icon('calendar-check', 'w-3.5 h-3.5')} ${t('inPlan')}</button>
           <button class="chip" data-filter="all">${icon('layers', 'w-3.5 h-3.5')} ${t('all')}</button>
         </div>
@@ -13398,7 +13392,7 @@ async function renderIdeas(params) {
         <button class="chip ${ideaDensity === 'compact' ? 'chip-active' : ''}" id="idea-density" type="button">${icon('rows-3', 'w-3.5 h-3.5')} <span data-density-text>${ideaDensity === 'compact' ? th('ขนาดปกติ','Comfortable') : th('กระทัดรัด','Compact')}</span></button>
       </div>
 
-      ${loadError ? `<div class="card p-4 text-xs" style="background:var(--warning-bg); border-color:color-mix(in srgb, var(--warning) 35%, transparent);">${icon('info', 'w-4 h-4')} ${escapeHtml(loadError)}</div>` : ''}
+      ${loadError ? `<div class="card notice p-4 text-xs">${icon('info', 'w-4 h-4')} ${escapeHtml(loadError)}</div>` : ''}
       <div id="idea-pending-slot"></div>
       <div class="card p-3" id="ideas-map-card">
         <div class="flex items-center justify-between gap-2 px-1 pb-2 flex-wrap">
@@ -13418,7 +13412,7 @@ async function renderIdeas(params) {
           <div id="ideas-map" class="map-frame w-full" style="height:min(38vh, 320px);"></div>
           <div id="ideas-map-status" class="map-status"><span class="skeleton" style="width:26px;height:26px;border-radius:50%;"></span> <span>${th('กำลังโหลดแผนที่...','Loading map...')}</span></div>
           <div id="ideas-map-empty" class="map-status hidden"><div class="text-center px-4">
-            <div class="row-icon mx-auto mb-2" style="width:40px;height:40px;">${icon('map-pin', 'w-5 h-5')}</div>
+            <div class="row-icon mx-auto mb-2">${icon('map-pin', 'w-5 h-5')}</div>
             <p class="text-xs text-[var(--text-secondary)]">${th('ใส่พิกัด (lat,lng) ให้ไอเดีย เพื่อให้แสดงหมุดบนแผนที่','Add coordinates (lat,lng) to an idea to see it here')}</p>
           </div></div>
         </div>
@@ -13440,9 +13434,9 @@ async function renderIdeas(params) {
     pendingCount = listPendingIdeas(tripId).length;
     if (!pendingCount) { slot.innerHTML = ''; return; }
     slot.innerHTML = `
-      <div class="card p-4" id="idea-pending-banner" style="background:var(--warning-bg); border-color:color-mix(in srgb, var(--warning) 42%, transparent);">
+      <div class="card notice p-4" id="idea-pending-banner">
         <div class="flex items-start gap-3 flex-wrap">
-          <span class="row-icon" style="width:38px;height:38px;border-radius:13px;background:color-mix(in srgb, var(--warning) 20%, #fff);color:var(--warning);flex-shrink:0;">${icon('cloud-off', 'w-4 h-4')}</span>
+          <span class="row-icon">${icon('cloud-off', 'w-4 h-4')}</span>
           <div class="flex-1 min-w-[180px]">
             <p class="text-sm font-semibold">${th(`บันทึกไว้ในเครื่องแล้ว ${pendingCount} ไอเดีย — ยังไม่ขึ้นคลาวด์`, `${pendingCount} idea(s) saved on this device — not on the cloud yet`)}</p>
             <p class="text-xs mt-0.5 text-[var(--text-secondary)]">${th('Firestore ปฏิเสธการเขียน (กฎที่เผยแพร่อยู่เก่ากว่าโค้ด) — ข้อความไม่หาย ระบบจะซิงก์ให้อัตโนมัติเมื่อกฎถูกอัปเดต','Firestore denied the write (the published rules are older than the app) — nothing is lost, it syncs automatically once the rules are updated.')}</p>
@@ -13486,18 +13480,16 @@ async function renderIdeas(params) {
     const topVotes = sortIdeas(open, 'votes')[0];
     const budget = ideasBudget(open);
     const tiles = [
-      { icon: 'lightbulb', label: th('ไอเดียทั้งหมด','Ideas'), value: ideas.length, tone: 'blue' },
-      { icon: 'sparkles', label: th('รอตัดสินใจ','Shortlist'), value: open.length, tone: 'yellow' },
-      { icon: 'calendar-check', label: t('inPlan'), value: planned.length, tone: 'blue' },
-      { icon: 'crown', label: th('โหวตสูงสุด','Top votes'), value: topVotes ? `${voteCount(topVotes)}` : '0', tone: 'yellow' }
+      { label: th('ไอเดียทั้งหมด','Ideas'), value: ideas.length },
+      { label: th('รอตัดสินใจ','Shortlist'), value: open.length },
+      { label: t('inPlan'), value: planned.length },
+      { label: th('โหวตสูงสุด','Top votes'), value: topVotes ? `${voteCount(topVotes)}` : '0' }
     ];
+    // Stat cards = label + figure (same anatomy as the dashboard KPIs).
     box.innerHTML = tiles.map(tile => `
-      <div class="card p-3 flex items-center gap-2">
-        <span class="row-icon" style="width:34px;height:34px;border-radius:12px;${tile.tone === 'yellow' ? 'background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);' : 'background:var(--primary-light);color:var(--primary-strong);'}">${icon(tile.icon, 'w-4 h-4')}</span>
-        <span class="min-w-0">
-          <span class="block text-xs font-semibold text-[var(--text-tertiary)]">${tile.label}</span>
-          <span class="block text-lg font-semibold" style="font-family:var(--font-display);">${escapeHtml(String(tile.value))}</span>
-        </span>
+      <div class="kpi-tile idea-stat">
+        <p class="kpi-label">${tile.label}</p>
+        <p class="kpi-value">${escapeHtml(String(tile.value))}</p>
       </div>`).join('') + (budget ? `<p class="col-span-2 sm:col-span-4 text-xs text-[var(--text-secondary)]">${icon('coins', 'w-3 h-3')} ${th('งบประมาณรวมของไอเดียที่ยังไม่เข้าแผน','Estimated budget of the unplanned ideas')}: <b>${escapeHtml(formatCurrency(budget, trip?.baseCurrency || 'THB'))}</b></p>` : '');
     queueIcons();
   }
@@ -13528,11 +13520,11 @@ async function renderIdeas(params) {
     return best;
   }
 
-  /** Section header for one category group (color + icon + count). */
+  /** Section header for one category group: pin-colour dot (data) + name + count. */
   function ideaGroupHeadHtml(g) {
     const color = placeCategoryColor(g.id);
-    return `<div class="idea-group-head" style="--idea-group:${escapeHtml(color)};">
-      <span class="idea-group-icon">${icon(placeCategoryIcon(g.id), 'w-3.5 h-3.5')}</span>
+    return `<div class="idea-group-head">
+      <span class="cat-dot" style="--dot:${escapeHtml(color)};" aria-hidden="true"></span>
       <b class="min-w-0 truncate">${escapeHtml(placeCategoryLabel(g.id, lang))}</b>
       <span class="idea-group-count">${g.ideas.length}</span>
     </div>`;
@@ -13574,7 +13566,7 @@ async function renderIdeas(params) {
       return `
       <div class="card p-4 idea-card ${queued ? 'is-queued' : ''}" data-idea="${idea.id}">
         <div class="flex items-start gap-3">
-          <button class="vote-btn ${voted ? 'is-voted' : ''}" data-act="vote" data-id="${idea.id}" title="${t('vote')}">
+          <button class="vote-btn ${voted ? 'is-voted' : ''}" data-act="vote" data-id="${idea.id}" title="${t('vote')}" aria-pressed="${voted ? 'true' : 'false'}">
             ${icon('chevron-up', 'w-4 h-4')}
             <span>${info.count}</span>
           </button>
@@ -13594,7 +13586,7 @@ async function renderIdeas(params) {
               <span class="idea-img-hint">${icon('images', 'w-3 h-3')} ${imgs.length}/3</span>
             </div>` : ''}
             <div class="flex items-center gap-2 flex-wrap mt-2">
-              <span class="badge badge-planned text-xs idea-cat-badge" style="background:color-mix(in srgb, ${escapeHtml(placeCategoryColor(ideaCategoryId(idea.category)))} 14%, transparent);color:${escapeHtml(placeCategoryColor(ideaCategoryId(idea.category)))};">${icon(placeCategoryIcon(ideaCategoryId(idea.category)), 'w-2.5 h-2.5')} ${escapeHtml(placeCategoryLabel(ideaCategoryId(idea.category), lang))}</span>
+              <span class="badge badge-planned text-xs idea-cat-badge"><span class="cat-dot" style="--dot:${escapeHtml(placeCategoryColor(ideaCategoryId(idea.category)))};" aria-hidden="true"></span> ${escapeHtml(placeCategoryLabel(ideaCategoryId(idea.category), lang))}</span>
               ${idea.address ? `<span class="meta-line idea-detail">${icon('map-pin', 'w-3 h-3')} <span class="truncate" style="max-width:220px;">${escapeHtml(idea.address)}</span></span>` : ''}
               ${Number(idea.estimatedCostMinor) > 0 ? `<span class="badge badge-skipped text-xs idea-detail">${icon('coins', 'w-2.5 h-2.5')} ${escapeHtml(formatCurrency(Number(idea.estimatedCostMinor), idea.currency || trip?.baseCurrency || 'THB'))}</span>` : ''}
             </div>
@@ -13603,10 +13595,8 @@ async function renderIdeas(params) {
               : (pinned && !planPinned ? `<p class="idea-near-line is-muted idea-detail">${icon('route', 'w-3 h-3')} ${th('แผนยังไม่มีพิกัดให้เทียบระยะ','The plan has no pins to compare with yet')}</p>` : '')}
             ${voters.length ? `<p class="text-xs text-[var(--text-tertiary)] mt-2 idea-detail">${icon('users', 'w-3 h-3')} ${escapeHtml(voters.join(', '))}${info.count > voters.length ? ` +${info.count - voters.length}` : ''}</p>` : ''}
             <div class="flex items-center gap-1 flex-wrap mt-2">
-              ${sanitizeUrl(idea.url) ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(sanitizeUrl(idea.url))}" target="_blank" rel="noopener noreferrer">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
-              ${idea.address ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(googleMapsPlaceUrl(idea.address, idea.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
-              ${pinned ? `<button class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" data-act="locate" data-id="${idea.id}">${icon('crosshair', 'w-3.5 h-3.5')} ${th('หมุด','Pin')}</button>` : ''}
-              ${pinned && planPinned ? `<button class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" data-act="compare" data-id="${idea.id}">${icon('git-compare', 'w-3.5 h-3.5')} ${th('เทียบกับแผน','Compare')}</button>` : ''}
+              ${sanitizeUrl(idea.url) ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:32px;padding:4px 8px;" href="${escapeHtml(sanitizeUrl(idea.url))}" target="_blank" rel="noopener noreferrer">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
+              ${idea.address ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:32px;padding:4px 8px;" href="${escapeHtml(googleMapsPlaceUrl(idea.address, idea.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
               ${idea.status === 'planned'
                 ? `<span class="badge badge-completed text-xs">${icon('check', 'w-3 h-3')} ${th('อยู่ในแผน','In the plan')}${idea.plannedDate ? ` • ${escapeHtml(idea.plannedDate)}` : ''}</span>`
                 : `<button class="btn btn-secondary btn-sm text-xs" style="min-height:32px;padding:4px 8px;" data-act="plan" data-id="${idea.id}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>`}
@@ -13712,16 +13702,16 @@ async function renderIdeas(params) {
     const sheet = showBottomSheet(`
       <div class="space-y-3">
         <div class="flex items-start gap-3">
-          <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--surface-2);color:var(--text-secondary);">${icon('git-compare', 'w-5 h-5')}</div>
+          <div class="row-icon">${icon('git-compare', 'w-5 h-5')}</div>
           <div class="min-w-0">
             <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('เทียบไอเดียกับแผน','Compare with the plan')}</h3>
             <p class="text-xs text-[var(--text-secondary)] mt-0.5 truncate">${escapeHtml(idea.title || '')}${c ? ` • <span class="font-mono">${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}</span>` : ''}</p>
           </div>
         </div>
-        ${!c ? `<div class="card p-3 text-xs" style="background:var(--warning-bg);">${icon('crosshair', 'w-4 h-4')} ${th('ไอเดียนี้ยังไม่มีพิกัด — กดแก้ไขแล้วใส่ lat,lng เพื่อเทียบระยะได้','This idea has no pin yet — edit it and add lat,lng to compare distances.')}</div>` : ''}
-        ${c && !days.length ? `<div class="card p-3 text-xs" style="background:var(--bg-secondary);">${icon('map-pin', 'w-4 h-4')} ${th('แผนการเดินทางยังไม่มีพิกัด — ใส่พิกัดให้สถานที่ในแผนก่อน แล้วค่อยกลับมาเทียบ','The itinerary has no pins yet — add coordinates to planned places first.')}</div>` : ''}
+        ${!c ? `<div class="card notice p-3 text-xs">${icon('crosshair', 'w-4 h-4')} ${th('ไอเดียนี้ยังไม่มีพิกัด — กดแก้ไขแล้วใส่ lat,lng เพื่อเทียบระยะได้','This idea has no pin yet — edit it and add lat,lng to compare distances.')}</div>` : ''}
+        ${c && !days.length ? `<div class="card notice p-3 text-xs">${icon('map-pin', 'w-4 h-4')} ${th('แผนการเดินทางยังไม่มีพิกัด — ใส่พิกัดให้สถานที่ในแผนก่อน แล้วค่อยกลับมาเทียบ','The itinerary has no pins yet — add coordinates to planned places first.')}</div>` : ''}
         ${best ? `<div class="idea-compare-best">
-          <span class="idea-compare-best-label">${icon('trophy', 'w-3.5 h-3.5')} ${th('ใกล้แผนที่สุด','Closest to the plan')}</span>
+          <span class="idea-compare-best-label">${th('ใกล้แผนที่สุด','Closest to the plan')}</span>
           <b>~${ideaKmLabel(best.km)}</b>
           <span class="truncate">${escapeHtml(best.item.title || '')} • ${escapeHtml(best.item.date || '')}</span>
           ${best.item.date ? `<button class="btn btn-secondary btn-sm" data-day="${escapeHtml(best.item.date)}">${icon('calendar-days', 'w-3.5 h-3.5')} ${th('ดูวันนี้','See day')}</button>` : ''}
@@ -13818,7 +13808,7 @@ async function renderIdeas(params) {
     const sheet = showBottomSheet(`
       <div class="space-y-4">
         <div class="flex items-center gap-3">
-          <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--surface-2);color:var(--text-secondary);">${icon('lightbulb', 'w-5 h-5')}</div>
+          <div class="row-icon">${icon('lightbulb', 'w-5 h-5')}</div>
           <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${isEdit ? t('edit') : t('addIdea')}</h3>
         </div>
         <div class="input-group"><label class="input-label">${th('ชื่อสถานที่','Place name')} *</label>
@@ -14094,7 +14084,7 @@ async function renderBookings(params) {
         }).join('')}
       </div>
 
-      ${loadError ? `<div class="card p-4 text-xs" style="background:var(--warning-bg); border-color:color-mix(in srgb, var(--warning) 35%, transparent);">${icon('info', 'w-4 h-4')} ${escapeHtml(loadError)}</div>` : ''}
+      ${loadError ? `<div class="card notice p-4 text-xs">${icon('info', 'w-4 h-4')} ${escapeHtml(loadError)}</div>` : ''}
       <div id="bookings-list" class="space-y-5 stagger"></div>
     </div>
   `;
@@ -14106,7 +14096,7 @@ async function renderBookings(params) {
     const upcoming = upcomingReservations(reservations, nowStamp, 1)[0];
     if (!upcoming) {
       box.innerHTML = `<div class="flex items-center gap-3">
-        <span class="row-icon" style="width:38px;height:38px;border-radius:12px;">${icon('calendar-clock', 'w-4 h-4')}</span>
+        <span class="row-icon">${icon('calendar-clock', 'w-4 h-4')}</span>
         <div>
           <p class="text-xs font-semibold">${th('ยังไม่มีการจองถัดไป','No upcoming booking')}</p>
           <p class="text-xs text-[var(--text-secondary)]">${th('เพิ่มตั๋ว/ที่พัก แล้วระบบจะเตือนลำดับถัดไปไว้ตรงนี้','Add a ticket or hotel and the next one shows up here')}</p>
@@ -14119,7 +14109,7 @@ async function renderBookings(params) {
     const countdown = dayjs(`${upcoming.date}T${upcoming.startTime || '00:00'}`).diff(dayjs(), 'day');
     box.innerHTML = `
       <div class="flex items-center gap-3 flex-wrap">
-        <span class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--primary-light);color:var(--primary-strong);">${icon(rt.icon, 'w-5 h-5')}</span>
+        <span class="row-icon">${icon(rt.icon, 'w-5 h-5')}</span>
         <div class="flex-1 min-w-0">
           <p class="text-xs font-semibold text-[var(--text-tertiary)]">${th('การจองถัดไป','Next booking')} ${countdown >= 0 ? `• ${th('อีก','in')} ${countdown} ${th('วัน','day(s)')}` : ''}</p>
           <p class="font-semibold text-sm truncate">${escapeHtml(upcoming.title || '')}</p>
@@ -14161,7 +14151,7 @@ async function renderBookings(params) {
             return `
             <div class="card p-4 booking-card" data-booking="${r.id}">
               <div class="flex items-start gap-3">
-                <span class="row-icon" style="width:42px;height:42px;border-radius:14px;background:${rt.tone}1f;color:${rt.tone};">${icon(rt.icon, 'w-5 h-5')}</span>
+                <span class="row-icon">${icon(rt.icon, 'w-5 h-5')}</span>
                 <div class="flex-1 min-w-0">
                   <div class="flex items-start justify-between gap-2">
                     <div class="min-w-0">
@@ -14183,12 +14173,12 @@ async function renderBookings(params) {
                   </div>
                   ${r.address ? `<p class="text-xs text-[var(--text-secondary)] mt-2">${icon('map-pin', 'w-3 h-3')} ${escapeHtml(r.address)}</p>` : ''}
                   ${r.notes ? `<p class="text-xs text-[var(--text-secondary)] mt-1">${escapeHtml(r.notes)}</p>` : ''}
-                  ${warnings.length ? `<p class="text-xs mt-2" style="color:var(--warning);">${icon('alert-triangle', 'w-3 h-3')} ${escapeHtml(warnings.map(w => lang === 'th' ? w.th : w.en).join(' • '))}</p>` : ''}
+                  ${warnings.length ? `<p class="text-xs mt-2 text-[var(--text-secondary)]">${icon('alert-triangle', 'w-3 h-3')} ${escapeHtml(warnings.map(w => lang === 'th' ? w.th : w.en).join(' • '))}</p>` : ''}
                   <div class="flex items-center gap-1 flex-wrap mt-2">
-                    ${sanitizeUrl(r.url) ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(sanitizeUrl(r.url))}" target="_blank" rel="noopener noreferrer">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
-                    ${r.address ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" href="${escapeHtml(googleMapsPlaceUrl(r.address, r.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
-                    ${r.phone ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" href="tel:${escapeHtml(String(r.phone).replace(/[^\d+#*,;]/g, ''))}">${icon('phone', 'w-3.5 h-3.5')} ${escapeHtml(r.phone)}</a>` : ''}
-                    ${r.expenseId ? `<a class="badge badge-completed text-xs" href="#/trip/${tripId}/expenses/add?id=${escapeHtml(r.expenseId)}">${icon('receipt', 'w-2.5 h-2.5')} ${th('อยู่ในค่าใช้จ่าย', 'In expenses')}</a>` : (Number(r.costMinor) > 0 ? `<button class="btn btn-ghost btn-sm text-xs" style="min-height:30px;padding:2px 8px;" data-act="expense" data-id="${escapeHtml(r.id)}">${icon('receipt', 'w-3.5 h-3.5')} ${th('เพิ่มเป็นค่าใช้จ่าย', 'Add as expense')}</button>` : '')}
+                    ${sanitizeUrl(r.url) ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:32px;padding:4px 8px;" href="${escapeHtml(sanitizeUrl(r.url))}" target="_blank" rel="noopener noreferrer">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดลิงก์','Open link')}</a>` : ''}
+                    ${r.address ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:32px;padding:4px 8px;" href="${escapeHtml(googleMapsPlaceUrl(r.address, r.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${th('แผนที่','Map')}</a>` : ''}
+                    ${r.phone ? `<a class="btn btn-ghost btn-sm text-xs" style="min-height:32px;padding:4px 8px;" href="tel:${escapeHtml(String(r.phone).replace(/[^\d+#*,;]/g, ''))}">${icon('phone', 'w-3.5 h-3.5')} ${escapeHtml(r.phone)}</a>` : ''}
+                    ${r.expenseId ? `<a class="badge badge-completed text-xs" href="#/trip/${tripId}/expenses/add?id=${escapeHtml(r.expenseId)}">${icon('receipt', 'w-2.5 h-2.5')} ${th('อยู่ในค่าใช้จ่าย', 'In expenses')}</a>` : (Number(r.costMinor) > 0 ? `<button class="btn btn-ghost btn-sm text-xs" style="min-height:32px;padding:4px 8px;" data-act="expense" data-id="${escapeHtml(r.id)}">${icon('receipt', 'w-3.5 h-3.5')} ${th('เพิ่มเป็นค่าใช้จ่าย', 'Add as expense')}</button>` : '')}
               ${!r.linkedItemId ? `<button class="btn btn-secondary btn-sm text-xs" style="min-height:32px;padding:4px 8px;" data-act="plan" data-id="${r.id}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>` : ''}
                     <button class="icon-btn" data-act="edit" data-id="${r.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
                     <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${r.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
@@ -14252,7 +14242,7 @@ async function renderBookings(params) {
     const sheet = showBottomSheet(`
       <div class="space-y-4">
         <div class="flex items-center gap-3">
-          <div class="row-icon" style="width:40px;height:40px;border-radius:14px;background:var(--surface-2);color:var(--text-secondary);">${icon('ticket', 'w-5 h-5')}</div>
+          <div class="row-icon">${icon('ticket', 'w-5 h-5')}</div>
           <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${isEdit ? t('edit') : t('addBooking')}</h3>
         </div>
         <div class="input-group"><label class="input-label">${th('ประเภท','Type')}</label>
@@ -14519,7 +14509,7 @@ async function renderExplore(params) {
       <section id="explore-reco"></section>
       <section>
         <h3 class="font-semibold text-sm mb-2 flex items-center gap-2">
-          <span class="row-icon" style="width:28px;height:28px;border-radius:10px;">${icon('layout-grid', 'w-4 h-4')}</span>
+          <span class="row-icon">${icon('layout-grid', 'w-4 h-4')}</span>
           ${th('สถานที่ทั้งหมด','All places')} <span id="explore-count" class="badge badge-planned text-xs">0</span>
         </h3>
         <div id="explore-list" class="guide-grid"></div>
@@ -14553,14 +14543,13 @@ async function renderExplore(params) {
     if (!recos.length) { box.innerHTML = ''; return; }
     box.innerHTML = `
       <h3 class="font-semibold text-sm mb-2 flex items-center gap-2">
-        <span class="row-icon" style="width:28px;height:28px;border-radius:10px;background:var(--brand-yellow-tint);color:var(--brand-yellow-ink);">${icon('wand-sparkles', 'w-4 h-4')}</span>
         ${th('แนะนำสำหรับทริปนี้','Suggested for this trip')}
         <span class="text-xs text-[var(--text-tertiary)] font-medium">${th('เรียงจากใกล้จุดที่วางไว้','ranked by distance to your plan')}</span>
       </h3>
       <div class="reco-strip">
         ${recos.map(r => `
           <div class="reco-card">
-            <span class="place-chip" style="background:var(--primary-light);color:var(--primary-strong);border-color:transparent;">${icon(categoryIcon(r.place.category), 'w-3 h-3')} ${escapeHtml(categoryLabel(r.place.category, lang))}</span>
+            <span class="place-chip">${icon(categoryIcon(r.place.category), 'w-3 h-3')} ${escapeHtml(categoryLabel(r.place.category, lang))}</span>
             <b class="mt-2">${escapeHtml(lang === 'th' ? r.place.name.th : r.place.name.en)}</b>
             <p>${escapeHtml(lang === 'th' ? r.reasonTh : r.reasonEn)}</p>
             <div class="flex gap-2 mt-2">
@@ -14599,9 +14588,9 @@ async function renderExplore(params) {
       queueIcons();
       return;
     }
-    box.innerHTML = places.map((place, idx) => `
+    box.innerHTML = places.map(place => `
       <div class="place-card" data-place="${place.id}">
-        <span class="place-thumb ${idx % 3 === 1 ? 'place-thumb--amber' : idx % 3 === 2 ? 'place-thumb--sky' : ''}">${icon(categoryIcon(place.category), 'w-6 h-6')}</span>
+        <span class="place-thumb">${icon(categoryIcon(place.category), 'w-6 h-6')}</span>
         <div class="place-body">
           <div class="place-title">${escapeHtml(lang === 'th' ? place.name.th : place.name.en)}</div>
           <p class="place-desc">${escapeHtml(lang === 'th' ? place.note.th : place.note.en)}</p>
@@ -14703,13 +14692,13 @@ async function renderExplore(params) {
     }
     box.innerHTML = `
       <div class="min-w-0">
-        <span class="eh-chip">${icon('sparkles', 'w-3 h-3')} ${th('ไกด์พร้อมใช้','Ready-made guide')}</span>
+        <span class="eh-chip eh-chip--label">${icon('book-open', 'w-3 h-3')} ${th('ไกด์พร้อมใช้','Ready-made guide')}</span>
         <h2 class="text-lg sm:text-xl mt-2 leading-tight">${escapeHtml(th('ที่เที่ยวที่คัดมาแล้วสำหรับทริปนี้','Places picked for this trip'))}</h2>
-        <p class="text-[12px] mt-1" style="color:rgba(255,255,255,.86)">${escapeHtml(dest ? (lang === 'th' ? dest.tagline.th : dest.tagline.en) : '')}</p>
+        <p class="explore-hero-tagline text-[12px] mt-1">${escapeHtml(dest ? (lang === 'th' ? dest.tagline.th : dest.tagline.en) : '')}</p>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         ${chips.map(c => `
-          <button class="eh-chip" data-dest-chip="${c.destination.id}" style="${c.destination.id === destId ? 'background:rgba(255,255,255,.36);' : ''}">
+          <button type="button" class="eh-chip ${c.destination.id === destId ? 'is-active' : ''}" data-dest-chip="${c.destination.id}" aria-pressed="${c.destination.id === destId ? 'true' : 'false'}">
             ${icon('map-pin', 'w-3 h-3')} ${escapeHtml(lang === 'th' ? c.destination.cityTh : c.destination.city)}
           </button>`).join('')}
       </div>`;
@@ -14798,9 +14787,9 @@ async function renderCalendar(params) {
         <div class="cal-grid mb-1" id="cal-weekdays"></div>
         <div class="cal-grid" id="cal-grid"></div>
         <div class="cal-legend mt-3">
-          <span>${icon('square', 'w-3 h-3 inline')} ${th('วันของทริป','Trip day')}</span>
+          <span><span class="cal-legend-swatch is-trip" aria-hidden="true"></span> ${th('วันของทริป','Trip day')}</span>
           <span><span class="cal-pill" style="display:inline-block;">${th('มีแผน','planned')}</span></span>
-          <span>${icon('circle-dot', 'w-3 h-3 inline')} ${th('วันนี้','Today')}</span>
+          <span><span class="cal-legend-swatch is-today" aria-hidden="true"></span> ${th('วันนี้','Today')}</span>
         </div>
       </div>
 
@@ -14822,7 +14811,7 @@ async function renderCalendar(params) {
       if (!cell.inMonth) cls.push('is-outside');
       if (cell.inTrip) cls.push('is-trip');
       if (cell.isToday) cls.push('is-today');
-      const pills = cell.pills.map((p, i) => `<span class="cal-pill ${i === 1 ? 'cal-pill--amber' : i === 2 ? 'cal-pill--mist' : ''}">${escapeHtml(String(p.title).slice(0, 22))}</span>`).join('');
+      const pills = cell.pills.map(p => `<span class="cal-pill">${escapeHtml(String(p.title).slice(0, 22))}</span>`).join('');
       return `<button class="${cls.join(' ')}" data-day="${cell.iso}">
         <span class="cal-day">${cell.inMonth ? cell.day : `<span style="opacity:.6">${cell.day}</span>`}</span>
         ${pills}
@@ -14853,8 +14842,8 @@ async function renderCalendar(params) {
         </div>
         ${dayItems.length ? `<div class="space-y-2">${dayItems.map(i => `
           <div class="flex items-center gap-3 p-2 rounded-xl" style="background:var(--bg-secondary);border:1px solid var(--border-light);">
-            <span class="text-xs font-mono font-semibold w-12 flex-shrink-0" style="color:var(--primary-strong);">${escapeHtml(String(i.startAt || '').slice(11, 16) || '--:--')}</span>
-            <span class="row-icon" style="width:28px;height:28px;border-radius:10px;">${icon(placeCategoryIcon(ideaCategoryId(i.category)), 'w-3.5 h-3.5')}</span>
+            <span class="text-xs font-mono font-medium w-12 flex-shrink-0 text-[var(--text-secondary)]">${i.startAt ? escapeHtml(formatTime(i.startAt, trip?.timezone)) : '--:--'}</span>
+            <span class="row-icon">${icon(placeCategoryIcon(ideaCategoryId(i.category)), 'w-3.5 h-3.5')}</span>
             <span class="min-w-0 flex-1">
               <b class="block text-[13px] truncate">${escapeHtml(i.title || '')}</b>
               ${i.address ? `<span class="text-xs text-[var(--text-secondary)] truncate block">${escapeHtml(i.address)}</span>` : ''}
@@ -14910,7 +14899,7 @@ async function openShareSheet(trip = null) {
   const sheet = showBottomSheet(`
     <div class="space-y-4">
       <div class="flex items-start gap-3">
-        <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--surface-2);color:var(--text-secondary);">${icon('share-2', 'w-5 h-5')}</div>
+        <div class="row-icon">${icon('share-2', 'w-5 h-5')}</div>
         <div class="min-w-0">
           <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('ชวนเพื่อนเข้าทริป','Invite your friends')}</h3>
           <p class="text-xs text-[var(--text-secondary)] mt-0.5">${th('ทุกคนเห็นแผนเดียวกันแบบเรียลไทม์ — แชร์ค่าใช้จ่ายและโหวตที่เที่ยวได้ทันที','Everyone sees the same plan live — split costs and vote on places together')}</p>
@@ -14995,7 +14984,7 @@ function openBookingImport(tripId, { onSaved = null } = {}) {
   const sheet = showBottomSheet(`
     <div class="space-y-4">
       <div class="flex items-start gap-3">
-        <div class="row-icon" style="width:42px;height:42px;border-radius:14px;background:var(--gradient-duo);color:#fff;">${icon('mail-plus', 'w-5 h-5')}</div>
+        <div class="row-icon">${icon('mail-plus', 'w-5 h-5')}</div>
         <div class="min-w-0">
           <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('นำเข้าจากอีเมลยืนยันการจอง','Import from a confirmation e-mail')}</h3>
           <p class="text-xs text-[var(--text-secondary)] mt-0.5">${th('คัดลอกข้อความจากอีเมล/แอปจอง แล้ววางที่นี่ ระบบจะอ่านวันเวลา รหัส และราคาให้','Paste the text of a booking e-mail — the app reads the dates, codes and price for you')}</p>
@@ -15047,12 +15036,14 @@ Total 24,500 THB`
     if (!box) return;
     if (!draft) { box.innerHTML = ''; if (saveBtn) saveBtn.disabled = true; return; }
     const tone = parser ? parser.confidenceLabel(draft.confidence) : { tone: 'warning', th: 'ตรวจสอบ', en: 'Check' };
-    const toneVar = tone.tone === 'success' ? 'var(--success)' : tone.tone === 'warning' ? 'var(--warning)' : 'var(--danger)';
+    // Confidence is not money: a neutral badge; the icon (check vs alert) and the
+    // words carry the meaning instead of a green/amber/red wash.
+    const toneIcon = tone.tone === 'success' ? 'check' : 'alert-triangle';
     box.innerHTML = `
-      <div class="card p-3" style="border-color:color-mix(in srgb, ${toneVar} 40%, var(--border));">
+      <div class="card p-3">
         <div class="flex items-center justify-between gap-2 mb-2">
           <b class="text-xs">${icon('scan-text', 'w-3.5 h-3.5 inline')} ${th('พบข้อมูล','Recognised')}</b>
-          <span class="badge text-xs" style="background:color-mix(in srgb, ${toneVar} 14%, transparent); color:${toneVar}; border-color:color-mix(in srgb, ${toneVar} 30%, transparent);">${escapeHtml(lang === 'th' ? tone.th : tone.en)} • ${draft.confidence}%</span>
+          <span class="badge badge-planned text-xs">${icon(toneIcon, 'w-3 h-3')} ${escapeHtml(lang === 'th' ? tone.th : tone.en)} • ${draft.confidence}%</span>
         </div>
         <div class="space-y-2">
           ${draft.recognised.map(r => `<div class="parsed-row"><span>${escapeHtml(r.label)}</span><b>${escapeHtml(r.value)}</b></div>`).join('')}

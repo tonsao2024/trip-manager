@@ -2565,8 +2565,12 @@ console.log('\n▶ v17/v18 offline strip + colour themes');
   const flatCssV35 = fs.readFileSync(path.join(root, 'src/css/flat.css'), 'utf8');
   check(/\.chip-active, \.chip-active:hover \{[^}]*var\(--surface-2\)/.test(flatCssV35),
     'palette v35: a selected chip is a surface step + hairline, not a solid accent pill');
-  check(/\.badge-completed \{[^}]*--success-light/.test(refreshCss) && /\.badge-cancelled \{[^}]*--danger-light/.test(refreshCss),
-    'palette v19: status badges carry vivid fills');
+  // v35 round 4: status is not money — badges are a neutral surface step; a
+  // cancelled item keeps red *ink* only (no tinted fill anywhere in the cascade).
+  check(/\.badge-planned, \.badge-completed, \.badge-skipped, \.badge-pending \{[^}]*var\(--surface-2\)/.test(flatCssV35)
+    && /\.badge-cancelled \{ background: transparent; color: var\(--danger\)/.test(flatCssV35)
+    && !/\.badge-completed \{[^}]*--success-light/.test(refreshCss) && !/\.badge-cancelled \{[^}]*--danger-light/.test(refreshCss),
+    'palette v35: status badges are neutral (cancelled = red ink, no fill)');
 
   // v18: colour themes are back (LINE / Facebook / Instagram …), each editable per user.
   const themesSrc = fs.readFileSync(path.join(root, 'src/js/utils/themes.js'), 'utf8');
