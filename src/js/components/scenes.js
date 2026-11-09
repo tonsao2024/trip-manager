@@ -15,7 +15,7 @@
  * as the most common dead end on a phone. The handler lives in app.js
  * (`[data-ps-back]`), so the component stays markup-only.
  */
-const BACK_PAGES = new Set(['members', 'documents', 'import', 'prep', 'ideas', 'bookings', 'calendar', 'explore', 'settings']);
+const BACK_PAGES = new Set(['members', 'documents', 'import', 'prep', 'ideas', 'bookings', 'calendar', 'weather', 'explore', 'settings']);
 
 /** Titles used to arrive with a decorative icon in front — the title is text only now. */
 function plainTitle(title) {

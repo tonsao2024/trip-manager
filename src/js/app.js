@@ -131,7 +131,7 @@ import {
   deleteReservation, groupReservationsByDate, upcomingReservations, routeLabel,
   reservationToItineraryPayload, durationBetween, reservationWarnings
 } from './reservations/index.js';
-import { fetchDailyForecast, forecastForDates, forecastLabel, datesBetween, weatherTip, weatherTone, isForecastRelevant, geocodeCity, searchCities, createLatestRequestGuard } from './utils/weather.js';
+import { fetchDailyForecast, fetchForecastWindow, WEATHER_DESTINATIONS, forecastForDates, forecastLabel, datesBetween, weatherTip, weatherTone, isForecastRelevant, geocodeCity, searchCities, createLatestRequestGuard } from './utils/weather.js';
 // utils/explore.js (destination library) loads inside renderExplore only.
 // utils/bookingImport.js loads inside the booking-import sheet only.
 
@@ -2688,6 +2688,7 @@ const routes = [
   { path: '/trip/:tripId/settings', handler: renderSettings },
   { path: '/trip/:tripId/explore', handler: renderExplore },
   { path: '/trip/:tripId/calendar', handler: renderCalendar },
+  { path: '/trip/:tripId/weather', handler: renderWeatherCalendar },
   { path: '/trip/:tripId/more', handler: renderMore },
 ];
 
@@ -10012,7 +10013,10 @@ async function renderSettlement(params) {
         ? th('จ่าย/รับ', 'PAYS / GETS')
         : role === 'receiver' ? th('รับเงิน', 'GETS BACK') : th('จ่ายเงิน', 'PAYS');
       const tone = role === 'receiver' ? POS : role === 'payer' ? NEG : 'var(--primary-strong)';
-      const color = nodeColors.get(id) || debtMapColor(order.indexOf(id));
+      const personIndex = order.indexOf(id);
+      const color = nodeColors.get(id) || debtMapColor(personIndex);
+      const clipId = `debt-avatar-${personIndex}`;
+      if (person.photoURL) markerDefs.push(`<clipPath id="${clipId}" clipPathUnits="userSpaceOnUse"><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${nodeR}"/></clipPath>`);
       const above = labelAbove(p);
       const nameY = above ? p.y - nodeR - 29 : p.y + nodeR + (compact ? 20 : 18);
       const roleY = above ? p.y - nodeR - 12 : p.y + nodeR + (compact ? 35 : 32);
@@ -10021,7 +10025,7 @@ async function renderSettlement(params) {
           <title>${escapeHtml(person.displayName || '')}${out ? ` • ${th('จ่าย', 'pays')} ${money(out)}` : ''}${inc ? ` • ${th('รับ', 'gets')} ${money(inc)}` : ''}</title>
           <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${nodeR + 6}" fill="${escapeHtml(color)}" opacity=".13"/>
           <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${nodeR}" fill="${escapeHtml(color)}"/>
-          <text x="${p.x.toFixed(1)}" y="${(p.y + 1).toFixed(1)}" text-anchor="middle" dominant-baseline="central" fill="${escapeHtml(avatarInk(color))}" font-size="${FS.initial}" font-weight="600" font-family="var(--font-display)">${initial(person)}</text>
+          ${person.photoURL ? `<image href="${escapeHtml(person.photoURL)}" x="${(p.x - nodeR).toFixed(1)}" y="${(p.y - nodeR).toFixed(1)}" width="${nodeR * 2}" height="${nodeR * 2}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clipId})"/>` : `<text x="${p.x.toFixed(1)}" y="${(p.y + 1).toFixed(1)}" text-anchor="middle" dominant-baseline="central" fill="${escapeHtml(avatarInk(color))}" font-size="${FS.initial}" font-weight="600" font-family="var(--font-display)">${initial(person)}</text>`}
           <text x="${p.x.toFixed(1)}" y="${nameY.toFixed(1)}" text-anchor="middle" fill="var(--text-strong)" font-size="${FS.name}" font-weight="500" font-family="var(--font-sans)">${shortName(person, 16)}</text>
           <text x="${p.x.toFixed(1)}" y="${roleY.toFixed(1)}" text-anchor="middle" fill="${escapeHtml(tone)}" font-size="${FS.role}" font-weight="500" font-family="var(--font-sans)">${roleLabel}</text>
         </g>`;
@@ -10034,12 +10038,12 @@ async function renderSettlement(params) {
         <span class="debt-step" aria-hidden="true">${index + 1}</span>
         <div class="debt-route">
           <button type="button" class="debt-person-link" data-settle-person="${escapeHtml(tx.from)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${payer.displayName || 'ผู้จ่าย'}`, `View expenses for ${payer.displayName || 'payer'}`))}">
-            <span class="avatar" style="width:36px;height:36px;font-size:14px;${avatarStyle(payer.color)};">${initial(payer)}</span>
+            <span class="avatar" style="width:36px;height:36px;font-size:14px;${avatarStyle(payer.color)};">${payer.photoURL ? `<img decoding="async" src="${escapeHtml(payer.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(payer.displayName || '?'))}</span>
             <span class="debt-person-copy"><span class="debt-person-role">${th('ผู้โอน', 'From')}</span><span class="debt-person-name">${escapeHtml(payer.displayName || '')}</span></span>
           </button>
           <span class="debt-row-pays" aria-label="${th('โอนให้', 'pays')}" >${icon('arrow-right', 'w-4 h-4')}</span>
           <button type="button" class="debt-person-link" data-settle-person="${escapeHtml(tx.to)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${receiver.displayName || 'ผู้รับ'}`, `View expenses for ${receiver.displayName || 'receiver'}`))}">
-            <span class="avatar" style="width:36px;height:36px;font-size:14px;${avatarStyle(receiver.color)};">${initial(receiver)}</span>
+            <span class="avatar" style="width:36px;height:36px;font-size:14px;${avatarStyle(receiver.color)};">${receiver.photoURL ? `<img decoding="async" src="${escapeHtml(receiver.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(receiver.displayName || '?'))}</span>
             <span class="debt-person-copy"><span class="debt-person-role">${th('ผู้รับ', 'To')}</span><span class="debt-person-name">${escapeHtml(receiver.displayName || '')}</span></span>
           </button>
         </div>
@@ -15214,6 +15218,133 @@ function initOfflineStrip() {
   paint();
 }
 
+async function renderWeatherCalendar(params) {
+  const tripId = params.tripId;
+  const token = beginRender();
+  await loadTrip(tripId);
+  if (isStale(token)) return;
+  const trip = currentTrip || {};
+  const lang = getLang();
+  const th = (a, b) => lang === 'th' ? a : b;
+  const normalizeDate = (value) => {
+    if (!value) return '';
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+    if (typeof value === 'object' && Number.isFinite(value.seconds)) return normalizeDate(new Date(value.seconds * 1000));
+    const match = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
+    return match?.[1] || '';
+  };
+  const startDate = normalizeDate(trip.startDate);
+  const endDate = normalizeDate(trip.endDate) || startDate;
+  const today = new Date();
+  const defaultDate = startDate || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+  const [defaultYear, defaultMonth] = defaultDate.split('-').map(Number);
+  let year = defaultYear;
+  let month = defaultMonth - 1;
+  let city = WEATHER_DESTINATIONS[0];
+  let selectedDate = defaultDate;
+  let forecast = [];
+  let loading = false;
+  const requestGuard = createLatestRequestGuard();
+  const monthNames = (y, m) => new Intl.DateTimeFormat(lang === 'th' ? 'th-TH' : 'en-GB', { month: 'long', year: 'numeric' }).format(new Date(y, m, 1));
+  const monthDays = (y, m) => new Date(y, m + 1, 0).getDate();
+  const dateKey = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const isTripDate = (date) => !!startDate && date >= startDate && date <= endDate;
+  const daysInMonth = () => {
+    const count = monthDays(year, month);
+    const first = (new Date(year, month, 1).getDay() + 6) % 7;
+    const cells = Array(first).fill(null);
+    for (let day = 1; day <= count; day++) cells.push(dateKey(year, month, day));
+    while (cells.length % 7) cells.push(null);
+    return cells;
+  };
+  const todayKey = dateKey(today.getFullYear(), today.getMonth(), today.getDate());
+  const weekdayLabels = lang === 'th' ? ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.'] : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const selectedLabel = (date) => {
+    if (!date) return '';
+    const [y, m, d] = date.split('-').map(Number);
+    return new Intl.DateTimeFormat(lang === 'th' ? 'th-TH' : 'en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(y, m - 1, d));
+  };
+
+  function paint() {
+    const byDate = new Map(forecast.map(day => [day.date, day]));
+    const cityButtons = WEATHER_DESTINATIONS.map(place => `
+      <button type="button" class="weather-city-chip${city.id === place.id ? ' is-active' : ''}" data-weather-city="${place.id}" aria-pressed="${city.id === place.id}">${escapeHtml(place.label)}</button>`).join('');
+    const cells = daysInMonth().map(date => {
+      if (!date) return '<span class="weather-day weather-day--blank" aria-hidden="true"></span>';
+      const day = byDate.get(date);
+      const inTrip = isTripDate(date);
+      const selected = date === selectedDate;
+      const isToday = date === todayKey;
+      const isSeasonal = day?.forecastBand === 'seasonal';
+      const label = day ? (lang === 'th' ? day.labelTh : day.labelEn) : th('ยังไม่มีพยากรณ์', 'No forecast available');
+      const temp = day && Number.isFinite(Number(day.max)) ? `${Math.round(day.max)}°` : '—';
+      const low = day && Number.isFinite(Number(day.min)) ? `${Math.round(day.min)}°` : '';
+      return `<button type="button" class="weather-day${inTrip ? ' is-trip' : ''}${selected ? ' is-selected' : ''}${isToday ? ' is-today' : ''}${isSeasonal ? ' is-seasonal' : ''}" data-weather-date="${date}" title="${escapeHtml(`${selectedLabel(date)} · ${label}`)}" aria-label="${escapeHtml(`${selectedLabel(date)}${inTrip ? ` · ${th('วันเดินทาง', 'Trip day')}` : ''} · ${isSeasonal ? th('แนวโน้มระยะไกล', 'Long-range outlook') : ''} · ${label}${day ? ` · ${temp}/${low}` : ''}`)}" aria-pressed="${selected}">
+        <span class="weather-day-number">${Number(date.slice(-2))}${inTrip ? '<i aria-hidden="true">✦</i>' : ''}</span>
+        ${day ? `<span class="weather-day-icon tone-${escapeHtml(day.tone)}">${icon(day.icon, 'w-4 h-4')}</span><span class="weather-day-temp">${temp}<small>${low}</small></span>${isSeasonal ? `<small class="weather-day-range">${th('ไกล', 'Long')}</small>` : ''}` : `<span class="weather-day-icon weather-day-icon--empty">${loading ? icon('loader-circle', 'w-4 h-4') : '·'}</span><span class="weather-day-temp weather-day-temp--empty">${loading ? '…' : '—'}</span>`}
+      </button>`;
+    }).join('');
+    const selectedForecast = byDate.get(selectedDate);
+    const selectedIsTrip = isTripDate(selectedDate);
+    const selectedDetail = selectedForecast
+      ? `<div class="weather-selected-icon tone-${escapeHtml(selectedForecast.tone)}">${icon(selectedForecast.icon, 'w-6 h-6')}</div><div class="weather-selected-copy"><strong>${escapeHtml(selectedLabel(selectedDate))}</strong><span>${escapeHtml(lang === 'th' ? selectedForecast.labelTh : selectedForecast.labelEn)} · ${selectedForecast.min ?? '—'}° / ${selectedForecast.max ?? '—'}°</span>${selectedForecast.rainChance != null ? `<small>${th('โอกาสฝนสูงสุด', 'Max rain chance')} ${selectedForecast.rainChance}%</small>` : ''}<small class="weather-confidence${selectedForecast.forecastBand === 'seasonal' ? ' is-long-range' : ''}">${selectedForecast.forecastBand === 'seasonal' ? th('แนวโน้มระยะไกลจาก ECMWF · ความละเอียดระดับภูมิภาค ควรใช้ประกอบการวางแผน', 'ECMWF seasonal outlook · regional-scale guidance; use as a planning trend') : th('พยากรณ์รายวันระยะใกล้จาก Open-Meteo', 'Short-range daily forecast from Open-Meteo')}</small></div>`
+      : `<div class="weather-selected-icon is-muted">${icon(selectedIsTrip ? 'plane' : 'calendar-days', 'w-6 h-6')}</div><div class="weather-selected-copy"><strong>${escapeHtml(selectedLabel(selectedDate))}${selectedIsTrip ? ` · ${th('วันเดินทาง', 'Trip day')}` : ''}</strong><span>${loading ? th('กำลังโหลดพยากรณ์อากาศ…', 'Loading forecast…') : th('ยังไม่มีข้อมูลพยากรณ์สำหรับวันนี้', 'No forecast available for this date')}</span><small>${th('ข้อมูลพยากรณ์ระยะไกลมีให้ประมาณ 7 เดือน หากยังไม่อยู่ในช่วงนี้ ระบบจะแสดงเมื่อมีข้อมูล', 'Long-range seasonal forecasts are available for about 7 months; dates beyond that are left blank until data is available')}</small></div>`;
+    appEl.innerHTML = `
+      <div class="page-enter weather-calendar-page">
+        ${renderPageScene('weather', { lang, title: th('พยากรณ์อากาศ', 'Weather forecast'), subtitle: th('ดูสภาพอากาศรายวันตามเมืองและช่วงเวลาเดินทาง', 'Daily conditions by destination and trip dates') })}
+        <section class="weather-calendar-card card" aria-label="${th('ปฏิทินพยากรณ์อากาศ', 'Weather forecast calendar')}">
+          <div class="weather-destination-bar"><div><span class="weather-section-kicker">${th('ปลายทาง', 'DESTINATION')}</span><div class="weather-city-list">${cityButtons}</div></div></div>
+          <div class="weather-month-toolbar">
+            <button type="button" class="btn btn-secondary btn-icon" data-weather-month="-1" aria-label="${th('เดือนก่อนหน้า', 'Previous month')}">${icon('chevron-left', 'w-4 h-4')}</button>
+            <div class="weather-month-title"><h2>${escapeHtml(monthNames(year, month))}</h2><span>${escapeHtml(city.label)}</span></div>
+            <button type="button" class="btn btn-secondary btn-icon" data-weather-month="1" aria-label="${th('เดือนถัดไป', 'Next month')}">${icon('chevron-right', 'w-4 h-4')}</button>
+          </div>
+          <div class="weather-calendar-grid" role="group" aria-label="${escapeHtml(monthNames(year, month))}">
+            ${weekdayLabels.map(label => `<span class="weather-weekday">${label}</span>`).join('')}
+            ${cells}
+          </div>
+          <div class="weather-legend"><span><i class="weather-legend-trip"></i>${th('วันเดินทาง', 'Trip dates')}</span><span><i class="weather-legend-forecast"></i>${th('พยากรณ์ระยะใกล้', 'Near-term forecast')}</span><span><i class="weather-legend-seasonal"></i>${th('แนวโน้มระยะไกล', 'Seasonal outlook')}</span></div>
+          <div class="weather-selected-day">${selectedDetail}</div>
+        </section>
+        <p class="weather-source-note">${icon('info', 'w-3.5 h-3.5')} <span>${th('พยากรณ์ระยะใกล้ใช้ Open-Meteo; วันที่ไกลกว่านั้นใช้ ECMWF Seasonal Ensemble ซึ่งให้แนวโน้มรายวันได้ถึงประมาณ 7 เดือนโดยไม่ต้องใช้ API key วันที่เกินช่วงข้อมูลจะแสดงว่ายังไม่มีพยากรณ์ แนวโน้มระยะไกลมีความไม่แน่นอนสูงกว่าและควรตรวจซ้ำใกล้วันเดินทาง', 'Near dates use Open-Meteo; farther dates use the ECMWF seasonal ensemble, with daily guidance up to about 7 months and no API key. Dates beyond available data stay unforecast. Long-range guidance is less certain—check again closer to departure.')}
+          <a href="https://open-meteo.com/en/docs/seasonal-forecast-api" target="_blank" rel="noopener noreferrer">${th('ที่มาข้อมูล', 'Data source')}</a></span></p>
+      </div>`;
+    queueIcons();
+    appEl.querySelectorAll('[data-weather-month]').forEach(button => button.addEventListener('click', () => {
+      month += Number(button.dataset.weatherMonth);
+      if (month < 0) { month = 11; year--; }
+      if (month > 11) { month = 0; year++; }
+      selectedDate = Array.from({ length: monthDays(year, month) }, (_, index) => dateKey(year, month, index + 1)).find(isTripDate) || dateKey(year, month, 1);
+      paint();
+    }));
+    appEl.querySelectorAll('[data-weather-city]').forEach(button => button.addEventListener('click', () => {
+      const next = WEATHER_DESTINATIONS.find(place => place.id === button.dataset.weatherCity);
+      if (!next || next.id === city.id) return;
+      city = next;
+      forecast = [];
+      loadForecast();
+    }));
+    appEl.querySelectorAll('[data-weather-date]').forEach(button => button.addEventListener('click', () => {
+      selectedDate = button.dataset.weatherDate;
+      paint();
+    }));
+  }
+
+  async function loadForecast() {
+    const current = requestGuard.begin();
+    loading = true;
+    paint();
+    const nextForecast = await fetchForecastWindow(city);
+    if (!current() || isStale(token)) return;
+    forecast = nextForecast;
+    loading = false;
+    paint();
+  }
+
+  paint();
+  loadForecast();
+}
+
 function renderMore(params) {
   const tripId = params.tripId;
   const lang = getLang();
@@ -15230,6 +15361,7 @@ function renderMore(params) {
         { href: `#/trip/${tripId}/prep`, icon: 'backpack', label: lang === 'th' ? 'เตรียมตัวก่อนไป' : 'Trip prep' },
         { href: `#/trip/${tripId}/bookings`, icon: 'ticket', label: lang === 'th' ? 'การจอง / ตั๋ว' : 'Bookings & tickets' },
         { href: `#/trip/${tripId}/calendar`, icon: 'calendar-days', label: lang === 'th' ? 'ปฏิทินทริป' : 'Trip calendar' },
+        { href: `#/trip/${tripId}/weather`, icon: 'cloud-sun', label: lang === 'th' ? 'พยากรณ์อากาศ' : 'Weather forecast' },
         { href: `#/trip/${tripId}/explore`, icon: 'compass', label: lang === 'th' ? 'ชวนไปที่นี่ (ไกด์)' : 'Explore guides' }
       ]
     },

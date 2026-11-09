@@ -730,6 +730,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 .countdown-scene {
   --cdc-mountain: color-mix(in srgb, var(--primary-raw) 16%, var(--surface));
   --cdc-snow: var(--surface);
+  --cdc-cloud: color-mix(in srgb, var(--primary-raw) 20%, #ffffff);
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -740,6 +741,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 [data-theme="dark"] .countdown-scene {
   --cdc-mountain: color-mix(in srgb, var(--primary-raw) 30%, var(--surface));
   --cdc-snow: color-mix(in srgb, #ffffff 82%, var(--surface));
+  --cdc-cloud: color-mix(in srgb, #b9d7ed 24%, var(--surface));
 }
 .cdc-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .cdc-main { min-width: 0; }

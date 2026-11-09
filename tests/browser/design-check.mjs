@@ -45,6 +45,7 @@ const ROUTES = {
   settings: ['#/trip/t1/settings'],
   'expense-add': ['#/trip/t1/expenses/add'],
   calendar: ['#/trip/t1/calendar'],
+  weather: ['#/trip/t1/weather'],
   explore: ['#/trip/t1/explore'],
   documents: ['#/trip/t1/documents'],
   export: ['#/trip/t1/export'],

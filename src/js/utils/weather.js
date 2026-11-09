@@ -13,9 +13,19 @@ export function createLatestRequestGuard() {
 }
 
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
+const SEASONAL_URL = 'https://seasonal-api.open-meteo.com/v1/seasonal';
 const GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search';
 const CACHE_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
 const CACHE_PREFIX = 'fuji_weather_';
+
+/** Curated Japanese trip destinations for the month-view forecast. */
+export const WEATHER_DESTINATIONS = Object.freeze([
+  Object.freeze({ id: 'tokyo', label: 'TOKYO', lat: 35.6762, lon: 139.6503 }),
+  Object.freeze({ id: 'fujikawaguchiko', label: 'FUJIKAWAGUCHIKO', lat: 35.4970, lon: 138.7550 }),
+  Object.freeze({ id: 'nikko', label: 'NIKKO', lat: 36.7199, lon: 139.6982 }),
+  Object.freeze({ id: 'yuzawa', label: 'YUZAWA', lat: 36.9360, lon: 138.8080 }),
+  Object.freeze({ id: 'hakuba', label: 'HAKUBA', lat: 36.6983, lon: 137.8610 })
+]);
 
 /* ------------------------------------------------------------------ *
  * WMO weather codes → bilingual label + lucide icon + tone
@@ -235,6 +245,48 @@ export async function fetchDailyForecast(place, { startDate, endDate } = {}) {
     console.warn('weather fetch failed', e?.message || e);
     return [];
   }
+}
+
+/**
+ * Daily weather for a travel month. Use the high-resolution forecast nearby,
+ * then the ECMWF seasonal ensemble beyond its 16-day window (up to 7 months).
+ * Long-range values are explicitly marked as seasonal outlooks in the UI.
+ */
+export async function fetchForecastWindow(place) {
+  let coords = place;
+  if (typeof place === 'string' || !Number.isFinite(Number(place?.lat))) {
+    coords = await geocodeCity(typeof place === 'string' ? place : place?.city).catch(() => null);
+  }
+  if (!Number.isFinite(Number(coords?.lat)) || !Number.isFinite(Number(coords?.lon))) return [];
+  const lat = Number(coords.lat), lon = Number(coords.lon);
+  const key = `window_${lat.toFixed(2)}_${lon.toFixed(2)}_seasonal210`;
+  const cached = cacheGet(key);
+  if (cached) return cached;
+
+  let seasonal = [];
+  try {
+    const url = `${SEASONAL_URL}?latitude=${lat}&longitude=${lon}`
+      + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum'
+      + '&timezone=auto&forecast_days=210&models=ecmwf_seasonal_ensemble_mean_seamless';
+    seasonal = parseForecast(await fetchJson(url)).map(day => ({ ...day, forecastBand: 'seasonal', source: 'ECMWF seasonal ensemble' }));
+  } catch (error) {
+    console.warn('seasonal weather forecast unavailable', error?.message || error);
+  }
+
+  // Preserve the more detailed short-range forecast on near-term dates.
+  const today = new Date();
+  const dateKey = d => d.toISOString().slice(0, 10);
+  const start = dateKey(new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())));
+  const endDate = new Date(`${start}T00:00:00Z`);
+  endDate.setUTCDate(endDate.getUTCDate() + 15);
+  const nearTerm = await fetchDailyForecast(coords, { startDate: start, endDate: dateKey(endDate) });
+  const nearMap = new Map(nearTerm.map(day => [day.date, { ...day, forecastBand: 'short', source: 'Open-Meteo daily forecast' }]));
+  const merged = seasonal.map(day => nearMap.get(day.date) || day);
+  const seasonalDates = new Set(seasonal.map(day => day.date));
+  for (const day of nearTerm) if (!seasonalDates.has(day.date)) merged.push({ ...day, forecastBand: 'short', source: 'Open-Meteo daily forecast' });
+  merged.sort((a, b) => a.date.localeCompare(b.date));
+  if (merged.length) cacheSet(key, merged);
+  return merged;
 }
 
 export function clearWeatherCache() {
