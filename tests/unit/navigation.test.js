@@ -12,5 +12,6 @@ export function testPrimaryNavigationRegistry() {
   const secondary = secondaryNavItems({ tripId: 'trip 1', lang: 'th' });
   assert(secondary.length === TRIP_SECONDARY_NAV.length && secondary.every(item => item.href.startsWith('#/trip/trip%201/')), 'secondary menu destinations share the registry and encode trip ids');
   assert(new Set(TRIP_SECONDARY_NAV.map(item => item.id)).size === TRIP_SECONDARY_NAV.length, 'secondary nav ids are unique');
+  assert(secondary.some(item => item.id === 'weather' && item.href === '#/trip/trip%201/weather'), 'weather forecast is available from the secondary More menu');
   console.log('✓ shared primary and secondary navigation registry');
 }

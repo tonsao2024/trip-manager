@@ -167,3 +167,154 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 @media (max-width: 767px) {
   .btn.btn-sm.debt-pay-btn, .btn.btn-sm.expense-more-filters { min-height: 44px !important; }
 }
+
+/* A richer, still restrained palette makes statuses and dashboard sections easier to scan. */
+.badge-planned { background: color-mix(in srgb, #4b83ee 11%, var(--surface)); color: color-mix(in srgb, #245fc7 84%, var(--text-strong)); border-color: color-mix(in srgb, #4b83ee 26%, var(--border)); }
+.badge-completed { background: color-mix(in srgb, #22a879 11%, var(--surface)); color: color-mix(in srgb, #08764f 84%, var(--text-strong)); border-color: color-mix(in srgb, #22a879 26%, var(--border)); }
+.badge-skipped, .badge-pending { background: color-mix(in srgb, #e99b32 12%, var(--surface)); color: color-mix(in srgb, #a45c08 88%, var(--text-strong)); border-color: color-mix(in srgb, #e99b32 28%, var(--border)); }
+.badge-current { background: color-mix(in srgb, var(--primary-raw) 12%, var(--surface)); }
+.badge-cancelled { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); }
+[data-theme="dark"] .badge-planned { color: #a9c7ff; }
+[data-theme="dark"] .badge-completed { color: #83dfba; }
+[data-theme="dark"] .badge-skipped, [data-theme="dark"] .badge-pending { color: #ffd08a; }
+#settle-views .chip { border-color: color-mix(in srgb, var(--chip-tone, var(--primary-raw)) 25%, var(--border)); background: color-mix(in srgb, var(--chip-tone, var(--primary-raw)) 7%, var(--surface)); }
+#settle-views .chip:nth-child(1) { --chip-tone: #4b83ee; }
+#settle-views .chip:nth-child(2) { --chip-tone: #a064d8; }
+#settle-views .chip:nth-child(3) { --chip-tone: #1d9e8a; }
+#settle-views .chip.chip-active { color: color-mix(in srgb, var(--chip-tone) 72%, var(--text-strong)); border-color: color-mix(in srgb, var(--chip-tone) 45%, var(--border)); background: color-mix(in srgb, var(--chip-tone) 14%, var(--surface)); }
+#settle-views .chip svg { color: var(--chip-tone); }
+.dash-meta > span:not([hidden]) { display: inline-flex; align-items: center; min-height: 25px; margin: 3px 5px 0 0; padding: 2px 9px; border: 1px solid color-mix(in srgb, var(--primary-raw) 16%, var(--border)); border-radius: 999px; background: color-mix(in srgb, var(--primary-raw) 7%, var(--surface)); }
+.dash-meta > span:not(:last-child)::after { content: none; }
+.dash-meta .dash-status { background: color-mix(in srgb, #df9c32 14%, var(--surface)); border-color: color-mix(in srgb, #df9c32 30%, var(--border)); color: color-mix(in srgb, #a15d09 82%, var(--text-strong)); }
+
+/* The cover is a full-board hero, using the same outer width and rhythm as full-width cards. */
+.dash-cover { aspect-ratio: 2.9 / 1; max-height: 250px; border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(30, 64, 82, .09); }
+@media (max-width: 600px) { .dash-cover { aspect-ratio: 2.25 / 1; max-height: 190px; } }
+
+/* The traveller follows the real countdown progress along a scenic route to Fuji. */
+.countdown-scene { gap: 10px; }
+.cdc-top { align-items: center; }
+.cdc-main { flex: 1 1 auto; }
+.cdc-days { font-size: clamp(52px, 6vw, 64px); font-weight: 600; }
+.cdc-journey {
+  --cdc-jacket: color-mix(in srgb, var(--primary-raw) 82%, #1754aa);
+  --cdc-foothill: color-mix(in srgb, #74b993 28%, var(--surface));
+  position: relative; width: 100%; height: 124px; overflow: hidden; isolation: isolate;
+  border: 1px solid color-mix(in srgb, #78a9cd 28%, var(--border)); border-radius: 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, #a8d9f2 38%, var(--surface)) 0%, color-mix(in srgb, #f8d8a2 24%, var(--surface)) 78%, var(--surface) 100%);
+}
+[data-theme="dark"] .cdc-journey { --cdc-foothill: color-mix(in srgb, #367b69 28%, var(--surface)); }
+.cdc-horizon { position: absolute; inset: auto -4% -25px; height: 62px; border-radius: 50% 50% 0 0 / 30% 30% 0 0; background: color-mix(in srgb, #98c9a6 22%, var(--surface)); z-index: 0; }
+.cdc-fuji { position: absolute; z-index: 1; width: clamp(120px, 35%, 178px); height: auto; right: 5px; bottom: 12px; filter: drop-shadow(0 2px 2px rgba(39, 58, 72, .12)); }
+.cdc-cloud { position: absolute; z-index: 2; width: 48px; height: auto; opacity: .76; }
+.cdc-cloud--back { top: 20px; left: 16%; animation: cdc-cloud-drift 10s ease-in-out infinite alternate; }
+.cdc-cloud--front { top: 36px; left: 60%; width: 34px; opacity: .56; animation: cdc-cloud-drift 8s ease-in-out -2s infinite alternate-reverse; }
+@keyframes cdc-cloud-drift { from { transform: translateX(-9px); } to { transform: translateX(12px); } }
+.cdc-path { position: absolute; z-index: 2; left: -6%; right: 8%; bottom: -20px; height: 46px; border: 2px solid color-mix(in srgb, #d4a66b 44%, transparent); border-bottom: 0; border-radius: 50% 50% 0 0; opacity: .75; }
+.cdc-track { position: absolute; z-index: 4; left: 18px; right: 18px; bottom: 13px; height: 5px; margin: 0; border-radius: 999px; background: color-mix(in srgb, #ffffff 74%, var(--surface)); box-shadow: 0 1px 2px rgba(31, 59, 75, .12); }
+.cdc-track-fill { background: linear-gradient(90deg, #65b6a0, #56a2df); transition: width .9s cubic-bezier(.2,.72,.25,1); }
+.cdc-runner { z-index: 5; width: 50px; height: 62px; bottom: 0; transition: left .9s cubic-bezier(.2,.72,.25,1); filter: drop-shadow(0 2px 1px rgba(35, 51, 69, .14)); }
+.cdc-runner-svg, .cdc-celebrate-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.cdc-celebrate-svg { display: none; }
+.cdc-runner-body { animation: cdc-bounce .42s ease-in-out infinite alternate; transform-origin: 24px 40px; }
+.cdc-runner-arm, .cdc-runner-leg { transform-box: view-box; }
+.cdc-runner:is(.is-during, .is-after) .cdc-runner-body { animation: none; }
+.cdc:is(.is-during, .is-after) .cdc-runner-svg { display: none; }
+.cdc:is(.is-during, .is-after) .cdc-celebrate-svg { display: block; animation: cdc-arrive .45s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes cdc-arrive { 0% { transform: translateY(5px) scale(.88); } 70% { transform: translateY(-3px) scale(1.04); } 100% { transform: translateY(0) scale(1); } }
+.cdc-fireworks { position: absolute; z-index: 6; right: 24px; top: 1px; width: 105px; height: 86px; overflow: visible; opacity: 0; pointer-events: none; }
+.cdc-firework { transform-box: fill-box; transform-origin: center; opacity: 0; fill: none; stroke: #f1a936; stroke-width: 2.3; stroke-linecap: round; }
+.cdc-firework circle { fill: #fff2bb; stroke-width: 1.5; }
+.cdc-firework--two { stroke: #ef83a6; }
+.cdc-firework--three { stroke: #77b8ec; }
+.cdc.is-during .cdc-fireworks { opacity: 1; }
+.cdc.is-during .cdc-firework { animation: cdc-burst 2.8s ease-out 1 both; }
+.cdc.is-during .cdc-firework--two { animation-delay: .45s; }
+.cdc.is-during .cdc-firework--three { animation-delay: .9s; }
+@keyframes cdc-burst { 0% { opacity: 0; transform: scale(.35); } 18% { opacity: 1; } 68% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(1.16); } }
+.cdc-journey.is-empty .cdc-track, .cdc-journey.is-empty .cdc-path { display: none; }
+.cdc-journey.is-empty .cdc-fuji { opacity: .8; }
+.cdc-ends { margin-top: -4px; }
+@media (max-width: 480px) {
+  .cdc-days { font-size: 48px; }
+  .cdc-journey { height: 112px; }
+  .cdc-fuji { width: 43%; }
+  .cdc-fireworks { right: 14px; width: 92px; }
+  .cdc-track { left: 14px; right: 14px; bottom: 12px; }
+  .cdc-runner { width: 46px; height: 57px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cdc-cloud, .cdc-runner-body, .cdc-celebrate-svg, .cdc.is-during .cdc-firework { animation: none !important; }
+  .cdc-track-fill, .cdc-runner { transition: none !important; }
+  .cdc.is-during .cdc-firework { opacity: .72; }
+}
+
+/* Trip weather calendar — clear forecast window, vivid trip-range markers. */
+.weather-calendar-page { max-width: 980px; margin-inline: auto; }
+.weather-calendar-card { padding: clamp(14px, 3vw, 24px); background: linear-gradient(150deg, color-mix(in srgb, #58a9df 5%, var(--surface)) 0%, var(--surface) 44%); }
+.weather-destination-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.weather-section-kicker { display: block; margin-bottom: 8px; color: var(--text-tertiary); font-size: 11px; font-weight: 600; letter-spacing: .08em; }
+.weather-city-list { display: flex; flex-wrap: wrap; gap: 7px; }
+.weather-city-chip { min-height: 34px; padding: 5px 11px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-secondary); font-size: 11px; font-weight: 600; letter-spacing: .03em; cursor: pointer; transition: .18s ease; }
+.weather-city-chip:hover { border-color: color-mix(in srgb, #389bd1 45%, var(--border)); background: color-mix(in srgb, #60b5e5 9%, var(--surface)); }
+.weather-city-chip.is-active { color: #155b80; border-color: #72b9d9; background: #e3f4fb; box-shadow: inset 0 0 0 1px rgba(69, 162, 198, .12); }
+[data-theme="dark"] .weather-city-chip.is-active { color: #b8e7f9; border-color: #367e9d; background: #1d3b49; }
+.weather-month-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 22px 0 14px; }
+.weather-month-toolbar .btn { flex: 0 0 40px; }
+.weather-month-title { flex: 1; text-align: center; }
+.weather-month-title h2 { margin: 0; color: var(--text-strong); font-size: 22px; font-weight: 600; }
+.weather-month-title > span { display: block; margin-top: 2px; color: var(--text-tertiary); font-size: 11px; font-weight: 600; letter-spacing: .08em; }
+.weather-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.weather-weekday { display: grid; min-height: 28px; place-items: center; color: var(--text-tertiary); font-size: 11px; font-weight: 600; }
+.weather-day { position: relative; display: flex; min-width: 0; min-height: 92px; flex-direction: column; align-items: center; gap: 3px; padding: 7px 3px 5px; overflow: hidden; border: 1px solid var(--border-light); border-radius: 12px; background: color-mix(in srgb, #fff 60%, var(--surface)); color: var(--text-secondary); cursor: pointer; transition: transform .16s ease, background .16s ease, border-color .16s ease; }
+.weather-day:hover { transform: translateY(-1px); border-color: var(--border-strong); }
+.weather-day-number { display: flex; width: 100%; align-items: center; justify-content: center; gap: 3px; color: var(--text-strong); font-size: 12px; font-weight: 600; line-height: 1.2; }
+.weather-day-number i { color: #e18e34; font-size: 9px; font-style: normal; }
+.weather-day-icon { display: grid; min-height: 23px; place-items: center; }
+.weather-day-temp { display: flex; align-items: baseline; gap: 4px; color: var(--text-strong); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.weather-day-temp small { color: var(--text-tertiary); font-size: 10px; font-weight: 400; }
+.weather-day-temp--empty { color: var(--text-tertiary); font-weight: 400; }
+.weather-day--blank { visibility: hidden; }
+.weather-day.is-trip { border-color: color-mix(in srgb, #efad45 44%, var(--border)); background: color-mix(in srgb, #ffd984 19%, var(--surface)); }
+.weather-day.is-trip .weather-day-number { color: #965f0c; }
+[data-theme="dark"] .weather-day.is-trip { background: color-mix(in srgb, #b47720 16%, var(--surface)); border-color: color-mix(in srgb, #e1aa4f 40%, var(--border)); }
+[data-theme="dark"] .weather-day.is-trip .weather-day-number { color: #ffd78c; }
+.weather-day.is-selected { outline: 2px solid color-mix(in srgb, var(--primary-raw) 62%, transparent); outline-offset: -2px; }
+.weather-day.is-today .weather-day-number { color: var(--primary-strong); }
+.weather-day-icon.tone-sun, .weather-selected-icon.tone-sun { color: #e7a027; }
+.weather-day-icon.tone-cloud, .weather-selected-icon.tone-cloud { color: #6d91ac; }
+.weather-day-icon.tone-rain, .weather-selected-icon.tone-rain { color: #428fc7; }
+.weather-day-icon.tone-snow, .weather-selected-icon.tone-snow { color: #659fc5; }
+.weather-day-icon.tone-storm, .weather-selected-icon.tone-storm { color: #8a73c2; }
+.weather-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 13px; color: var(--text-secondary); font-size: 11px; }
+.weather-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.weather-legend i { width: 12px; height: 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); }
+.weather-legend-trip { border-color: #e6b355 !important; background: #fff0c9 !important; }
+.weather-legend-forecast { border-color: #82bdcf !important; background: #e4f5fa !important; }
+.weather-selected-day { display: flex; align-items: center; gap: 12px; min-height: 72px; margin-top: 16px; padding: 12px 14px; border: 1px solid color-mix(in srgb, #43a2c8 20%, var(--border)); border-radius: 14px; background: color-mix(in srgb, #5ab8de 7%, var(--surface)); }
+.weather-selected-icon { display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; border-radius: 13px; background: color-mix(in srgb, #ffffff 78%, var(--surface)); }
+.weather-selected-icon.is-muted { color: var(--text-tertiary); }
+.weather-selected-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.weather-selected-copy strong { color: var(--text-strong); font-size: 13px; }
+.weather-selected-copy span { color: var(--text-secondary); font-size: 12px; }
+.weather-selected-copy small { color: var(--text-tertiary); font-size: 11px; }
+.weather-source-note { display: flex; align-items: flex-start; gap: 7px; margin: 12px 4px 0; color: var(--text-tertiary); font-size: 11px; line-height: 1.6; }
+.weather-source-note > svg { flex: 0 0 auto; margin-top: 2px; }
+.weather-source-note a { margin-left: 4px; color: var(--primary-strong); text-decoration: underline; text-underline-offset: 2px; }
+@media (max-width: 520px) {
+  .weather-calendar-grid { gap: 4px; }
+  .weather-day { min-height: 74px; padding: 6px 1px 4px; border-radius: 9px; }
+  .weather-day-number { font-size: 11px; }
+  .weather-day-icon svg { width: 14px; height: 14px; }
+  .weather-day-temp { gap: 2px; font-size: 10px; }
+  .weather-day-temp small { font-size: 9px; }
+  .weather-month-title h2 { font-size: 19px; }
+  .weather-city-chip { padding-inline: 8px; font-size: 10px; }
+}
+.weather-day.is-seasonal { border-style: dashed; border-color: color-mix(in srgb, #5a9fbb 50%, var(--border)); }
+.weather-day-range { color: #627f8d; font-size: 8px; line-height: 1; }
+.weather-day.is-seasonal.is-trip { border-color: #d39b3a; }
+.weather-legend-seasonal { border-style: dashed !important; border-color: #74a9bd !important; background: #eaf5f8 !important; }
+.weather-confidence { color: var(--text-tertiary) !important; }
+.weather-confidence.is-long-range { color: #8e6822 !important; }
+[data-theme="dark"] .weather-confidence.is-long-range { color: #e4c27a !important; }

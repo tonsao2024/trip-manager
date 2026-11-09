@@ -143,22 +143,39 @@ function trackEnds(c, lang = 'th') {
 }
 
 /** A flat silhouette of the mountain — one tint of the accent, a paper-white cap. */
-function fujiMark() {
-  return `
-  <svg class="cdc-fuji" viewBox="0 0 160 72" aria-hidden="true" focusable="false">
-    <path d="M2 70 C 40 66, 62 52, 80 10 C 98 52, 120 66, 158 70 Z" fill="var(--cdc-mountain)"/>
-    <path d="M66 31 C 71 22, 75 15, 80 10 C 85 15, 89 22, 94 31 L 88 28 L 84 33 L 80 28 L 76 33 L 72 28 Z" fill="var(--cdc-snow)"/>
-  </svg>`;
+function journeyArtwork({ hasDate, lang, pct } = {}) {
+  return `<div class="cdc-journey${hasDate ? '' : ' is-empty'}">
+    <div class="cdc-horizon" aria-hidden="true"></div>
+    <svg class="cdc-cloud cdc-cloud--back" viewBox="0 0 54 24" aria-hidden="true" focusable="false"><path d="M8 20a7 7 0 0 1-1-14 10 10 0 0 1 19-1 8 8 0 0 1 12 7 6 6 0 0 1-1 12H8Z" fill="var(--cdc-cloud)"/></svg>
+    <svg class="cdc-cloud cdc-cloud--front" viewBox="0 0 54 24" aria-hidden="true" focusable="false"><path d="M8 20a7 7 0 0 1-1-14 10 10 0 0 1 19-1 8 8 0 0 1 12 7 6 6 0 0 1-1 12H8Z" fill="var(--cdc-cloud)"/></svg>
+    <svg class="cdc-fuji" viewBox="0 0 180 100" aria-hidden="true" focusable="false">
+      <path d="M2 98 C 42 90, 66 58, 90 8 C 114 58, 138 90, 178 98 Z" fill="var(--cdc-mountain)"/>
+      <path d="M72 44 C 79 29, 84 17, 90 8 C 96 17, 101 29, 108 44 L 100 40 L 95 47 L 90 41 L 85 47 L 80 40 Z" fill="var(--cdc-snow)"/>
+      <path d="M0 98 Q90 88 180 98V100H0Z" fill="var(--cdc-foothill)"/>
+    </svg>
+    <div class="cdc-path" aria-hidden="true"></div>
+    ${hasDate ? `<div class="cdc-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"
+      aria-label="${lang === 'th' ? 'ความคืบหน้าสู่วันเดินทาง' : 'Progress to departure'}">
+      <span class="cdc-track-fill" data-cd-bar style="width:${pct}%"></span>
+      ${runnerMark()}
+    </div>
+    <svg class="cdc-fireworks" viewBox="0 0 110 90" aria-hidden="true" focusable="false">
+      <g class="cdc-firework cdc-firework--one"><path d="M22 42V28M22 56V70M8 49H0M36 49H44M12 39 6 33M32 59 38 65M32 39 38 33M12 59 6 65"/><circle cx="22" cy="49" r="3"/></g>
+      <g class="cdc-firework cdc-firework--two"><path d="M72 25V14M72 36V47M61 30H50M83 30H94M64 22 58 16M80 38 86 44M80 22 86 16M64 38 58 44"/><circle cx="72" cy="30" r="2.5"/></g>
+      <g class="cdc-firework cdc-firework--three"><path d="M48 68V58M48 78V88M38 73H28M58 73H68M41 66 36 61M55 80 60 85M55 66 60 61M41 80 36 85"/><circle cx="48" cy="73" r="2"/></g>
+    </svg>` : ''}
+  </div>`;
 }
 
 /** Decorative traveller; the limbs animate independently while the marker follows progress. */
 function runnerMark() {
   return `<span class="cdc-runner" data-cd-runner aria-hidden="true">
     <svg class="cdc-runner-svg" viewBox="0 0 48 56" focusable="false">
+      <ellipse cx="24" cy="53" rx="12" ry="2.5" fill="rgba(38,52,73,.18)"/>
       <g class="cdc-runner-body">
         <path d="M20 20 L15 29 L9 27" class="cdc-runner-arm cdc-runner-arm--back"/>
         <path d="M23 35 L17 43 L10 44" class="cdc-runner-leg cdc-runner-leg--back"/>
-        <path d="M24 20 Q18 22 19 31 L23 37 L31 34 L29 24 Q28 20 24 20Z" fill="var(--primary)"/>
+        <path d="M24 20 Q18 22 19 31 L23 37 L31 34 L29 24 Q28 20 24 20Z" fill="var(--cdc-jacket)"/>
         <path d="M19 23 Q14 22 14 27 L15 33 L20 33Z" fill="var(--brand-yellow-raw)"/>
         <circle cx="27" cy="13" r="7" fill="#f3bd91"/>
         <path d="M20 13 Q19 5 27 5 Q34 5 34 12 Q30 10 27 10 Q25 14 20 13Z" fill="#263449"/>
@@ -166,6 +183,14 @@ function runnerMark() {
         <path d="M27 35 L33 42 L39 41" class="cdc-runner-leg cdc-runner-leg--front"/>
         <path d="M27 23 L32 29 L37 26" class="cdc-runner-arm cdc-runner-arm--front"/>
       </g>
+    </svg>
+    <svg class="cdc-celebrate-svg" viewBox="0 0 48 56" focusable="false">
+      <ellipse cx="24" cy="53" rx="13" ry="2.5" fill="rgba(38,52,73,.18)"/>
+      <path d="M21 35 18 49 14 51M28 35 31 49 35 51" fill="none" stroke="#263449" stroke-width="4.5" stroke-linecap="round"/>
+      <path d="M20 19Q16 21 18 28L20 37 31 37 32 25Q32 19 27 19Z" fill="var(--cdc-jacket)"/>
+      <path d="M20 23 12 14 8 8M30 23 37 14 40 8" fill="none" stroke="#f3bd91" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="25" cy="12" r="6.5" fill="#f3bd91"/>
+      <path d="M19 12Q18 4 25 4 33 4 32 12 28 9 25 9 23 13 19 12Z" fill="#263449"/>
     </svg>
   </span>`;
 }
@@ -189,16 +214,9 @@ export function renderCountdownScene({ startDate, endDate, createdAt, timezone, 
         </div>
         <p class="cdc-caption" data-cd-eta>${f.caption}</p>
       </div>
-      ${fujiMark()}
     </div>
-    ${c.startDate ? `
-    <p class="cdc-track-label" data-cd-track-label>${c.phase === 'before' ? (lang === 'th' ? 'นับถอยหลังสู่วันเดินทาง' : 'Countdown to departure') : (lang === 'th' ? 'ถึงวันเดินทางแล้ว' : 'Departure reached')}</p>
-    <div class="cdc-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"
-      aria-label="${lang === 'th' ? 'ความคืบหน้าสู่วันเดินทาง' : 'Progress to departure'}">
-      <span class="cdc-track-fill" data-cd-bar style="width:${pct}%"></span>
-      ${runnerMark()}
-    </div>
-    <div class="cdc-ends"><span data-cd-left>${left}</span><span data-cd-right>${right}</span></div>` : ''}
+    ${journeyArtwork({ hasDate: !!c.startDate, lang, pct })}
+    ${c.startDate ? `<div class="cdc-ends"><span data-cd-left>${left}</span><span data-cd-right>${right}</span></div>` : ''}
   </div>`;
 }
 
@@ -228,7 +246,6 @@ export function mountCountdown(rootId, { startDate, endDate, createdAt, timezone
     set('[data-cd-days]', f.value);
     set('[data-cd-unit]', f.unit);
     set('[data-cd-eta]', f.caption);
-    set('[data-cd-track-label]', c.phase === 'before' ? (lang === 'th' ? 'นับถอยหลังสู่วันเดินทาง' : 'Countdown to departure') : (lang === 'th' ? 'ถึงวันเดินทางแล้ว' : 'Departure reached'));
     const bar = scene.querySelector('[data-cd-bar]');
     if (bar) bar.style.width = `${pct}%`;
     const track = scene.querySelector('.cdc-track');

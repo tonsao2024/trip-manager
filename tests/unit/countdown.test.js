@@ -52,6 +52,10 @@ export function testCountdown() {
   const pct = markup.match(/--cd-progress:(\d+)%/)?.[1];
   assert(pct && markup.includes(`aria-valuenow="${pct}"`) && markup.includes(`width:${pct}%`), 'runner position, fill and accessible value share progress');
   assert(markup.includes('data-cd-runner') && markup.includes('aria-hidden="true"'), 'decorative runner is present');
+  assert(markup.includes('cdc-runner-svg') && markup.includes('cdc-cloud--front') && markup.includes('cdc-fuji'), 'Fuji, the animated traveller and clouds share the journey scene');
+  assert(!markup.includes('นับถอยหลังสู่วันเดินทาง'), 'the redundant countdown-to-departure line is removed');
+  const arrival = renderCountdownScene({ startDate: '2026-12-30', endDate: '2027-01-05', now });
+  assert(arrival.includes('is-during') && arrival.includes('cdc-fireworks') && arrival.includes('cdc-celebrate-svg'), 'on departure day the traveller switches to the celebration pose with fireworks');
   assert(!renderCountdownScene({}).includes('data-cd-runner'), 'no date does not show misleading progress');
   const finished = renderCountdownScene({ startDate: new Date(Date.now() - 5 * 86400000), endDate: new Date(Date.now() - 3 * 86400000) });
   assert(finished.includes('is-after') && finished.includes('--cd-progress:100%'), 'finished trip reaches the end of the track');

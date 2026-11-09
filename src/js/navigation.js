@@ -15,6 +15,7 @@ export const TRIP_SECONDARY_NAV = Object.freeze([
   Object.freeze({ id: 'prep', group: 'planning', label: { th: 'เตรียมตัว', en: 'Prep' }, path: '/prep', icon: 'backpack' }),
   Object.freeze({ id: 'bookings', group: 'planning', label: { th: 'การจอง', en: 'Bookings' }, path: '/bookings', icon: 'ticket' }),
   Object.freeze({ id: 'calendar', group: 'planning', label: { th: 'ปฏิทินทริป', en: 'Trip calendar' }, path: '/calendar', icon: 'calendar-days' }),
+  Object.freeze({ id: 'weather', group: 'planning', label: { th: 'พยากรณ์อากาศ', en: 'Weather forecast' }, path: '/weather', icon: 'cloud-sun' }),
   Object.freeze({ id: 'explore', group: 'planning', label: { th: 'ชวนไปที่นี่', en: 'Explore' }, path: '/explore', icon: 'compass' }),
   Object.freeze({ id: 'import', group: 'tools', label: { th: 'นำเข้า / ส่งออก', en: 'Import / Export' }, path: '/import', icon: 'package' }),
   Object.freeze({ id: 'settings', group: 'tools', label: { th: 'ตั้งค่า', en: 'Settings' }, path: '/settings', icon: 'settings' })

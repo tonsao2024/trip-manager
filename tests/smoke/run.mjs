@@ -435,6 +435,12 @@ check(!!q('#settlement-content'), 'settlement: renders');
 await goto('#/trip/t1/more');
 await waitFor(() => text$().includes('ตั้งค่า') || text$().includes('Settings'), { label: 'more page' });
 check(!!q('#logout-more'), 'more: menu renders');
+check(!!q(`a[href="#/trip/t1/weather"]`), 'more: weather forecast has its own menu entry');
+await goto('#/trip/t1/weather');
+await waitFor(() => q('.weather-calendar-grid'), { label: 'weather calendar page' });
+check(q('.weather-city-list')?.textContent.includes('TOKYO') && q('.weather-city-list')?.textContent.includes('HAKUBA'), 'weather page offers the requested Japanese destinations');
+check(q(`[data-weather-date="${TRIP.startDate}"]`)?.classList.contains('is-trip'), 'weather page opens in the trip month and highlights the departure date');
+check(text$().includes('Open-Meteo'), 'weather page credits the free Open-Meteo forecast source');
 
 console.log('\n▶ itinerary: add a place with coordinates (map must not re-init)');
 await goto('#/trip/t1/itinerary');

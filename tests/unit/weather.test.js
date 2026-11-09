@@ -1,10 +1,44 @@
 // Unit tests — weather helpers (WMO mapping, parsing, trip-window logic).
 import {
-  WMO_CODES, weatherCodeInfo, parseForecast, forecastForDates, forecastLabel,
+  WMO_CODES, WEATHER_DESTINATIONS, weatherCodeInfo, parseForecast, fetchForecastWindow, forecastForDates, forecastLabel,
   weatherTip, datesBetween, isForecastRelevant, weatherTone, createLatestRequestGuard
 } from '../../src/js/utils/weather.js';
 
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
+
+export function testWeatherDestinations() {
+  assert(WEATHER_DESTINATIONS.map(place => place.label).join(',') === 'TOKYO,FUJIKAWAGUCHIKO,NIKKO,YUZAWA,HAKUBA', 'the default Japan destination list has the requested five cities in order');
+  assert(WEATHER_DESTINATIONS.every(place => Number.isFinite(place.lat) && Number.isFinite(place.lon)), 'every curated destination has coordinates');
+}
+
+export async function testExtendedForecastWindow() {
+  const originalFetch = globalThis.fetch;
+  const today = new Date();
+  const day0 = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  const key = day0.toISOString().slice(0, 10);
+  const day30Date = new Date(day0); day30Date.setUTCDate(day30Date.getUTCDate() + 30);
+  const day30 = day30Date.toISOString().slice(0, 10);
+  const urls = [];
+  const payload = (time, weather_code, max, min, precipitation_sum) => ({ daily: { time, weather_code, temperature_2m_max: max, temperature_2m_min: min, precipitation_sum } });
+  globalThis.fetch = async (url) => {
+    const requestUrl = String(url);
+    urls.push(requestUrl);
+    const data = requestUrl.includes('seasonal-api.open-meteo.com')
+      ? payload([key, day30], [61, 3], [16, 10], [8, 2], [4, 0])
+      : payload([key], [0], [18], [9], [0]);
+    return new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const days = await fetchForecastWindow({ lat: 35.6762, lon: 139.6503 });
+    const near = days.find(day => day.date === key);
+    const extended = days.find(day => day.date === day30);
+    assert(near?.forecastBand === 'short' && near.code === 0, 'near-term forecast overrides the seasonal estimate');
+    assert(extended?.forecastBand === 'seasonal' && extended.code === 3, 'ECMWF seasonal daily forecast fills dates beyond the 16-day forecast');
+    assert(urls.some(url => url.includes('seasonal-api.open-meteo.com') && url.includes('ecmwf_seasonal_ensemble_mean_seamless')), 'long range uses the ECMWF seasonal ensemble endpoint');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
 
 export function testCodeMapping() {
   assert(weatherCodeInfo(0).icon === 'sun', 'clear sky → sun');
