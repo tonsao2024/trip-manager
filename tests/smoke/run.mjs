@@ -3521,6 +3521,33 @@ console.log('\n▶ v36: transfers need the same permission as the rules + concur
   await sleep(120);
 }
 
+console.log('\n▶ v36: two accounts never share a trip list');
+{
+  await goto('#/trips');
+  await waitFor(() => text$().includes('ทริปฟูจิ'), { label: 'trip list before account isolation check' });
+  const tripsMod = await import(pathToFileURL(path.join(outDir, 'trips/index.js')).href);
+  tripsMod.clearTripsCache();
+  const base = fsdb.__dump('trips/t1') || {};
+  fsdb.__seed('trips/sharedA', { ...base, name: 'ทริปของ A', inviteCode: 'SHAA01', createdBy: 'u1', memberUids: ['u1'] });
+  fsdb.__seed('trips/sharedB', { ...base, name: 'ทริปของ B', inviteCode: 'SHBB01', createdBy: 'u2', memberUids: ['u2'] });
+  const [a, b] = await Promise.all([tripsMod.listTrips('u1', false), tripsMod.listTrips('u2', false)]);
+  check(a.every(t => t.id !== 'sharedB'), `accounts: A never receives B's trips (${a.map(t => t.id).join(',')})`);
+  check(b.every(t => t.id !== 'sharedA'), `accounts: B never receives A's trips (${b.map(t => t.id).join(',')})`);
+  // A cache stamped for u1 holds nothing but that account's trips. Loading as u2
+  // must ignore it (the uid stamp is what makes the cache per account).
+  window.localStorage.setItem('fuji_trips_cache', JSON.stringify({
+    data: [{ id: 'sharedA', name: 'ทริปของ A', createdBy: 'u1', memberUids: ['u1'] }],
+    timestamp: Date.now(), uid: 'u1'
+  }));
+  const leak = await tripsMod.listTrips('u2', false).catch(() => []);
+  check(!leak.some(t => t.id === 'sharedA'),
+    `accounts: a cache stamped for another account is not served (${(leak || []).map(t => t.id).join(',')})`);
+  fsdb.__store.delete('trips/sharedA');
+  fsdb.__store.delete('trips/sharedB');
+  tripsMod.clearTripsCache();
+  window.localStorage.removeItem('fuji_trips_cache');
+}
+
 console.log('\n▶ v36: the trip list is paged (no silent 30-trip cap)');
 {
   await goto('#/trips');
