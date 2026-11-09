@@ -901,7 +901,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   .btn-row::-webkit-scrollbar, .chip-row::-webkit-scrollbar { display: none; }
   .btn-row .btn, .chip-row .chip { flex: 0 0 auto; scroll-snap-align: start; min-height: 34px; padding: 4px 12px; font-size: 12px; }
   .btn-row .btn { justify-content: center; }
-  .btn-row .btn-sm { min-height: 30px; padding: 4px 8px; font-size: 12px; }
+  .btn-row .btn-sm { min-height: 36px; padding: 4px 8px; font-size: 12px; } /* round 5: small buttons ≥36px on phones (was 30) */
   
   .chip-row .chip { min-height: 32px; padding: 4px 8px; font-size: 12px; }
   .chip-row-scroll { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
