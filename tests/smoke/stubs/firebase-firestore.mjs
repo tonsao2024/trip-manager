@@ -314,3 +314,24 @@ export default {
   getFirestore, collection, doc, query, where, orderBy, limit, getDocs, getDoc,
   setDoc, addDoc, updateDoc, deleteDoc, writeBatch, onSnapshot, serverTimestamp, Timestamp
 };
+
+export const getDocFromServer = getDoc;
+export const getDocsFromServer = getDocs;
+// Serialize transactions in the in-memory stand-in. This is not a rules emulator.
+let transactionQueue = Promise.resolve();
+export function runTransaction(db, updateFunction) {
+  const run = async () => {
+    const writes = [];
+    const tx = {
+      get: ref => getDoc(ref),
+      set: (ref, data, options) => { denyCheck(ref.path); writes.push(() => setDoc(ref, data, options)); },
+      delete: ref => { denyCheck(ref.path); writes.push(() => deleteDoc(ref)); }
+    };
+    const result = await updateFunction(tx);
+    for (const write of writes) await write();
+    return result;
+  };
+  const result = transactionQueue.then(run, run);
+  transactionQueue = result.catch(() => {});
+  return result;
+}

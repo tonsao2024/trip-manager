@@ -1,0 +1,169 @@
+/* Layered surfaces and a little movement for the journey. */
+:root {
+  --bg: #edf2f6;
+  --bg-secondary: #e7eef3;
+  --bg-tertiary: #dce6ec;
+  --surface-2: #f2f6f8;
+  --surface-3: #e3ebef;
+  --surface-inset: #eef3f6;
+  --border: rgba(31, 59, 75, .15);
+  --border-light: rgba(31, 59, 75, .10);
+}
+[data-theme="dark"] {
+  --bg: #10171d;
+  --bg-secondary: #17232b;
+  --bg-tertiary: #20303a;
+  --surface: #1b2831;
+  --card: #1b2831;
+  --surface-2: #23343e;
+  --surface-3: #30434d;
+  --surface-inset: #152129;
+  --text-tertiary: #b3bbc1;
+  --border: rgba(211, 231, 239, .16);
+  --border-light: rgba(211, 231, 239, .10);
+}
+
+.card, .kpi-tile, .kpi-tile.kpi-compact, .place-card, .group-card {
+  border-color: var(--border);
+  box-shadow: 0 3px 12px rgba(27, 52, 66, .07), 0 1px 2px rgba(27, 52, 66, .04);
+}
+.card-hover:hover, .place-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 6px 18px rgba(27, 52, 66, .12);
+}
+[data-theme="dark"] :is(.card, .kpi-tile, .place-card, .group-card) {
+  box-shadow: 0 3px 14px rgba(0, 0, 0, .2);
+}
+/* Respect the explicit flat-depth preference; colour and borders still separate surfaces. */
+html[data-depth="flat"] :is(.card, .kpi-tile, .place-card, .group-card),
+html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: none; }
+/* Subtle variation helps distinguish dashboard summaries without competing with data. */
+.dash-widget[data-dashboard-widget="countdown"] > .card {
+  background: linear-gradient(145deg, var(--surface) 35%, color-mix(in srgb, var(--primary) 9%, var(--surface)) 100%);
+  border-color: color-mix(in srgb, var(--primary) 25%, var(--border));
+}
+.kpi-tile[data-kpi="total"] { background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
+.kpi-tile[data-kpi="balance"] { background: color-mix(in srgb, #20a69a 7%, var(--surface)); }
+.kpi-tile[data-kpi="budget"] { background: color-mix(in srgb, #e8a53b 9%, var(--surface)); }
+
+/* Individual records remain easy to scan inside larger dashboard panels. */
+#upnext-list .upnext-row, .recent-list .expense-row, .booking-list .booking-row,
+.dash-idea-list .dash-idea-row, .member-board .member-row {
+  background: var(--surface-2);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+}
+#upnext-list .upnext-row:last-child, .recent-list .expense-row:last-child,
+.booking-list .booking-row:last-child, .dash-idea-list .dash-idea-row:last-child,
+.member-board .member-row:last-child { margin-bottom: 0; border-bottom: 1px solid var(--border-light); padding-bottom: 10px; }
+.booking-list .booking-row:first-child, .dash-idea-list .dash-idea-row:first-child { padding-top: 10px; }
+#upnext-list .upnext-row:hover, .recent-list .expense-row:hover,
+.dash-idea-list .dash-idea-row:hover, .member-board .member-row:hover { background: var(--surface-3); }
+
+/* The track is inset by half the runner's width so even 0% and 100% fit. */
+.cdc-track { height: 7px; margin: 34px 20px 0; background: var(--surface-3); }
+.cdc-track-fill { transition: width .5s var(--ease); }
+.cdc-runner {
+  position: absolute;
+  left: var(--cd-progress);
+  bottom: 3px;
+  width: 40px;
+  height: 47px;
+  transform: translateX(-50%);
+  transition: left .5s var(--ease);
+  pointer-events: none;
+}
+.cdc-runner-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.cdc-runner-body { animation: cdc-bounce .48s infinite alternate; transform-origin: 24px 40px; }
+.cdc-runner-arm, .cdc-runner-leg { fill: none; stroke-linecap: round; stroke-linejoin: round; transform-box: view-box; }
+.cdc-runner-arm { stroke: #f3bd91; stroke-width: 4; }
+.cdc-runner-leg { stroke: #263449; stroke-width: 5; }
+.cdc-runner-arm--back { transform-origin: 20px 22px; animation: cdc-swing .48s infinite alternate; }
+.cdc-runner-arm--front { transform-origin: 27px 23px; animation: cdc-swing .48s infinite alternate-reverse; }
+.cdc-runner-leg--back { transform-origin: 23px 35px; animation: cdc-swing .48s infinite alternate-reverse; }
+.cdc-runner-leg--front { transform-origin: 27px 35px; animation: cdc-swing .48s infinite alternate; }
+@keyframes cdc-bounce { from { transform: translateY(0); } to { transform: translateY(-2px); } }
+@keyframes cdc-swing { from { transform: rotate(-20deg); } to { transform: rotate(20deg); } }
+.cdc:is(.is-during, .is-after) :is(.cdc-runner-body, .cdc-runner-arm, .cdc-runner-leg) { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .cdc :is(.cdc-runner-body, .cdc-runner-arm, .cdc-runner-leg) { animation: none; }
+  .cdc-track-fill, .cdc-runner { transition: none; }
+}
+@media print {
+  .card, .kpi-tile, .place-card, .group-card { box-shadow: none; }
+  .cdc :is(.cdc-runner-body, .cdc-runner-arm, .cdc-runner-leg) { animation: none; }
+}
+
+/* Debt map: read the transfer instructions first, explore the graph on demand. */
+.debt-map-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+.debt-map-heading h3 { margin: 2px 0 5px; font-size: 22px; }
+.debt-map-heading p { margin: 0; color: var(--text-secondary); font-size: 13px; }
+.debt-map-heading .debt-map-eyebrow { color: var(--primary-strong); font-size: 12px; font-weight: 600; }
+.debt-map-total { display: flex; flex-direction: column; min-width: 190px; gap: 2px; padding: 12px 16px; border-radius: 10px; background: var(--primary-lighter); border: 1px solid var(--border-light); }
+.debt-map-total span, .debt-map-total small { color: var(--text-secondary); font-size: 12px; }
+.debt-map-total strong { font-size: 22px; color: var(--text-strong); }
+.debt-list-heading { display: flex; align-items: center; justify-content: space-between; margin: 20px 0 10px; }
+.debt-list-heading h4 { margin: 0; font-size: 15px; }
+.debt-list-heading span { color: var(--text-secondary); font-size: 12px; }
+.debt-payer-list { gap: 8px; margin: 0; }
+.debt-payer-list .debt-tx-row, .debt-payer-list .debt-tx-row:last-child {
+  display: flex; gap: 16px; align-items: center; padding: 14px; border: 1px solid var(--border); border-left: 4px solid var(--debt-edge-color); border-radius: 10px; background: var(--surface-2);
+}
+.debt-payer-list .debt-tx-row:hover { background: var(--surface-2); }
+.debt-payer-list .debt-tx-row::before { display: none; }
+.debt-step { flex: 0 0 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); color: var(--text-secondary); font-size: 12px; }
+.debt-route { display: flex; flex: 1; min-width: 0; align-items: center; gap: 12px; }
+.debt-route .debt-person-link { flex: 1 1 0; gap: 9px; }
+.debt-person-copy { display: flex; flex-direction: column; min-width: 0; }
+.debt-person-role { color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.debt-person-name { color: var(--text-strong); font-size: 14px; }
+.debt-route .avatar { flex: 0 0 36px; }
+.debt-row-pays { flex: 0 0 auto; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--surface); color: var(--primary-strong); }
+.debt-amount-block { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 130px; }
+.debt-amount-block > span { color: var(--text-secondary); font-size: 12px; }
+.debt-row-amount { font-size: 16px; }
+.debt-map-action-hint, .debt-graph-help { color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.debt-map-action-hint { margin: 12px 0 20px; }
+.debt-graph-details { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.debt-graph-details summary { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; font-weight: 600; list-style: none; }
+.debt-graph-details summary::-webkit-details-marker { display: none; }
+.debt-graph-details summary > span { display: flex; align-items: center; gap: 8px; }
+.debt-graph-details[open] summary > svg { transform: rotate(180deg); }
+.debt-graph-help, .debt-graph-details .debt-map-legend { margin: 0 16px 12px; }
+.debt-graph-details .debt-map-container { margin: 0 16px 16px; }
+@media (max-width: 600px) {
+  .debt-map-heading { align-items: stretch; flex-direction: column; gap: 12px; }
+  .debt-map-total { min-width: 0; }
+  .debt-payer-list .debt-tx-row, .debt-payer-list .debt-tx-row:last-child { flex-wrap: wrap; gap: 10px; padding: 12px; }
+  .debt-route { flex: 1 1 calc(100% - 38px); gap: 5px; }
+  .debt-route .debt-person-link { gap: 5px; }
+  .debt-route .avatar { width: 28px !important; height: 28px !important; flex-basis: 28px; font-size: 12px !important; }
+  .debt-row-pays { width: 24px; height: 24px; font-size: 12px; }
+  .debt-amount-block { margin-left: 36px; align-items: flex-start; min-width: 0; }
+}
+/* Long names must remain readable, especially on narrow screens. */
+.debt-route .debt-person-name { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.35; }
+.cdc-track-label { margin: 0; font-size: 12px; color: var(--text-secondary); }
+.debt-total-explanation { margin: 12px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+.debt-pay-btn { flex: 0 0 auto; min-height: 44px; }
+.debt-route .debt-person-link { min-height: 44px; }
+@media (max-width: 600px) {
+  .debt-pay-btn { margin-left: auto; }
+  .debt-amount-block { flex: 1 1 auto; }
+}
+.expense-more-filters { display: none; }
+.expense-extra-actions { margin-bottom: 8px; }
+@media (max-width: 767px) {
+  .expense-more-filters { display: flex; width: 100%; justify-content: flex-start; gap: 8px; min-height: 44px; margin: 0 0 12px; }
+  .expense-more-filters [data-expense-filter-summary] { margin-left: auto; color: var(--text-secondary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .expense-extra-controls:not(.is-open) { display: none; }
+  .expense-extra-controls { padding: 12px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+  .expense-extra-controls #cat-filters { margin-bottom: 0; }
+}
+.expense-more-filters [data-expense-filter-summary] { line-height: 1.5; }
+@media (max-width: 600px) { .debt-amount-block .debt-row-amount { margin-left: 0; } }
+@media (max-width: 767px) {
+  .btn.btn-sm.debt-pay-btn, .btn.btn-sm.expense-more-filters { min-height: 44px !important; }
+}

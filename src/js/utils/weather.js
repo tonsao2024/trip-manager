@@ -6,6 +6,12 @@
 //
 // Pure helpers (WMO code mapping, summary, cache keys) are exported for tests.
 
+/** Discard stale results when the user switches cities while requests overlap. */
+export function createLatestRequestGuard() {
+  let sequence = 0;
+  return { begin() { const token = ++sequence; return () => token === sequence; }, invalidate() { sequence++; } };
+}
+
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search';
 const CACHE_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours

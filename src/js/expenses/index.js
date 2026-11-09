@@ -18,47 +18,21 @@ export function subscribeExpenses(tripId, cb) {
 
 /** Every expense of the trip, cached per trip (stale-while-revalidate). */
 async function loadAllExpensesUncached(tripId) {
-  const snap = await getDocs(query(collection(db, `trips/${tripId}/expenses`), limit(500)));
+  // Read the entire collection. A silent cap here also corrupts settlement totals.
+  const snap = await getDocs(collection(db, `trips/${tripId}/expenses`));
   return snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
     .filter(e => e.status !== 'voided')
-    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(a.id).localeCompare(String(b.id)));
 }
 
+/** Page through the full cached list using a numeric offset, including filters. */
 export async function fetchExpenses(tripId, { filters = {}, pageSize = 20, lastDoc = null } = {}) {
   if (!db) throw new Error('DB not ready');
-  // No cursor → serve from the cached trip list, so switching to the expenses
-  // menu does not cost a round trip. Later pages still come from the server.
-  if (!lastDoc) {
-    const all = await fetchAllExpenses(tripId);
-    return { items: applyFilters(all, filters).slice(0, pageSize), lastDoc: null, fromCache: true };
-  }
-  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout loading expenses - check Firestore indexes')), 12000));
-
-  const fetchPromise = (async () => {
-    try {
-      const col = collection(db, `trips/${tripId}/expenses`);
-      const queryRef = lastDoc
-        ? query(col, orderBy('date', 'desc'), startAfter(lastDoc), limit(pageSize))
-        : query(col, orderBy('date', 'desc'), limit(pageSize));
-      const snap = await getDocs(queryRef);
-      let items = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(e => e.status !== 'voided');
-      items = applyFilters(items, filters);
-      return { items, lastDoc: snap.docs[snap.docs.length - 1] || null };
-    } catch (e) {
-      if (/index/i.test(e.message || '') || e.code === 'failed-precondition') {
-        console.warn('Expenses index missing, falling back without orderBy', e.message);
-        const snap = await getDocs(query(collection(db, `trips/${tripId}/expenses`), limit(200)));
-        let items = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(e => e.status !== 'voided');
-        items.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-        items = applyFilters(items, filters);
-        return { items, lastDoc: null };
-      }
-      throw e;
-    }
-  })();
-
-  return Promise.race([fetchPromise, timeout]);
+  const all = applyFilters(await fetchAllExpenses(tripId), filters);
+  const offset = Number.isInteger(lastDoc) && lastDoc > 0 ? lastDoc : 0;
+  const size = Math.max(1, Math.floor(Number(pageSize) || 20));
+  return { items: all.slice(offset, offset + size), lastDoc: offset + size < all.length ? offset + size : null, fromCache: true };
 }
 
 function applyFilters(items, filters = {}) {
@@ -72,9 +46,9 @@ function applyFilters(items, filters = {}) {
 }
 
 /** Every expense of the trip (used by exports / dashboard summaries). v22: 5 min cache for faster menus. */
-export async function fetchAllExpenses(tripId, { max = 500, fresh = false } = {}) {
+export async function fetchAllExpenses(tripId, { max = null, fresh = false } = {}) {
   if (!db) throw new Error('DB not ready');
-  const key = `exps:${tripId}`;
+  const key = `exps:full:${tripId}`;
   let list;
   if (fresh) {
     // Do not join a stale in-flight cache refresh: another device may have
@@ -253,7 +227,7 @@ export async function updateExpense(tripId, expenseId, updates, userId, by = nul
 }
 
 function invalidateExpenses(tripId) {
-  cacheForget(`exps:${tripId}`);
+  cacheForget(`exps:full:${tripId}`);
 }
 
 /**

@@ -38,6 +38,13 @@ firebase deploy --project trip-manager-93b22 --only firestore:rules,firestore:in
 
 `firebase.json` มีเฉพาะ Firestore และ static Hosting ไม่มี Functions หรือ Storage
 เพื่อไม่ให้คำสั่ง deploy ปกติพยายามเปิดบริการที่ต้องใช้ Blaze
+
+> **v36 — ต้อง deploy rules หลังอัปเดตนี้** การบันทึก “จ่ายแล้ว” เปลี่ยนเป็น
+> transaction + guard document (`trips/{id}/settlements/_transferGuard`) และ rules
+> บังคับว่าทุก transfer create/delete ต้องมี guard bump ใน atomic write เดียวกัน
+> ถ้า client ใหม่ทำงานกับ rules เก่า การบันทึกจะถูกปฏิเสธ; ถ้า client เก่า (หน้าที่โหลดค้าง
+> ไว้ก่อน deploy) ทำงานกับ rules ใหม่ การบันทึกก็จะถูกปฏิเสธเช่นกัน — ให้ผู้ใช้รีเฟรชหน้า
+> หนึ่งครั้งหลัง deploy (client เก่ายัง **อ่าน** ยอดได้ตามปกติ)
 ใช้ GitHub Pages สำหรับเว็บตามขั้นตอนข้างบน หรือ Firebase static Hosting:
 
 ```bash

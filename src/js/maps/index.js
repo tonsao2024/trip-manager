@@ -174,7 +174,13 @@ function isDarkTheme() {
   return document.documentElement.getAttribute('data-theme') === 'dark';
 }
 
-function buildTileLayer(map, L, def, entry, { withFallback = true } = {}) {
+// Notify the host when the final tile provider cannot supply a basemap.
+function notifyTileStatus(map, status) {
+  const container = map?.getContainer?.();
+  if (container && typeof CustomEvent !== 'undefined') container.dispatchEvent(new CustomEvent('trip-map-tile-status', { detail: status }));
+}
+
+function buildTileLayer(map, L, def, entry, { withFallback = true, fallbackProvider = false } = {}) {
   const dark = isDarkTheme();
   let failedTiles = 0;
   let switched = false;
@@ -188,17 +194,19 @@ function buildTileLayer(map, L, def, entry, { withFallback = true } = {}) {
     detectRetina: false
   });
 
-  if (withFallback) {
-    layer.on('tileerror', () => {
-      failedTiles++;
-      if (failedTiles >= 4 && !switched && def.id === 'map') {
-        switched = true;
-        console.warn('[Maps] Tiles failing on CARTO, falling back to OpenStreetMap');
-        try { map.removeLayer(layer); } catch {}
-        addTileLayerWithFallback(map, L, 1, entry);
-      }
-    });
-  }
+  layer.on('tileload', () => { failedTiles = 0; notifyTileStatus(map, 'ready'); });
+  layer.on('tileerror', () => {
+    failedTiles++;
+    if (failedTiles < 4 || switched) return;
+    switched = true;
+    if (withFallback && def.id === 'map') {
+      console.warn('[Maps] Tiles failing on CARTO, falling back to OpenStreetMap');
+      try { map.removeLayer(layer); } catch {}
+      addTileLayerWithFallback(map, L, 1, entry);
+    } else if (!fallbackProvider) {
+      notifyTileStatus(map, 'error');
+    }
+  });
 
   layer.addTo(map);
   layer.bringToBack?.();
@@ -217,13 +225,18 @@ function buildTileLayer(map, L, def, entry, { withFallback = true } = {}) {
 function addTileLayerWithFallback(map, L, providerIndex = 0, entry = null) {
   const provider = TILE_PROVIDERS[Math.min(providerIndex, TILE_PROVIDERS.length - 1)];
   const def = { ...provider, id: provider.name.toLowerCase(), maxZoom: provider.maxZoom };
-  const layer = buildTileLayer(map, L, def, entry, { withFallback: false });
+  const layer = buildTileLayer(map, L, def, entry, { withFallback: false, fallbackProvider: true });
 
   let failedTiles = 0;
   let switched = false;
+  layer.on('tileload', () => { failedTiles = 0; });
   layer.on('tileerror', () => {
     failedTiles++;
     // If many tiles fail on this provider, switch to the next one automatically
+    if (failedTiles >= 4 && !switched && providerIndex === TILE_PROVIDERS.length - 1) {
+      switched = true;
+      notifyTileStatus(map, 'error');
+    }
     if (failedTiles >= 4 && !switched && providerIndex < TILE_PROVIDERS.length - 1) {
       switched = true;
       console.warn(`[Maps] Tiles failing on ${provider.name}, falling back to ${TILE_PROVIDERS[providerIndex + 1].name}`);

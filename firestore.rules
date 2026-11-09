@@ -273,7 +273,26 @@ service cloud.firestore {
       // Settlements
       match /settlements/{settlementId} {
         allow read: if isTripMember(tripId);
-        allow create, update, delete: if canEditExpense(tripId);
+        // “จ่ายแล้ว” transfers are versioned by the reserved `_transferGuard`
+        // document. It only ever moves forward one version at a time, and a
+        // transfer may only be written in the same atomic write that bumps it —
+        // so a client cannot record a payment without passing the guard.
+        function guardFieldsOk() {
+          return request.resource.data.keys().hasOnly(['version', 'transferId', 'operation'])
+            && request.resource.data.transferId is string
+            && request.resource.data.operation in ['create', 'delete'];
+        }
+        allow create: if settlementId != '_transferGuard'
+            ? canEditExpense(tripId)
+            : canEditExpense(tripId) && guardFieldsOk() && request.resource.data.version == 1;
+        allow update: if settlementId != '_transferGuard'
+            ? canEditExpense(tripId)
+            : canEditExpense(tripId) && guardFieldsOk()
+              && request.resource.data.version is int
+              && request.resource.data.version == resource.data.version + 1;
+        allow delete: if settlementId != '_transferGuard'
+            ? canEditExpense(tripId)
+            : isTripAdmin(tripId) && !existsAfter(/databases/$(database)/documents/trips/$(tripId));
 
         match /payments/{paymentId} {
           allow read: if isTripMember(tripId);
@@ -370,10 +389,15 @@ service cloud.firestore {
       // once and can be undone, never edited, so the settlement history stays honest.
       match /transfers/{transferId} {
         allow read: if isTripMember(tripId);
+        // Only the same atomic write that bumps the guard may write this record.
+        function guardedTransfer(operation) {
+          let after = getAfter(/databases/$(database)/documents/trips/$(tripId)/settlements/_transferGuard).data;
+          return after.transferId == transferId && after.operation == operation && after.version is int;
+        }
         allow create: if canEditExpense(tripId)
           && request.resource.data.amountMinor is int && request.resource.data.amountMinor > 0
-          && request.resource.data.fromId != request.resource.data.toId;
-        allow delete: if canEditExpense(tripId);
+          && request.resource.data.fromId != request.resource.data.toId && guardedTransfer('create');
+        allow delete: if canEditExpense(tripId) && guardedTransfer('delete');
         allow update: if false;
       }
 

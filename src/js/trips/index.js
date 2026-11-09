@@ -1,5 +1,6 @@
 import { db, storage, serverTimestamp, isStorageAvailable } from '../firebase.js';
 import { brandPrimary } from '../utils/brand.js';
+import { deleteTransfer } from '../settlement/transfers.js';
 import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, query, where, limit, arrayUnion, arrayRemove, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { compressImage } from '../utils/helpers.js';
@@ -396,6 +397,17 @@ export async function deleteTrip(tripId, { onProgress } = {}) {
   if (!tripId) throw new Error('Missing trip id');
   const warnings = [];
 
+  // Guarded transfer records must be removed before membership is cleaned up.
+  // Best-effort like the other sub-collections: a failed cleanup must not block
+  // deleting the trip itself.
+  try {
+    const transfers = await getDocs(collection(db, `trips/${tripId}/transfers`));
+    for (const transfer of transfers.docs) await deleteTransfer(tripId, transfer.id);
+  } catch (e) {
+    console.warn('[Trips] transfer cleanup failed:', e?.code || e?.message);
+    warnings.push('transfers');
+  }
+
   for (const sub of TRIP_SUBCOLLECTIONS) {
     try {
       onProgress?.(sub);
@@ -404,6 +416,7 @@ export async function deleteTrip(tripId, { onProgress } = {}) {
       let batch = writeBatch(db);
       let n = 0;
       for (const d of snap.docs) {
+        if (sub === 'settlements' && d.id === '_transferGuard') continue;
         // Nested line items under expenses
         if (sub === 'expenses') {
           try {
@@ -425,7 +438,10 @@ export async function deleteTrip(tripId, { onProgress } = {}) {
   cacheClear();
 
   try {
-    await deleteDoc(doc(db, 'trips', tripId));
+    const finalBatch = writeBatch(db);
+    finalBatch.delete(doc(db, `trips/${tripId}/settlements/_transferGuard`));
+    finalBatch.delete(doc(db, 'trips', tripId));
+    await finalBatch.commit();
   } catch (e) {
     if (e?.code === 'permission-denied') {
       throw new Error('ไม่มีสิทธิ์ลบทริปนี้ — ต้อง deploy Firestore Rules ใหม่ (ให้ trip admin ลบได้)');

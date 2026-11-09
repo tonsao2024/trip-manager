@@ -724,9 +724,8 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 .trip-menu-btn svg { width: 16px; height: 16px; }
 
 /* ------------------------------------------------------------------
-   Countdown card (v35 — moment 1). A rail-ticket reading of the trip: one big
-   number, one caption, a thin track with a dot and a flat silhouette of the
-   mountain. Static; the number refreshes once a minute (countdown.js).
+   Countdown card. The figure refreshes once a minute; dimension.css adds the
+   animated traveller to the track and respects reduced-motion preferences.
    ------------------------------------------------------------------ */
 .countdown-scene {
   --cdc-mountain: color-mix(in srgb, var(--primary-raw) 16%, var(--surface));
