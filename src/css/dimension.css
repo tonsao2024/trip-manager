@@ -37,11 +37,6 @@
 /* Respect the explicit flat-depth preference; colour and borders still separate surfaces. */
 html[data-depth="flat"] :is(.card, .kpi-tile, .place-card, .group-card),
 html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: none; }
-/* Subtle variation helps distinguish dashboard summaries without competing with data. */
-.dash-widget[data-dashboard-widget="countdown"] > .card {
-  background: linear-gradient(145deg, var(--surface) 35%, color-mix(in srgb, var(--primary) 9%, var(--surface)) 100%);
-  border-color: color-mix(in srgb, var(--primary) 25%, var(--border));
-}
 .kpi-tile[data-kpi="total"] { background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
 .kpi-tile[data-kpi="balance"] { background: color-mix(in srgb, #20a69a 7%, var(--surface)); }
 .kpi-tile[data-kpi="budget"] { background: color-mix(in srgb, #e8a53b 9%, var(--surface)); }
@@ -63,8 +58,8 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 .dash-idea-list .dash-idea-row:hover, .member-board .member-row:hover { background: var(--surface-3); }
 
 /* The track is inset by half the runner's width so even 0% and 100% fit. */
-.cdc-track { height: 7px; margin: 34px 20px 0; background: var(--surface-3); }
-.cdc-track-fill { transition: width .5s var(--ease); }
+.cdc-track { height: 6px; }
+.cdc-track-fill { transition: width .9s cubic-bezier(.2,.72,.25,1); }
 .cdc-runner {
   position: absolute;
   left: var(--cd-progress);
@@ -191,29 +186,28 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 .dash-cover { aspect-ratio: 2.9 / 1; max-height: 250px; border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(30, 64, 82, .09); }
 @media (max-width: 600px) { .dash-cover { aspect-ratio: 2.25 / 1; max-height: 190px; } }
 
-/* The traveller follows the real countdown progress along a scenic route to Fuji. */
-.countdown-scene { gap: 10px; }
+/* The traveller follows the real countdown progress along a scenic route to Fuji.
+   The whole scene is the card — the sky lives on .countdown-scene (components.css);
+   .cdc-journey is an absolute full-bleed backdrop behind the content. */
 .cdc-top { align-items: center; }
 .cdc-main { flex: 1 1 auto; }
 .cdc-days { font-size: clamp(52px, 6vw, 64px); font-weight: 600; }
 .cdc-journey {
   --cdc-jacket: color-mix(in srgb, var(--primary-raw) 82%, #1754aa);
-  --cdc-foothill: color-mix(in srgb, #74b993 28%, var(--surface));
-  position: relative; width: 100%; height: 124px; overflow: hidden; isolation: isolate;
-  border: 1px solid color-mix(in srgb, #78a9cd 28%, var(--border)); border-radius: 14px;
-  background: linear-gradient(180deg, color-mix(in srgb, #a8d9f2 38%, var(--surface)) 0%, color-mix(in srgb, #f8d8a2 24%, var(--surface)) 78%, var(--surface) 100%);
+  --cdc-foothill: color-mix(in srgb, #74b993 30%, transparent);
+  position: absolute; inset: 0; z-index: 0; overflow: hidden; border: 0; border-radius: 0; background: none; pointer-events: none;
 }
-[data-theme="dark"] .cdc-journey { --cdc-foothill: color-mix(in srgb, #367b69 28%, var(--surface)); }
-.cdc-horizon { position: absolute; inset: auto -4% -25px; height: 62px; border-radius: 50% 50% 0 0 / 30% 30% 0 0; background: color-mix(in srgb, #98c9a6 22%, var(--surface)); z-index: 0; }
-.cdc-fuji { position: absolute; z-index: 1; width: clamp(120px, 35%, 178px); height: auto; right: 5px; bottom: 12px; filter: drop-shadow(0 2px 2px rgba(39, 58, 72, .12)); }
+[data-theme="dark"] .cdc-journey { --cdc-foothill: color-mix(in srgb, #3f8a70 38%, transparent); }
+.cdc-horizon { position: absolute; z-index: 0; inset: auto -4% 34px; height: 86px; border-radius: 50% 50% 0 0 / 34% 34% 0 0; background: color-mix(in srgb, #98c9a6 30%, transparent); }
+.cdc-fuji { position: absolute; z-index: 1; width: clamp(140px, 38%, 205px); height: auto; right: 6px; bottom: 40px; filter: drop-shadow(0 2px 2px rgba(39, 58, 72, .22)); }
 .cdc-cloud { position: absolute; z-index: 2; width: 48px; height: auto; opacity: .76; }
-.cdc-cloud--back { top: 20px; left: 16%; animation: cdc-cloud-drift 10s ease-in-out infinite alternate; }
-.cdc-cloud--front { top: 36px; left: 60%; width: 34px; opacity: .56; animation: cdc-cloud-drift 8s ease-in-out -2s infinite alternate-reverse; }
+.cdc-cloud--back { top: 18%; left: 16%; animation: cdc-cloud-drift 10s ease-in-out infinite alternate; }
+.cdc-cloud--front { top: 30%; left: 62%; width: 34px; opacity: .56; animation: cdc-cloud-drift 8s ease-in-out -2s infinite alternate-reverse; }
 @keyframes cdc-cloud-drift { from { transform: translateX(-9px); } to { transform: translateX(12px); } }
-.cdc-path { position: absolute; z-index: 2; left: -6%; right: 8%; bottom: -20px; height: 46px; border: 2px solid color-mix(in srgb, #d4a66b 44%, transparent); border-bottom: 0; border-radius: 50% 50% 0 0; opacity: .75; }
-.cdc-track { position: absolute; z-index: 4; left: 18px; right: 18px; bottom: 13px; height: 5px; margin: 0; border-radius: 999px; background: color-mix(in srgb, #ffffff 74%, var(--surface)); box-shadow: 0 1px 2px rgba(31, 59, 75, .12); }
-.cdc-track-fill { background: linear-gradient(90deg, #65b6a0, #56a2df); transition: width .9s cubic-bezier(.2,.72,.25,1); }
-.cdc-runner { z-index: 5; width: 50px; height: 62px; bottom: 0; transition: left .9s cubic-bezier(.2,.72,.25,1); filter: drop-shadow(0 2px 1px rgba(35, 51, 69, .14)); }
+.cdc-path { position: absolute; z-index: 2; left: -6%; right: 20%; bottom: 24px; height: 56px; border: 2px solid color-mix(in srgb, #b8874d 52%, transparent); border-bottom: 0; border-radius: 50% 50% 0 0; opacity: .85; }
+.cdc-track { margin: 46px 2px 0; }
+.cdc-track-fill { transition: width .9s cubic-bezier(.2,.72,.25,1); }
+.cdc-runner { z-index: 5; width: 50px; height: 62px; bottom: 2px; transition: left .9s cubic-bezier(.2,.72,.25,1); filter: drop-shadow(0 2px 1px rgba(35, 51, 69, .28)); }
 .cdc-runner-svg, .cdc-celebrate-svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .cdc-celebrate-svg { display: none; }
 .cdc-runner-body { animation: cdc-bounce .42s ease-in-out infinite alternate; transform-origin: 24px 40px; }
@@ -222,7 +216,7 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 .cdc:is(.is-during, .is-after) .cdc-runner-svg { display: none; }
 .cdc:is(.is-during, .is-after) .cdc-celebrate-svg { display: block; animation: cdc-arrive .45s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes cdc-arrive { 0% { transform: translateY(5px) scale(.88); } 70% { transform: translateY(-3px) scale(1.04); } 100% { transform: translateY(0) scale(1); } }
-.cdc-fireworks { position: absolute; z-index: 6; right: 24px; top: 1px; width: 105px; height: 86px; overflow: visible; opacity: 0; pointer-events: none; }
+.cdc-fireworks { position: absolute; z-index: 3; right: 22px; top: 44px; width: 105px; height: 86px; overflow: visible; opacity: 0; }
 .cdc-firework { transform-box: fill-box; transform-origin: center; opacity: 0; fill: none; stroke: #f1a936; stroke-width: 2.3; stroke-linecap: round; }
 .cdc-firework circle { fill: #fff2bb; stroke-width: 1.5; }
 .cdc-firework--two { stroke: #ef83a6; }
@@ -232,15 +226,13 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 .cdc.is-during .cdc-firework--two { animation-delay: .45s; }
 .cdc.is-during .cdc-firework--three { animation-delay: .9s; }
 @keyframes cdc-burst { 0% { opacity: 0; transform: scale(.35); } 18% { opacity: 1; } 68% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(1.16); } }
-.cdc-journey.is-empty .cdc-track, .cdc-journey.is-empty .cdc-path { display: none; }
-.cdc-journey.is-empty .cdc-fuji { opacity: .8; }
-.cdc-ends { margin-top: -4px; }
+.cdc-journey.is-empty .cdc-path { display: none; }
+.cdc-journey.is-empty .cdc-fuji { opacity: .85; }
 @media (max-width: 480px) {
   .cdc-days { font-size: 48px; }
-  .cdc-journey { height: 112px; }
-  .cdc-fuji { width: 43%; }
-  .cdc-fireworks { right: 14px; width: 92px; }
-  .cdc-track { left: 14px; right: 14px; bottom: 12px; }
+  .cdc-fuji { width: 44%; right: 2px; bottom: 44px; }
+  .cdc-fireworks { right: 12px; top: 38px; width: 92px; }
+  .cdc-track { margin: 38px 0 0; }
   .cdc-runner { width: 46px; height: 57px; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -251,7 +243,7 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 
 /* Trip weather calendar — clear forecast window, vivid trip-range markers. */
 .weather-calendar-page { max-width: 980px; margin-inline: auto; }
-.weather-calendar-card { padding: clamp(14px, 3vw, 24px); background: linear-gradient(150deg, color-mix(in srgb, #58a9df 5%, var(--surface)) 0%, var(--surface) 44%); }
+.weather-calendar-card { padding: clamp(14px, 3vw, 24px); background: var(--surface); }
 .weather-destination-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .weather-section-kicker { display: block; margin-bottom: 8px; color: var(--text-tertiary); font-size: 11px; font-weight: 600; letter-spacing: .08em; }
 .weather-city-list { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -266,7 +258,7 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 .weather-month-title > span { display: block; margin-top: 2px; color: var(--text-tertiary); font-size: 11px; font-weight: 600; letter-spacing: .08em; }
 .weather-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
 .weather-weekday { display: grid; min-height: 28px; place-items: center; color: var(--text-tertiary); font-size: 11px; font-weight: 600; }
-.weather-day { position: relative; display: flex; min-width: 0; min-height: 92px; flex-direction: column; align-items: center; gap: 3px; padding: 7px 3px 5px; overflow: hidden; border: 1px solid var(--border-light); border-radius: 12px; background: color-mix(in srgb, #fff 60%, var(--surface)); color: var(--text-secondary); cursor: pointer; transition: transform .16s ease, background .16s ease, border-color .16s ease; }
+.weather-day { position: relative; display: flex; min-width: 0; min-height: 92px; flex-direction: column; align-items: center; gap: 3px; padding: 7px 3px 5px; overflow: hidden; border: 1px solid var(--border-light); border-radius: 12px; background: color-mix(in srgb, var(--surface) 86%, #ffffff 14%); color: var(--text-secondary); cursor: pointer; transition: transform .16s ease, background .16s ease, border-color .16s ease; }
 .weather-day:hover { transform: translateY(-1px); border-color: var(--border-strong); }
 .weather-day-number { display: flex; width: 100%; align-items: center; justify-content: center; gap: 3px; color: var(--text-strong); font-size: 12px; font-weight: 600; line-height: 1.2; }
 .weather-day-number i { color: #e18e34; font-size: 9px; font-style: normal; }
@@ -289,10 +281,10 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 .weather-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 13px; color: var(--text-secondary); font-size: 11px; }
 .weather-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .weather-legend i { width: 12px; height: 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); }
-.weather-legend-trip { border-color: #e6b355 !important; background: #fff0c9 !important; }
-.weather-legend-forecast { border-color: #82bdcf !important; background: #e4f5fa !important; }
+.weather-legend-trip { border-color: #e6b355 !important; background: color-mix(in srgb, #ffd984 34%, var(--surface)) !important; }
+.weather-legend-forecast { border-color: #82bdcf !important; background: color-mix(in srgb, #a8e0f0 26%, var(--surface)) !important; }
 .weather-selected-day { display: flex; align-items: center; gap: 12px; min-height: 72px; margin-top: 16px; padding: 12px 14px; border: 1px solid color-mix(in srgb, #43a2c8 20%, var(--border)); border-radius: 14px; background: color-mix(in srgb, #5ab8de 7%, var(--surface)); }
-.weather-selected-icon { display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; border-radius: 13px; background: color-mix(in srgb, #ffffff 78%, var(--surface)); }
+.weather-selected-icon { display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; border-radius: 13px; border: 1px solid var(--border-light); background: var(--bg-secondary); }
 .weather-selected-icon.is-muted { color: var(--text-tertiary); }
 .weather-selected-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 .weather-selected-copy strong { color: var(--text-strong); font-size: 13px; }
@@ -313,8 +305,14 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 }
 .weather-day.is-seasonal { border-style: dashed; border-color: color-mix(in srgb, #5a9fbb 50%, var(--border)); }
 .weather-day-range { color: #627f8d; font-size: 8px; line-height: 1; }
+[data-theme="dark"] .weather-day-range { color: #9db8c4; }
+[data-theme="dark"] .weather-day-icon.tone-sun, [data-theme="dark"] .weather-selected-icon.tone-sun { color: #f5c15a; }
+[data-theme="dark"] .weather-day-icon.tone-cloud, [data-theme="dark"] .weather-selected-icon.tone-cloud { color: #93b7cd; }
+[data-theme="dark"] .weather-day-icon.tone-rain, [data-theme="dark"] .weather-selected-icon.tone-rain { color: #6fb2e0; }
+[data-theme="dark"] .weather-day-icon.tone-snow, [data-theme="dark"] .weather-selected-icon.tone-snow { color: #8fc3e0; }
+[data-theme="dark"] .weather-day-icon.tone-storm, [data-theme="dark"] .weather-selected-icon.tone-storm { color: #ab9ae2; }
 .weather-day.is-seasonal.is-trip { border-color: #d39b3a; }
-.weather-legend-seasonal { border-style: dashed !important; border-color: #74a9bd !important; background: #eaf5f8 !important; }
+.weather-legend-seasonal { border-style: dashed !important; border-color: #74a9bd !important; background: color-mix(in srgb, #b9e2ec 24%, var(--surface)) !important; }
 .weather-confidence { color: var(--text-tertiary) !important; }
 .weather-confidence.is-long-range { color: #8e6822 !important; }
 [data-theme="dark"] .weather-confidence.is-long-range { color: #e4c27a !important; }

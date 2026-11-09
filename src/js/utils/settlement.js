@@ -4,7 +4,12 @@ import { expensePayments, paymentMethodOf } from './payments.js';
  * Net balance = Paid - Owed
  */
 
-export function calculateNetBalances(expenses, members) {
+/**
+ * Net balance = what the member actually paid − what they actually consumed.
+ * Actual money only (a bill still marked ประมาณการ has moved no money and is
+ * excluded) — pass { includeEstimated: true } to project the planned ledger.
+ */
+export function calculateNetBalances(expenses, members, { includeEstimated = false } = {}) {
   // expenses: [{ payerId, allocations: [{ memberId, amountMinor }] }]
   const balances = new Map();
   for (const m of members) balances.set(m.id, 0);
@@ -14,6 +19,7 @@ export function calculateNetBalances(expenses, members) {
     // No host yet ("ยังไม่ระบุเจ้าภาพ") — nobody paid, so it cannot be part of
     // any balance until a payer is assigned.
     if (exp.payerPending) continue;
+    if (!includeEstimated && exp.isEstimated) continue;
     for (const payment of expensePayments(exp)) {
       const payer = payment.memberId;
       balances.set(payer, (balances.get(payer) || 0) + payment.amountMinor);
@@ -81,8 +87,10 @@ export function applyTransfers(balances, transfers = []) {
  * recorded transfers (จ่ายแล้ว) reduce the matching pair.
  *
  * Every member's net equals the sum of their pairs, so this agrees with `balances`.
+ * Actual money only by default — pass { includeEstimated: true } to also settle
+ * the planned (estimated) bills.
  */
-export function settleByBill(expenses, transfers = [], toleranceMinor = 0) {
+export function settleByBill(expenses, transfers = [], toleranceMinor = 0, { includeEstimated = false } = {}) {
   // owed.get(from).get(to) = amount `from` still owes `to`; negative means the reverse.
   const owed = new Map();
   const addOwed = (from, to, amount) => {
@@ -95,6 +103,7 @@ export function settleByBill(expenses, transfers = [], toleranceMinor = 0) {
 
   for (const exp of expenses || []) {
     if (!exp || exp.status === 'voided' || exp.payerPending) continue;
+    if (!includeEstimated && exp.isEstimated) continue;
     const net = new Map();
     for (const p of expensePayments(exp)) net.set(p.memberId, (net.get(p.memberId) || 0) + (Number(p.amountMinor) || 0));
     for (const a of exp.allocations || []) net.set(a.memberId, (net.get(a.memberId) || 0) - (Number(a.amountMinor) || 0));
@@ -135,9 +144,9 @@ export function settleByBill(expenses, transfers = [], toleranceMinor = 0) {
     || String(x.from).localeCompare(String(y.from)) || String(x.to).localeCompare(String(y.to)));
 }
 
-export function calculateSettlement(expenses, members, transfers = []) {
-  const balances = applyTransfers(calculateNetBalances(expenses, members), transfers);
-  const transactions = settleByBill(expenses, transfers);
+export function calculateSettlement(expenses, members, transfers = [], { includeEstimated = false } = {}) {
+  const balances = applyTransfers(calculateNetBalances(expenses, members, { includeEstimated }), transfers);
+  const transactions = settleByBill(expenses, transfers, 0, { includeEstimated });
   return { balances, transactions };
 }
 
@@ -191,9 +200,16 @@ export function groupTransfersByPayer(transactions = []) {
  * @param {{includeEstimated?:boolean}} [options] estimated rows are included by
  *   default so the receipts agree with the transfer list (pass false for an
  *   "actual money only" receipt).
- * @returns {Array<{memberId, displayName, paidMinor, paidByMethod, owedMinor, netMinor, items, transactions}>}
+ * @returns {Array<{memberId, displayName, paidMinor, paidByMethod, owedMinor, netMinor, settledMinor,
+ *   estimatedPaidMinor, estimatedOwedMinor, items, transactions}>}
+ * `settledMinor` is always a number (0 without recorded transfers): positive = the
+ * member recorded money they sent, negative = recorded money they received. So the
+ * receipt can print `รับ − หัก + โอน = คงเหลือ` and the line always adds up.
+ * `estimatedPaidMinor` / `estimatedOwedMinor` are the estimated (not yet real) parts
+ * of those totals, computed with the same `includeEstimated` door, so the UI can
+ * split actual vs estimated without a second pass.
  */
-export function buildSettlementStatements(expenses, members, { includeEstimated = true, transfers = [] } = {}) {
+export function buildSettlementStatements(expenses, members, { includeEstimated = false, transfers = [] } = {}) {
   const rows = new Map();
   const ensure = (memberId) => {
     const id = memberId || 'unknown';
@@ -209,6 +225,7 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
         owedMinor: 0,
         paidCount: 0,
         shareCount: 0,
+        settledMinor: 0,
         items: []
       });
     }
@@ -291,8 +308,9 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
   }
   const statements = [...rows.values()].map(row => {
     row.items.sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.role.localeCompare(b.role));
-    row.netMinor = row.paidMinor - row.owedMinor + (row.settledMinor || 0);
+    row.netMinor = row.paidMinor - row.owedMinor + row.settledMinor;
     row.estimatedPaidMinor = row.items.filter(i => i.role === 'paid' && i.estimated).reduce((n, i) => n + i.amountMinor, 0);
+    row.estimatedOwedMinor = row.items.filter(i => i.role === 'share' && i.estimated).reduce((n, i) => n + i.amountMinor, 0);
     return row;
   });
   return statements.sort((a, b) => b.paidMinor - a.paidMinor || String(a.displayName).localeCompare(String(b.displayName)));
@@ -366,12 +384,13 @@ export function pendingPayerExpenses(expenses = []) {
  * @param {Array} expenses
  * @returns {Array<{expenseId:string,title:string,date:string,amountMinor:number,totalMinor:number,payers:Array<{memberId:string,amountMinor:number}>,currency:string|null,method:string}>}
  */
-export function transactionSources(tx, expenses = []) {
+export function transactionSources(tx, expenses = [], { includeEstimated = false } = {}) {
   if (!tx) return [];
   const rows = [];
   for (const e of expenses) {
     if (!e || (e.status || 'active') === 'voided') continue;
     if (e.payerPending) continue;
+    if (!includeEstimated && e.isEstimated) continue;
     if (!expensePayments(e).some(p => p.memberId === tx.to && p.amountMinor > 0)) continue;
     const share = (e.allocations || []).find(a => a.memberId === tx.from);
     if (!share) continue;

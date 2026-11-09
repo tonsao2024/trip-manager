@@ -335,12 +335,13 @@ function categorySummaryRows(expenses, lang = 'th') {
 function memberSummaryRows(expenses, members, lang = 'th') {
   const rows = [[
     lang === 'th' ? 'สมาชิก' : 'Member',
-    lang === 'th' ? 'จ่ายไป (THB)' : 'Paid (THB)',
-    lang === 'th' ? 'ต้องรับผิดชอบ (THB)' : 'Share (THB)',
+    lang === 'th' ? 'จ่ายไป (THB) — จ่ายจริง' : 'Paid (THB) — actual',
+    lang === 'th' ? 'ต้องรับผิดชอบ (THB) — จ่ายจริง' : 'Share (THB) — actual',
     lang === 'th' ? 'สุทธิ (THB)' : 'Net (THB)'
   ]];
   const stats = new Map(members.map(m => [m.id, { paid: 0, share: 0 }]));
   expenses.forEach(e => {
+    if (e.isEstimated) return; // actual money only — matches the settlement receipts
     for (const payment of expensePayments(e)) {
       if (!stats.has(payment.memberId)) stats.set(payment.memberId, { paid: 0, share: 0 });
       stats.get(payment.memberId).paid += payment.amountMinor;

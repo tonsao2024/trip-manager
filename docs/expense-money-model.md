@@ -26,6 +26,15 @@
   its satang minor-unit precision, with an equal-distribution button for convenience.
   Editable amounts group thousands without replacing the focused input.
   The ledger continues to store numeric integers.
+- Settlement (“เคลียร์บิล”) totals exclude estimated bills by default — the ledger
+  settles actual spend only (see `buildSettlementStatements`, `includeEstimated`
+  defaults to false). Estimated bills are still planned spend shown elsewhere: the
+  expenses page and dashboard separate จ่ายจริง / ประมาณการ, and the settlement
+  overview shows `จ่ายจริงรวม` plus a `ประมาณการ (ไม่รวมในยอดเคลียร์)` split (paid
+  ahead / share / unassigned-payer estimates, which stay out of the ledger and are
+  listed in the pending panel). A projected ledger is available via
+  `includeEstimated: true` and always agrees with the estimated view of
+  `calculateSettlement`. Each receipt prints `รับ − หัก + โอนแล้ว = คงเหลือ`.
 - Deploy the updated Cloud Functions together with the frontend if using the
   callable settlement endpoint; saved settlements now explicitly carry
   `currency: 'THB'`. This change does not migrate existing expense documents.

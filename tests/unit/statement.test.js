@@ -1,5 +1,7 @@
 // Per-member settlement statements power the "เคลียร์บิล" receipts:
 // received (paid, split by cash/card), deducted (their share) and the balance.
+// Since v37 the ledger is ACTUAL money only: estimated (ประมาณการ) bills are
+// excluded by default and shown via includeEstimated: true (a projected view).
 import { buildSettlementStatements, transactionBreakdown, calculateSettlement } from '../../src/js/utils/settlement.js';
 
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
@@ -45,24 +47,29 @@ const expenses = [
 export function testSettlementStatements() {
   console.log('Testing per-member statements...');
 
+  // Default = actual money only (the receipt and the transfer list must agree).
   const statements = buildSettlementStatements(expenses, members);
   const by = Object.fromEntries(statements.map(s => [s.memberId, s]));
 
   eq(statements.length, 3, 'one statement per member');
-  eq(by.u1.paidMinor, 32000, 'card + estimated cash payment counted');
+  eq(by.u1.paidMinor, 30000, 'estimated payment excluded by default');
   eq(by.u1.paidByMethod.card, 30000, 'split by method: card');
-  eq(by.u1.paidByMethod.cash, 2000, 'split by method: cash (the estimate)');
-  eq(by.u1.estimatedPaidMinor, 2000, 'estimated part flagged separately');
+  eq(by.u1.paidByMethod.cash, 0, 'estimate excluded from methods too');
+  eq(by.u1.estimatedPaidMinor, 0, 'no estimated rows in actual mode');
   eq(by.u2.paidMinor, 3000, 'cash payment counted');
   eq(by.u2.paidByMethod.cash, 3000, 'split by method: cash');
   eq(by.u3.paidMinor, 0, 'voided expense ignored');
 
   eq(by.u1.owedMinor, 11000, 'u1 share = 10000 + 1000');
-  eq(by.u2.owedMinor, 12000, 'u2 share = 10000 + 1000 + 1000 (estimates included by default)');
-  eq(by.u3.owedMinor, 12000, 'u3 share');
-  eq(by.u1.netMinor, 32000 - 11000, 'balance = received − deducted');
-  eq(by.u2.netMinor, 3000 - 12000, 'u2 owes money');
-  eq(by.u1.paidCount, 2, 'paid count');
+  eq(by.u2.owedMinor, 11000, 'u2 share = 10000 + 1000 (estimate excluded)');
+  eq(by.u3.owedMinor, 11000, 'u3 share');
+  eq(by.u2.estimatedOwedMinor, 0, 'no estimated share flagged in actual mode');
+  eq(by.u3.estimatedOwedMinor, 0, 'no estimated share flagged in actual mode');
+  eq(by.u1.settledMinor, 0, 'settledMinor defaults to 0');
+  eq(by.u2.settledMinor, 0, 'settledMinor defaults to 0');
+  eq(by.u1.netMinor, 30000 - 11000, 'balance = received − deducted');
+  eq(by.u2.netMinor, 3000 - 11000, 'u2 owes money');
+  eq(by.u1.paidCount, 1, 'paid count');
   eq(by.u1.shareCount, 2, 'share count');
 
   // Statements must agree with the transfer minimisation used by the page.
@@ -73,10 +80,8 @@ export function testSettlementStatements() {
 
   // Item rows: who paid what, and what the member owes, with the method.
   const paid = by.u1.items.filter(i => i.role === 'paid');
-  eq(paid.length, 2, 'u1 has two payment rows');
-  const cardRow = paid.find(p => p.method === 'card');
-  eq(cardRow.title, 'ค่าที่พัก', 'payment row keeps the title');
-  assert(paid.some(p => p.estimated), 'estimated rows are flagged');
+  eq(paid.length, 1, 'u1 has one actual payment row');
+  eq(paid[0].title, 'ค่าที่พัก', 'payment row keeps the title');
   const shares = by.u2.items.filter(i => i.role === 'share');
   assert(shares.length >= 2, 'u2 has share rows');
   assert(shares.every(s => s.paidBy), 'each share row names the payer');
@@ -84,12 +89,30 @@ export function testSettlementStatements() {
   assert(!by.u1.items.some(i => i.role === 'share' && i.expenseId === 'e1' && i.amountMinor === 0), 'zero shares skipped');
   eq(transactionBreakdown(by.u2).length, shares.length, 'transaction breakdown lists the share rows');
 
-  // Actual-money-only view drops the estimated rows.
-  const actualOnly = buildSettlementStatements(expenses, members, { includeEstimated: false });
-  const u2Actual = actualOnly.find(s => s.memberId === 'u2');
-  eq(u2Actual.owedMinor, 11000, 'estimates excluded on request');
-  eq(actualOnly.find(s => s.memberId === 'u1').paidMinor, 30000, 'estimate not counted as paid');
-  assert(!actualOnly.some(s => s.items.some(i => i.estimated)), 'no estimated rows in actual-only mode');
+  // Recorded transfers show up on the statement (the receipt prints them as a line,
+  // so รับ − หัก + โอน = คงเหลือ always adds up).
+  const withTransfer = buildSettlementStatements(expenses, members, { transfers: [{ fromId: 'u2', toId: 'u1', amountMinor: 500 }] });
+  const t2 = withTransfer.find(s => s.memberId === 'u2');
+  const t1 = withTransfer.find(s => s.memberId === 'u1');
+  eq(t2.settledMinor, 500, 'sender records money sent');
+  eq(t1.settledMinor, -500, 'receiver records money received');
+  eq(t2.netMinor, 3000 - 11000 + 500, 'sender balance moves by the transfer');
+  eq(t1.netMinor, 30000 - 11000 - 500, 'receiver balance moves by the transfer');
+
+  // Projected view (includeEstimated: true) restores the planned ledger.
+  const projected = buildSettlementStatements(expenses, members, { includeEstimated: true });
+  const pj = Object.fromEntries(projected.map(s => [s.memberId, s]));
+  eq(pj.u1.paidMinor, 32000, 'card + estimated cash payment counted');
+  eq(pj.u1.paidByMethod.cash, 2000, 'split by method: cash (the estimate)');
+  eq(pj.u1.estimatedPaidMinor, 2000, 'estimated part flagged separately');
+  eq(pj.u2.owedMinor, 12000, 'u2 share = 10000 + 1000 + 1000 (estimate included)');
+  eq(pj.u3.owedMinor, 12000, 'u3 share');
+  eq(pj.u2.estimatedOwedMinor, 1000, 'u2 estimated share part');
+  eq(pj.u3.estimatedOwedMinor, 1000, 'u3 estimated share part');
+  eq(pj.u1.netMinor, 32000 - 11000, 'balance = received − deducted');
+  assert(pj.u1.items.some(i => i.estimated), 'estimated rows are flagged');
+  const projBalances = calculateSettlement(expenses, members, [], { includeEstimated: true }).balances;
+  for (const b of projBalances) eq(pj[b.memberId].netMinor, b.net, `projected statement == projected balance for ${b.memberId}`);
 
   // Sorting: biggest payer first.
   eq(statements[0].memberId, 'u1', 'statements sorted by amount paid');

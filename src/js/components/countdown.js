@@ -142,24 +142,20 @@ function trackEnds(c, lang = 'th') {
     `${th ? 'ออกเดินทาง' : 'Departure'} ${shortDate(c.startDate, lang, c.timezone)}`];
 }
 
-/** A flat silhouette of the mountain — one tint of the accent, a paper-white cap. */
-function journeyArtwork({ hasDate, lang, pct } = {}) {
-  return `<div class="cdc-journey${hasDate ? '' : ' is-empty'}">
-    <div class="cdc-horizon" aria-hidden="true"></div>
-    <svg class="cdc-cloud cdc-cloud--back" viewBox="0 0 54 24" aria-hidden="true" focusable="false"><path d="M8 20a7 7 0 0 1-1-14 10 10 0 0 1 19-1 8 8 0 0 1 12 7 6 6 0 0 1-1 12H8Z" fill="var(--cdc-cloud)"/></svg>
-    <svg class="cdc-cloud cdc-cloud--front" viewBox="0 0 54 24" aria-hidden="true" focusable="false"><path d="M8 20a7 7 0 0 1-1-14 10 10 0 0 1 19-1 8 8 0 0 1 12 7 6 6 0 0 1-1 12H8Z" fill="var(--cdc-cloud)"/></svg>
-    <svg class="cdc-fuji" viewBox="0 0 180 100" aria-hidden="true" focusable="false">
+/** A flat silhouette of the mountain — one tint of the accent, a paper-white cap.
+ *  Rendered as a full-bleed backdrop behind the card's content (aria-hidden). */
+function journeyArtwork({ hasDate } = {}) {
+  return `<div class="cdc-journey${hasDate ? '' : ' is-empty'}" aria-hidden="true">
+    <div class="cdc-horizon"></div>
+    <svg class="cdc-cloud cdc-cloud--back" viewBox="0 0 54 24" focusable="false"><path d="M8 20a7 7 0 0 1-1-14 10 10 0 0 1 19-1 8 8 0 0 1 12 7 6 6 0 0 1-1 12H8Z" fill="var(--cdc-cloud)"/></svg>
+    <svg class="cdc-cloud cdc-cloud--front" viewBox="0 0 54 24" focusable="false"><path d="M8 20a7 7 0 0 1-1-14 10 10 0 0 1 19-1 8 8 0 0 1 12 7 6 6 0 0 1-1 12H8Z" fill="var(--cdc-cloud)"/></svg>
+    <svg class="cdc-fuji" viewBox="0 0 180 100" focusable="false">
       <path d="M2 98 C 42 90, 66 58, 90 8 C 114 58, 138 90, 178 98 Z" fill="var(--cdc-mountain)"/>
       <path d="M72 44 C 79 29, 84 17, 90 8 C 96 17, 101 29, 108 44 L 100 40 L 95 47 L 90 41 L 85 47 L 80 40 Z" fill="var(--cdc-snow)"/>
       <path d="M0 98 Q90 88 180 98V100H0Z" fill="var(--cdc-foothill)"/>
     </svg>
-    <div class="cdc-path" aria-hidden="true"></div>
-    ${hasDate ? `<div class="cdc-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"
-      aria-label="${lang === 'th' ? 'ความคืบหน้าสู่วันเดินทาง' : 'Progress to departure'}">
-      <span class="cdc-track-fill" data-cd-bar style="width:${pct}%"></span>
-      ${runnerMark()}
-    </div>
-    <svg class="cdc-fireworks" viewBox="0 0 110 90" aria-hidden="true" focusable="false">
+    <div class="cdc-path"></div>
+    ${hasDate ? `<svg class="cdc-fireworks" viewBox="0 0 110 90" focusable="false">
       <g class="cdc-firework cdc-firework--one"><path d="M22 42V28M22 56V70M8 49H0M36 49H44M12 39 6 33M32 59 38 65M32 39 38 33M12 59 6 65"/><circle cx="22" cy="49" r="3"/></g>
       <g class="cdc-firework cdc-firework--two"><path d="M72 25V14M72 36V47M61 30H50M83 30H94M64 22 58 16M80 38 86 44M80 22 86 16M64 38 58 44"/><circle cx="72" cy="30" r="2.5"/></g>
       <g class="cdc-firework cdc-firework--three"><path d="M48 68V58M48 78V88M38 73H28M58 73H68M41 66 36 61M55 80 60 85M55 66 60 61M41 80 36 85"/><circle cx="48" cy="73" r="2"/></g>
@@ -196,9 +192,11 @@ function runnerMark() {
 }
 
 /**
- * Card body markup. Call mountCountdown() to keep the number fresh.
+ * Card markup — the whole illustrated card: header row, figure, scenic backdrop,
+ * progress track and the date ends. Header strings are trusted to be
+ * pre-escaped by the caller. Call mountCountdown() to keep the number fresh.
  */
-export function renderCountdownScene({ startDate, endDate, createdAt, timezone, lang = 'th', now = new Date() } = {}) {
+export function renderCountdownScene({ startDate, endDate, createdAt, timezone, lang = 'th', now = new Date(), header = null } = {}) {
   const c = computeCountdown({ startDate, endDate, createdAt, timezone, now });
   const p = c.progress;
   const pct = Math.round(p * 100);
@@ -206,6 +204,13 @@ export function renderCountdownScene({ startDate, endDate, createdAt, timezone, 
   const [left, right] = trackEnds(c, lang);
   return `
   <div class="countdown-scene cdc is-${c.phase}${c.startDate ? '' : ' is-empty'}" data-cd-root style="--cd-progress:${pct}%;">
+    ${header ? `<div class="cdc-head">
+      <div class="cdc-head-text min-w-0">
+        <h3 class="cdc-title">${header.title}</h3>
+        <p id="live-since" class="cdc-sub"><span data-live-label>${header.liveLabel || ''}</span></p>
+      </div>
+      <a class="cdc-edit" href="${header.editHref}" aria-label="${header.editAria}">${header.editLabel}</a>
+    </div>` : ''}
     <div class="cdc-top">
       <div class="cdc-main">
         <div class="cdc-figure${f.text ? ' is-text' : ''}">
@@ -215,18 +220,24 @@ export function renderCountdownScene({ startDate, endDate, createdAt, timezone, 
         <p class="cdc-caption" data-cd-eta>${f.caption}</p>
       </div>
     </div>
-    ${journeyArtwork({ hasDate: !!c.startDate, lang, pct })}
-    ${c.startDate ? `<div class="cdc-ends"><span data-cd-left>${left}</span><span data-cd-right>${right}</span></div>` : ''}
+    ${journeyArtwork({ hasDate: !!c.startDate })}
+    <div class="cdc-spacer" aria-hidden="true"></div>
+    ${c.startDate ? `<div class="cdc-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"
+      aria-label="${lang === 'th' ? 'ความคืบหน้าสู่วันเดินทาง' : 'Progress to departure'}">
+      <span class="cdc-track-fill" data-cd-bar style="width:${pct}%"></span>
+      ${runnerMark()}
+    </div>
+    <div class="cdc-ends"><span data-cd-left>${left}</span><span data-cd-right>${right}</span></div>` : ''}
   </div>`;
 }
 
 /**
  * Mount (or refresh) the countdown inside #rootId. Returns { update, destroy }.
  */
-export function mountCountdown(rootId, { startDate, endDate, createdAt, timezone, lang = 'th' } = {}) {
+export function mountCountdown(rootId, { startDate, endDate, createdAt, timezone, lang = 'th', header = null } = {}) {
   const root = document.getElementById(rootId);
   if (!root) return { update() {}, destroy() {} };
-  root.innerHTML = renderCountdownScene({ startDate, endDate, createdAt, timezone, lang });
+  root.innerHTML = renderCountdownScene({ startDate, endDate, createdAt, timezone, lang, header });
 
   let timer = null;
   const destroy = () => { if (timer) { clearInterval(timer); timer = null; } };
