@@ -45,8 +45,10 @@ import { APP_VERSION, APP_VERSION_LABEL, APP_UPDATED_ISO, APP_NAME, APP_AUTHOR, 
 import { BRAND, BRAND_PRIMARY, brandPalette, brandPrimary, memberColors as themeMemberColors, dayHues as themeDayHues, memberColorAt, categoryColorChoices } from './utils/brand.js';
 import {
   THEMES, DEFAULT_THEME_ID, CUSTOM_THEME_ID, themeName, applyStoredTheme, applyTheme,
-  readStoredTheme, saveTheme, themeVars, buildCustomPalette, contrastInk, mix as mixThemeColor, lighten as lightenThemeColor
+  readStoredTheme, saveTheme, themeVars, buildCustomPalette, contrastInk, mix as mixThemeColor, lighten as lightenThemeColor,
+  normalizeHex, onColorInk
 } from './utils/themes.js';
+import { observeA11y } from './utils/a11y.js';
 import { showBottomSheet, showModal } from './components/modal.js';
 import { confirmAction, promptAction } from './components/confirm.js';
 import { mountCountdown, computeCountdown, countdownHeadline } from './components/countdown.js';
@@ -161,6 +163,26 @@ const refreshBtn = document.getElementById('refresh-btn');
 // --- Thai dates (v35): “15 ม.ค.” in rows, “15–20 ม.ค. 2570” for a trip range ---
 const shortDay = (v) => (v ? (thaiDate(v, { year: false }) || String(v)) : '');
 const tripRangeLabel = (t) => thaiDateRange(t?.startDate, t?.endDate);
+
+// --- Avatar ink (round 5): initials keep the member's own colour and take the ink
+// that reads on it — white on deep colours, near-black on the pastels (≥4.5:1).
+// The primary fallback follows --on-primary, which is per mode (themes.js).
+function avatarInk(color) {
+  const raw = String(color || '').trim();
+  if (!raw || raw === 'var(--primary)') return 'var(--on-primary)';
+  const hex = normalizeHex(raw);
+  return hex ? onColorInk(hex) : '#ffffff';
+}
+// Receipt headline (round 5): a long name steps down a size instead of wrapping
+// to four lines. Thai vowel/tone marks take no width, so they are not counted.
+function nameSizeClass(name) {
+  const len = String(name || '').replace(/[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/g, '').trim().length;
+  return len > 18 ? ' is-xlong' : len > 10 ? ' is-long' : '';
+}
+function avatarStyle(color) {
+  const raw = String(color || '').trim() || 'var(--primary)';
+  return `background:${escapeHtml(raw)};color:${avatarInk(raw)}`;
+}
 // v35: a missing end time used to print “07:00 – -”; show just the start instead.
 const timeRange = (start, end, tz) => {
   const a = start ? formatTime(start, tz) : '';
@@ -252,7 +274,7 @@ function openCommentSheet({ tripId, expenseId, title = '', amount = '', comments
 
   const rowHtml = (c) => `
     <div class="comment-row" data-comment-row="${c.id}">
-      <div class="avatar" style="width:28px;height:28px;font-size:12px;background:${escapeHtml(c.color || 'var(--primary)')};">
+      <div class="avatar" style="width:28px;height:28px;font-size:12px;${avatarStyle(c.color)};">
         ${c.photoURL ? `<img decoding="async" src="${escapeHtml(c.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(c.name || '?'))}
       </div>
       <div class="min-w-0 flex-1">
@@ -361,7 +383,7 @@ async function openActivitySheet(tripId, { isAdmin = false } = {}) {
         <div class="activity-icon">${icon(activityIcon(e.type), 'w-3.5 h-3.5')}</div>
         <div class="min-w-0 flex-1">
           <div class="text-xs"><b>${escapeHtml(e.name || '—')}</b> ${escapeHtml(activityLabel(e.type, lang))}${e.title ? ` — ${escapeHtml(e.title)}` : ''}</div>
-          ${e.detail ? `<div class="text-xs text-[var(--text-tertiary)] truncate">${escapeHtml(e.detail)}</div>` : ''}
+          ${e.detail ? `<div class="text-xs text-[var(--text-tertiary)] truncate">${escapeHtml(String(e.detail).replace(/\b\d{4}-\d{2}-\d{2}\b/g, (iso) => shortDay(iso)))}</div>` : ''}
           <div class="text-xs text-[var(--text-tertiary)]">${escapeHtml(fmtWhen(e.at, lang))}${e.pending ? ` • ${th('ในเครื่องนี้','on device')}` : ''}</div>
         </div>
         ${isAdmin ? `<button class="activity-del-btn" data-activity-del="${e.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>` : ''}
@@ -549,6 +571,10 @@ try {
   }).observe(document.body, { childList: true, subtree: true });
 } catch (e) { console.warn('icon observer failed', e); }
 
+// Round 5: one accessibility pass for every rendered subtree — form labels point
+// at their field, icon-only buttons get a spoken name (see utils/a11y.js).
+try { observeA11y(document.body); } catch (e) { console.warn('a11y observer failed', e); }
+
 // v35: no scroll-reveal observer — content is visible the moment it renders
 // (the old reveal left cards at opacity 0 in print and screenshots, audit B9).
 
@@ -722,8 +748,9 @@ function paintAppFooter() {
   set('#app-footer [data-footer-copyright]', copyrightNote(lang));
   const stamp = document.querySelector('#app-footer [data-build-stamp]');
   if (stamp) {
-    // Compact chip: “build 2026-10-06”, full label on hover (v18.2 footer redesign).
-    stamp.textContent = `build ${APP_UPDATED_ISO}`;
+    // Compact chip: “build 8 พ.ย. 2569”, full label on hover (round 5: Thai
+    // screens count years in พ.ศ.; only the “© 2024–2026” line keeps CE).
+    stamp.textContent = `build ${appUpdatedShort(lang)}`;
     stamp.title = appBuildLabel(lang, palette);
   }
   const title = document.getElementById('app-title');
@@ -1140,7 +1167,7 @@ function updateUserDisplay(user) {
       nameEl = document.createElement('div');
       nameEl.id = 'user-display-name';
       nameEl.className = 'user-display-name hidden md:flex items-center mr-1 text-right';
-      nameEl.innerHTML = `<span class="text-[13px] font-semibold leading-none" id="user-name-text"></span>`;
+      nameEl.innerHTML = `<span class="text-[13px] font-semibold" id="user-name-text"></span>`;
       userMenu.parentElement.insertBefore(nameEl, userMenu);
     }
   }
@@ -1797,6 +1824,13 @@ function notificationSettingsCardsHtml({ lang = 'th', perms = {}, tripSettings =
   const hourOptions = Array.from({ length: 24 }, (_, h) => h)
     .map(h => `<option value="${h}" ${Number(tripSettings.summaryHour ?? p.summaryHour ?? 20) === h ? 'selected' : ''}>${String(h).padStart(2, '0')}:00</option>`)
     .join('');
+  // Round 5: the browser's raw permission word ("denied") is shown in Thai.
+  const permissionText = ({
+    granted: th('อนุญาตแล้ว', 'allowed'),
+    denied: th('ถูกบล็อก', 'blocked'),
+    default: th('ยังไม่ได้ถาม', 'not asked yet'),
+    unsupported: th('ไม่รองรับ', 'not supported')
+  })[permission] || permission;
   const statusRow = (ok, label, value) => `
     <div class="notify-status-row">
       <span class="notify-status-dot ${ok ? 'is-ok' : 'is-off'}"></span>
@@ -1841,12 +1875,12 @@ function notificationSettingsCardsHtml({ lang = 'th', perms = {}, tripSettings =
     </div>
 
     <div class="card p-5 space-y-3" id="notify-push-card" data-settings-section="notify">
-      <h3 class="font-semibold flex items-center gap-2">${icon('bell-ring', 'w-4 h-4')} ${th('Web Push (FCM)', 'Web Push (FCM)')}
+      <h3 class="font-semibold flex items-center gap-2">${icon('bell-ring', 'w-4 h-4')} ${th('แจ้งเตือนแบบพุช (Web Push)', 'Web Push (FCM)')}
         <span class="badge ${isOn ? 'badge-completed' : 'badge-planned'} text-xs">${isOn ? th('เปิดอยู่', 'On') : th('ปิดอยู่', 'Off')}</span></h3>
       <p class="text-xs text-[var(--text-secondary)]">${th('แจ้งเตือนผ่าน FCM ได้แม้ปิดแอป โดย GitHub Actions ส่งคิวปกติทุก 30 นาที (อาจล่าช้า) — Firebase ยังเป็น Spark', 'FCM can reach this device with the app closed. GitHub Actions sends the queue normally every 30 minutes (possibly delayed). Firebase stays on Spark.')}</p>
       ${statusRow(support.supported, th('เบราว์เซอร์รองรับ', 'Browser support'), support.supported ? th('รองรับ', 'supported') : (support.message || th('ไม่รองรับ', 'not supported')))}
-      ${statusRow(permission === 'granted', th('สิทธิ์การแจ้งเตือน', 'Notification permission'), permission)}
-      ${statusRow(Boolean(vapid), 'VAPID key', vapid ? th('พร้อมใช้งาน', 'configured') : th('ยังไม่ได้ตั้ง — ติดต่อผู้ดูแลเว็บไซต์', 'not configured — contact the site admin'))}
+      ${statusRow(permission === 'granted', th('สิทธิ์การแจ้งเตือน', 'Notification permission'), permissionText)}
+      ${statusRow(Boolean(vapid), th('คีย์เว็บพุช (VAPID)', 'VAPID key'), vapid ? th('พร้อมใช้งาน', 'configured') : th('ยังไม่ได้ตั้ง — ติดต่อผู้ดูแลเว็บไซต์', 'not configured — contact the site admin'))}
       ${statusRow(Boolean(token), th('อุปกรณ์นี้ลงทะเบียนแล้ว', 'This device registered'), token ? `${String(token).slice(0, 12)}…` : th('ยังไม่ลงทะเบียน', 'not registered'))}
       <div class="btn-row">
         <button type="button" class="btn ${isOn ? 'btn-ghost' : 'btn-primary'} btn-sm" id="notify-push-toggle" ${support.supported && (isOn || Boolean(vapid)) ? '' : 'disabled'}>
@@ -2087,13 +2121,13 @@ function openUserSheet(user) {
   const sheet = showBottomSheet(`
     <div class="space-y-4 account-sheet">
       <div class="flex items-center gap-3">
-        <div class="avatar" style="background: var(--gradient-primary); width:52px;height:52px; flex-shrink:0;">${user.photoURL ? `<img decoding="async" src="${escapeHtml(user.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(initial)}</div>
+        <div class="avatar" style="background: var(--primary); color: var(--on-primary); width:52px;height:52px; flex-shrink:0;">${user.photoURL ? `<img decoding="async" src="${escapeHtml(user.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(initial)}</div>
         <div class="flex-1 min-w-0">
           <h3 class="font-semibold truncate text-[15px]">${escapeHtml(user.displayName || user.email || 'User')}</h3>
           <p class="text-xs text-[var(--text-secondary)] truncate">${escapeHtml(user.email || user.uid.slice(0,12))} ${tripInfo}</p>
           <span class="badge badge-planned text-xs mt-1">${icon('shield-check','w-3 h-3')} ${th('บัญชีที่เข้าสู่ระบบ','Signed in')}</span>
         </div>
-        <button id="close-user-sheet" class="btn btn-ghost btn-sm !p-2">${icon('x','w-4 h-4')}</button>
+        <button id="close-user-sheet" class="btn btn-ghost btn-sm !p-2" aria-label="${th('ปิด','Close')}" title="${th('ปิด','Close')}">${icon('x','w-4 h-4')}</button>
       </div>
 
       <div class="card p-3 space-y-3">
@@ -2102,8 +2136,8 @@ function openUserSheet(user) {
           <span class="text-xs text-[var(--text-tertiary)]">${escapeHtml(user.uid.slice(0,10))}…</span>
         </div>
         <div class="grid gap-2">
-          <div class="input-group"><label class="input-label text-xs">${icon('user','w-3 h-3')} Display Name</label><input id="edit-display-name" class="input text-[13px] !min-h-[36px]" value="${escapeHtml(user.displayName || '')}" placeholder="ชื่อที่แสดง"></div>
-          <div class="input-group"><label class="input-label text-xs">${icon('image','w-3 h-3')} Photo URL</label><input id="edit-photo-url" class="input text-[13px] !min-h-[36px]" value="${escapeHtml(user.photoURL || '')}" placeholder="https://..."></div>
+          <div class="input-group"><label class="input-label text-xs">${icon('user','w-3 h-3')} ${th('ชื่อที่แสดง','Display name')}</label><input id="edit-display-name" class="input text-[13px] !min-h-[36px]" value="${escapeHtml(user.displayName || '')}" placeholder="ชื่อที่แสดง"></div>
+          <div class="input-group"><label class="input-label text-xs">${icon('image','w-3 h-3')} ${th('ลิงก์รูปโปรไฟล์ (URL)','Photo URL')}</label><input id="edit-photo-url" class="input text-[13px] !min-h-[36px]" value="${escapeHtml(user.photoURL || '')}" placeholder="https://..."></div>
           <button id="save-profile" class="btn btn-primary btn-sm w-full !min-h-[38px]">${icon('save','w-4 h-4')} ${th('บันทึกโปรไฟล์','Save profile')}</button>
         </div>
       </div>
@@ -2511,7 +2545,7 @@ function themePickerHtml({ idPrefix = 'tp', showModes = true } = {}) {
       <div class="mode-grid">
         <button class="mode-option ${getStoredMode() === 'light' ? 'active' : ''}" data-mode="light">${icon('sun', 'w-5 h-5')} ${th('สว่าง', 'Light')}</button>
         <button class="mode-option ${getStoredMode() === 'dark' ? 'active' : ''}" data-mode="dark">${icon('moon', 'w-5 h-5')} ${th('มืด', 'Dark')}</button>
-        <button class="mode-option ${getStoredMode() === 'auto' ? 'active' : ''}" data-mode="auto">${icon('monitor', 'w-5 h-5')} Auto</button>
+        <button class="mode-option ${getStoredMode() === 'auto' ? 'active' : ''}" data-mode="auto">${icon('monitor', 'w-5 h-5')} ${th('อัตโนมัติ', 'Auto')}</button>
       </div>` : ''}
     </div>`;
 }
@@ -3189,7 +3223,7 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
     const ok = await confirmAction({
       title: lang==='th' ? `ลบทริป "${trip.name}" ?` : `Delete "${trip.name}"?`,
       message: lang==='th' ? 'การลบจะลบแผนการเดินทาง ค่าใช้จ่าย สมาชิก เอกสารของทริปนี้ทั้งหมด และไม่สามารถกู้คืนได้' : 'This permanently removes the itinerary, expenses, members and documents of this trip.',
-      detail: `Trip ID: <b>${escapeHtml(trip.id)}</b>`,
+      detail: `${lang==='th' ? 'รหัสทริป (Trip ID)' : 'Trip ID'}: <b>${escapeHtml(trip.id)}</b>`,
       confirmText: lang==='th' ? 'ลบทริป' : 'Delete trip',
       danger: true, icon: 'trash-2'
     });
@@ -3227,7 +3261,7 @@ function openTripActions(trip, { onChanged } = {}) {
         <button id="ta-open" class="btn btn-primary w-full">${icon('log-in', 'w-4 h-4')} ${lang==='th' ? 'เปิดทริป' : 'Open trip'}</button>
         <button id="ta-edit" class="btn btn-secondary w-full">${icon('pencil', 'w-4 h-4')} ${lang==='th' ? 'แก้ไขข้อมูลทริป' : 'Edit trip'}</button>
         <button id="ta-dup" class="btn btn-secondary w-full">${icon('copy', 'w-4 h-4')} ${lang==='th' ? 'ทำสำเนาทริป' : 'Duplicate'}</button>
-        <button id="ta-id" class="btn btn-ghost w-full text-xs">${icon('clipboard-copy', 'w-3.5 h-3.5')} ${lang==='th' ? 'คัดลอก Trip ID' : 'Copy Trip ID'}</button>
+        <button id="ta-id" class="btn btn-ghost w-full text-xs">${icon('clipboard-copy', 'w-3.5 h-3.5')} ${lang==='th' ? 'คัดลอกรหัสทริป (Trip ID)' : 'Copy Trip ID'}</button>
         <button id="ta-del" class="btn btn-danger-quiet w-full">${icon('trash-2', 'w-4 h-4')} ${lang==='th' ? 'ลบทริป' : 'Delete trip'}</button>
       </div>
     </div>
@@ -3257,13 +3291,13 @@ function openTripActions(trip, { onChanged } = {}) {
     } catch (e) { tLoad.close(); toast.error(e.message); }
   });
   document.getElementById('ta-id')?.addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(trip.id); toast.success(lang==='th' ? 'คัดลอก Trip ID แล้ว' : 'Trip ID copied'); } catch { toast.error('Copy failed'); }
+    try { await navigator.clipboard.writeText(trip.id); toast.success(lang==='th' ? 'คัดลอกรหัสทริปแล้ว' : 'Trip ID copied'); } catch { toast.error('Copy failed'); }
   });
   document.getElementById('ta-del')?.addEventListener('click', async () => {
     const ok = await confirmAction({
       title: lang==='th' ? `ลบทริป "${trip.name}" ?` : `Delete "${trip.name}"?`,
       message: lang==='th' ? 'ลบแผนการเดินทาง ค่าใช้จ่าย สมาชิก และเอกสารทั้งหมดของทริปนี้ถาวร' : 'Permanently removes itinerary, expenses, members and documents.',
-      detail: `Trip ID: <b>${escapeHtml(trip.id)}</b>`,
+      detail: `${lang==='th' ? 'รหัสทริป (Trip ID)' : 'Trip ID'}: <b>${escapeHtml(trip.id)}</b>`,
       confirmText: lang==='th' ? 'ลบทริป' : 'Delete trip', danger: true, icon: 'trash-2'
     });
     if (!ok) return;
@@ -4197,9 +4231,10 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
   const originalExpenses = expenses;
   expenses = expensesInThb(expenses, trip);
   const fmt = minor => formatCurrency(minor || 0, 'THB');
-  // v35 money rule: summaries (the three stat figures and their change lines) are
-  // whole baht — ฿13,680 — while rows and detail screens keep satang (฿3,343.92).
-  const fmtSum = minor => formatCurrency(Math.round((minor || 0) / 100) * 100, 'THB').replace(/[.,]00(?=\D*$)/, '');
+  // Round 5 money rule (decision ก): the dashboard shows the exact amount, so a
+  // stat line can never disagree with the settlement screen (“ได้คืน ฿3,343.92”,
+  // not a rounded ฿3,344). Only a whole-baht figure drops its “.00” (฿13,680).
+  const fmtSum = minor => formatCurrency(Number(minor) || 0, 'THB').replace(/[.,]00(?=\D*$)/, '');
   const secondary = minor => currency === 'THB' || !rate ? '' : formatCurrency(convertCurrency(minor, 'THB', currency, 1 / rate), currency);
   const thbTag = minor => origTextChipHtml(secondary(minor));
   const thbOfBudget = secondary;
@@ -4480,7 +4515,7 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
     return `
       <div class="member-row ${isMe ? 'is-me' : ''}" data-mid="${escapeHtml(id)}" role="button" tabindex="0" title="${th('แตะเพื่อดูรายการของคนนี้','Tap to see this person’s bills')}">
         <div class="member-row-main">
-          <div class="avatar member-row-avatar" style="background:${m?.color || 'var(--primary)'};">
+          <div class="avatar member-row-avatar" style="${avatarStyle(m?.color)};">
             ${m?.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m?.displayName || 'U'))}
           </div>
           <div class="min-w-0">
@@ -4545,7 +4580,7 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
               </div>
               <div class="team-members">
                 ${g.members.length ? g.members.map(m => `
-                  <span class="team-member-chip"><span class="avatar w-5 h-5 text-xs" style="background:${escapeHtml(m.color || 'var(--primary)')};width:20px;height:20px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>${escapeHtml((m.displayName || '').split(' ')[0])}</span>`).join('')
+                  <span class="team-member-chip"><span class="avatar w-5 h-5 text-xs" style="${avatarStyle(m.color)};width:20px;height:20px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>${escapeHtml((m.displayName || '').split(' ')[0])}</span>`).join('')
                   : `<span class="team-card-note">${th('ยังไม่ได้เลือกสมาชิก','No members picked yet')}</span>`}
               </div>
             </article>`;
@@ -5770,7 +5805,7 @@ async function renderItinerary(params) {
               ${it.notes ? `<div class="itin-sheet-note">${escapeHtml(it.notes)}</div>` : ''}
             </td>
             <td style="width:88px;"><span class="itin-sheet-status">${escapeHtml(statusLabel(it))}</span></td>
-            <td class="num" style="width:112px;">${est ? `<span class="itin-sheet-est">${moneyHtml(est, currency, exportThbRate)}</span>` : '<span style="color:#9ca3af;">—</span>'}</td>
+            <td class="num" style="width:112px;">${est ? `<span class="itin-sheet-est">${moneyHtml(est, currency, exportThbRate)}</span>` : '<span style="color:var(--text-tertiary);">—</span>'}</td>
           </tr>`;
       }).join('');
       return `
@@ -6099,7 +6134,7 @@ async function renderItinerary(params) {
         listEl.innerHTML = renderEmptyState({
           icon: 'map-pinned',
           title: th('ไม่มีแผนในวันนี้','No plans'),
-          desc: showAll ? th('เพิ่มสถานที่แรกเข้าไปในทริปเลย','Add the first place to your trip') : th(`ยังไม่มีแผนสำหรับ ${selectedDate}`, `No plans for ${selectedDate}`),
+          desc: showAll ? th('เพิ่มสถานที่แรกเข้าไปในทริปเลย','Add the first place to your trip') : th(`ยังไม่มีแผนสำหรับวันที่ ${thaiDate(selectedDate) || selectedDate}`, `No plans for ${formatDate(selectedDate, 'en') || selectedDate}`),
           actionHtml: `<button id="empty-add" class="btn btn-secondary btn-sm mt-3">${icon('plus', 'w-4 h-4')} ${t('addPlace')}</button>`
         });
         bind('empty-add', 'click', () => openItemForm(null, selectedDate));
@@ -6316,7 +6351,7 @@ async function renderItinerary(params) {
     const memberTiles = (selectedIds = []) => members.map(m => `
       <button type="button" class="tile ${selectedIds.includes(m.id) ? 'tile-selected' : ''}" data-member="${m.id}" data-role="share">
         <span class="flex items-center gap-2 min-w-0">
-          <span class="avatar w-7 h-7 text-xs" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+          <span class="avatar w-7 h-7 text-xs" style="${avatarStyle(m.color)};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
           <span class="text-xs font-medium truncate">${escapeHtml(m.displayName)}</span>
         </span>
       </button>`).join('') || `<p class="text-xs text-[var(--text-secondary)]">${th('ยังไม่มีสมาชิกในทริป','No members yet')}</p>`;
@@ -6407,7 +6442,7 @@ async function renderItinerary(params) {
               ${tripGroups.length ? tripGroups.map(g => `
                 <button type="button" class="tile ${(it.groupIds || []).includes(g.id) ? 'tile-selected' : ''}" data-group="${g.id}">
                   <span class="flex items-center gap-2 min-w-0">
-                    <span class="avatar w-7 h-7 text-xs" style="background:${escapeHtml(g.color || 'var(--primary)')};width:28px;height:28px;">${icon(g.icon || 'users', 'w-3.5 h-3.5')}</span>
+                    <span class="avatar w-7 h-7 text-xs" style="${avatarStyle(g.color)};width:28px;height:28px;">${icon(g.icon || 'users', 'w-3.5 h-3.5')}</span>
                     <span class="text-xs font-medium truncate">${escapeHtml(g.name)}</span>
                   </span>
                 </button>`).join('')
@@ -6426,7 +6461,7 @@ async function renderItinerary(params) {
           </div>
 
           <div class="input-group"><label class="input-label">${th('ที่อยู่','Address')}</label><input id="it-address" class="input" autocomplete="off" value="${escapeHtml(it.address || '')}"></div>
-          <div class="input-group"><label class="input-label">Google Maps URL</label><input id="it-maps-url" class="input" placeholder="https://maps.google.com/?q=..." autocomplete="off" value="${escapeHtml(it.googleMapsUrl || '')}"></div>
+          <div class="input-group"><label class="input-label">${th('ลิงก์ Google Maps', 'Google Maps link')}</label><input id="it-maps-url" class="input" placeholder="https://maps.google.com/?q=..." autocomplete="off" value="${escapeHtml(it.googleMapsUrl || '')}"></div>
 
           <div class="input-group">
             <label class="input-label">${th('รูปภาพ (URL)','Image (URL)')}</label>
@@ -6471,7 +6506,7 @@ async function renderItinerary(params) {
                   ${members.map(m => `
                     <button type="button" class="tile ${(initPayer === m.id) ? 'tile-selected' : ''}" data-member="${m.id}" data-role="payer">
                       <span class="flex items-center gap-2 min-w-0">
-                        <span class="avatar w-7 h-7 text-xs" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+                        <span class="avatar w-7 h-7 text-xs" style="${avatarStyle(m.color)};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                         <span class="text-xs font-medium truncate">${escapeHtml(m.displayName)}</span>
                       </span>
                     </button>`).join('')}
@@ -6865,7 +6900,9 @@ async function renderItinerary(params) {
 
   bind('add-itinerary-btn', 'click', () => openItemForm(null, showAll ? null : selectedDate));
   loadItems();
-  if (action === 'add') openItemForm(null, showAll ? null : selectedDate);
+  // ?action=add opens one sheet — a second paint of the same route (data refresh,
+  // a repeated hashchange) must not stack another form with the same ids.
+  if (action === 'add' && !document.getElementById('itinerary-form')) openItemForm(null, showAll ? null : selectedDate);
 }
 
 const EXPENSE_CATS = EXPENSE_CATEGORIES;   // built-ins (kept for Excel/legacy paths)
@@ -7540,7 +7577,7 @@ function expenseFormSectionsHtml({
           </div>
           <div class="space-y-3">
             <div class="grid grid-cols-3 gap-3">
-              <div class="input-group col-span-2"><label class="input-label">${tx('ยอดก่อนส่วนลด / VAT / Service Charge','Subtotal before adjustments')} *</label><input id="${p}ex-subtotal" class="input money-input" type="text" inputmode="decimal" required placeholder="0.00" value="${amount(e.subtotalMinor)}"></div>
+              <div class="input-group col-span-2"><label class="input-label">${tx('ยอดก่อนส่วนลด / VAT / ค่าบริการ','Subtotal before adjustments')} *</label><input id="${p}ex-subtotal" class="input money-input" type="text" inputmode="decimal" required placeholder="0.00" value="${amount(e.subtotalMinor)}"></div>
               <div class="input-group"><label class="input-label">${tx('สกุลเงิน','Currency')}</label>
                 <select id="${p}ex-currency" class="input">${tripCurrencyList(trip, [e.currency]).map(c => `<option value="${c}" ${currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
               </div>
@@ -7548,7 +7585,7 @@ function expenseFormSectionsHtml({
 
             <div class="grid grid-cols-3 gap-3">
               <div class="input-group"><label class="input-label">${tx('ส่วนลด','Discount')}</label><input id="${p}ex-discount" class="input money-input" type="text" inputmode="decimal" value="${amount(e.discountMinor) || 0}"></div>
-              <div class="input-group"><label class="input-label">Service Charge</label><input id="${p}ex-service" class="input money-input" type="text" inputmode="decimal" value="${amount(e.serviceMinor) || 0}"></div>
+              <div class="input-group"><label class="input-label">${tx('ค่าบริการ (Service charge)','Service charge')}</label><input id="${p}ex-service" class="input money-input" type="text" inputmode="decimal" value="${amount(e.serviceMinor) || 0}"></div>
               <div class="input-group"><label class="input-label">VAT / Tax</label><input id="${p}ex-tax" class="input money-input" type="text" inputmode="decimal" value="${amount(e.taxMinor) || 0}"></div>
             </div>
 
@@ -7577,7 +7614,7 @@ function expenseFormSectionsHtml({
                 ${members.map(m => `
                   <button type="button" class="tile ${initialPayers.has(m.id) ? 'tile-selected' : ''}" data-payer="${m.id}" title="${escapeHtml(m.displayName)}">
                     <span class="flex items-center gap-2 min-w-0">
-                      <span class="avatar w-8 h-8 text-xs" style="background:${m.color || 'var(--primary)'};width:32px;height:32px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+                      <span class="avatar w-8 h-8 text-xs" style="${avatarStyle(m.color)};width:32px;height:32px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                       <span class="text-sm font-medium truncate">${escapeHtml(m.displayName)}</span>
                     </span>
                   </button>`).join('') || `<p class="text-sm text-[var(--text-secondary)]">${tx('ยังไม่พบสมาชิกในทริปนี้','No members found in this trip')}</p>`}
@@ -7612,7 +7649,7 @@ function expenseFormSectionsHtml({
                 ${members.map(m => `
                   <button type="button" class="tile ${selectedShare.some(x => x.id === m.id) ? 'tile-selected' : ''}" data-share="${m.id}" title="${escapeHtml(m.displayName)}">
                     <span class="flex items-center gap-2 min-w-0">
-                      <span class="avatar w-8 h-8 text-xs" style="background:${m.color || 'var(--primary)'};width:32px;height:32px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+                      <span class="avatar w-8 h-8 text-xs" style="${avatarStyle(m.color)};width:32px;height:32px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                       <span class="text-sm font-medium truncate">${escapeHtml(m.displayName)}</span>
                     </span>
                   </button>`).join('')}
@@ -7911,7 +7948,7 @@ function mountExpenseForm({
       area.innerHTML = ids.map(m => `
         <div class="split-equal-row flex justify-between items-center text-sm p-2 rounded-xl gap-2" style="background: var(--bg-secondary);">
           <span class="flex items-center gap-2 min-w-0">
-            <span class="avatar w-7 h-7 text-xs" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+            <span class="avatar w-7 h-7 text-xs" style="${avatarStyle(m.color)};width:28px;height:28px;border-width:1.5px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
             <span class="truncate">${escapeHtml(m.displayName)}</span>
           </span>
           <span class="font-semibold flex-shrink-0">${moneyHtml(equal.find(a => a.memberId === m.id).amountMinor, v.cur, v.rate)}</span>
@@ -7937,7 +7974,7 @@ function mountExpenseForm({
         return `
           <div class="split-row" data-member="${m.id}">
             <div class="split-name">
-              <span class="avatar w-7 h-7 text-xs" style="background:${m.color || 'var(--primary)'};width:28px;height:28px;border-width:1.5px;flex-shrink:0;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+              <span class="avatar w-7 h-7 text-xs" style="${avatarStyle(m.color)};width:28px;height:28px;border-width:1.5px;flex-shrink:0;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
               <span class="truncate text-xs font-medium" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
             </div>
             <input data-alloc="${m.id}" aria-label="${escapeHtml(m.displayName)} ${tx('ยอดที่กรอก','Entered amount')}" class="input split-input money-input" type="text" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${escapeHtml(displayValue)}">
@@ -8224,7 +8261,7 @@ function mountExpenseForm({
       ${picked.map(m => `
         <div class="payer-row" data-payer-row="${m.id}">
           <span class="payer-name">
-            <span class="avatar" style="background:${m.color || 'var(--primary)'};width:26px;height:26px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+            <span class="avatar" style="${avatarStyle(m.color)};width:26px;height:26px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
             <span class="truncate text-xs font-medium" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
           </span>
           <input class="input money-input" type="text" inputmode="decimal" data-payment="${m.id}" aria-label="${escapeHtml(m.displayName)} ${tx('ยอดที่จ่าย','Amount paid')}" value="${escapeHtml(payerAmounts[m.id] || '')}" placeholder="0.00">
@@ -8486,7 +8523,7 @@ async function renderExpenseAdd(params) {
         type: isEdit ? 'expense.update' : 'expense.create',
         targetId: savedId,
         title: payload.title,
-        detail: `${formatCurrency(payload.netTotalMinor || 0, payload.currency || currency)} • ${payload.date || ''}`,
+        detail: `${formatCurrency(payload.netTotalMinor || 0, payload.currency || currency)}${payload.date ? ` • ${escapeHtml(shortDay(payload.date))}` : ''}`,
         user: me
       });
 
@@ -8581,7 +8618,7 @@ async function openExpenseSheet({
             <span class="badge badge-planned text-xs">${th('เมนูเดียวกับหน้าค่าใช้จ่าย','same form as the expenses page')}</span>
           </p>
         </div>
-        <button class="btn btn-ghost btn-sm" id="sh-close">${icon('x', 'w-4 h-4')}</button>
+        <button class="btn btn-ghost btn-sm" id="sh-close" aria-label="${th('ปิด','Close')}" title="${th('ปิด','Close')}">${icon('x', 'w-4 h-4')}</button>
       </div>
       <form id="sh-expense-form" class="expense-form">
         ${expenseFormSectionsHtml({ prefix: 'sh-', e, members, items, trip, lang, currency: e.currency || baseCurrency, expenseRates: rates, lockItinerary, planLabel: item?.title || '' })}
@@ -8660,7 +8697,7 @@ async function openExpenseSheet({
         type: editing ? 'expense.update' : 'expense.create',
         targetId: savedId,
         title: payload.title,
-        detail: `${formatCurrency(payload.netTotalMinor || 0, payload.currency || baseCurrency)} • ${payload.date || ''}`,
+        detail: `${formatCurrency(payload.netTotalMinor || 0, payload.currency || baseCurrency)}${payload.date ? ` • ${shortDay(payload.date)}` : ''}`,
         user: me
       });
 
@@ -8931,7 +8968,7 @@ async function renderSettlement(params) {
 
   function memberHeader(m, { withAvatar = true } = {}) {
     const isMe = m.memberId === currentUser.uid;
-    return `${withAvatar ? `<div class="avatar" style="width:34px;height:34px;background:${escapeHtml(m.color || 'var(--primary)')};font-size:12px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</div>` : ''}
+    return `${withAvatar ? `<div class="avatar" style="width:34px;height:34px;${avatarStyle(m.color)};font-size:12px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</div>` : ''}
       <div class="min-w-0">
         <div class="font-semibold text-sm truncate">${escapeHtml(m.displayName)} ${isMe ? `<span class="badge badge-planned text-xs">${th('คุณ','you')}</span>` : ''}</div>
         <div class="text-xs text-[var(--text-tertiary)]">${th('จ่ายจริง','paid')} ${m.paidCount} • ${th('ร่วมหาร','shares')} ${m.shareCount}</div>
@@ -8986,7 +9023,7 @@ async function renderSettlement(params) {
       const m = state.membersMap[id] || {};
       return `<button type="button" class="settle-answer-row ${direction} no-export" data-settle-person="${escapeHtml(id)}">
         <span class="settle-answer-dir">${icon(direction === 'out' ? 'arrow-up-right' : 'arrow-down-left', 'w-3.5 h-3.5')}</span>
-        ${showNames ? `<span class="avatar" style="width:24px;height:24px;font-size:12px;background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName || '?'))}</span>` : ''}
+        ${showNames ? `<span class="avatar" style="width:24px;height:24px;font-size:12px;${avatarStyle(m.color)};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName || '?'))}</span>` : ''}
         <span class="settle-answer-who">${direction === 'out' ? th('จ่ายให้','Pay') : th('รับจาก','Receive from')} ${escapeHtml(m.displayName || '')}</span>
         <b class="settle-answer-amount">${direction === 'out' ? '−' : '+'}${money(amountMinor)}</b>
         ${icon('chevron-right', 'w-3 h-3')}
@@ -9020,7 +9057,7 @@ async function renderSettlement(params) {
           count: flaggedCount(m),
           netMinor: m.netMinor,
           color: m.color || '',
-          avatar: `<span class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>`
+          avatar: `<span class="avatar" style="${avatarStyle(m.color)};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>`
         })).join('')}
       </div>`;
   }
@@ -9109,12 +9146,12 @@ async function renderSettlement(params) {
 
         <!-- The member's name AND the bottom line are the headline (screen + PNG) -->
         <div class="rcpt-member-bar">
-          <div class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">
+          <div class="avatar" style="${avatarStyle(m.color)};">
             ${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}
           </div>
           <div class="min-w-0 flex-1">
             <div class="rcpt-member-label">${th('ใบเสร็จของ','Receipt for')}</div>
-            <div class="receipt-member-name receipt-member-name--lg">${escapeHtml(m.displayName)}${isMe ? ` <span class="you-badge">${th('คุณ','You')}</span>` : ''}</div>
+            <div class="receipt-member-name receipt-member-name--lg${nameSizeClass(m.displayName)}">${escapeHtml(m.displayName)}${isMe ? ` <span class="you-badge">${th('คุณ','You')}</span>` : ''}</div>
             <div class="rcpt-member-sub">${th('จ่ายจริง','Paid')} ${m.paidCount} · ${th('ร่วมหาร','shared')} ${m.shareCount}${flaggedCount(m) ? ` · ${flaggedCount(m)} ${th('รายการที่ทักท้วง','flagged')}` : ''}</div>
           </div>
           <div class="rcpt-hero ${positive ? 'is-positive' : 'is-negative'}">
@@ -9312,7 +9349,7 @@ async function renderSettlement(params) {
         return `<section class="tx-payer-group" data-tx-payer="${escapeHtml(group.from)}">
           <div class="tx-payer-head">
             <button type="button" class="tx-person-link tx-payer-person" data-settle-person="${escapeHtml(group.from)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${from.displayName || 'สมาชิก'}`, `View expenses for ${from.displayName || 'member'}`))}">
-              <span class="avatar" style="background:${escapeHtml(from.color || 'var(--primary)')};width:32px;height:32px;font-size:12px;">${from.photoURL ? `<img decoding="async" src="${escapeHtml(from.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(from.displayName || ''))}</span>
+              <span class="avatar" style="${avatarStyle(from.color)};width:32px;height:32px;font-size:12px;">${from.photoURL ? `<img decoding="async" src="${escapeHtml(from.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(from.displayName || ''))}</span>
               <span class="min-w-0">
                 <b class="block truncate">${escapeHtml(from.displayName || th('สมาชิก','Member'))}</b>
                 <small>${th('ต้องโอนให้','Owes')} ${group.recipients.length} ${th('คน','people')}</small>
@@ -9334,7 +9371,7 @@ async function renderSettlement(params) {
               return `<div class="tx-row tx-recipient-row" data-tx-recipient="${escapeHtml(recipient.to)}">
                 <div class="tx-recipient-head">
                   <button type="button" class="tx-person-link tx-recipient-person" data-settle-person="${escapeHtml(recipient.to)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${to.displayName || 'สมาชิก'}`, `View expenses for ${to.displayName || 'member'}`))}">
-                    <span class="avatar" style="background:${escapeHtml(to.color || 'var(--primary)')};width:28px;height:28px;font-size:12px;">${to.photoURL ? `<img decoding="async" src="${escapeHtml(to.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(to.displayName || ''))}</span>
+                    <span class="avatar" style="${avatarStyle(to.color)};width:28px;height:28px;font-size:12px;">${to.photoURL ? `<img decoding="async" src="${escapeHtml(to.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(to.displayName || ''))}</span>
                     <span class="min-w-0"><small>${th('โอนให้','Pay to')}</small><b class="block truncate">${escapeHtml(to.displayName || th('สมาชิก','Member'))}</b></span>
                   </button>
                   <div class="tx-recipient-amount">${moneyPair(recipient.amountMinor)}</div>
@@ -9441,7 +9478,7 @@ async function renderSettlement(params) {
         <div class="net-summary-grid">
           ${people.map(m => `
             <button type="button" class="net-chip ${m.netMinor >= 0 ? 'is-in' : 'is-out'} no-export" data-settle-person="${escapeHtml(m.memberId)}">
-              <span class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+              <span class="avatar" style="${avatarStyle(m.color)};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
               <span class="net-chip-body">
                 <span class="net-chip-name">${escapeHtml(m.displayName)}</span>
                 <span class="net-chip-state">${Math.abs(m.netMinor) <= 1 ? th('เคลียร์แล้ว','Settled') : m.netMinor > 0 ? th('รับสุทธิ','Gets back') : th('จ่ายสุทธิ','Pays')}</span>
@@ -9701,7 +9738,7 @@ async function renderSettlement(params) {
     const detailDensity = 'full';
     const detail = showBottomSheet(`
       <div class="receipt-detail-head">
-        <div class="avatar" style="width:40px;height:40px;background:${escapeHtml(m.color || 'var(--primary)')};">
+        <div class="avatar" style="width:40px;height:40px;${avatarStyle(m.color)};">
           ${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" alt="" class="w-full h-full rounded-full object-cover">` : escapeHtml((m.displayName || '?').trim().charAt(0).toUpperCase())}
         </div>
         <div class="min-w-0">
@@ -9737,7 +9774,7 @@ async function renderSettlement(params) {
     if (switchBar) {
       switchBar.innerHTML = all.map(x => `
         <button type="button" class="rd-person ${x.memberId === m.memberId ? 'is-active' : ''}" data-detail-person="${escapeHtml(x.memberId)}" title="${escapeHtml(x.displayName || '')}" aria-label="${escapeHtml(x.displayName || '')}">
-          <span class="avatar" style="background:${escapeHtml(x.color || 'var(--primary)')};width:24px;height:24px;font-size:12px;">${escapeHtml((x.displayName || '?').trim().charAt(0).toUpperCase())}</span>
+          <span class="avatar" style="${avatarStyle(x.color)};width:24px;height:24px;font-size:12px;">${escapeHtml((x.displayName || '?').trim().charAt(0).toUpperCase())}</span>
         </button>`).join('');
       switchBar.querySelectorAll('[data-detail-person]').forEach(btn => btn.addEventListener('click', () => {
         detail.close();
@@ -9939,7 +9976,7 @@ async function renderSettlement(params) {
           <title>${escapeHtml(person.displayName || '')}${out ? ` • ${th('จ่าย', 'pays')} ${money(out)}` : ''}${inc ? ` • ${th('รับ', 'gets')} ${money(inc)}` : ''}</title>
           <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${nodeR + 6}" fill="${escapeHtml(color)}" opacity=".13"/>
           <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${nodeR}" fill="${escapeHtml(color)}"/>
-          <text x="${p.x.toFixed(1)}" y="${(p.y + 1).toFixed(1)}" text-anchor="middle" dominant-baseline="central" fill="#fff" font-size="${FS.initial}" font-weight="600" font-family="var(--font-display)">${initial(person)}</text>
+          <text x="${p.x.toFixed(1)}" y="${(p.y + 1).toFixed(1)}" text-anchor="middle" dominant-baseline="central" fill="${escapeHtml(avatarInk(color))}" font-size="${FS.initial}" font-weight="600" font-family="var(--font-display)">${initial(person)}</text>
           <text x="${p.x.toFixed(1)}" y="${nameY.toFixed(1)}" text-anchor="middle" fill="var(--text-strong)" font-size="${FS.name}" font-weight="500" font-family="var(--font-sans)">${shortName(person, 16)}</text>
           <text x="${p.x.toFixed(1)}" y="${roleY.toFixed(1)}" text-anchor="middle" fill="${escapeHtml(tone)}" font-size="${FS.role}" font-weight="500" font-family="var(--font-sans)">${roleLabel}</text>
         </g>`;
@@ -9949,12 +9986,12 @@ async function renderSettlement(params) {
     const rowsHtml = edgeRows.map(({ tx, payer, receiver, color }) => `
       <div class="debt-tx-row" style="--debt-edge-color:${escapeHtml(color)};">
         <button type="button" class="debt-person-link" data-settle-person="${escapeHtml(tx.from)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${payer.displayName || 'ผู้จ่าย'}`, `View expenses for ${payer.displayName || 'payer'}`))}">
-          <span class="avatar" style="width:24px;height:24px;font-size:12px;background:${escapeHtml(payer.color || 'var(--primary)')};">${initial(payer)}</span>
+          <span class="avatar" style="width:24px;height:24px;font-size:12px;${avatarStyle(payer.color)};">${initial(payer)}</span>
           <span class="debt-person-name">${escapeHtml(payer.displayName || '')}</span>
         </button>
         <span class="debt-row-pays">${icon('arrow-right', 'w-3 h-3')} ${th('จ่ายให้', 'pays')}</span>
         <button type="button" class="debt-person-link" data-settle-person="${escapeHtml(tx.to)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${receiver.displayName || 'ผู้รับ'}`, `View expenses for ${receiver.displayName || 'receiver'}`))}">
-          <span class="avatar" style="width:24px;height:24px;font-size:12px;background:${escapeHtml(receiver.color || 'var(--primary)')};">${initial(receiver)}</span>
+          <span class="avatar" style="width:24px;height:24px;font-size:12px;${avatarStyle(receiver.color)};">${initial(receiver)}</span>
           <span class="debt-person-name">${escapeHtml(receiver.displayName || '')}</span>
         </button>
         <span class="debt-row-amount">${money(tx.amountMinor)}</span>
@@ -10857,7 +10894,7 @@ async function renderMembers(params) {
       list.innerHTML = members.map(m => `
         <div class="card people-row" data-member="${m.id}">
           <div class="flex items-center gap-3 min-w-0">
-            <div class="people-avatar" style="background:${m.color || 'var(--primary)'}">
+            <div class="people-avatar" style="${avatarStyle(m.color)}">
               ${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}
             </div>
             <div class="min-w-0">
@@ -10951,7 +10988,7 @@ async function renderMembers(params) {
         <div class="group-card-people">
           ${people.length ? people.map(m => `
             <span class="group-person" title="${escapeHtml(m.displayName || '')}">
-              <span class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+              <span class="avatar" style="${avatarStyle(m.color)};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
               <span class="group-person-name">${escapeHtml((m.displayName || '').split(' ')[0])}</span>
             </span>`).join('')
             : `<span class="text-xs text-[var(--text-tertiary)]">${th('ยังไม่ได้เลือกสมาชิก','No members picked yet')}</span>`}
@@ -11067,7 +11104,7 @@ async function renderMembers(params) {
           <div class="tile-grid" id="group-tiles">
             ${all.map(m => `
               <button type="button" class="tile ${picked.has(m.id) ? 'tile-selected' : ''}" data-member="${escapeHtml(m.id)}">
-                <span class="avatar" style="background:${escapeHtml(m.color || 'var(--primary)')};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+                <span class="avatar" style="${avatarStyle(m.color)};">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                 <span class="text-sm truncate">${escapeHtml(m.displayName || '')}</span>
               </button>`).join('') || `<p class="text-xs text-[var(--text-tertiary)]">${th('ยังไม่มีสมาชิกในทริป','No members on the trip yet')}</p>`}
           </div></div>
@@ -11349,7 +11386,7 @@ async function renderDocuments(params) {
 
   bind('add-doc-btn', 'click', () => openDocForm(null));
   loadDocs();
-  if (action === 'add') openDocForm(null);
+  if (action === 'add' && !document.getElementById('doc-form')) openDocForm(null);
 }
 
 async function renderImportExport(params) {
@@ -11791,7 +11828,7 @@ async function renderSettings(params) {
           <div id="member-budget-rows" class="space-y-2">
             ${settingMembers.map(m => `
               <div class="member-budget-row">
-                <span class="avatar" style="width:28px;height:28px;font-size:12px;background:${escapeHtml(m.color || 'var(--primary)')};flex-shrink:0;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+                <span class="avatar" style="width:28px;height:28px;font-size:12px;${avatarStyle(m.color)};flex-shrink:0;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                 <span class="text-xs font-medium truncate flex-1" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
                 <input id="s-mbudget-${escapeHtml(m.id)}" class="input money-input member-budget-input" type="text" inputmode="decimal" placeholder="0.00" value="${escapeHtml(fmtBudgetInput(memberBudgets[m.id]))}">
                 <span class="text-xs text-[var(--text-tertiary)] flex-shrink-0 font-medium">THB</span>
@@ -11872,7 +11909,7 @@ async function renderSettings(params) {
       <div class="card p-5 space-y-3" id="settings-account-card" data-settings-section="appearance">
         <h3 class="font-semibold flex items-center gap-2">${th('บัญชีและอุปกรณ์','Account & device')}</h3>
         <div class="flex items-center gap-3">
-          <div class="avatar" style="width:44px;height:44px;background:var(--gradient-primary);">${avatarInitialHtml(currentUser)}</div>
+          <div class="avatar" style="width:44px;height:44px;background:var(--primary);color:var(--on-primary);">${avatarInitialHtml(currentUser)}</div>
           <div class="min-w-0 flex-1">
             <p class="text-sm font-semibold truncate">${escapeHtml(currentUser?.displayName || currentUser?.email || 'User')}</p>
             <p class="text-xs text-[var(--text-tertiary)] truncate">${escapeHtml(currentUser?.email || '')}</p>
@@ -11907,7 +11944,7 @@ async function renderSettings(params) {
         <h3 class="font-semibold flex items-center gap-2">${th('รหัสเชิญเข้าร่วมทริป','Trip invite code')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('ส่งรหัสนี้ให้เพื่อน — พวกเขาล็อกอินด้วยบัญชี Google/อีเมล แล้วกรอกรหัสเพื่อขอเข้าร่วม จากนั้นกดอนุมัติได้ที่หน้าสมาชิก','Share this code with friends — they sign in with Google/email, enter it to request access, and you approve them on the Members page.')}</p>
         <div class="flex items-center gap-2 flex-wrap">
-          <span id="invite-code-value" class="font-mono text-xl font-semibold tracking-[0.3em] px-4 py-2 rounded-xl" style="background:var(--bg-secondary); border:1px dashed var(--border);">${escapeHtml(formatInviteCode(trip?.inviteCode) || '—')}</span>
+          <span id="invite-code-value" class="font-mono text-xl font-medium tracking-[0.3em] px-4 py-2 rounded-xl" style="background:var(--bg-secondary); border:1px dashed var(--border);">${escapeHtml(formatInviteCode(trip?.inviteCode) || '—')}</span>
           <button id="invite-code-copy" class="btn btn-secondary btn-sm">${icon('copy', 'w-4 h-4')} ${th('คัดลอก','Copy')}</button>
           <button id="invite-code-regen" class="btn btn-ghost btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${th('สร้างรหัสใหม่','New code')}</button>
         </div>
@@ -11930,7 +11967,7 @@ async function renderSettings(params) {
           <button id="dup-trip" class="btn btn-secondary btn-sm">${icon('copy', 'w-4 h-4')} ${th('ทำสำเนาทริป','Duplicate trip')}</button>
           <button id="del-trip" class="btn btn-sm btn-danger-quiet">${icon('trash-2', 'w-4 h-4')} ${th('ลบทริปนี้','Delete this trip')}</button>
         </div>
-        <p class="text-xs text-[var(--text-tertiary)] font-mono">Trip ID: ${escapeHtml(tripId)}</p>
+        <p class="text-xs text-[var(--text-tertiary)]">${th('รหัสทริป (Trip ID)', 'Trip ID')}: <span class="font-mono">${escapeHtml(tripId)}</span></p>
       </div>
 
       <div class="card p-5 space-y-2" id="about-card" data-settings-section="advanced">
@@ -11948,7 +11985,7 @@ async function renderSettings(params) {
           <span class="badge badge-skipped" data-build-theme>${icon('palette', 'w-3 h-3')} ${escapeHtml(th('ชุดสี', 'Palette'))} ${escapeHtml(themeName(currentTheme().id, lang))}</span>
         </div>
         <div class="about-details" data-build-stamp>
-          <div><span>${th('อัปเดตล่าสุด', 'Last updated')}</span><b>${escapeHtml(appUpdatedShort(lang))}</b> <i>(${escapeHtml(APP_UPDATED_ISO)})</i></div>
+          <div><span>${th('อัปเดตล่าสุด', 'Last updated')}</span><b>${escapeHtml(appUpdatedShort(lang))}</b></div>
           <div><span>${th('ชุดสีที่ใช้', 'Active palette')}</span><b>${escapeHtml(themeName(currentTheme().id, lang))}</b> • ${escapeHtml(brandPalette().blue)} / ${escapeHtml(brandPalette().amber)}</div>
           <div><span>${th('เวอร์ชันเว็บ', 'Web build')}</span><b>${escapeHtml(APP_VERSION_LABEL)} · build ${escapeHtml(APP_UPDATED_ISO)}</b></div>
         </div>
@@ -12530,7 +12567,7 @@ async function renderSettings(params) {
     const ok = await confirmAction({
       title: th(`ลบทริป "${trip?.name}" ?`, `Delete "${trip?.name}"?`),
       message: th('ข้อมูลทั้งหมดของทริปนี้จะถูกลบถาวร รวมถึงแผนการเดินทาง ค่าใช้จ่าย สมาชิก และเอกสาร', 'Everything in this trip will be permanently deleted.'),
-      detail: `Trip ID: <b>${escapeHtml(tripId)}</b>`,
+      detail: `${th('รหัสทริป (Trip ID)', 'Trip ID')}: <b>${escapeHtml(tripId)}</b>`,
       confirmText: th('ลบทริป', 'Delete trip'), danger: true, icon: 'trash-2'
     });
     if (!ok) return;
@@ -13377,7 +13414,7 @@ async function renderIdeas(params) {
           <button class="chip" data-filter="planned">${icon('calendar-check', 'w-3.5 h-3.5')} ${t('inPlan')}</button>
           <button class="chip" data-filter="all">${icon('layers', 'w-3.5 h-3.5')} ${t('all')}</button>
         </div>
-        <select id="idea-sort" class="input text-xs" style="max-width:190px; min-height:36px;">
+        <select id="idea-sort" class="input text-xs" style="max-width:190px; min-height:36px;" aria-label="${th('เรียงไอเดียตาม','Sort ideas by')}">
           <option value="votes">${th('เรียงตามโหวต','Sort: most voted')}</option>
           <option value="newest">${th('ใหม่สุดก่อน','Sort: newest')}</option>
           <option value="alpha">${th('ตามตัวอักษร','Sort: A → Z')}</option>
@@ -13713,7 +13750,7 @@ async function renderIdeas(params) {
         ${best ? `<div class="idea-compare-best">
           <span class="idea-compare-best-label">${th('ใกล้แผนที่สุด','Closest to the plan')}</span>
           <b>~${ideaKmLabel(best.km)}</b>
-          <span class="truncate">${escapeHtml(best.item.title || '')} • ${escapeHtml(best.item.date || '')}</span>
+          <span class="truncate">${escapeHtml(best.item.title || '')}${best.item.date ? ` • ${escapeHtml(thaiDate(best.item.date, { year: false }))}` : ''}</span>
           ${best.item.date ? `<button class="btn btn-secondary btn-sm" data-day="${escapeHtml(best.item.date)}">${icon('calendar-days', 'w-3.5 h-3.5')} ${th('ดูวันนี้','See day')}</button>` : ''}
         </div>` : ''}
         ${days.length ? `<div class="space-y-2">${days.map(([day, v]) => `
@@ -13724,7 +13761,7 @@ async function renderIdeas(params) {
               <span class="block text-xs text-[var(--text-tertiary)]">${th('ใกล้สุดของวันนี้','nearest this day')}</span>
             </span>
             <b class="text-xs font-semibold">~${ideaKmLabel(v.km)}</b>
-            <button class="btn btn-ghost btn-sm text-xs" data-day="${escapeHtml(day)}">${icon('arrow-right', 'w-3.5 h-3.5')}</button>
+            <button class="btn btn-ghost btn-sm text-xs" data-day="${escapeHtml(day)}" aria-label="${th('ดูวันนี้','See day')} ${escapeHtml(thaiDate(day, { year: false }))}" title="${th('ดูวันนี้','See day')}">${icon('arrow-right', 'w-3.5 h-3.5')}</button>
           </div>`).join('')}</div>` : ''}
         <div class="flex gap-2">
           <button id="idea-compare-close" class="btn btn-secondary flex-1">${th('ปิด','Close')}</button>
@@ -13836,7 +13873,7 @@ async function renderIdeas(params) {
           <div class="input-group"><label class="input-label">${th('ค่าใช้จ่ายประมาณ','Estimated cost')}</label>
             <div class="flex gap-2">
               <input id="idea-cost" class="input money-input flex-1" type="text" inputmode="decimal" value="${escapeHtml(toolAmountValue(idea?.estimatedCostMinor, idea?.currency || trip?.baseCurrency || 'THB'))}" placeholder="0">
-              <select id="idea-cur" class="input" style="max-width:92px;">${toolCurrencyOptions(trip, idea?.currency || trip?.baseCurrency || 'THB')}</select>
+              <select id="idea-cur" class="input" style="max-width:92px;" aria-label="${th('สกุลเงิน','Currency')}">${toolCurrencyOptions(trip, idea?.currency || trip?.baseCurrency || 'THB')}</select>
             </div></div>
         </div>
         <div class="flex gap-2">
@@ -14113,7 +14150,7 @@ async function renderBookings(params) {
         <div class="flex-1 min-w-0">
           <p class="text-xs font-semibold text-[var(--text-tertiary)]">${th('การจองถัดไป','Next booking')} ${countdown >= 0 ? `• ${th('อีก','in')} ${countdown} ${th('วัน','day(s)')}` : ''}</p>
           <p class="font-semibold text-sm truncate">${escapeHtml(upcoming.title || '')}</p>
-          <p class="text-xs text-[var(--text-secondary)]">${escapeHtml(upcoming.date || '')} ${escapeHtml(upcoming.startTime || '')} ${upcoming.confirmation ? `• ${t('confirmCode')}: <b>${escapeHtml(upcoming.confirmation)}</b>` : ''}</p>
+          <p class="text-xs text-[var(--text-secondary)]">${escapeHtml(thaiDate(upcoming.date) || upcoming.date || '')} ${escapeHtml(upcoming.startTime || '')} ${upcoming.confirmation ? `• ${t('confirmCode')}: <b>${escapeHtml(upcoming.confirmation)}</b>` : ''}</p>
         </div>
         <button class="btn btn-secondary btn-sm" data-copy="${escapeHtml(upcoming.confirmation || '')}">${icon('copy', 'w-3.5 h-3.5')} ${th('คัดลอกรหัส','Copy code')}</button>
       </div>`;
@@ -14495,13 +14532,13 @@ async function renderExplore(params) {
         <div class="flex items-start justify-between gap-3 flex-wrap" id="explore-hero"></div>
         <div class="explore-search mt-3">
           ${icon('search', 'w-4 h-4')}
-          <input id="explore-search" class="input" placeholder="${th('ค้นหาสถานที่ในไกด์…','Search the guides…')}" value="${escapeHtml(query)}">
+          <input id="explore-search" class="input" aria-label="${th('ค้นหาสถานที่ในไกด์','Search the guides')}" placeholder="${th('ค้นหาสถานที่ในไกด์…','Search the guides…')}" value="${escapeHtml(query)}">
         </div>
       </div>
 
       <div class="flex items-center gap-2 flex-wrap">
         <div class="chip-row flex-1" id="explore-cats"></div>
-        <select id="explore-dest" class="input text-xs" style="max-width:210px;min-height:38px;">
+        <select id="explore-dest" class="input text-xs" style="max-width:210px;min-height:38px;" aria-label="${th('ปลายทางของไกด์','Guide destination')}">
           ${DESTINATIONS.map(d => `<option value="${d.id}" ${d.id === destId ? 'selected' : ''}>${escapeHtml(lang === 'th' ? `${d.cityTh} • ${d.countryTh}` : `${d.city} • ${d.country}`)}</option>`).join('')}
         </select>
       </div>
@@ -14553,8 +14590,8 @@ async function renderExplore(params) {
             <b class="mt-2">${escapeHtml(lang === 'th' ? r.place.name.th : r.place.name.en)}</b>
             <p>${escapeHtml(lang === 'th' ? r.reasonTh : r.reasonEn)}</p>
             <div class="flex gap-2 mt-2">
-              <button class="btn btn-secondary btn-sm flex-1" style="min-height:32px;font-size:12px;" data-plan="${r.place.id}" data-dest="${destId}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>
-              <button class="btn btn-secondary btn-sm" style="min-height:32px;font-size:12px;" data-idea="${r.place.id}" data-dest="${destId}" title="${th('เก็บเป็นไอเดีย','Save as idea')}">${icon('lightbulb', 'w-3.5 h-3.5')}</button>
+              <button class="btn btn-secondary btn-sm flex-1" style="font-size:12px;" data-plan=""${r.place.id}" data-dest="${destId}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>
+              <button class="btn btn-secondary btn-sm" style="font-size:12px;" data-idea="${r.place.id}" data-dest="${destId}" aria-label="${th('เก็บเป็นไอเดีย','Save as idea')}" title="${th('เก็บเป็นไอเดีย','Save as idea')}">${icon('lightbulb', 'w-3.5 h-3.5')}</button>
             </div>
           </div>`).join('')}
       </div>`;
@@ -14567,8 +14604,8 @@ async function renderExplore(params) {
     const all = destinationPlaces(destId);
     const counts = exploreCategoryCounts(all);
     box.innerHTML = counts.map(c => `
-      <button class="chip ${category === c.id ? 'chip-active' : ''}" data-cat="${c.id}">
-        ${icon(c.icon, 'w-3.5 h-3.5')} ${escapeHtml(lang === 'th' ? c.th : c.en)} <span style="opacity:.7">${c.count}</span>
+      <button class="chip ${category === c.id ? 'chip-active' : ''}" data-cat="${c.id}"${!c.count && c.id !== 'all' && category !== c.id ? ' disabled aria-disabled="true"' : ''}>
+        ${icon(c.icon, 'w-3.5 h-3.5')} ${escapeHtml(lang === 'th' ? c.th : c.en)} <span class="chip-count">${c.count}</span>
       </button>`).join('');
     queueIcons();
   }
@@ -14600,11 +14637,13 @@ async function renderExplore(params) {
             <span class="place-chip">${icon('clock', 'w-3 h-3')} ${Math.round((Number(place.durationMinutes) || 60) / 60 * 10) / 10} ${th('ชม.','h')}</span>
             ${costChip(place)}
           </div>
-          <div class="place-actions">
-            <button class="btn btn-secondary btn-sm" style="min-height:32px;font-size:12px;" data-plan="${place.id}" data-dest="${destId}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>
-            <button class="btn btn-secondary btn-sm" style="min-height:32px;font-size:12px;" data-idea="${place.id}" data-dest="${destId}">${icon('lightbulb', 'w-3.5 h-3.5')} ${th('เก็บเป็นไอเดีย','Save as idea')}</button>
-            <a class="btn btn-ghost btn-sm" style="min-height:32px;font-size:12px;" href="${escapeHtml(googleMapsPlaceUrl(place.area, place.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${t('map')}</a>
-          </div>
+        </div>
+        <!-- Round 5: the actions take the card's full width, so “แผนที่” stays on
+             the same row as the other two instead of wrapping alone on a phone. -->
+        <div class="place-actions">
+          <button class="btn btn-secondary btn-sm" data-plan="${place.id}" data-dest="${destId}">${icon('calendar-plus', 'w-3.5 h-3.5')} ${t('addToPlan')}</button>
+          <button class="btn btn-secondary btn-sm" data-idea="${place.id}" data-dest="${destId}">${icon('lightbulb', 'w-3.5 h-3.5')} ${th('เก็บเป็นไอเดีย','Save as idea')}</button>
+          <a class="btn btn-secondary btn-sm" href="${escapeHtml(googleMapsPlaceUrl(place.area, place.coordinates))}" target="_blank" rel="noopener">${icon('navigation', 'w-3.5 h-3.5')} ${t('map')}</a>
         </div>
       </div>`).join('');
     queueIcons();

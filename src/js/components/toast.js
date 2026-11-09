@@ -48,7 +48,7 @@ function createToast({ type = 'success', title, message, duration = 4000, retryF
 
   const closeBtn = el.querySelector('.toast-close');
   const close = () => {
-    el.style.animation = 'toastSlideOut 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards';
+    el.style.animation = 'toastSlideOut 0.2s var(--ease) forwards';
     setTimeout(() => el.remove(), 200);
   };
   closeBtn.onclick = close;

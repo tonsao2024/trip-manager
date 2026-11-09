@@ -106,7 +106,7 @@ select.input { border-radius: var(--radius); }
   font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background var(--t-fast, 150ms) var(--ease, ease), border-color var(--t-fast, 150ms) var(--ease, ease);
+  transition: background var(--t-fast, 150ms) var(--ease, var(--ease)), border-color var(--t-fast, 150ms) var(--ease, var(--ease));
 }
 .explore-hero .eh-chip svg { color: var(--text-tertiary); }
 .explore-hero .eh-chip:hover { border-color: var(--border-strong); }
@@ -127,7 +127,7 @@ select.input { border-radius: var(--radius); }
 .place-card {
   display: flex; gap: 12px; align-items: stretch;
   padding: 12px;
-  transition: transform 0.2s cubic-bezier(0.16,1,0.3,1), box-shadow 0.2s ease, border-color 0.2s ease;
+  transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease), border-color 0.2s var(--ease);
 }
 .place-thumb {
   flex: 0 0 auto; width: 74px; height: 74px;
@@ -190,7 +190,7 @@ select.input { border-radius: var(--radius); }
   background: var(--surface);
   display: flex; flex-direction: column; gap: 4px;
   cursor: pointer;
-  transition: transform 0.16s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.16s var(--ease), border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
   text-align: left;
 }
 .cal-cell:hover { border-color: var(--border-strong); }
@@ -252,7 +252,7 @@ select.input { border-radius: var(--radius); }
   color: var(--text);
   cursor: pointer;
   text-align: center;
-  transition: transform 0.18s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition: transform 0.18s var(--ease), box-shadow 0.2s var(--ease), border-color 0.2s var(--ease);
 }
 .share-tile .row-icon { width: 40px; height: 40px; border-radius: 15px; }
 .share-code {
@@ -326,7 +326,7 @@ select.input { border-radius: var(--radius); }
 .theme-swatch-row { position: absolute; left: 8px; bottom: 8px; display: inline-flex; gap: 4px; }
 .theme-swatch-dot { display: inline-block; border-radius: 50%; box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .9); }
 .theme-card-plus { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); display: grid; place-items: center; color: #fff; }
-.theme-card-name { font-family: var(--font-display); font-weight: 500; font-size: 13px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.theme-card-name { font-family: var(--font-display); font-weight: 500; font-size: 13px; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The check marks ONLY the theme in use. */
 .theme-card-check {
   position: absolute; top: 12px; right: 12px; width: 20px; height: 20px; border-radius: 50%;
@@ -436,7 +436,7 @@ select.input { border-radius: var(--radius); }
 /* --- ใบเสร็จรายคน (รายละเอียดแบบแผ่น + ตัวสลับคน) --- */
 .rd-person {
   flex: 0 0 auto; display: inline-flex; padding: 4px; border: 1.5px solid var(--border); background: var(--surface);
-  cursor: pointer; transition: border-color .16s ease, background .16s ease;
+  cursor: pointer; transition: border-color .16s var(--ease), background .16s var(--ease);
 }
 .rd-person:hover { border-color: var(--border-strong); }
 .rd-person.is-active { border-color: var(--text-secondary); background: var(--surface-2); box-shadow: none; }
@@ -620,7 +620,7 @@ select.input { border-radius: var(--radius); }
 .net-chip-body { flex: 1; min-width: 0; }
 .net-chip-name { display: block; font-size: 13px; color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .net-chip-state { display: block; font-size: 12px; }
-.net-chip-lines { display: grid; gap: 1px; margin-top: 4px; font-size: 12px; line-height: 1.35; color: var(--text-secondary); }
+.net-chip-lines { display: grid; gap: 1px; margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
 .net-chip-line { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .net-summary-note { margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
 .net-chip-amount { font-size: 13px; flex-shrink: 0; }
@@ -743,7 +743,7 @@ select.input { border-radius: var(--radius); }
 .debt-legend-item.is-in { background: color-mix(in srgb, var(--success) 14%, var(--surface)); color: var(--success); border: 1px solid color-mix(in srgb, var(--success) 40%, transparent); }
 .debt-legend-item.is-out { background: color-mix(in srgb, var(--danger) 14%, var(--surface)); color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); }
 .debt-legend-hint { color: var(--text-tertiary); font-weight: 600; margin-left: auto; }
-.debt-map-node { transition: filter .18s ease, opacity .18s ease; }
+.debt-map-node { transition: filter .18s var(--ease), opacity .18s var(--ease); }
 .debt-tx-row {
   display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0;
   padding: 8px; text-align: left;
@@ -758,7 +758,7 @@ select.input { border-radius: var(--radius); }
 .debt-person-link:hover .debt-person-name { color: var(--primary-strong); }
 .debt-person-link:focus-visible { outline: 2px solid var(--primary-raw); outline-offset: 2px; border-radius: 8px; }
 .debt-person-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.debt-row-amount { flex: 0 0 auto; margin-left: auto; color: var(--text-strong); font-weight: 600; font-family: var(--font-mono, monospace); white-space: nowrap; }
+.debt-row-amount { flex: 0 0 auto; margin-left: auto; color: var(--text-strong); font-weight: 500; font-family: var(--font-mono, monospace); white-space: nowrap; }
 
 /* ==================================================================
    v18.2 — expenses: “เฉลี่ยต่อคน” chip + queued ideas
@@ -933,9 +933,9 @@ select.input { border-radius: var(--radius); }
   padding: 8px;
   font-size: 12px;
   cursor: pointer;
-  transition: background .16s ease, border-color .16s ease;
+  transition: background .16s var(--ease), border-color .16s var(--ease);
 }
-.settle-overview-chevron { transition: transform .18s ease; }
+.settle-overview-chevron { transition: transform .18s var(--ease); }
 .settle-overview-toggle.is-expanded .settle-overview-chevron { transform: rotate(180deg); }
 .settle-overview-details {
   margin-top: 16px; padding-top: 16px;

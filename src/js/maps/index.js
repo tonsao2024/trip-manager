@@ -876,7 +876,7 @@ export function setItemFocus(containerId, itemId) {
       const node = l.getElement?.() || l._icon || null;
       if (node) {
         node.style.opacity = on ? '1' : '0.42';
-        node.style.transition = 'opacity .22s ease, filter .22s ease';
+        node.style.transition = 'opacity .22s var(--ease), filter .22s var(--ease)';
         node.style.filter = on ? 'none' : 'saturate(.55)';
       }
       l.setZIndexOffset?.(on && itemId ? 1200 : 0);

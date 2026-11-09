@@ -34,7 +34,8 @@ export function isoOf(year, month, day) {
 
 export function monthLabel(year, month, lang = 'th') {
   const idx = Math.min(12, Math.max(1, Number(month))) - 1;
-  return lang === 'th' ? `${TH_MONTHS[idx]} ${year}` : `${EN_MONTHS[idx]} ${year}`;
+  // Thai screens count years in พ.ศ. (“พฤศจิกายน 2569”), like every other date in the app.
+  return lang === 'th' ? `${TH_MONTHS[idx]} ${Number(year) + 543}` : `${EN_MONTHS[idx]} ${year}`;
 }
 
 export function monthShort(month, lang = 'th') {

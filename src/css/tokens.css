@@ -38,7 +38,9 @@
   --primary-dark: color-mix(in srgb, var(--primary-raw) 78%, #000);
   --primary-soft: color-mix(in srgb, var(--primary-raw) 14%, transparent);
   --primary-strong: color-mix(in srgb, var(--primary-raw) 84%, #000); /* accent text on light */
-  --on-primary: #ffffff;
+  /* Ink on a filled primary. The colour theme publishes one ink per mode
+     (themes.js → --on-primary-light / --on-primary-dark, ≥4.5:1 each). */
+  --on-primary: var(--on-primary-light, #ffffff);
 
   /* ---- Sun yellow (never behind body text) ---- */
   --brand-yellow: var(--brand-yellow-raw);
@@ -75,7 +77,7 @@
   --text: #171717;
   --text-strong: #0a0a0a;
   --text-secondary: #525252;
-  --text-tertiary: #737373;        /* 4.55:1 on #fafafa */
+  --text-tertiary: #6b6b6b;        /* 4.85:1 on #f4f4f5, 5.33:1 on #fff (round 5) */
   --border: rgba(0, 0, 0, .09);
   --border-strong: rgba(0, 0, 0, .18);
   --border-light: rgba(0, 0, 0, .05);
@@ -201,7 +203,7 @@
   --primary-dark: color-mix(in srgb, var(--primary-raw) 50%, #fff);
   --primary-soft: color-mix(in srgb, var(--primary-raw) 26%, transparent);
   --primary-strong: color-mix(in srgb, var(--primary-raw) 55%, #fff);
-  --on-primary: #0a0a0a;
+  --on-primary: var(--on-primary-dark, #0a0a0a);
 
   --brand-yellow: var(--brand-yellow-raw);
   --brand-yellow-soft: color-mix(in srgb, var(--brand-yellow-raw) 24%, transparent);

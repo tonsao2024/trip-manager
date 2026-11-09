@@ -82,7 +82,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   border: none; background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: color 0.2s ease, background 0.2s ease;
+  transition: color 0.2s var(--ease), background 0.2s var(--ease);
 }
 .pass-toggle:hover { color: var(--primary-strong); background: var(--bg-secondary); }
 [data-theme="dark"] .pass-toggle:hover { color: var(--primary); }
@@ -143,7 +143,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   background: transparent;
   cursor: pointer;
 }
-.bottom-nav-item i, .bottom-nav-item svg { width: 22px; height: 22px; transition: transform 0.3s ease; }
+.bottom-nav-item i, .bottom-nav-item svg { width: 22px; height: 22px; transition: transform 0.3s var(--ease); }
 
 /* ---------------- FAB ---------------- */
 .fab {
@@ -180,7 +180,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   display: flex;
   gap: 12px;
   align-items: flex-start;
-  animation: toastSlideIn 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: toastSlideIn 0.32s var(--ease);
   font-size: 14px;
   font-weight: 400;
   line-height: 1.4;
@@ -201,7 +201,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   width: 28px; height: 28px; margin: -4px -4px -4px 0;
   display: grid; place-items: center;
   flex-shrink: 0;
-  transition: color 0.15s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.15s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: color 0.15s var(--ease), background-color 0.15s var(--ease);
 }
 .toast-close:hover { color: var(--text-strong); background: var(--surface-2); }
 @keyframes toastSlideIn {
@@ -228,7 +228,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 /* ---------------- Empty state ---------------- */
 .empty-state {
   color: var(--text-secondary);
-  animation: fadeInUp 0.6s ease;
+  animation: fadeInUp 0.6s var(--ease);
 }
 
 /* ---------------- Bottom Sheet — stable at every resolution ----------------
@@ -249,7 +249,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   max-height: 88dvh;
   overflow: hidden;
   z-index: 51;
-  animation: slideUpCute 0.34s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: slideUpCute 0.34s var(--ease);
   display: flex;
   flex-direction: column;
   will-change: translate;
@@ -264,7 +264,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
     max-height: min(82dvh, 780px);
     max-width: 560px;
     width: calc(100% - 32px);
-    animation: sheetPopDesktop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    animation: sheetPopDesktop 0.3s var(--ease);
   }
 }
 .bottom-sheet-handle {
@@ -272,7 +272,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   margin: 12px auto 8px;
   flex-shrink: 0;
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition: background 0.2s var(--ease);
 }
 @media (min-width: 768px) { .bottom-sheet-handle { display: none; } }
 .bottom-sheet-content {
@@ -464,7 +464,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   border: 1px solid var(--border);
   box-shadow: var(--shadow-xs);
   overflow: hidden;
-  transition: transform 0.22s cubic-bezier(0.16,1,0.3,1), box-shadow 0.22s ease, border-color 0.22s ease;
+  transition: transform 0.22s var(--ease), box-shadow 0.22s var(--ease), border-color 0.22s var(--ease);
 }
 .kpi-label { font-size: 12px; font-weight: 600; color: var(--text-tertiary); }
 .kpi-value { font-size: 22px; margin-top: 4px; font-family: var(--font-display); line-height: 1.15; }
@@ -578,7 +578,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   place-items: center;
   align-self: center;
 }
-.itin-thumb img { display: block; transition: transform 0.45s cubic-bezier(0.16,1,0.3,1); }
+.itin-thumb img { display: block; transition: transform 0.45s var(--ease); }
 
 /* v28: tap the photo → open it big (the button is the whole thumbnail) */
 .itin-thumb-zoom {
@@ -616,11 +616,11 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease), border-color 0.15s var(--ease);
 }
 .itin-expand-btn:hover { background: var(--surface-2); color: var(--text-strong); border-color: var(--border-strong); }
 .itin-expand-btn svg { width: 14px; height: 14px; }
-.itin-card.is-expanded .itin-detail { animation: fadeIn 0.18s ease; }
+.itin-card.is-expanded .itin-detail { animation: fadeIn 0.18s var(--ease); }
 @media (max-width: 639px) {
   .itin-expand-btn { display: inline-flex; }
   /* :not(.is-expanded) keeps each detail element's own display when shown */
@@ -642,7 +642,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   display: grid; place-items: center;
   width: 32px; height: 32px;
   background: var(--bg-secondary); color: var(--text-secondary);
-  transition: transform 0.16s ease, background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  transition: transform 0.16s var(--ease), background 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease);
   cursor: pointer;
 }
 
@@ -660,7 +660,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 }
 
 /* Recent expense row */
-.expense-row { transition: transform 0.16s ease, background 0.2s ease, border-color 0.2s ease;
+.expense-row { transition: transform 0.16s var(--ease), background 0.2s var(--ease), border-color 0.2s var(--ease);
 }
 .expense-row:hover { border-color: color-mix(in srgb, var(--primary-raw) 36%, var(--border)); background: var(--bg-secondary); }
 /* The amount may wrap inside under half the row; a full-width amount squeezed the title and date to 3px */
@@ -686,7 +686,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   transform: rotate(-45deg);
   display: grid; place-items: center;
   border: 2.5px solid #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  animation: markerDrop 0.45s cubic-bezier(0.16,1,0.3,1) backwards;
+  animation: markerDrop 0.45s var(--ease) backwards;
 }
 .map-pin-marker span { transform: rotate(45deg); color: #fff; font-weight: 600; font-size: 12px; line-height: 1; }
 /* v28: place-name labels beside the pins (toggle: map toolbar / settings) */
@@ -718,7 +718,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 .trip-menu-btn {
   width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center;
   background: rgba(255,255,255,0.92); color: #333; border: 0; cursor: pointer;
-  transition: transform 0.16s ease, background 0.2s ease;
+  transition: transform 0.16s var(--ease), background 0.2s var(--ease);
 }
 .trip-menu-btn:hover { background: #fff; }
 .trip-menu-btn svg { width: 16px; height: 16px; }
@@ -812,7 +812,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   padding: 16px 16px 32px;
   color: #3b3527;
   transform: rotate(var(--note-tilt, -1.2deg));
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+  transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease);
   overflow: hidden;
   cursor: pointer;
 }
@@ -830,7 +830,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 .note-body { font-size: 13px; line-height: 1.5; margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .note-meta { position: absolute; bottom: 8px; left: 14px; right: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; opacity: 0.72; }
 .note-tag { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; white-space: nowrap; } /* never split “7 Oct” mid-date on narrow phones */
-.note-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s ease; }
+.note-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s var(--ease); }
 .note-card:hover .note-actions, .note-card:focus-within .note-actions { opacity: 1; }
 .note-actions button { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; background: rgba(255, 255, 255, 0.65); border: 0; color: #4b4232; cursor: pointer; }
 .note-actions button:hover { background: #fff; }
@@ -964,7 +964,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   border: 1px solid var(--border);
   font-size: 12px;
   line-height: 1.45;
-  animation: fadeInDown .32s ease both;
+  animation: fadeInDown .32s var(--ease) both;
 }
 .diag-fix {
   margin-top: 8px;
@@ -1062,8 +1062,8 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 .receipt-line { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 4px 0; }
 .receipt-line.total { font-weight: 600; font-size: 14px; border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; }
 .receipt-line.muted { color: var(--text-tertiary); font-size: 12px; }
-.receipt-positive { color: #047857; font-weight: 600; }
-.receipt-negative { color: #b91c1c; font-weight: 600; }
+.receipt-positive { color: var(--success); font-weight: 600; } /* tokens: the receipt paper re-declares the light ones */
+.receipt-negative { color: var(--danger); font-weight: 600; }
 .receipt-foot { margin-top: 16px; text-align: center; border-top: 1px dashed var(--border); padding-top: 8px; }
 .receipt-stamp {
   display: inline-flex;
@@ -1099,7 +1099,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   pointer-events: none;
   z-index: 9999;
   border-radius: 0 3px 3px 0;
-  transition: opacity .15s ease;
+  transition: opacity .15s var(--ease);
 }
 .route-progress.is-active {
   opacity: 1;
@@ -1108,7 +1108,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 .route-progress.is-done {
   opacity: 0;
   transform: scaleX(1);
-  transition: transform .18s ease, opacity .18s ease;
+  transition: transform .18s var(--ease), opacity .18s var(--ease);
   animation: none;
 }
 @keyframes route-progress-run {
@@ -1242,7 +1242,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 .itin-sheet-est { color: #047857; font-weight: 600; }
 .itin-sheet-est i { display: block; font-style: normal; color: var(--success); font-size: 12px; font-weight: 600; }
 .itin-sheet-status { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 2px 8px; border: 1px solid #d1d5db; color: #374151; background: #ffffff; }
-.itin-sheet-foot { margin-top: 16px; padding-top: 8px; border-top: 1px dashed #e5e7eb; display: flex; justify-content: space-between; font-size: 12px; color: #9ca3af; }
+.itin-sheet-foot { margin-top: 16px; padding-top: 8px; border-top: 1px dashed #e5e7eb; display: flex; justify-content: space-between; font-size: 12px; color: #6b6b6b; }
 .itin-sheet-empty { padding: 24px 16px; text-align: center; font-size: 12px; color: #6b7280; }
 
 /* ------------------------------------------------------------------ *
@@ -1626,7 +1626,7 @@ html, body { max-width: 100%; overflow-x: clip; }
   box-shadow: var(--shadow-md);
   padding: 8px;
   margin-top: 4px;
-  animation: menuFadeIn 0.16s ease;
+  animation: menuFadeIn 0.16s var(--ease);
 }
 .itin-more-menu.is-open { display: block; }
 .itin-more-menu button {
@@ -1642,7 +1642,7 @@ html, body { max-width: 100%; overflow-x: clip; }
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s var(--ease);
 }
 .itin-more-menu button:hover { background: var(--bg-secondary); }
 .itin-more-menu button.is-danger { color: var(--danger); }
@@ -1792,7 +1792,7 @@ html, body { max-width: 100%; overflow-x: clip; }
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.28);
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.15s ease;
+  transition: background 0.15s var(--ease), transform 0.15s var(--ease);
 }
 .itin-thumb-more:hover { background: rgba(15, 23, 42, 0.78); }
 
@@ -1906,7 +1906,7 @@ html, body { max-width: 100%; overflow-x: clip; }
 .money-norate { font-size: 12px; font-weight: 600; color: var(--warning); white-space: nowrap; }
 /* Inside the (always light) receipt the chip must stay light too */
 .receipt .money-primary { color: #111827; }
-.receipt .money-eq { color: #9ca3af; }
+.receipt .money-eq { color: var(--text-tertiary); }
 .export-flat .receipt .money-primary { color: #111827 !important; }
 
 /* ---------- 4) Receipt v2 (settlement): hero balance + calm rows ---------- */
@@ -1964,9 +1964,9 @@ html, body { max-width: 100%; overflow-x: clip; }
 .rcpt-dispute {
   position: relative; display: grid; place-items: center;
   width: 26px; height: 26px; border-radius: 999px;
-  border: 1px dashed #d1d5db; background: #fff; color: #9ca3af;
-  cursor: pointer; opacity: .7;
-  transition: opacity .15s cubic-bezier(0.22, 1, 0.36, 1), border-color .15s cubic-bezier(0.22, 1, 0.36, 1), color .15s cubic-bezier(0.22, 1, 0.36, 1), background-color .15s cubic-bezier(0.22, 1, 0.36, 1);
+  border: 1px dashed #d1d5db; background: #fff; color: #6b6b6b;
+  cursor: pointer;
+  transition: opacity .15s var(--ease), border-color .15s var(--ease), color .15s var(--ease), background-color .15s var(--ease);
 }
 .rcpt-dispute svg { width: 13px; height: 13px; }
 .rcpt-dispute:hover { opacity: 1; border-style: solid; border-color: #a1a1aa; color: #27272a; background: #f4f4f5; }
@@ -2001,10 +2001,10 @@ html, body { max-width: 100%; overflow-x: clip; }
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: border-color .15s ease, color .15s ease, background .15s ease;
+  transition: border-color .15s var(--ease), color .15s var(--ease), background .15s var(--ease);
 }
 .rcpt-showall:hover { border-color: #0090ff; color: #006fd6; background: #e8f4ff; }
-.rcpt-showall svg { width: 13px; height: 13px; transition: transform .2s ease; }
+.rcpt-showall svg { width: 13px; height: 13px; transition: transform .2s var(--ease); }
 .rcpt-showall.is-expanded svg { transform: rotate(180deg); }
 .rcpt-chips-line { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .rcpt-method-chip {
@@ -2020,10 +2020,10 @@ html, body { max-width: 100%; overflow-x: clip; }
   max-width: 100%;
 }
 .rcpt-method-chip b { font-weight: 600; color: #111827; font-variant-numeric: tabular-nums; }
-.rcpt-method-chip i { font-style: normal; color: #9ca3af; font-size: 12px; }
+.rcpt-method-chip i { font-style: normal; color: var(--text-tertiary); font-size: 12px; }
 .rcpt-method-chip svg { width: 11px; height: 11px; }
 .rcpt-method-chip--card { background: #faf5ff; border-color: #ddd6fe; }
-.rcpt-empty { font-size: 12px; color: #9ca3af; padding: 8px 2px; }
+.rcpt-empty { font-size: 12px; color: var(--text-tertiary); padding: 8px 2px; }
 .rcpt-block-total .money-dual { justify-content: flex-end; }
 .rcpt-block-total .money-primary { font-size: 13px; }
 @media (max-width: 520px) {
@@ -2120,7 +2120,7 @@ html, body { max-width: 100%; overflow-x: clip; }
 }
 .tool-progress > span {
   display: block; height: 100%; border-radius: 9999px;
-  transition: width 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: width 0.45s var(--ease);
 }
 
 /* ---- Checklists ---- */
@@ -2129,7 +2129,7 @@ html, body { max-width: 100%; overflow-x: clip; }
   display: flex; align-items: center; gap: 8px;
   padding: 8px; border-radius: 12px;
   background: var(--surface-2); border: 1px solid var(--border-light);
-  transition: background 0.2s ease, opacity 0.2s ease;
+  transition: background 0.2s var(--ease), opacity 0.2s var(--ease);
 }
 .check-item:hover { background: var(--surface-3); }
 .check-item.is-done { opacity: 0.62; }
@@ -2139,7 +2139,7 @@ html, body { max-width: 100%; overflow-x: clip; }
   border: 2px solid color-mix(in srgb, var(--primary) 45%, var(--border));
   background: var(--surface); color: #fff;
   display: grid; place-items: center; cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+  transition: background 0.2s var(--ease), border-color 0.2s var(--ease), transform 0.15s var(--ease);
 }
 .check-box:hover { border-color: var(--primary); }
 .check-item.is-done .check-box { background: var(--gradient-primary); border-color: transparent; }
@@ -2243,7 +2243,7 @@ body.map-expanded-open { overflow: hidden; }
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
-  transition: background-color 0.15s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.15s cubic-bezier(0.22, 1, 0.36, 1), color 0.15s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: background-color 0.15s var(--ease), border-color 0.15s var(--ease), color 0.15s var(--ease);
 }
 .vote-btn:hover { border-color: var(--border-strong); color: var(--text-strong); }
 /* Voted = the shared active state (surface step + stronger hairline). */
@@ -2274,7 +2274,7 @@ body.map-expanded-open { overflow: hidden; }
 .idea-img {
   width: 76px; height: 56px; padding: 0; border-radius: 12px; overflow: hidden;
   border: 1.5px solid var(--border); background: var(--bg-secondary); cursor: zoom-in;
-  transition: transform 0.15s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.15s var(--ease), border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
 .idea-img:hover { border-color: var(--primary); }
 .idea-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -2304,7 +2304,7 @@ body.map-expanded-open { overflow: hidden; }
   color: var(--text-secondary);
   cursor: pointer;
   max-width: 100%;
-  transition: background-color 0.15s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.15s cubic-bezier(0.22, 1, 0.36, 1), color 0.15s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: background-color 0.15s var(--ease), border-color 0.15s var(--ease), color 0.15s var(--ease);
 }
 button.idea-pin-line:hover, button.idea-near-line:hover { background: var(--surface-2); border-color: var(--border-strong); color: var(--text-strong); }
 
@@ -2359,7 +2359,7 @@ button.idea-pin-line:hover, button.idea-near-line:hover { background: var(--surf
 .idea-lightbox-thumbs { display: flex; gap: 8px; margin-top: 8px; }
 .idea-lightbox-thumbs button {
   width: 64px; height: 46px; padding: 0; border-radius: 10px; overflow: hidden; cursor: pointer;
-  border: 2px solid transparent; opacity: .65; transition: opacity 0.2s ease, border-color 0.2s ease;
+  border: 2px solid transparent; opacity: .65; transition: opacity 0.2s var(--ease), border-color 0.2s var(--ease);
 }
 .idea-lightbox-thumbs button.is-active { border-color: var(--primary); opacity: 1; }
 .idea-lightbox-thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -2401,7 +2401,7 @@ button.idea-pin-line:hover, button.idea-near-line:hover { background: var(--surf
   display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
   padding: 8px; border-radius: 12px; cursor: pointer;
   background: var(--surface); border: 1px solid var(--border);
-  transition: transform 0.15s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.15s var(--ease), border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
 .dash-pop-row:hover { border-color: color-mix(in srgb, var(--primary-raw) 35%, var(--border)); }
 
@@ -2478,7 +2478,7 @@ button.idea-pin-line:hover, button.idea-near-line:hover { background: var(--surf
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease;
+  transition: background .18s var(--ease), border-color .18s var(--ease), color .18s var(--ease), box-shadow .18s var(--ease);
 }
 .settings-tab:hover { border-color: color-mix(in srgb, var(--primary-raw) 40%, var(--border)); }
 
@@ -2511,13 +2511,13 @@ button.idea-pin-line:hover, button.idea-near-line:hover { background: var(--surf
 .settings-toggle {
   flex-shrink: 0; width: 40px; height: 22px; appearance: none; -webkit-appearance: none;
   border-radius: 999px; background: var(--bg-secondary); border: 1.5px solid var(--border-strong);
-  position: relative; cursor: pointer; transition: background .18s ease, border-color .18s ease;
+  position: relative; cursor: pointer; transition: background .18s var(--ease), border-color .18s var(--ease);
 }
 .settings-toggle::after {
   content: ''; position: absolute; top: 1.5px; left: 2px;
   width: 16px; height: 16px; border-radius: 50%;
   background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.25);
-  transition: transform .18s ease;
+  transition: transform .18s var(--ease);
 }
 .settings-toggle:checked { background: var(--gradient-primary); border-color: transparent; }
 .settings-toggle:checked::after { transform: translateX(17px); }
@@ -2693,7 +2693,7 @@ button.idea-pin-line:hover, button.idea-near-line:hover { background: var(--surf
   background: var(--surface);
   color: var(--text-primary);
   text-align: left;
-  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+  transition: border-color .16s var(--ease), background .16s var(--ease), box-shadow .16s var(--ease);
 }
 .map-default-option:hover { border-color: var(--border-strong); }
 /* Selected = the same surface step + stronger hairline as .chip-active. */
@@ -2794,7 +2794,7 @@ button.idea-pin-line:hover, button.idea-near-line:hover { background: var(--surf
   gap: 8px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-full);
-  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+  transition: box-shadow 0.25s var(--ease), border-color 0.25s var(--ease);
 }
 .expense-form .form-submit-row .btn { min-height: 44px; }
 @media (max-width: 640px) {
@@ -3021,7 +3021,7 @@ button.idea-pin-line:hover, button.idea-near-line:hover { background: var(--surf
   align-items: start; gap: 12px; width: 100%; min-width: 0; text-align: left;
   padding: 12px; padding-right: 40px; border: 0; border-radius: 0;
   background: transparent; cursor: pointer;
-  transition: background-color 0.15s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: background-color 0.15s var(--ease);
 }
 .notify-row:hover { background: var(--surface-2); }
 .notify-entry.is-unread .notify-row { background: transparent; }
@@ -3079,7 +3079,7 @@ button.idea-pin-line:hover, button.idea-near-line:hover { background: var(--surf
 }
 .notify-status-row:last-of-type { border-bottom: none; }
 .notify-status-label { color: var(--text-secondary); }
-.notify-status-value { color: var(--text); font-weight: 600; font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace); font-size: 12px; }
+.notify-status-value { color: var(--text); font-weight: 500; font-size: 12px; } /* Thai words: the sans face (Mono has no Thai, and no 600) */
 .notify-status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-tertiary); }
 .notify-status-dot.is-ok { background: var(--success); }
 .notify-status-dot.is-off { background: var(--warning); }

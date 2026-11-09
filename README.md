@@ -56,6 +56,17 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > removed; the import page no longer shows two blue buttons. It also fixes the explore header (its label,
 > tagline and city chips were white on white), the calendar day list's time column (now the trip's time zone),
 > and link-styled buttons that turned blue in dark mode.
+> **Round 5 (same version):** contrast and consistency pass. Text on a filled primary (buttons, FAB, badge,
+> avatars) picks its ink per mode, so dark mode no longer puts white on the light blue (3.05:1) and avatar
+> initials are dark on their pastel hues; the light tertiary grey is #6b6b6b; the receipt and itinerary
+> sheets keep light ink on their white paper in dark mode. Every date is Thai พ.ศ. (calendar heading, empty
+> states, bookings, activity log, idea compare, build stamp “build 8 พ.ย. 2569”); the dashboard shows exact
+> satang; admin terms read Thai first (“รหัสทริป (Trip ID)”, “คีย์เว็บพุช (VAPID)”). All motion uses the one
+> `--ease` curve. On phones/touch, small buttons are ≥36 px, chips ≥32 px and other tappable controls ≥32 px.
+> Form labels are linked to their fields, icon-only buttons get names (`src/js/utils/a11y.js`), and the
+> place cards in Explore keep their three actions on one row at 390 px. The new
+> `npm run test:browser:design` renders 43 screens × 1440/390 px × light/dark with IBM Plex and fails on
+> contrast, Mono 600, clipped Thai lines, CE years, English-only copy, targets <24 px or unnamed controls.
 >
 > **v34 — 4 Nov 2026, ออกแบบใหม่ทั้งระบบเป็น Flat design + ตรวจปุ่ม/เมนูทุกหน้า.** A ground-up repaint into
 > a flat design language plus a full button-and-menu audit. **Look:** every gradient, glow, glass blur and

@@ -10,9 +10,12 @@
     "test:smoke": "node tests/smoke/run.mjs",
     "test:browser:build": "node tests/browser/mobile-build.mjs",
     "test:browser:mobile": "node tests/browser/mobile-check.mjs",
-    "test:browser:desktop": "node tests/browser/desktop-check.mjs"
+    "test:browser:desktop": "node tests/browser/desktop-check.mjs",
+    "test:browser:design": "node tests/browser/design-check.mjs"
   },
   "devDependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans-thai": "^5.3.0",
     "@fontsource/noto-sans-thai": "^5.2.5",
     "@fontsource/outfit": "^5.2.5",
     "@fontsource/plus-jakarta-sans": "^5.2.5",

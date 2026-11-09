@@ -151,6 +151,26 @@ export function contrastInk(hex, lightInk = '#ffffff', darkInk = '#000000') {
   return contrastRatio(lightInk, background) >= contrastRatio(darkInk, background) ? lightInk : darkInk;
 }
 
+/**
+ * Text ink for a filled surface: white or the app's near-black (#0a0a0a),
+ * whichever reads better — and never below WCAG AA 4.5:1 (pure black is the
+ * last resort for the few mid-tones where #0a0a0a would land at 4.4:1).
+ */
+export function onColorInk(hex) {
+  const background = normalizeHex(hex);
+  if (!background) return '#ffffff';
+  const ink = contrastInk(background, '#ffffff', '#0a0a0a');
+  return contrastRatio(ink, background) >= 4.5 ? ink : contrastInk(background, '#ffffff', '#000000');
+}
+
+/**
+ * The primary as dark mode paints it — tokens.css lightens the raw brand colour
+ * with `color-mix(in srgb, var(--primary-raw) 68%, #fff)`; this is the same mix.
+ */
+export function darkModePrimary(hex) {
+  return mix(normalizeHex(hex, '#2f6fe4'), 68, '#ffffff');
+}
+
 /* --------------------------------- themes --------------------------------- */
 
 /**
@@ -182,7 +202,10 @@ function theme(def) {
       '--brand-sand-raw': normalizeHex(def.sand, mix(def.accent || '#f0ae52', 22, '#ffffff')),
       '--page-bg': normalizeHex(def.bg, mix(primary, 5, '#ffffff')),
       '--page-bg-dark': normalizeHex(def.bgDark, mix(primary, 12, '#0c0f15')),
-      '--on-primary': contrastInk(primary),
+      // Ink on the filled primary, per mode (round 5): tokens.css picks one of
+      // the two, so a light-mode white never lands on the lighter dark-mode blue.
+      '--on-primary-light': onColorInk(primary),
+      '--on-primary-dark': onColorInk(darkModePrimary(primary)),
       // an empty string means “keep the tokens.css default”
       '--gradient-primary': def.gradient || ''
     },
@@ -342,7 +365,8 @@ export function buildCustomPalette(custom = {}) {
     '--brand-sand-raw': mix(accent, 20, '#ffffff'),
     '--page-bg': mix(primary, 6, '#ffffff'),
     '--page-bg-dark': mix(primary, 14, '#0b0f16'),
-    '--on-primary': contrastInk(primary),
+    '--on-primary-light': onColorInk(primary),
+    '--on-primary-dark': onColorInk(darkModePrimary(primary)),
     '--gradient-primary': `linear-gradient(135deg, ${primary} 0%, ${mix(primary, 62, '#ffffff')} 100%)`,
     '--fuji-theme': 'custom',
     '--fuji-primary': primary,

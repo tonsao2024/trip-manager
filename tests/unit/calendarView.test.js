@@ -23,7 +23,7 @@ export function testDateMaths() {
   assert(isoOf(2026, 4, 5) === '2026-04-05', 'iso padding');
   assert(parseISODate('2026-04-05').day === 5, 'parse');
   assert(monthShort(4, 'th') === 'เม.ย.' && monthShort(4, 'en') === 'Apr', 'month labels');
-  assert(monthLabel(2026, 4, 'th').includes('2026') && monthLabel(2026, 4, 'en').startsWith('April'), 'month heading');
+  assert(monthLabel(2026, 4, 'th').endsWith(' 2569') && monthLabel(2026, 4, 'en').startsWith('April'), 'month heading (Thai in พ.ศ.)');
 }
 
 export function testMonthGrid() {
@@ -38,7 +38,8 @@ export function testMonthGrid() {
   const grid = buildMonthGrid(2026, 4, { trip, items, today: '2026-04-12', lang: 'th' });
   assert(grid.weeks.length === 6, 'always 6 weeks');
   assert(grid.weeks.every(w => w.length === 7), 'always 7 columns');
-  assert(grid.label.includes('เมษายน'), 'Thai month label');
+  assert(grid.label === 'เมษายน 2569', `Thai month label in พ.ศ. (got ${grid.label})`);
+  assert(buildMonthGrid(2026, 4, { trip, items, today: '2026-04-12', lang: 'en' }).label === 'April 2026', 'English keeps the CE year');
   const days = grid.weeks.flat();
   assert(days.length === 42, '42 cells');
   const firstOfMonth = days.find(c => c.inMonth && c.day === 1);
