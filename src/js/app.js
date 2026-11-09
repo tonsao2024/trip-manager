@@ -132,6 +132,7 @@ import {
   reservationToItineraryPayload, durationBetween, reservationWarnings
 } from './reservations/index.js';
 import { fetchDailyForecast, fetchForecastWindow, WEATHER_DESTINATIONS, forecastForDates, forecastLabel, datesBetween, weatherTip, weatherTone, isForecastRelevant, geocodeCity, searchCities, createLatestRequestGuard } from './utils/weather.js';
+import { fetchJmaForecast, jmaOfficeForSpot } from './utils/jma.js';
 // utils/explore.js (destination library) loads inside renderExplore only.
 // utils/bookingImport.js loads inside the booking-import sheet only.
 
@@ -3713,16 +3714,7 @@ async function renderDashboard(params) {
       <div id="dashboard-board" class="dashboard-board">
         <section class="dash-widget dash-widget--half" data-dashboard-widget="countdown">
           ${dragHandle(th('การ์ดนับถอยหลัง','countdown card'))}
-          <div class="card p-4 md:p-5">
-            <div class="card-head">
-              <div class="min-w-0">
-                <h3 class="card-title">${t('countdown')}</h3>
-                <p id="live-since" class="card-sub"><span data-live-label></span></p>
-              </div>
-              <a href="#/trip/${escapeHtml(tripId)}/settings?tab=trip&amp;focus=dates" class="btn btn-ghost btn-sm" aria-label="${th('กำหนดหรือแก้ไขวันเดินทาง','Set or edit trip dates')}">${trip?.startDate ? th('แก้ไขวัน','Edit dates') : th('กำหนดวันเดินทาง','Set trip dates')}</a>
-            </div>
-            <div id="countdown-scene"></div>
-          </div>
+          <div id="countdown-scene"></div>
         </section>
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="weather">
@@ -4140,9 +4132,18 @@ async function renderDashboard(params) {
   });
   applyDashDensity();
 
-  // Countdown scene (independent of Firestore so it always renders)
+  // Countdown scene (independent of Firestore so it always renders) — the illustrated
+  // scene IS the card, so the header (title, live line, edit link) moves inside it.
+  const cdEditHref = `#/trip/${escapeHtml(tripId)}/settings?tab=trip&amp;focus=dates`;
   const cd = mountCountdown('countdown-scene', {
-    startDate: trip?.startDate, endDate: trip?.endDate, createdAt: trip?.createdAt, timezone: trip?.timezone, lang
+    startDate: trip?.startDate, endDate: trip?.endDate, createdAt: trip?.createdAt, timezone: trip?.timezone, lang,
+    header: {
+      title: t('countdown'),
+      editHref: cdEditHref,
+      editLabel: trip?.startDate ? th('แก้ไขวัน','Edit dates') : th('กำหนดวันเดินทาง','Set trip dates'),
+      editAria: th('กำหนดหรือแก้ไขวันเดินทาง','Set or edit trip dates'),
+      liveLabel: ''
+    }
   });
   document.addEventListener('routechange', () => cd.destroy(), { once: true });
   // Live "time left" text. Written once per minute as plain text — rebuilding the
@@ -4250,9 +4251,11 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
   const estimatedMinor = sumExpenses(expenses, { estimatedOnly: true });
   const totalMinor = actualMinor + estimatedMinor;
 
-  // Per-member paid/share totals (My wallet + the member board share these).
+  // Per-member paid/share totals (My wallet + the member board share these) —
+  // actual money only, so they match the receipts on the settlement page.
   const paidBy = {}, shareBy = {};
   expenses.forEach(e => {
+    if (e.isEstimated) return;
     for (const p of expensePayments(e)) paidBy[p.memberId] = (paidBy[p.memberId] || 0) + p.amountMinor;
     (e.allocations || []).forEach(a => { shareBy[a.memberId] = (shareBy[a.memberId] || 0) + (a.amountMinor || 0); });
   });
@@ -7183,7 +7186,10 @@ async function renderExpenses(params) {
         <span class="group-avg-total">${th('รวม','total')} ${money(totalMinor)} • ${pax} ${th('คน','pax')}${places != null ? ` • ${places} ${th('ที่','places')}` : ''}</span>
       </div>`;
     box.innerHTML = report.groups.map(g => card(g.name, g.icon, g.color, g.shareMinor, g.perPersonMinor, g.memberCount, { places: groupPlaceCount(g.id) })).join('')
-      + card(th('ทั้งทริป','Whole trip'), 'users-round', 'var(--primary)', report.trip.shareMinor, report.trip.perPersonMinor, report.trip.memberCount, { trip: true });
+      + card(th('ทั้งทริป','Whole trip'), 'users-round', 'var(--primary)', report.trip.shareMinor, report.trip.perPersonMinor, report.trip.memberCount, { trip: true })
+      + (normalized.some(e => e && e.isEstimated && e.status !== 'voided')
+        ? `<p class="group-avg-note">${th('ตัวเลขชุดนี้หารจาก “ยอดที่หารกัน” จึงรวมประมาณการไว้ด้วย — กดตัวกรอง “จ่ายจริง” ด้านล่างเพื่อดูเฉพาะเงินจริง', 'Group figures divide “shares”, so they include estimated bills — tap the “Actual” filter below for actual money only')}</p>`
+        : '');
     queueIcons();
   }
 
@@ -9014,7 +9020,7 @@ async function renderSettlement(params) {
     return `${withAvatar ? `<div class="avatar" style="width:34px;height:34px;${avatarStyle(m.color)};font-size:12px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</div>` : ''}
       <div class="min-w-0">
         <div class="font-semibold text-sm truncate">${escapeHtml(m.displayName)} ${isMe ? `<span class="badge badge-planned text-xs">${th('คุณ','you')}</span>` : ''}</div>
-        <div class="text-xs text-[var(--text-tertiary)]">${th('จ่ายจริง','paid')} ${m.paidCount} • ${th('ร่วมหาร','shares')} ${m.shareCount}</div>
+        <div class="text-xs text-[var(--text-tertiary)]">${th('จ่ายแล้ว','paid')} ${m.paidCount} • ${th('ร่วมหาร','shares')} ${m.shareCount}</div>
       </div>`;
   }
 
@@ -9128,6 +9134,7 @@ async function renderSettlement(params) {
   function receiptHtml(m) {
     const isMe = m.memberId === currentUser.uid;
     const methods = ['cash', 'card', 'transfer'].filter(k => m.paidByMethod[k] > 0);
+    const transferNet = m.settledMinor || 0;
     const paidItems = m.items.filter(i => i.role === 'paid');
     const shareItems = m.items.filter(i => i.role === 'share');
     const settled = m.netMinor > 0 && shareItems.length === 0;
@@ -9195,7 +9202,7 @@ async function renderSettlement(params) {
           <div class="min-w-0 flex-1">
             <div class="rcpt-member-label">${th('ใบเสร็จของ','Receipt for')}</div>
             <div class="receipt-member-name receipt-member-name--lg${nameSizeClass(m.displayName)}">${escapeHtml(m.displayName)}${isMe ? ` <span class="you-badge">${th('คุณ','You')}</span>` : ''}</div>
-            <div class="rcpt-member-sub">${th('จ่ายจริง','Paid')} ${m.paidCount} · ${th('ร่วมหาร','shared')} ${m.shareCount}${flaggedCount(m) ? ` · ${flaggedCount(m)} ${th('รายการที่ทักท้วง','flagged')}` : ''}</div>
+            <div class="rcpt-member-sub">${th('จ่ายแล้ว','Paid')} ${m.paidCount} · ${th('ร่วมหาร','shared')} ${m.shareCount}${flaggedCount(m) ? ` · ${flaggedCount(m)} ${th('รายการที่ทักท้วง','flagged')}` : ''}</div>
           </div>
           <div class="rcpt-hero ${positive ? 'is-positive' : 'is-negative'}">
             <div class="min-w-0">
@@ -9221,7 +9228,7 @@ async function renderSettlement(params) {
             ${paidItems.length
               ? paidItems.map((i, idx) => itemRow(i, idx, 'paid')).join('') + showAllBtn(paidItems.length, 'recv')
               : `<p class="rcpt-empty">${th('ยังไม่ได้จ่ายรายการใด','No payments recorded')}</p>`}
-            <div class="rcpt-block-total-line"><span>${th('รวมรับ (จ่ายจริง)','Total paid')}</span><b>${moneyPair(m.paidMinor)}</b></div>
+            <div class="rcpt-block-total-line"><span>${th('รวมรับ','Total received')}</span><b>${moneyPair(m.paidMinor)}</b></div>
           </div>
         </section>
 
@@ -9248,6 +9255,7 @@ async function renderSettlement(params) {
             <div class="rcpt-sum">
               <div class="rcpt-sum-row"><span>${th('รับ','Received')}</span><b>${money(m.paidMinor)}</b></div>
               <div class="rcpt-sum-row"><span>${th('หัก','Deducted')}</span><b>− ${money(m.owedMinor)}</b></div>
+              ${transferNet !== 0 ? `<div class="rcpt-sum-row"><span>${th('โอนแล้ว (บันทึกในระบบ)','Transfers recorded')}</span><b>${transferNet > 0 ? '+' : '−'} ${money(Math.abs(transferNet))}</b></div>` : ''}
               <div class="rcpt-sum-total ${positive ? 'is-positive' : 'is-negative'}">
                 <span>${th('คงเหลือ','Balance')}</span>
                 <b>${positive ? '+' : '−'}${money(Math.abs(m.netMinor))}</b>
@@ -9557,6 +9565,13 @@ async function renderSettlement(params) {
 
   function overviewHtml() {
     const totalPaid = state.statements.reduce((s, m) => s + m.paidMinor, 0);
+    // Estimated bills are excluded from the ledger; report them separately
+    // (projected view) plus the estimates nobody has hosted yet.
+    const projected = buildSettlementStatements(state.expenses, state.members, { includeEstimated: true, transfers: state.transfers });
+    const estPaid = projected.reduce((s, m) => s + (m.estimatedPaidMinor || 0), 0);
+    const estOwed = projected.reduce((s, m) => s + (m.estimatedOwedMinor || 0), 0);
+    const pendingSum = pendingPayerExpenses(state.expenses).reduce((n, e) => n + (Number(e.netTotalMinor) || 0), 0);
+    const hasEstimates = estPaid > 0 || estOwed > 0 || pendingSum > 0;
     const byMethod = state.statements.reduce((acc, m) => {
       ['cash', 'card', 'transfer'].forEach(k => { acc[k] += m.paidByMethod[k] || 0; });
       return acc;
@@ -9570,12 +9585,15 @@ async function renderSettlement(params) {
             ${icon('chevron-down', 'w-3.5 h-3.5 settle-overview-chevron')}
           </button>
         </div>
-        <div class="kpi-strip mb-4">
+        <div class="kpi-strip mb-2">
           <div class="kpi-mini"><span class="kpi-mini-label">${th('จ่ายจริงรวม','Total paid')}</span><b>${moneyPair(totalPaid)}</b></div>
           <div class="kpi-mini"><span class="kpi-mini-label">${th('เงินสด','Cash')}</span><b>${moneyPair(byMethod.cash)}</b></div>
           <div class="kpi-mini"><span class="kpi-mini-label">${th('บัตร','Card')}</span><b>${moneyPair(byMethod.card)}</b></div>
           <div class="kpi-mini"><span class="kpi-mini-label">${th('โอน','Transfer')}</span><b>${moneyPair(byMethod.transfer)}</b></div>
         </div>
+        <p class="receipt-line muted mb-4">${hasEstimates
+          ? `<span>${th('ประมาณการ (ไม่รวมในยอดเคลียร์)','Estimated (excluded)')}</span><span>${th('จ่ายล่วงหน้า','Paid ahead')} <b>${money(estPaid)}</b> • ${th('ส่วนแบ่ง','Share')} <b>${money(estOwed)}</b>${pendingSum > 0 ? ` • ${th('รอระบุผู้จ่าย','Unassigned')} <b>${money(pendingSum)}</b>` : ''} • <a href="#/trip/${escapeHtml(tripId)}/expenses" class="link-btn">${th('ดูรายการ','View')}</a></span>`
+          : `<span>${th('ประมาณการ','Estimated')}</span><span>${th('ไม่มี — ทุกรายการเป็นยอดจ่ายจริงแล้ว','None — everything is actual spending')}</span>`}</p>
         <div class="settle-overview-credit-cards">${cardsSummaryHtml()}</div>
         <div id="settle-overview-details" class="settle-overview-details" ${overviewDetailsExpanded ? '' : 'hidden'}>
           <h5 class="font-semibold text-xs mb-2">${th('สรุปค่าใช้จ่ายแยกตามสมาชิก','Member expense breakdown')}</h5>
@@ -9596,7 +9614,7 @@ async function renderSettlement(params) {
                 </tr>`).join('')}
             </tbody>
           </table>
-          <div class="receipt-line muted"><span>${th('ยอดรวมทุกคน','Everyone together')}</span><span>${money(state.statements.reduce((s, m) => s + m.netMinor, 0))}</span></div>
+          <div class="receipt-line muted"><span>${th('ตรวจยอดสุทธิทุกคน (รวมเป็น ฿0)','Net check (sums to ฿0)')}</span><span>${money(state.statements.reduce((s, m) => s + m.netMinor, 0))}</span></div>
         </div>
       </section>
       ${netSummaryHtml()}
@@ -15038,8 +15056,11 @@ async function openShareSheet(trip = null) {
     try { members = await listMembers(tripId); } catch {}
     try { items = await fetchItinerary(tripId); } catch {}
     try { expenses = await fetchAllExpenses(tripId); } catch {}
-    const total = expenses.filter(e => e.status !== 'voided').reduce((sum, e) => sum + (Number(e.netTotalMinor) || 0), 0);
-    return tripSummaryText({ trip: t0, members, items, expenses, totalMinor: total, currency: t0.baseCurrency || 'THB', lang });
+    // Aggregate in baht — the raw netTotalMinor must not be added across currencies.
+    let total = 0;
+    try { total = sumExpenses(expensesInThb(expenses.filter(e => e.status !== 'voided'), t0)); }
+    catch { total = expenses.filter(e => e.status !== 'voided').reduce((sum, e) => sum + (Number(e.netTotalMinor) || 0), 0); }
+    return tripSummaryText({ trip: t0, members, items, expenses, totalMinor: total, currency: 'THB', lang });
   }
   async function planText() {
     let items = [];
@@ -15244,7 +15265,10 @@ async function renderWeatherCalendar(params) {
   let selectedDate = defaultDate;
   let forecast = [];
   let loading = false;
+  let jmaState = 'idle'; // idle | loading | ready | unavailable — 'unavailable' hides the 気象庁 card silently
+  let jmaData = null;
   const requestGuard = createLatestRequestGuard();
+  const jmaGuard = createLatestRequestGuard();
   const monthNames = (y, m) => new Intl.DateTimeFormat(lang === 'th' ? 'th-TH' : 'en-GB', { month: 'long', year: 'numeric' }).format(new Date(y, m, 1));
   const monthDays = (y, m) => new Date(y, m + 1, 0).getDate();
   const dateKey = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -15263,6 +15287,46 @@ async function renderWeatherCalendar(params) {
     if (!date) return '';
     const [y, m, d] = date.split('-').map(Number);
     return new Intl.DateTimeFormat(lang === 'th' ? 'th-TH' : 'en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(y, m - 1, d));
+  };
+
+  const renderJmaPanel = () => {
+    const office = jmaOfficeForSpot(city);
+    if (!office || jmaState === 'unavailable') return ''; // not covered, or failed to load → silent hide
+    const reportDate = jmaData?.reportDatetime ? new Date(jmaData.reportDatetime) : null;
+    const reportLabel = reportDate && !Number.isNaN(reportDate.getTime())
+      ? new Intl.DateTimeFormat(lang === 'th' ? 'th-TH' : 'en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(reportDate)
+      : '';
+    const head = `<div class="jma-head">
+        <div class="jma-head-main">${icon('shield-check', 'w-4 h-4')}<div class="jma-head-copy">
+          <strong>${th('ทางการจาก 気象庁', 'Official from 気象庁')}</strong>
+          <span>${th('พยากรณ์ 7 วัน', '7-day outlook')}${jmaData?.areaName ? ` · ${escapeHtml(jmaData.areaName)}` : ''}${reportLabel ? ` · ${th('อัปเดต', 'Updated')} ${escapeHtml(reportLabel)}` : ''}</span>
+        </div></div>
+        <span class="jma-credit">出典：気象庁</span>
+      </div>`;
+    if (jmaState !== 'ready') {
+      return `<section class="jma-card" aria-hidden="true">${head}<div class="jma-grid">${Array.from({ length: 7 }, () => '<span class="jma-day jma-day--skeleton"></span>').join('')}</div></section>`;
+    }
+    const days = Array.isArray(jmaData?.days) ? jmaData.days : [];
+    if (!days.length) return '';
+    const cellHtml = days.map(day => {
+      const d = new Date(`${day.date}T00:00:00`);
+      const dateLabel = Number.isNaN(d.getTime()) ? String(day.date) : new Intl.DateTimeFormat(lang === 'th' ? 'th-TH' : 'en-GB', { weekday: 'short', day: 'numeric' }).format(d);
+      const reli = day.reliability ? `<span class="jma-reli jma-reli-${String(day.reliability).toLowerCase()}" title="${escapeHtml(`${th('ความน่าเชื่อถือ 気象庁', '気象庁 reliability')}: ${day.reliability}`)}">${escapeHtml(day.reliability)}</span>` : '';
+      const pop = day.pop != null ? `<span class="jma-pop">${icon('droplets', 'w-3 h-3')}${Math.round(day.pop)}%</span>` : '<span class="jma-pop">—</span>';
+      const tmax = day.max != null ? Math.round(day.max) : '–';
+      const tmin = day.min != null ? Math.round(day.min) : '–';
+      return `<div class="jma-day" title="${escapeHtml(lang === 'th' ? day.labelTh : day.labelEn)}">
+          <span class="jma-day-date">${escapeHtml(dateLabel)}</span>
+          ${icon(day.icon, `w-5 h-5 jma-day-icon tone-${escapeHtml(day.tone)}`)}
+          <span class="jma-day-temp">${tmax}°<small>${tmin}°</small></span>
+          ${pop}
+          ${reli}
+        </div>`;
+    }).join('');
+    return `<section class="jma-card" aria-label="${th('พยากรณ์ทางการจาก 気象庁 7 วัน', 'Official 気象庁 7-day forecast')}">${head}
+      <div class="jma-grid">${cellHtml}</div>
+      <p class="jma-note">${th('ความน่าเชื่อถือ 気象庁: A = คงเส้นคงวา · B = พอเชื่อถือได้ · C = อาจเปลี่ยน', '気象庁 reliability: A = stable · B = fairly confident · C = variable')}</p>
+    </section>`;
   };
 
   function paint() {
@@ -15287,7 +15351,7 @@ async function renderWeatherCalendar(params) {
     const selectedForecast = byDate.get(selectedDate);
     const selectedIsTrip = isTripDate(selectedDate);
     const selectedDetail = selectedForecast
-      ? `<div class="weather-selected-icon tone-${escapeHtml(selectedForecast.tone)}">${icon(selectedForecast.icon, 'w-6 h-6')}</div><div class="weather-selected-copy"><strong>${escapeHtml(selectedLabel(selectedDate))}</strong><span>${escapeHtml(lang === 'th' ? selectedForecast.labelTh : selectedForecast.labelEn)} · ${selectedForecast.min ?? '—'}° / ${selectedForecast.max ?? '—'}°</span>${selectedForecast.rainChance != null ? `<small>${th('โอกาสฝนสูงสุด', 'Max rain chance')} ${selectedForecast.rainChance}%</small>` : ''}<small class="weather-confidence${selectedForecast.forecastBand === 'seasonal' ? ' is-long-range' : ''}">${selectedForecast.forecastBand === 'seasonal' ? th('แนวโน้มระยะไกลจาก ECMWF · ความละเอียดระดับภูมิภาค ควรใช้ประกอบการวางแผน', 'ECMWF seasonal outlook · regional-scale guidance; use as a planning trend') : th('พยากรณ์รายวันระยะใกล้จาก Open-Meteo', 'Short-range daily forecast from Open-Meteo')}</small></div>`
+      ? `<div class="weather-selected-icon tone-${escapeHtml(selectedForecast.tone)}">${icon(selectedForecast.icon, 'w-6 h-6')}</div><div class="weather-selected-copy"><strong>${escapeHtml(selectedLabel(selectedDate))}</strong><span>${escapeHtml(lang === 'th' ? selectedForecast.labelTh : selectedForecast.labelEn)} · ${selectedForecast.min ?? '—'}° / ${selectedForecast.max ?? '—'}°</span>${selectedForecast.rainChance != null ? `<small>${th('โอกาสฝนสูงสุด', 'Max rain chance')} ${selectedForecast.rainChance}%</small>` : ''}<small class="weather-confidence${selectedForecast.forecastBand === 'seasonal' ? ' is-long-range' : ''}">${selectedForecast.forecastBand === 'seasonal' ? th('แนวโน้มระยะไกลจาก ECMWF · ความละเอียดระดับภูมิภาค ควรใช้ประกอบการวางแผน', 'ECMWF seasonal outlook · regional-scale guidance; use as a planning trend') : selectedForecast.source === 'Visual Crossing' ? th('พยากรณ์รายวันจาก Visual Crossing · ข้อมูลสำรองเมื่อ Open-Meteo ล่ม', 'Daily forecast from Visual Crossing · backup when Open-Meteo is unavailable') : th('พยากรณ์รายวันระยะใกล้จาก Open-Meteo', 'Short-range daily forecast from Open-Meteo')}</small></div>`
       : `<div class="weather-selected-icon is-muted">${icon(selectedIsTrip ? 'plane' : 'calendar-days', 'w-6 h-6')}</div><div class="weather-selected-copy"><strong>${escapeHtml(selectedLabel(selectedDate))}${selectedIsTrip ? ` · ${th('วันเดินทาง', 'Trip day')}` : ''}</strong><span>${loading ? th('กำลังโหลดพยากรณ์อากาศ…', 'Loading forecast…') : th('ยังไม่มีข้อมูลพยากรณ์สำหรับวันนี้', 'No forecast available for this date')}</span><small>${th('ข้อมูลพยากรณ์ระยะไกลมีให้ประมาณ 7 เดือน หากยังไม่อยู่ในช่วงนี้ ระบบจะแสดงเมื่อมีข้อมูล', 'Long-range seasonal forecasts are available for about 7 months; dates beyond that are left blank until data is available')}</small></div>`;
     appEl.innerHTML = `
       <div class="page-enter weather-calendar-page">
@@ -15306,7 +15370,8 @@ async function renderWeatherCalendar(params) {
           <div class="weather-legend"><span><i class="weather-legend-trip"></i>${th('วันเดินทาง', 'Trip dates')}</span><span><i class="weather-legend-forecast"></i>${th('พยากรณ์ระยะใกล้', 'Near-term forecast')}</span><span><i class="weather-legend-seasonal"></i>${th('แนวโน้มระยะไกล', 'Seasonal outlook')}</span></div>
           <div class="weather-selected-day">${selectedDetail}</div>
         </section>
-        <p class="weather-source-note">${icon('info', 'w-3.5 h-3.5')} <span>${th('พยากรณ์ระยะใกล้ใช้ Open-Meteo; วันที่ไกลกว่านั้นใช้ ECMWF Seasonal Ensemble ซึ่งให้แนวโน้มรายวันได้ถึงประมาณ 7 เดือนโดยไม่ต้องใช้ API key วันที่เกินช่วงข้อมูลจะแสดงว่ายังไม่มีพยากรณ์ แนวโน้มระยะไกลมีความไม่แน่นอนสูงกว่าและควรตรวจซ้ำใกล้วันเดินทาง', 'Near dates use Open-Meteo; farther dates use the ECMWF seasonal ensemble, with daily guidance up to about 7 months and no API key. Dates beyond available data stay unforecast. Long-range guidance is less certain—check again closer to departure.')}
+        ${renderJmaPanel()}
+        <p class="weather-source-note">${icon('info', 'w-3.5 h-3.5')} <span>${th('พยากรณ์ระยะใกล้ใช้ Open-Meteo (สำหรับพิกัดญี่ปุ่นใช้โมเดล 気象庁 อัตโนมัติ) พร้อมการ์ดทางการจาก 気象庁 (出典：気象庁) หาก Open-Meteo ล่มจะสำรองด้วย Visual Crossing วันที่ไกลกว่านั้นใช้ ECMWF Seasonal Ensemble ซึ่งให้แนวโน้มรายวันได้ถึงประมาณ 7 เดือนโดยไม่ต้องใช้ API key วันที่เกินช่วงข้อมูลจะแสดงว่ายังไม่มีพยากรณ์ แนวโน้มระยะไกลมีความไม่แน่นอนสูงกว่าและควรตรวจซ้ำใกล้วันเดินทาง', 'Near dates use Open-Meteo (auto-selects the JMA model for Japan coordinates) with an official 気象庁 card (出典：気象庁) when available; Visual Crossing stands in if Open-Meteo fails. Farther dates use the ECMWF seasonal ensemble, with daily guidance up to about 7 months and no API key. Dates beyond available data stay unforecast. Long-range guidance is less certain—check again closer to departure.')}
           <a href="https://open-meteo.com/en/docs/seasonal-forecast-api" target="_blank" rel="noopener noreferrer">${th('ที่มาข้อมูล', 'Data source')}</a></span></p>
       </div>`;
     queueIcons();
@@ -15323,6 +15388,7 @@ async function renderWeatherCalendar(params) {
       city = next;
       forecast = [];
       loadForecast();
+      loadJmaPanel();
     }));
     appEl.querySelectorAll('[data-weather-date]').forEach(button => button.addEventListener('click', () => {
       selectedDate = button.dataset.weatherDate;
@@ -15341,8 +15407,22 @@ async function renderWeatherCalendar(params) {
     paint();
   }
 
+  async function loadJmaPanel() {
+    const office = jmaOfficeForSpot(city);
+    if (!office) { jmaState = 'unavailable'; jmaData = null; return; }
+    const current = jmaGuard.begin();
+    jmaState = 'loading';
+    jmaData = null;
+    paint();
+    const data = await fetchJmaForecast(office);
+    if (!current() || isStale(token)) return;
+    if (data) { jmaState = 'ready'; jmaData = data; } else { jmaState = 'unavailable'; jmaData = null; }
+    paint();
+  }
+
   paint();
   loadForecast();
+  loadJmaPanel();
 }
 
 function renderMore(params) {

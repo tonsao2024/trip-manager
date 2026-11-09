@@ -107,7 +107,7 @@ async function main() {
       for (let i = 1; i < items.length; i++) {
         if (items[i].top === items[i - 1].top && items[i].left < items[i - 1].right - 1) overlap = true;
       }
-      const card = document.querySelector('[data-dashboard-widget="countdown"] > .card').getBoundingClientRect();
+      const card = document.querySelector('[data-dashboard-widget="countdown"]').getBoundingClientRect();
       const scene = document.querySelector('[data-dashboard-widget="countdown"] .countdown-scene').getBoundingClientRect();
       return {
         headerH: Math.round(document.getElementById('app-header').getBoundingClientRect().height),

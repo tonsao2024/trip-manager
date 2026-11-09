@@ -1134,6 +1134,15 @@ console.log('\n▶ baht amounts appear even when the trip never set a rate');
 
 console.log('\n▶ settlement explains where each payment comes from');
 {
+  // The ledger settles actual money only (estimated bills are excluded since the
+  // actual-only fix), so seed one actual split bill to exercise the explanation.
+  fsdb.__seed('trips/t1/expenses/e-explain', {
+    title: 'ค่าอาหารหักกลบทดสอบ', date: TRIP.startDate, category: 'food', currency: 'THB', baseCurrency: 'THB',
+    subtotalMinor: 3000, discountMinor: 0, serviceMinor: 0, taxMinor: 0, cardFeeMinor: 0, netTotalMinor: 3000,
+    thbRate: 1, thbMinor: 3000, payerId: 'u2', status: 'active', isEstimated: false, estimatedMinor: 0,
+    actualMinor: 3000, paymentMethod: 'cash',
+    allocations: [{ memberId: 'u1', amountMinor: 1500 }, { memberId: 'u2', amountMinor: 1500 }], createdAt: new Date()
+  });
   await goto('#/trip/t1/settlement');
   await waitFor(() => q('#settle-overview'), { label: 'settlement page' });
   await sleep(300);
@@ -1143,6 +1152,8 @@ console.log('\n▶ settlement explains where each payment comes from');
   const html = details.map(d => d.innerHTML).join(' ');
   check(titles.some(t => html.includes(t)), 'settlement: the detail names the bills being settled');
   check(/หักกลบ|netted/.test(html), 'settlement: explains that the transfer is netted');
+  // Kept alive deliberately: the receipts/transactions assertions further down
+  // recompute against live data and need one actual split bill to chew on.
 }
 
 console.log('\n▶ v9: clear-bill receipts (received / deducted / balance + per-person PNG)');
@@ -2979,7 +2990,7 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
     'countdown: the scene stretches to fill its card');
   await goto('#/trip/t1/dashboard');
   await waitFor(() => q('[data-dashboard-widget="countdown"] .countdown-scene'), { timeout: 8000, label: 'countdown scene' }).catch(() => {});
-  const cdCard = q('[data-dashboard-widget="countdown"] > .card')?.getBoundingClientRect();
+  const cdCard = q('[data-dashboard-widget="countdown"]')?.getBoundingClientRect();
   const cdScene = q('[data-dashboard-widget="countdown"] .countdown-scene')?.getBoundingClientRect();
   const deadBand = cdCard && cdScene && cdCard.height ? Math.round(cdCard.bottom - cdScene.bottom) : null;
   check(deadBand === null || deadBand <= 24,

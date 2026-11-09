@@ -45,6 +45,13 @@ firebase deploy --project trip-manager-93b22 --only firestore:rules,firestore:in
 > ถ้า client ใหม่ทำงานกับ rules เก่า การบันทึกจะถูกปฏิเสธ; ถ้า client เก่า (หน้าที่โหลดค้าง
 > ไว้ก่อน deploy) ทำงานกับ rules ใหม่ การบันทึกก็จะถูกปฏิเสธเช่นกัน — ให้ผู้ใช้รีเฟรชหน้า
 > หนึ่งครั้งหลัง deploy (client เก่ายัง **อ่าน** ยอดได้ตามปกติ)
+
+> **v37 — เฉพาะเว็บ ไม่ต้อง deploy rules** ตัวเลขเคลียร์บิลนับเฉพาะ “จ่ายจริง” แล้ว
+> (บิลประมาณการไม่เข้าไปอยู่ใน ledger เว้นแต่เรียกผ่าน `includeEstimated: true`)
+> จึงไม่ต้องเปลี่ยน Firestore rules — ดู `docs/expense-money-model.md`
+> แหล่งพยากรณ์อากาศ: Open-Meteo (พิกัดญี่ปุ่นใช้โมเดล 気象庁 อัตโนมัติ) + การ์ดทางการ
+> 気象庁 (出典：気象庁) บนหน้า Weather สำหรับปลายทางญี่ปุ่น 5 แห่ง + Visual Crossing เป็น
+> ข้อมูลสำรองเงียบ ๆ เมื่อ Open-Meteo ล่ม — ทั้งหมดไม่มี API key และทำงานฝั่ง client ล้วน
 ใช้ GitHub Pages สำหรับเว็บตามขั้นตอนข้างบน หรือ Firebase static Hosting:
 
 ```bash

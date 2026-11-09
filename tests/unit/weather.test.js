@@ -1,7 +1,8 @@
 // Unit tests — weather helpers (WMO mapping, parsing, trip-window logic).
 import {
   WMO_CODES, WEATHER_DESTINATIONS, weatherCodeInfo, parseForecast, fetchForecastWindow, forecastForDates, forecastLabel,
-  weatherTip, datesBetween, isForecastRelevant, weatherTone, createLatestRequestGuard
+  weatherTip, datesBetween, isForecastRelevant, weatherTone, createLatestRequestGuard,
+  isJapanCoords, buildForecastUrl, parseVisualCrossing, fetchDailyForecast, clearWeatherCache
 } from '../../src/js/utils/weather.js';
 
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
@@ -114,4 +115,72 @@ export function testWeatherLatestRequestWins() {
   assert(!oldCity() && currentCity(), 'only the most recent city request can paint');
   guard.invalidate();
   assert(!currentCity(), 'invalidated requests cannot paint');
+}
+
+export function testJapanCoords() {
+  assert(isJapanCoords(35.6762, 139.6503) === true, 'Tokyo is inside the Japan bbox');
+  assert(isJapanCoords(26.2124, 127.6809) === true, 'Okinawa is inside the Japan bbox');
+  assert(isJapanCoords(13.7563, 100.5018) === false, 'Bangkok is not Japan');
+  assert(Number.isNaN(isJapanCoords('x', 'y')) === false && isJapanCoords('x', 'y') === false, 'garbage input → false');
+}
+
+export function testBuildForecastUrlModels() {
+  const tokyo = buildForecastUrl(35.6762, 139.6503, { startDate: '2026-11-10', endDate: '2026-11-11' });
+  assert(tokyo.includes('models=jma_seamless'), 'Japan coordinates request the JMA seamless model');
+  const bkk = buildForecastUrl(13.7563, 100.5018, { startDate: '2026-11-10', endDate: '2026-11-11' });
+  assert(!bkk.includes('models='), 'non-Japan coordinates keep the Open-Meteo default');
+  assert(tokyo.includes('daily=weather_code') && tokyo.includes('timezone=auto'), 'daily params + timezone kept');
+}
+
+export function testParseVisualCrossing() {
+  const parsed = parseVisualCrossing({
+    days: [
+      { datetime: '2026-11-10', tempmax: 31.4, tempmin: 25.2, icon: 'clear-day', precip: 0, precipprob: 5.4 },
+      { datetime: '2026-11-11', tempmax: 29.1, tempmin: 24.8, icon: 'rain', precip: 12.3, precipprob: 88.4 },
+      { datetime: '2026-11-12', tempmax: 27.9, tempmin: 24.1, icon: 'thunder-showers-day', precip: 30, precipprob: 95 },
+      { datetime: '2026-11-13', tempmax: 33.0, tempmin: 26.0, icon: 'snow-showers-night', precip: 2, precipprob: 61 },
+      { datetime: '2026-11-14', tempmax: 28.0, tempmin: 22.0, icon: 'partly-cloudy-day', precip: 0, precipprob: 12 },
+      { datetime: '2026-11-15', tempmax: 27.0, tempmin: 21.0, icon: 'something-weird', precip: 0, precipprob: 0 },
+      { tempmax: 20, tempmin: 15, icon: 'rain' }
+    ]
+  });
+  assert(parsed.length === 6, 'entries without datetime are dropped');
+  assert(parsed[0].code === 0 && parsed[0].icon === 'sun', 'clear-day → clear sky');
+  assert(parsed[1].code === 61 && parsed[1].tone === 'rain', 'rain → 61 rain');
+  assert(parsed[2].code === 95 && parsed[2].tone === 'storm', 'thunder-showers-day → 95 storm');
+  assert(parsed[3].code === 85 && parsed[3].tone === 'snow', 'snow-showers-night → 85 snow');
+  assert(parsed[4].icon === 'cloud-sun' && parsed[4].tone === 'cloud', 'partly-cloudy-day → partial cloud');
+  assert(parsed[5].code === 3, 'unknown icon falls back to overcast');
+  assert(parsed[1].rainChance === 88, 'precipprob rounded to a whole percent');
+  assert(parsed[1].rainMm === 12.3, 'precip kept as millimetres');
+  assert(parsed[1].max === 29.1 && parsed[1].min === 24.8, 'temperatures kept');
+  assert(parsed.every(day => day.source === 'Visual Crossing'), 'source tagged on every day');
+  assert(parseVisualCrossing({}).length === 0, 'empty payload → empty list');
+}
+
+export async function testVisualCrossingFallbackOnlyWhenOpenMeteoFails() {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    calls.push(u);
+    if (u.includes('api.open-meteo.com')) return new Response('boom', { status: 500 });
+    if (u.includes('visualcrossing.com')) {
+      return new Response(JSON.stringify({ days: [{ datetime: '2026-11-10', tempmax: 33, tempmin: 25, icon: 'rain', precip: 8, precipprob: 70 }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    throw new Error('unexpected url ' + u);
+  };
+  try {
+    clearWeatherCache();
+    const days = await fetchDailyForecast({ lat: 12.3456, lon: 98.7654 }, { startDate: '2026-11-10', endDate: '2026-11-10' });
+    assert(days.length === 1, 'visual crossing day returned when Open-Meteo fails');
+    assert(days[0].source === 'Visual Crossing', 'day is tagged with its source');
+    assert(days[0].tone === 'rain', 'icon mapped');
+    assert(calls.some(u => u.includes('api.open-meteo.com')), 'open-meteo attempted first');
+    assert(calls.some(u => u.includes('visualcrossing.com')), 'visual crossing used as backup');
+  } finally {
+    globalThis.fetch = originalFetch;
+    clearWeatherCache();
+  }
 }
