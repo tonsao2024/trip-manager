@@ -142,19 +142,20 @@ function trackEnds(c, lang = 'th') {
     `${th ? 'ออกเดินทาง' : 'Departure'} ${shortDate(c.startDate, lang, c.timezone)}`];
 }
 
-/** A flat silhouette of the mountain — one tint of the accent, a paper-white cap.
- *  Rendered as a full-bleed backdrop behind the card's content (aria-hidden). */
+/** A flat silhouette of the mountain — one tint of the accent, a paper-white cap
+ *  and the switchback trail that climbs its flank. Rendered as a full-bleed
+ *  backdrop behind the card's content (aria-hidden). */
 function journeyArtwork({ hasDate } = {}) {
   return `<div class="cdc-journey${hasDate ? '' : ' is-empty'}" aria-hidden="true">
     <div class="cdc-horizon"></div>
     <svg class="cdc-cloud cdc-cloud--back" viewBox="0 0 54 24" focusable="false"><path d="M8 20a7 7 0 0 1-1-14 10 10 0 0 1 19-1 8 8 0 0 1 12 7 6 6 0 0 1-1 12H8Z" fill="var(--cdc-cloud)"/></svg>
     <svg class="cdc-cloud cdc-cloud--front" viewBox="0 0 54 24" focusable="false"><path d="M8 20a7 7 0 0 1-1-14 10 10 0 0 1 19-1 8 8 0 0 1 12 7 6 6 0 0 1-1 12H8Z" fill="var(--cdc-cloud)"/></svg>
     <svg class="cdc-fuji" viewBox="0 0 180 100" focusable="false">
-      <path d="M2 98 C 42 90, 66 58, 90 8 C 114 58, 138 90, 178 98 Z" fill="var(--cdc-mountain)"/>
-      <path d="M72 44 C 79 29, 84 17, 90 8 C 96 17, 101 29, 108 44 L 100 40 L 95 47 L 90 41 L 85 47 L 80 40 Z" fill="var(--cdc-snow)"/>
+      <path d="M2 98 C 42 91, 67 58, 90 9 C 113 58, 138 91, 178 98 Z" fill="var(--cdc-mountain)"/>
+      <path class="cdc-route" d="M150 96 L130 86 L136 78 L122 68 L114 58 L106 51" fill="none"/>
+      <path d="M72 45 C 79 30, 84 17, 90 9 C 96 17, 101 30, 108 45 L 100 41 L 95 48 L 90 42 L 85 48 L 80 41 Z" fill="var(--cdc-snow)"/>
       <path d="M0 98 Q90 88 180 98V100H0Z" fill="var(--cdc-foothill)"/>
     </svg>
-    <div class="cdc-path"></div>
     ${hasDate ? `<svg class="cdc-fireworks" viewBox="0 0 110 90" focusable="false">
       <g class="cdc-firework cdc-firework--one"><path d="M22 42V28M22 56V70M8 49H0M36 49H44M12 39 6 33M32 59 38 65M32 39 38 33M12 59 6 65"/><circle cx="22" cy="49" r="3"/></g>
       <g class="cdc-firework cdc-firework--two"><path d="M72 25V14M72 36V47M61 30H50M83 30H94M64 22 58 16M80 38 86 44M80 22 86 16M64 38 58 44"/><circle cx="72" cy="30" r="2.5"/></g>
@@ -167,7 +168,7 @@ function journeyArtwork({ hasDate } = {}) {
 function runnerMark() {
   return `<span class="cdc-runner" data-cd-runner aria-hidden="true">
     <svg class="cdc-runner-svg" viewBox="0 0 48 56" focusable="false">
-      <ellipse cx="24" cy="53" rx="12" ry="2.5" fill="rgba(38,52,73,.18)"/>
+      <ellipse cx="24" cy="47" rx="10" ry="2.2" fill="rgba(38,52,73,.16)"/>
       <g class="cdc-runner-body">
         <path d="M20 20 L15 29 L9 27" class="cdc-runner-arm cdc-runner-arm--back"/>
         <path d="M23 35 L17 43 L10 44" class="cdc-runner-leg cdc-runner-leg--back"/>
@@ -181,7 +182,7 @@ function runnerMark() {
       </g>
     </svg>
     <svg class="cdc-celebrate-svg" viewBox="0 0 48 56" focusable="false">
-      <ellipse cx="24" cy="53" rx="13" ry="2.5" fill="rgba(38,52,73,.18)"/>
+      <ellipse cx="24" cy="47" rx="11" ry="2.2" fill="rgba(38,52,73,.16)"/>
       <path d="M21 35 18 49 14 51M28 35 31 49 35 51" fill="none" stroke="#263449" stroke-width="4.5" stroke-linecap="round"/>
       <path d="M20 19Q16 21 18 28L20 37 31 37 32 25Q32 19 27 19Z" fill="var(--cdc-jacket)"/>
       <path d="M20 23 12 14 8 8M30 23 37 14 40 8" fill="none" stroke="#f3bd91" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>

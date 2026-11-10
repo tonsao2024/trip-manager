@@ -34,6 +34,7 @@ keeps a safety net of common icons so small misses degrade gracefully.
 | --- | --- |
 | `build.mjs` | Runs the app routes in jsdom with the smoke-test stubs and writes HTML snapshots to `tools/preview/out/`. |
 | `shot.mjs` | Wraps snapshots in the app styles and captures screenshots with headless Chromium. |
+| `countdown.html` | Live gallery of the countdown card: real markup + real CSS at phone/desktop widths, light/dark, before/during/no-date. Open it through the static server below. |
 | `tailwind.config.cjs`, `tailwind.in.css` | Tailwind inputs used for the local snapshots. |
 
 Install the optional tooling from the repository root (all dev dependencies are
@@ -57,3 +58,15 @@ node tools/preview/shot.mjs [width] [route]
 ```
 
 Generated snapshots and screenshots are written under `tools/preview/out/` and are git-ignored.
+
+### `tools/preview/countdown.html` — the countdown card on its own
+
+```bash
+python3 -m http.server 8099 --bind 0.0.0.0
+# then open http://localhost:8099/tools/preview/countdown.html
+```
+
+The page imports `src/js/components/countdown.js` and the app stylesheets
+directly, so editing `--cdc-trail-bottom`, `--cdc-fuji-w`, `--cdc-runner-w` or
+`--cdc-runner-h` in `src/css/components.css` shows the new proportions on
+reload — that is where the person ↔ mountain ↔ frame balance is set.

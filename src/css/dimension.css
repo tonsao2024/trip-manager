@@ -58,14 +58,14 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 .dash-idea-list .dash-idea-row:hover, .member-board .member-row:hover { background: var(--surface-3); }
 
 /* The track is inset by half the runner's width so even 0% and 100% fit. */
-.cdc-track { height: 6px; }
 .cdc-track-fill { transition: width .9s cubic-bezier(.2,.72,.25,1); }
 .cdc-runner {
   position: absolute;
   left: var(--cd-progress);
-  bottom: 3px;
-  width: 40px;
-  height: 47px;
+  /* the traveller's feet land on the trail's top edge, shadow on the line */
+  bottom: -3px;
+  width: var(--cdc-runner-w);
+  height: var(--cdc-runner-h);
   transform: translateX(-50%);
   transition: left .5s var(--ease);
   pointer-events: none;
@@ -198,16 +198,18 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
   position: absolute; inset: 0; z-index: 0; overflow: hidden; border: 0; border-radius: 0; background: none; pointer-events: none;
 }
 [data-theme="dark"] .cdc-journey { --cdc-foothill: color-mix(in srgb, #3f8a70 38%, transparent); }
-.cdc-horizon { position: absolute; z-index: 0; inset: auto -4% 34px; height: 86px; border-radius: 50% 50% 0 0 / 34% 34% 0 0; background: color-mix(in srgb, #98c9a6 30%, transparent); }
-.cdc-fuji { position: absolute; z-index: 1; width: clamp(140px, 38%, 205px); height: auto; right: 6px; bottom: 40px; filter: drop-shadow(0 2px 2px rgba(39, 58, 72, .22)); }
-.cdc-cloud { position: absolute; z-index: 2; width: 48px; height: auto; opacity: .76; }
-.cdc-cloud--back { top: 18%; left: 16%; animation: cdc-cloud-drift 10s ease-in-out infinite alternate; }
-.cdc-cloud--front { top: 30%; left: 62%; width: 34px; opacity: .56; animation: cdc-cloud-drift 8s ease-in-out -2s infinite alternate-reverse; }
+/* Two soft hills stand on the trail line; the mountain is the far horizon, the
+   running path the near one. Everything shares --cdc-trail-bottom, so the
+   figure, the mountain and the trail stay level at any card size. */
+.cdc-horizon { position: absolute; z-index: 0; inset: auto -8% var(--cdc-trail-bottom); height: 46px; border-radius: 46% 54% 0 0 / 92% 74% 0 0; background: var(--cdc-hill); }
+.cdc-horizon::after { content: ''; position: absolute; left: 14%; right: -6%; bottom: 0; height: 26px; border-radius: 58% 42% 0 0 / 100% 82% 0 0; background: var(--cdc-hill-2); }
+.cdc-fuji { position: absolute; z-index: 1; width: var(--cdc-fuji-w); height: auto; right: 8px; bottom: calc(var(--cdc-trail-bottom) - 2px); filter: drop-shadow(0 2px 2px rgba(39, 58, 72, .18)); }
+.cdc-route { stroke: var(--cdc-route); stroke-width: 2; stroke-dasharray: 4 4; stroke-linecap: round; stroke-linejoin: round; }
+.cdc-cloud { position: absolute; z-index: 2; width: 44px; height: auto; opacity: .7; }
+.cdc-cloud--back { top: 20%; left: 14%; animation: cdc-cloud-drift 10s ease-in-out infinite alternate; }
+.cdc-cloud--front { top: 33%; left: 63%; width: 31px; opacity: .5; animation: cdc-cloud-drift 8s ease-in-out -2s infinite alternate-reverse; }
 @keyframes cdc-cloud-drift { from { transform: translateX(-9px); } to { transform: translateX(12px); } }
-.cdc-path { position: absolute; z-index: 2; left: -6%; right: 20%; bottom: 24px; height: 56px; border: 2px solid color-mix(in srgb, #b8874d 52%, transparent); border-bottom: 0; border-radius: 50% 50% 0 0; opacity: .85; }
-.cdc-track { margin: 46px 2px 0; }
-.cdc-track-fill { transition: width .9s cubic-bezier(.2,.72,.25,1); }
-.cdc-runner { z-index: 5; width: 50px; height: 62px; bottom: 2px; transition: left .9s cubic-bezier(.2,.72,.25,1); filter: drop-shadow(0 2px 1px rgba(35, 51, 69, .28)); }
+.cdc-runner { z-index: 5; transition: left .9s cubic-bezier(.2,.72,.25,1); filter: drop-shadow(0 2px 1px rgba(35, 51, 69, .24)); }
 .cdc-runner-svg, .cdc-celebrate-svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .cdc-celebrate-svg { display: none; }
 .cdc-runner-body { animation: cdc-bounce .42s ease-in-out infinite alternate; transform-origin: 24px 40px; }
@@ -216,7 +218,7 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 .cdc:is(.is-during, .is-after) .cdc-runner-svg { display: none; }
 .cdc:is(.is-during, .is-after) .cdc-celebrate-svg { display: block; animation: cdc-arrive .45s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes cdc-arrive { 0% { transform: translateY(5px) scale(.88); } 70% { transform: translateY(-3px) scale(1.04); } 100% { transform: translateY(0) scale(1); } }
-.cdc-fireworks { position: absolute; z-index: 3; right: 22px; top: 44px; width: 105px; height: 86px; overflow: visible; opacity: 0; }
+.cdc-fireworks { position: absolute; z-index: 3; right: 34px; top: 34px; width: 100px; height: 82px; overflow: visible; opacity: 0; }
 .cdc-firework { transform-box: fill-box; transform-origin: center; opacity: 0; fill: none; stroke: #f1a936; stroke-width: 2.3; stroke-linecap: round; }
 .cdc-firework circle { fill: #fff2bb; stroke-width: 1.5; }
 .cdc-firework--two { stroke: #ef83a6; }
@@ -226,14 +228,13 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 .cdc.is-during .cdc-firework--two { animation-delay: .45s; }
 .cdc.is-during .cdc-firework--three { animation-delay: .9s; }
 @keyframes cdc-burst { 0% { opacity: 0; transform: scale(.35); } 18% { opacity: 1; } 68% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(1.16); } }
-.cdc-journey.is-empty .cdc-path { display: none; }
 .cdc-journey.is-empty .cdc-fuji { opacity: .85; }
 @media (max-width: 480px) {
   .cdc-days { font-size: 48px; }
-  .cdc-fuji { width: 44%; right: 2px; bottom: 44px; }
-  .cdc-fireworks { right: 12px; top: 38px; width: 92px; }
-  .cdc-track { margin: 38px 0 0; }
-  .cdc-runner { width: 46px; height: 57px; }
+  .countdown-scene { --cdc-runner-w: 58px; --cdc-runner-h: 67px; --cdc-fuji-w: clamp(160px, 64%, 240px); }
+  .cdc-fuji { right: 4px; }
+  .cdc-fireworks { right: 22px; top: 28px; width: 88px; height: 74px; }
+  .cdc-track { margin: 78px 22px 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .cdc-cloud, .cdc-runner-body, .cdc-celebrate-svg, .cdc.is-during .cdc-firework { animation: none !important; }

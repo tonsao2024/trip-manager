@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="th" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Countdown card — visual check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../src/css/tokens.css">
+<link rel="stylesheet" href="../../src/css/components.css">
+<link rel="stylesheet" href="../../src/css/animations.css">
+<link rel="stylesheet" href="../../src/css/dimension.css">
+<style>
+  body { margin: 0; padding: 24px; background: var(--bg); color: var(--text); }
+  .pv-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 20px; }
+  .pv-bar h1 { margin: 0 16px 0 0; font-size: 16px; font-weight: 600; color: var(--text-strong); }
+  .pv-btn { min-height: 34px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-secondary); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .pv-btn.is-active { color: var(--primary-strong); border-color: color-mix(in srgb, var(--primary-raw) 45%, var(--border)); background: color-mix(in srgb, var(--primary-raw) 8%, var(--surface)); }
+  .pv-grid { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+  .pv-col { display: flex; flex-direction: column; gap: 16px; }
+  .pv-col > .pv-label { color: var(--text-tertiary); font-size: 11px; font-weight: 600; letter-spacing: .06em; }
+  .pv-card { width: 390px; }
+  .pv-card.wide { width: 620px; }
+  .pv-card > .countdown-scene { min-height: 248px; }
+  .pv-card .cdc-head-text { min-width: 0; }   /* tailwind.css is not loaded here */
+</style>
+</head>
+<body>
+<div class="pv-bar">
+  <h1>Countdown card</h1>
+  <button class="pv-btn is-active" data-theme-set="light">สว่าง</button>
+  <button class="pv-btn" data-theme-set="dark">มืด</button>
+  <button class="pv-btn" data-width="390">มือถือ 390</button>
+  <button class="pv-btn" data-width="620">เดสก์ท็อป 620</button>
+  <span style="color:var(--text-tertiary);font-size:12px">การ์ดจริงจาก <code>components/countdown.js</code> + CSS จริง</span>
+</div>
+<div class="pv-grid" id="grid"></div>
+
+<script type="module">
+import { renderCountdownScene } from '../../src/js/components/countdown.js';
+
+const DAY = 86400000;
+const DAY_AGO = d => new Date(Date.now() - d * DAY);
+const DAY_AHEAD = d => new Date(Date.now() + d * DAY);
+
+const header = {
+  title: 'นับถอยหลัง',
+  editHref: '#',
+  editLabel: 'แก้ไขวัน',
+  editAria: 'แก้ไขวันเดินทาง',
+  liveLabel: 'ออกเดินทาง 9 พ.ย. 2026'
+};
+
+const cases = [
+  { label: 'อีก 30 วัน · เริ่มต้นเส้นทาง', opts: { startDate: DAY_AHEAD(30), endDate: DAY_AHEAD(35), createdAt: DAY_AGO(30) } },
+  { label: 'อีก 9 วัน · ใกล้ถึง', opts: { startDate: DAY_AHEAD(9), endDate: DAY_AHEAD(14), createdAt: DAY_AGO(45) } },
+  { label: 'กำลังเดินทาง', opts: { startDate: DAY_AGO(2), endDate: DAY_AHEAD(3), createdAt: DAY_AGO(60) } },
+  { label: 'ยังไม่กำหนดวัน', opts: {} }
+];
+
+const grid = document.getElementById('grid');
+for (const width of [390, 620]) {
+  const col = document.createElement('div');
+  col.className = 'pv-col';
+  col.dataset.width = width;
+  col.innerHTML = `<div class="pv-label">${width === 390 ? 'มือถือ' : 'เดสก์ท็อป'} · ${width}px</div>`;
+  for (const c of cases) {
+    const box = document.createElement('div');
+    box.className = `pv-card${width === 620 ? ' wide' : ''}`;
+    box.innerHTML = renderCountdownScene({ ...c.opts, lang: 'th', header });
+    col.appendChild(box);
+  }
+  grid.appendChild(col);
+}
+
+document.querySelectorAll('[data-theme-set]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.documentElement.dataset.theme = btn.dataset.themeSet;
+    document.querySelectorAll('[data-theme-set]').forEach(b => b.classList.toggle('is-active', b === btn));
+  });
+});
+document.querySelectorAll('[data-width]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-width]').forEach(b => b.classList.toggle('is-active', b === btn));
+    document.querySelectorAll('.pv-col').forEach(col => {
+      col.style.display = col.dataset.width === btn.dataset.width ? 'flex' : 'none';
+    });
+  });
+});
+// start with the phone column
+document.querySelector('[data-width="620"]').click();
+document.querySelector('[data-width="390"]').click();
+</script>
+</body>
+</html>
