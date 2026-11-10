@@ -53,6 +53,7 @@ export function testCountdown() {
   assert(pct && markup.includes(`aria-valuenow="${pct}"`) && markup.includes(`width:${pct}%`), 'runner position, fill and accessible value share progress');
   assert(markup.includes('data-cd-runner') && markup.includes('aria-hidden="true"'), 'decorative runner is present');
   assert(markup.includes('cdc-runner-svg') && markup.includes('cdc-cloud--front') && markup.includes('cdc-fuji'), 'Fuji, the animated traveller and clouds share the journey scene');
+  assert(markup.includes('cdc-route') && !markup.includes('cdc-path'), 'the mountain carries the switchback trail instead of the old standalone arc');
   assert(!markup.includes('นับถอยหลังสู่วันเดินทาง'), 'the redundant countdown-to-departure line is removed');
   const arrival = renderCountdownScene({ startDate: '2026-12-30', endDate: '2027-01-05', now });
   assert(arrival.includes('is-during') && arrival.includes('cdc-fireworks') && arrival.includes('cdc-celebrate-svg'), 'on departure day the traveller switches to the celebration pose with fireworks');

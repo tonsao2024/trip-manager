@@ -733,6 +733,21 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   --cdc-mountain: color-mix(in srgb, var(--primary-raw) 16%, var(--surface));
   --cdc-snow: var(--surface);
   --cdc-cloud: color-mix(in srgb, var(--primary-raw) 20%, #ffffff);
+  /* The scene is built on ONE horizon: the trail is the ground line, the hills
+     and the mountain stand on it and the traveller runs along it. The four
+     numbers below keep person ↔ mountain ↔ frame in proportion — scale the
+     scene from here, not from the individual parts.
+     --cdc-trail-bottom is the trail's top edge measured from the card's bottom:
+     12px padding + the 12px date line (×1.6) + its 6px gap. The hills and the
+     mountain are pinned to it, so they rest on the line instead of floating. */
+  --cdc-trail-bottom: 43px;
+  --cdc-fuji-w: clamp(112px, 38%, 205px);
+  --cdc-runner-w: 32px;
+  --cdc-runner-h: 37px;
+  --cdc-hill: color-mix(in srgb, #9ac9a6 26%, transparent);
+  --cdc-hill-2: color-mix(in srgb, #74b993 20%, transparent);
+  --cdc-route: color-mix(in srgb, #4a7f9e 42%, transparent);
+  --cdc-tick: color-mix(in srgb, var(--primary-raw) 30%, transparent);
   position: relative;
   overflow: hidden;
   isolation: isolate;
@@ -751,6 +766,10 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   --cdc-mountain: color-mix(in srgb, var(--primary-raw) 34%, var(--surface));
   --cdc-snow: color-mix(in srgb, #ffffff 84%, var(--surface));
   --cdc-cloud: color-mix(in srgb, #b9d7ed 26%, var(--surface));
+  --cdc-hill: color-mix(in srgb, #2f7f66 30%, transparent);
+  --cdc-hill-2: color-mix(in srgb, #3f8a70 20%, transparent);
+  --cdc-route: color-mix(in srgb, #dceffb 38%, transparent);
+  --cdc-tick: color-mix(in srgb, #bfe3f5 28%, transparent);
   border-color: color-mix(in srgb, #8cc0de 26%, var(--border));
   background: linear-gradient(180deg, #131f30 0%, #1a3047 34%, #223e56 58%, #33485c 74%, color-mix(in srgb, #c98a4b 26%, #243447) 92%, #141e2b 100%);
 }
@@ -793,17 +812,49 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 .cdc-caption { margin: 8px 0 0; font-size: 14px; color: var(--text-secondary); }
 [data-theme="dark"] .cdc-caption, [data-theme="dark"] .cdc-sub { color: #c4d6e2; }
 .cdc-spacer { position: relative; z-index: 0; flex: 1 1 auto; min-height: 18px; }
+/* The trail: the countdown's ground line. Behind the traveller it is a solid
+   route; ahead of them the same route is dotted, so “how far is left” reads as
+   distance on a map instead of as a filled meter. Hairline ticks mark the
+   quarters of the journey and sit above the line, never on it. */
 .cdc-track {
   position: relative;
   z-index: 1;
-  height: 5px;
+  height: 6px;
+  margin: 44px 16px 0;
   border-radius: 999px;
-  background: color-mix(in srgb, #ffffff 72%, transparent);
-  box-shadow: 0 1px 2px rgba(31, 59, 75, .22);
-  margin-top: 4px;
+  background-color: color-mix(in srgb, #ffffff 58%, transparent);
+  background-image: repeating-linear-gradient(90deg,
+    color-mix(in srgb, #4a7f9e 52%, transparent) 0 4px,
+    transparent 4px 10px);
+  background-size: 100% 2px;
+  background-position: 0 50%;
+  background-repeat: repeat-x;
+  box-shadow: 0 1px 2px rgba(31, 59, 75, .18);
 }
-[data-theme="dark"] .cdc-track { background: color-mix(in srgb, #ffffff 22%, transparent); box-shadow: 0 1px 2px rgba(0, 0, 0, .45); }
-.cdc-track-fill { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: linear-gradient(90deg, #4fae94, #3f96d6); }
+.cdc-track::before {
+  content: '';
+  position: absolute;
+  inset: -5px 0 auto;
+  height: 4px;
+  background-image:
+    linear-gradient(90deg, transparent calc(25% - 0.5px), var(--cdc-tick) calc(25% - 0.5px) calc(25% + 0.5px), transparent calc(25% + 0.5px)),
+    linear-gradient(90deg, transparent calc(50% - 0.5px), var(--cdc-tick) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    linear-gradient(90deg, transparent calc(75% - 0.5px), var(--cdc-tick) calc(75% - 0.5px) calc(75% + 0.5px), transparent calc(75% + 0.5px));
+}
+[data-theme="dark"] .cdc-track {
+  background-color: color-mix(in srgb, #ffffff 20%, transparent);
+  background-image: repeating-linear-gradient(90deg,
+    color-mix(in srgb, #bfe3f5 44%, transparent) 0 4px,
+    transparent 4px 10px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .45);
+}
+.cdc-track-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4fae94, #3f96d6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .38);
+}
 .cdc-ends {
   position: relative;
   z-index: 1;
