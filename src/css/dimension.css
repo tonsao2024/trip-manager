@@ -231,10 +231,10 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 .cdc-journey.is-empty .cdc-fuji { opacity: .85; }
 @media (max-width: 480px) {
   .cdc-days { font-size: 48px; }
-  .countdown-scene { --cdc-runner-w: 30px; --cdc-runner-h: 35px; --cdc-fuji-w: clamp(104px, 38%, 168px); }
+  .countdown-scene { --cdc-runner-w: 50px; --cdc-runner-h: 58px; --cdc-fuji-w: clamp(140px, 52%, 200px); }
   .cdc-fuji { right: 4px; }
   .cdc-fireworks { right: 22px; top: 28px; width: 88px; height: 74px; }
-  .cdc-track { margin: 38px 15px 0; }
+  .cdc-track { margin: 68px 20px 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .cdc-cloud, .cdc-runner-body, .cdc-celebrate-svg, .cdc.is-during .cdc-firework { animation: none !important; }
