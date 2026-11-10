@@ -1,4 +1,4 @@
-import { computeCountdown, countdownHeadline, renderCountdownScene } from '../../src/js/components/countdown.js';
+import { computeCountdown, countdownHeadline, renderCountdownScene, countdownWeatherState, setCountdownWeather } from '../../src/js/components/countdown.js';
 
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
@@ -53,8 +53,14 @@ export function testCountdown() {
   assert(pct && markup.includes(`aria-valuenow="${pct}"`) && markup.includes(`width:${pct}%`), 'runner position, fill and accessible value share progress');
   assert(markup.includes('data-cd-runner') && markup.includes('aria-hidden="true"'), 'decorative runner is present');
   assert(markup.includes('cdc-runner-svg') && markup.includes('cdc-cloud--front') && markup.includes('cdc-fuji'), 'Fuji, the animated traveller and clouds share the journey scene');
+  assert(['sun', 'cloud', 'rain', 'snow', 'storm'].every(state => markup.includes(`cdc-outfit--${state}`)), 'both poses include forecast-specific outfits');
+  assert((markup.match(/class="cdc-umbrella"/g) || []).length === 2, 'rain umbrella is available in both traveller poses');
+  assert(markup.includes('cdc-cloud--extra'), 'partly cloudy has an additional cloud');
+  assert(markup.includes('cdc-sun') && markup.includes('cdc-moon'), 'decorative sky includes both theme-specific celestial bodies');
   assert(markup.includes('cdc-route') && !markup.includes('cdc-path'), 'the mountain carries the switchback trail instead of the old standalone arc');
   assert(!markup.includes('นับถอยหลังสู่วันเดินทาง'), 'the redundant countdown-to-departure line is removed');
+  const distant = renderCountdownScene({ startDate: '2100-01-01', now: new Date('2026-01-01T00:00:00Z') });
+  assert(distant.includes('cdc-figure is-long'), 'long countdowns use the compact number style');
   const arrival = renderCountdownScene({ startDate: '2026-12-30', endDate: '2027-01-05', now });
   assert(arrival.includes('is-during') && arrival.includes('cdc-fireworks') && arrival.includes('cdc-celebrate-svg'), 'on departure day the traveller switches to the celebration pose with fireworks');
   assert(!renderCountdownScene({}).includes('data-cd-runner'), 'no date does not show misleading progress');
@@ -90,4 +96,19 @@ export function testCountdownSubDayFigures() {
   // is already “during”, never a 0-day countdown with hours left.
   const same = computeCountdown({ startDate: '2027-01-10', timezone: 'Asia/Bangkok', now: new Date('2027-01-10T03:00:00Z') });
   assert(same.phase === 'during' && same.days === 0, 'the departure day itself is “during the trip”');
+}
+
+export function testCountdownWeather() {
+  assert(countdownWeatherState({ tone: 'cloud', icon: 'cloud-sun' }) === 'partly-cloudy', 'partly cloudy keeps the sun');
+  for (const tone of ['sun', 'rain', 'snow', 'storm']) assert(countdownWeatherState({ tone }) === tone, `${tone} maps to the scene`);
+  assert(countdownWeatherState(null) === 'default' && countdownWeatherState({ tone: 'unknown' }) === 'default', 'missing or unknown weather falls back');
+  const label = { textContent: '', hidden: true };
+  const scene = { dataset: {}, querySelector: () => label };
+  const day = { date: '2027-01-01', tone: 'rain', labelTh: 'ฝนเล็กน้อย', labelEn: 'Light rain' };
+  setCountdownWeather(scene, day, 'โตเกียว', 'th', '2027-01-01');
+  assert(scene.dataset.weather === 'rain' && label.textContent.includes('โตเกียว') && !label.hidden, 'forecast and city are shown together');
+  setCountdownWeather(scene, day, 'Tokyo', 'en', '2027-01-02');
+  assert(scene.dataset.weather === 'default' && label.hidden && !label.textContent, 'a stale date cannot masquerade as today');
+  setCountdownWeather(scene, null, 'Tokyo', 'en', '2027-01-01');
+  assert(scene.dataset.weather === 'default' && label.hidden, 'loading or failure clears prior weather');
 }
