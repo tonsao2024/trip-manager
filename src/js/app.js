@@ -51,7 +51,7 @@ import {
 import { observeA11y } from './utils/a11y.js';
 import { showBottomSheet, showModal } from './components/modal.js';
 import { confirmAction, promptAction } from './components/confirm.js';
-import { mountCountdown, computeCountdown, countdownHeadline } from './components/countdown.js';
+import { mountCountdown, computeCountdown, countdownHeadline, setCountdownWeather } from './components/countdown.js?v=2';
 import { initReveal, countUp, confetti, celebrateFrom, restagger } from './components/effects.js';
 import { resolvePermissions, clearPermissionsCache } from './utils/permissions.js';
 import { cacheForget } from './utils/datacache.js';
@@ -12814,6 +12814,9 @@ async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
   let loadFailed = false;
   let days = [];
   const weatherRequest = createLatestRequestGuard();
+  // Refresh daily data while the dashboard stays open, and stop when leaving it.
+  const refreshTimer = setInterval(() => { if (el.isConnected) loadActive(); }, 30 * 60 * 1000);
+  document.addEventListener('routechange', () => { clearInterval(refreshTimer); weatherRequest.invalidate(); }, { once: true });
 
   async function loadActive() {
     const isCurrent = weatherRequest.begin();
@@ -12842,6 +12845,8 @@ async function paintWeatherWidget(tripId, trip, items = [], lang = getLang()) {
     const city = cities[activeIdx];
     const today = days[0];
     const tone = weatherTone(today?.tone);
+    const scene = document.querySelector('#countdown-scene [data-cd-root]');
+    setCountdownWeather(scene, loading ? null : today, city?.name, lang, dayjs().format('YYYY-MM-DD'));
     const tip = weatherTip(days, lang);
     el.innerHTML = `
       <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">

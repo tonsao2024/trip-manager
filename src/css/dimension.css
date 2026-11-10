@@ -191,7 +191,12 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
    .cdc-journey is an absolute full-bleed backdrop behind the content. */
 .cdc-top { align-items: center; }
 .cdc-main { flex: 1 1 auto; }
-.cdc-days { font-size: clamp(52px, 6vw, 64px); font-weight: 600; }
+.cdc-figure { position: relative; width: fit-content; max-width: 100%; }
+.cdc-figure:not(.is-text)::after { content: ''; position: absolute; left: 2px; bottom: -3px; width: 38px; height: 3px; border-radius: 99px; background: linear-gradient(90deg, #4fae94, #3f96d6); }
+.cdc-figure:not(.is-text) .cdc-days { display: inline-block; font-size: clamp(78px, 8vw, 96px); font-weight: 700; letter-spacing: -.045em; line-height: .95; animation: cdc-number-enter .6s cubic-bezier(.2,.72,.25,1) both; }
+.cdc-figure.is-long .cdc-days { font-size: clamp(48px, 6vw, 66px); letter-spacing: -.035em; }
+.cdc-unit { font-size: 18px; }
+@keyframes cdc-number-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .cdc-journey {
   --cdc-jacket: color-mix(in srgb, var(--primary-raw) 82%, #1754aa);
   --cdc-foothill: color-mix(in srgb, #74b993 30%, transparent);
@@ -203,13 +208,63 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
    figure, the mountain and the trail stay level at any card size. */
 .cdc-horizon { position: absolute; z-index: 0; inset: auto -8% var(--cdc-trail-bottom); height: 46px; border-radius: 46% 54% 0 0 / 92% 74% 0 0; background: var(--cdc-hill); }
 .cdc-horizon::after { content: ''; position: absolute; left: 14%; right: -6%; bottom: 0; height: 26px; border-radius: 58% 42% 0 0 / 100% 82% 0 0; background: var(--cdc-hill-2); }
-.cdc-fuji { position: absolute; z-index: 1; width: var(--cdc-fuji-w); height: auto; right: 8px; bottom: calc(var(--cdc-trail-bottom) - 2px); filter: drop-shadow(0 2px 2px rgba(39, 58, 72, .18)); }
+.cdc-fuji { position: absolute; z-index: 1; width: var(--cdc-fuji-w); height: auto; max-height: 76%; right: -15%; bottom: calc(var(--cdc-trail-bottom) - 2px); filter: drop-shadow(0 2px 2px rgba(39, 58, 72, .18)); }
 .cdc-route { stroke: var(--cdc-route); stroke-width: 2; stroke-dasharray: 4 4; stroke-linecap: round; stroke-linejoin: round; }
+/* Decorative day/night sky follows the chosen theme, not the forecast. */
+.cdc-sun, .cdc-moon { position: absolute; z-index: 0; top: 16%; right: 12%; width: clamp(48px, 12%, 70px); height: auto; }
+.cdc-sun { animation: cdc-sun-turn 24s linear infinite; }
+.cdc-moon { display: none; }
+[data-theme="dark"] .cdc-sun { display: none; }
+[data-theme="dark"] .cdc-moon { display: block; }
+@keyframes cdc-sun-turn { to { transform: rotate(360deg); } }
 .cdc-cloud { position: absolute; z-index: 2; width: 44px; height: auto; opacity: .7; }
-.cdc-cloud--back { top: 20%; left: 14%; animation: cdc-cloud-drift 10s ease-in-out infinite alternate; }
-.cdc-cloud--front { top: 33%; left: 63%; width: 31px; opacity: .5; animation: cdc-cloud-drift 8s ease-in-out -2s infinite alternate-reverse; }
+.cdc-cloud--back { top: 31%; left: 38%; animation: cdc-cloud-drift 10s ease-in-out infinite alternate; }
+.cdc-cloud--front { top: 24%; left: 72%; width: 31px; opacity: .5; animation: cdc-cloud-drift 8s ease-in-out -2s infinite alternate-reverse; }
+.cdc-cloud--extra { display: none; top: 40%; left: 52%; width: 64px; opacity: .7; animation: cdc-cloud-drift 12s ease-in-out -4s infinite alternate; }
 @keyframes cdc-cloud-drift { from { transform: translateX(-9px); } to { transform: translateX(12px); } }
+/* Daily forecast effects are decorative; the label identifies the selected city. */
+.cdc-weather-label { margin: 5px 0 0; max-width: 55%; font-size: 11px; line-height: 1.35; color: var(--text-secondary); }
+.cdc-weather-label[hidden] { display: none; }
+[data-theme="dark"] .cdc-weather-label { color: #c4d6e2; }
+.cdc-weather-sheen { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.cdc[data-weather="sun"] .cdc-weather-sheen { background: radial-gradient(ellipse at 85% 19%, rgba(255, 201, 94, .28), transparent 48%); }
+.cdc:is([data-weather="cloud"], [data-weather="rain"], [data-weather="snow"], [data-weather="storm"]) .cdc-weather-sheen { background: linear-gradient(180deg, rgba(83, 112, 140, .20), transparent 75%); }
+.cdc[data-weather="storm"] .cdc-weather-sheen { background: linear-gradient(180deg, rgba(42, 58, 89, .46), rgba(74, 100, 129, .22) 60%, transparent); }
+[data-theme="dark"] .cdc-weather-sheen { opacity: .55; }
+.cdc[data-weather="sun"] .cdc-cloud { display: none; }
+.cdc[data-weather="partly-cloudy"] .cdc-weather-sheen { background: radial-gradient(ellipse at 85% 19%, rgba(255, 201, 94, .18), transparent 48%); }
+.cdc[data-weather="partly-cloudy"] .cdc-cloud--front { top: 22%; left: auto; right: 6%; width: clamp(75px, 19%, 110px); opacity: .95; }
+.cdc[data-weather="partly-cloudy"] .cdc-cloud--back { top: 34%; left: 48%; width: clamp(62px, 16%, 90px); opacity: .85; }
+.cdc[data-weather="partly-cloudy"] .cdc-cloud--extra { display: block; }
+.cdc:is([data-weather="sun"], [data-weather="partly-cloudy"]) .cdc-sun { filter: drop-shadow(0 0 12px rgba(255, 190, 65, .7)); }
+.cdc:is([data-weather="cloud"], [data-weather="rain"], [data-weather="snow"], [data-weather="storm"]) :is(.cdc-sun, .cdc-moon) { opacity: .15; }
+.cdc:is([data-weather="cloud"], [data-weather="rain"], [data-weather="snow"], [data-weather="storm"]) .cdc-cloud { width: clamp(80px, 21%, 125px); opacity: .92; filter: drop-shadow(0 5px 8px rgba(57, 79, 108, .18)); }
+.cdc:is([data-weather="rain"], [data-weather="storm"]) .cdc-cloud { --cdc-cloud: #a7b9cc; }
+[data-theme="dark"] .cdc:is([data-weather="rain"], [data-weather="storm"]) .cdc-cloud { --cdc-cloud: #697e98; }
+.cdc-precip { display: none; position: absolute; inset: 20% 0 auto; width: 100%; height: 62%; z-index: 2; pointer-events: none; mask-image: linear-gradient(90deg, transparent 0%, rgba(0,0,0,.25) 30%, #000 60%); }
+.cdc-rain { fill: none; stroke: #629bbc; stroke-width: 2.5; stroke-linecap: round; opacity: .75; }
+.cdc-snow { fill: #fff; opacity: .95; filter: drop-shadow(0 1px 2px #8199a8); }
+.cdc:is([data-weather="rain"], [data-weather="storm"]) .cdc-rain { display: block; animation: cdc-rain-fall 1.5s linear infinite; }
+.cdc[data-weather="storm"] .cdc-rain { stroke: #487d9d; stroke-width: 3.4; opacity: .9; animation: cdc-storm-rain .7s linear infinite; }
+@keyframes cdc-storm-rain { from { transform: translate(24px, -18px) skewX(-15deg); } to { transform: translate(-15px, 22px) skewX(-15deg); } }
+.cdc[data-weather="snow"] .cdc-snow { display: block; animation: cdc-snow-fall 5s ease-in-out infinite alternate; }
+@keyframes cdc-rain-fall { from { transform: translate(8px, -20px); } to { transform: translate(-8px, 20px); } }
+@keyframes cdc-snow-fall { from { transform: translate(-8px, -12px); } to { transform: translate(10px, 18px); } }
+.cdc-storm-wind { display: none; position: absolute; z-index: 2; inset: 25% 0 auto; width: 100%; height: 46%; fill: none; stroke: #a8d1dd; stroke-width: 2; stroke-linecap: round; opacity: .8; mask-image: linear-gradient(90deg, transparent 20%, #000 60%); }
+.cdc[data-weather="storm"] .cdc-storm-wind { display: block; animation: cdc-storm-gust 3s ease-in-out infinite alternate; }
+@keyframes cdc-storm-gust { from { transform: translateX(15px); opacity: .35; } to { transform: translateX(-15px); opacity: .9; } }
+.cdc-lightning { display: none; position: absolute; z-index: 2; top: 31%; right: 13%; width: clamp(24px, 6%, 36px); filter: drop-shadow(0 0 8px rgba(255, 209, 99, .7)); }
+.cdc[data-weather="storm"] .cdc-lightning { display: block; animation: cdc-lightning-glow 5s ease-in-out infinite alternate; }
+@keyframes cdc-lightning-glow { from { opacity: .55; } to { opacity: 1; } }
+
 .cdc-runner { z-index: 5; transition: left .9s cubic-bezier(.2,.72,.25,1); filter: drop-shadow(0 2px 1px rgba(35, 51, 69, .24)); }
+.cdc-outfit, .cdc-umbrella { display: none; }
+.cdc[data-weather="rain"] .cdc-umbrella { display: inline; }
+.cdc:is([data-weather="sun"], [data-weather="partly-cloudy"]) .cdc-outfit--sun,
+.cdc[data-weather="cloud"] .cdc-outfit--cloud,
+.cdc[data-weather="rain"] .cdc-outfit--rain,
+.cdc[data-weather="storm"] .cdc-outfit--storm,
+.cdc[data-weather="snow"] .cdc-outfit--snow { display: inline; }
 .cdc-runner-svg, .cdc-celebrate-svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .cdc-celebrate-svg { display: none; }
 .cdc-runner-body { animation: cdc-bounce .42s ease-in-out infinite alternate; transform-origin: 24px 40px; }
@@ -230,14 +285,16 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 @keyframes cdc-burst { 0% { opacity: 0; transform: scale(.35); } 18% { opacity: 1; } 68% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(1.16); } }
 .cdc-journey.is-empty .cdc-fuji { opacity: .85; }
 @media (max-width: 480px) {
-  .cdc-days { font-size: 48px; }
-  .countdown-scene { --cdc-runner-w: 58px; --cdc-runner-h: 67px; --cdc-fuji-w: clamp(160px, 64%, 240px); }
-  .cdc-fuji { right: 4px; }
+  .cdc-figure:not(.is-text) .cdc-days { font-size: 72px; }
+  .cdc-figure.is-long:not(.is-text) .cdc-days { font-size: 48px; }
+  .cdc-unit { font-size: 16px; }
+  .countdown-scene { --cdc-runner-w: 120px; --cdc-runner-h: 140px; --cdc-fuji-w: 110%; }
+  .cdc-fuji { right: -12%; }
   .cdc-fireworks { right: 22px; top: 28px; width: 88px; height: 74px; }
-  .cdc-track { margin: 78px 22px 0; }
+  .cdc-track { margin: 138px 60px 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cdc-cloud, .cdc-runner-body, .cdc-celebrate-svg, .cdc.is-during .cdc-firework { animation: none !important; }
+  .cdc-figure:not(.is-text) .cdc-days, .cdc-sun, .cdc-cloud, .cdc-precip, .cdc-lightning, .cdc-storm-wind, .cdc-runner-body, .cdc-celebrate-svg, .cdc.is-during .cdc-firework { animation: none !important; }
   .cdc-track-fill, .cdc-runner { transition: none !important; }
   .cdc.is-during .cdc-firework { opacity: .72; }
 }

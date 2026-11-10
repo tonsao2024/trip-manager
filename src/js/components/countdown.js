@@ -142,14 +142,43 @@ function trackEnds(c, lang = 'th') {
     `${th ? 'ออกเดินทาง' : 'Departure'} ${shortDate(c.startDate, lang, c.timezone)}`];
 }
 
+/** Map the daily forecast to a small set of decorative sky states. */
+export function countdownWeatherState(day) {
+  if (!day || day.missing) return 'default';
+  if (day.tone === 'sun') return 'sun';
+  if (day.tone === 'cloud') return day.icon === 'cloud-sun' ? 'partly-cloudy' : 'cloud';
+  return ['rain', 'snow', 'storm'].includes(day.tone) ? day.tone : 'default';
+}
+
+/** Apply only a confirmed forecast for today. A missing forecast clears old city data. */
+export function setCountdownWeather(scene, day, city, lang = 'th', today = '') {
+  if (!scene) return;
+  const state = day && day.date === today ? countdownWeatherState(day) : 'default';
+  scene.dataset.weather = state;
+  const label = scene.querySelector('[data-cd-weather-label]');
+  if (!label) return;
+  const description = lang === 'th' ? day?.labelTh : day?.labelEn;
+  label.textContent = state !== 'default' && city && description
+    ? `${lang === 'th' ? 'พยากรณ์วันนี้' : "Today's forecast"} · ${city} · ${description}` : '';
+  label.hidden = !label.textContent;
+}
+
 /** A flat silhouette of the mountain — one tint of the accent, a paper-white cap
  *  and the switchback trail that climbs its flank. Rendered as a full-bleed
  *  backdrop behind the card's content (aria-hidden). */
 function journeyArtwork({ hasDate } = {}) {
   return `<div class="cdc-journey${hasDate ? '' : ' is-empty'}" aria-hidden="true">
     <div class="cdc-horizon"></div>
+    <svg class="cdc-precip cdc-rain" viewBox="0 0 400 210" preserveAspectRatio="none" focusable="false"><path d="M35 18l-9 21 M105 35l-9 21 M175 12l-9 21 M245 30l-9 21 M320 13l-9 21 M390 28l-9 21 M65 105l-9 21 M140 122l-9 21 M220 100l-9 21 M295 118l-9 21 M365 105l-9 21 M54 55l-9 21 M145 75l-9 21 M210 63l-9 21 M280 70l-9 21 M350 62l-9 21 M24 155l-9 21 M110 170l-9 21 M185 153l-9 21 M260 166l-9 21 M335 155l-9 21 M398 176l-9 21"/></svg>
+    <svg class="cdc-precip cdc-snow" viewBox="0 0 400 210" preserveAspectRatio="none" focusable="false"><g><circle cx="35" cy="18" r="3"/><circle cx="105" cy="35" r="3"/><circle cx="175" cy="12" r="3"/><circle cx="245" cy="30" r="3"/><circle cx="320" cy="13" r="3"/><circle cx="390" cy="28" r="3"/><circle cx="65" cy="105" r="3"/><circle cx="140" cy="122" r="3"/><circle cx="220" cy="100" r="3"/><circle cx="295" cy="118" r="3"/><circle cx="365" cy="105" r="3"/><circle cx="55" cy="60" r="2"/><circle cx="145" cy="75" r="2"/><circle cx="210" cy="63" r="2.5"/><circle cx="280" cy="70" r="2"/><circle cx="350" cy="62" r="2.5"/><circle cx="24" cy="155" r="2"/><circle cx="110" cy="170" r="3"/><circle cx="185" cy="153" r="2"/><circle cx="260" cy="166" r="3"/><circle cx="335" cy="155" r="2"/><circle cx="398" cy="176" r="3"/></g></svg>
+    <div class="cdc-weather-sheen"></div>
+    <svg class="cdc-storm-wind" viewBox="0 0 320 150" preserveAspectRatio="none" focusable="false"><path d="M125 22h104q18 0 18-12t-17-8 M176 54h104q19 0 19-12t-18-8 M110 103h104q18 0 18 11t-17 10 M240 130h60"/></svg>
+    <svg class="cdc-lightning" viewBox="0 0 42 72" focusable="false"><path d="M24 2 5 39h14l-3 31 22-42H23Z" fill="#ffe5a1" stroke="#d69c46" stroke-width="2" stroke-linejoin="round"/></svg>
+    <svg class="cdc-sun" viewBox="0 0 64 64" focusable="false"><g fill="none" stroke="#f2a93b" stroke-width="3" stroke-linecap="round"><path d="M32 3v6M32 55v6M3 32h6M55 32h6M11.5 11.5l4.2 4.2M48.3 48.3l4.2 4.2M52.5 11.5l-4.2 4.2M15.7 48.3l-4.2 4.2"/></g><circle cx="32" cy="32" r="19" fill="#ffce64"/></svg>
+    <svg class="cdc-moon" viewBox="0 0 64 64" focusable="false"><path d="M47 49A24 24 0 0 1 24 7a23 23 0 1 0 23 42Z" fill="#f8df9d"/><circle cx="46" cy="13" r="2" fill="#f8df9d"/><circle cx="55" cy="24" r="1.5" fill="#f8df9d"/></svg>
     <svg class="cdc-cloud cdc-cloud--back" viewBox="0 0 54 24" focusable="false"><path d="M8 20a7 7 0 0 1-1-14 10 10 0 0 1 19-1 8 8 0 0 1 12 7 6 6 0 0 1-1 12H8Z" fill="var(--cdc-cloud)"/></svg>
     <svg class="cdc-cloud cdc-cloud--front" viewBox="0 0 54 24" focusable="false"><path d="M8 20a7 7 0 0 1-1-14 10 10 0 0 1 19-1 8 8 0 0 1 12 7 6 6 0 0 1-1 12H8Z" fill="var(--cdc-cloud)"/></svg>
+    <svg class="cdc-cloud cdc-cloud--extra" viewBox="0 0 54 24" focusable="false"><path d="M8 20a7 7 0 0 1-1-14 10 10 0 0 1 19-1 8 8 0 0 1 12 7 6 6 0 0 1-1 12H8Z" fill="var(--cdc-cloud)"/></svg>
     <svg class="cdc-fuji" viewBox="0 0 180 100" focusable="false">
       <path d="M2 98 C 42 91, 67 58, 90 9 C 113 58, 138 91, 178 98 Z" fill="var(--cdc-mountain)"/>
       <path class="cdc-route" d="M150 96 L130 86 L136 78 L122 68 L114 58 L106 51" fill="none"/>
@@ -162,6 +191,36 @@ function journeyArtwork({ hasDate } = {}) {
       <g class="cdc-firework cdc-firework--three"><path d="M48 68V58M48 78V88M38 73H28M58 73H68M41 66 36 61M55 80 60 85M55 66 60 61M41 80 36 85"/><circle cx="48" cy="73" r="2"/></g>
     </svg>` : ''}
   </div>`;
+}
+
+/** Accessories are grouped by forecast and remain decorative in both poses. */
+function travellerOutfits(celebrating = false) {
+  return `<g${celebrating ? ' transform="translate(-2 -1)"' : ''}>
+    <g class="cdc-outfit cdc-outfit--sun">
+      <path d="M19 10 Q20 3 27 3 Q33 3 35 10Z" fill="#f2a53b" stroke="#c77724" stroke-width=".7"/>
+      <path d="M18 10 Q26 12 37 10" fill="none" stroke="#c77724" stroke-width="2" stroke-linecap="round"/>
+      <path d="M26 12h4.3v2.5H26z M31 12h4v2.5h-4z" fill="#283b51" stroke="#283b51" stroke-width=".5"/>
+    </g>
+    <g class="cdc-outfit cdc-outfit--cloud">
+      <path d="M23 21 Q18 22 19 31 L23 37 L31 34 L29 24 Q28 20 23 21Z" fill="#6f9eb1"/>
+      <path d="M24 22l3 13" stroke="#d9eef0" stroke-width="1"/>
+    </g>
+    <g class="cdc-outfit cdc-outfit--rain">
+      <path d="M20 12 Q18 3 27 3 Q36 3 35 13 L32 11 Q31 7 27 7 Q22 7 21 13Z" fill="#e8a923" stroke="#b87917" stroke-width=".8"/>
+      <path d="M23 20 Q18 21 18 30 L21 38 L33 35 L30 23 Q28 20 23 20Z" fill="#f4be32" stroke="#bc861c" stroke-width=".7"/>
+      <path d="M24 22l3 13" stroke="#fff0b3" stroke-width="1"/>
+    </g>
+    <g class="cdc-outfit cdc-outfit--storm">
+      <path d="M20 12 Q18 3 27 3 Q36 3 35 13 L32 11 Q31 7 27 7 Q22 7 21 13Z" fill="#3c6482" stroke="#26465c" stroke-width=".8"/>
+      <path d="M23 20 Q18 21 17 30 L20 39 L34 36 L30 23 Q28 20 23 20Z" fill="#426e8b" stroke="#294d63" stroke-width=".7"/>
+      <path d="M24 22l3 13 M20 33l11-3" stroke="#b8d7dd" stroke-width="1"/>
+    </g>
+    <g class="cdc-outfit cdc-outfit--snow">
+      <path d="M20 10 Q20 3 27 3 Q34 3 35 10Z" fill="#a74d62"/><path d="M19 10h16" stroke="#e9b4b6" stroke-width="2" stroke-linecap="round"/><circle cx="27" cy="3" r="2" fill="#f8dfd7"/>
+      <path d="M22 20 Q17 21 18 31 L21 38 L33 35 L30 23 Q28 20 22 20Z" fill="#5c80a0" stroke="#3e607f" stroke-width=".7"/>
+      <path d="M21 20 Q26 23 32 20 L32 23 Q27 25 21 23Z M26 23l-1 8 3 1 1-8Z" fill="#d96468"/>
+    </g>
+  </g>`;
 }
 
 /** Decorative traveller; the limbs animate independently while the marker follows progress. */
@@ -177,8 +236,10 @@ function runnerMark() {
         <circle cx="27" cy="13" r="7" fill="#f3bd91"/>
         <path d="M20 13 Q19 5 27 5 Q34 5 34 12 Q30 10 27 10 Q25 14 20 13Z" fill="#263449"/>
         <circle cx="30" cy="13" r=".8" fill="#263449"/>
+        ${travellerOutfits()}
         <path d="M27 35 L33 42 L39 41" class="cdc-runner-leg cdc-runner-leg--front"/>
         <path d="M27 23 L32 29 L37 26" class="cdc-runner-arm cdc-runner-arm--front"/>
+        <g class="cdc-umbrella"><path d="M35 0 L37 26" fill="none" stroke="#344a5d" stroke-width="1.4" stroke-linecap="round"/><path d="M18 4 Q20 -7 34 -8 Q47 -8 49 4 Q45 1 41 4 Q37 1 33 4 Q29 1 25 4 Q21 1 18 4Z" fill="#ed6f77" stroke="#b44e60" stroke-width="1"/><path d="M34 -8 Q27 -4 25 4 M34 -8 Q39 -4 41 4" fill="none" stroke="#ffd6ce" stroke-width=".8"/></g>
       </g>
     </svg>
     <svg class="cdc-celebrate-svg" viewBox="0 0 48 56" focusable="false">
@@ -188,6 +249,8 @@ function runnerMark() {
       <path d="M20 23 12 14 8 8M30 23 37 14 40 8" fill="none" stroke="#f3bd91" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
       <circle cx="25" cy="12" r="6.5" fill="#f3bd91"/>
       <path d="M19 12Q18 4 25 4 33 4 32 12 28 9 25 9 23 13 19 12Z" fill="#263449"/>
+      ${travellerOutfits(true)}
+      <g class="cdc-umbrella"><path d="M37 -12 L40 8" fill="none" stroke="#344a5d" stroke-width="1.4" stroke-linecap="round"/><path d="M20 -9 Q22 -20 36 -21 Q49 -21 51 -9 Q47 -12 43 -9 Q39 -12 35 -9 Q31 -12 27 -9 Q23 -12 20 -9Z" fill="#ed6f77" stroke="#b44e60" stroke-width="1"/><path d="M36 -21 Q29 -17 27 -9 M36 -21 Q41 -17 43 -9" fill="none" stroke="#ffd6ce" stroke-width=".8"/></g>
     </svg>
   </span>`;
 }
@@ -214,11 +277,12 @@ export function renderCountdownScene({ startDate, endDate, createdAt, timezone, 
     </div>` : ''}
     <div class="cdc-top">
       <div class="cdc-main">
-        <div class="cdc-figure${f.text ? ' is-text' : ''}">
+        <div class="cdc-figure${f.text ? ' is-text' : ''}${!f.text && f.value.length > 3 ? ' is-long' : ''}">
           <span class="cdc-days" data-cd-days>${f.value}</span>
           ${f.unit ? `<span class="cdc-unit" data-cd-unit>${f.unit}</span>` : '<span class="cdc-unit" data-cd-unit></span>'}
         </div>
         <p class="cdc-caption" data-cd-eta>${f.caption}</p>
+        <p class="cdc-weather-label" data-cd-weather-label hidden></p>
       </div>
     </div>
     ${journeyArtwork({ hasDate: !!c.startDate })}
@@ -269,6 +333,7 @@ export function mountCountdown(rootId, { startDate, endDate, createdAt, timezone
       set('[data-cd-right]', right);
     }
     scene.querySelector('.cdc-figure')?.classList.toggle('is-text', f.text);
+    scene.querySelector('.cdc-figure')?.classList.toggle('is-long', !f.text && f.value.length > 3);
   };
 
   // The figure is in days (hours on the last day) — once a minute is plenty.

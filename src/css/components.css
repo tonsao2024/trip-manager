@@ -741,9 +741,9 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
      12px padding + the 12px date line (×1.6) + its 6px gap. The hills and the
      mountain are pinned to it, so they rest on the line instead of floating. */
   --cdc-trail-bottom: 43px;
-  --cdc-fuji-w: clamp(170px, 64%, 300px);
-  --cdc-runner-w: 64px;
-  --cdc-runner-h: 75px;
+  --cdc-fuji-w: 116%;
+  --cdc-runner-w: 158px;
+  --cdc-runner-h: 184px;
   --cdc-hill: color-mix(in srgb, #9ac9a6 26%, transparent);
   --cdc-hill-2: color-mix(in srgb, #74b993 20%, transparent);
   --cdc-route: color-mix(in srgb, #4a7f9e 42%, transparent);
@@ -820,7 +820,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   position: relative;
   z-index: 1;
   height: 6px;
-  margin: 86px 24px 0;
+  margin: 175px 79px 0;
   border-radius: 999px;
   background-color: color-mix(in srgb, #ffffff 58%, transparent);
   background-image: repeating-linear-gradient(90deg,
