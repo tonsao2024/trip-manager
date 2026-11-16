@@ -186,8 +186,7 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 
 /* v39: the cover is a balanced tile next to the trip name, not a full-width
    banner — the board starts one row below the header instead of a screen below. */
-.dash-cover { aspect-ratio: 1 / 1; border: 1px solid var(--border); box-shadow: none; }
-@media (min-width: 768px) { .dash-cover { aspect-ratio: 16 / 9; } }
+.dash-cover { border: 1px solid var(--border); box-shadow: none; }
 
 /* The traveller follows the real countdown progress along a scenic route to Fuji.
    The whole scene is the card — the sky lives on .countdown-scene (components.css);

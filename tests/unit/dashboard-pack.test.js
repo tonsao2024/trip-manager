@@ -99,3 +99,22 @@ export function testCssAndJsAgreeOnTheGrid() {
     'app.js measures the real cards and packs them with packDashboard');
   ok(!/grid-auto-flow:\s*dense/.test(flatCss), 'the board relies on the packer, not auto-placement');
 }
+
+export function testAddTileIsPlacedAfterPackedCards() {
+  ok(/placed\.reduce\(\(end, slot\) => Math\.max\(end, slot\.row \+ slot\.span\)/.test(appSource),
+    'add tile starts after the last packed card');
+  ok(/addTile\.style\.gridRow = ''/.test(appSource), 'normal flow clears the packed tile position');
+  ok(/count\.textContent = String\(dashboardHidden\.size\);[\s\S]*?scheduleDashboardLayout\(\)/.test(appSource),
+    'visibility changes repack the board');
+}
+
+export function testDesktopToMobileUsesCssBreakpoint() {
+  ok(appSource.includes("window.matchMedia('(min-width: 761px)').matches"),
+    'desktop packing follows the CSS breakpoint, not stale implicit grid tracks');
+}
+
+export function testPackedCardsUseOneGutter() {
+  const placed = packDashboard(cards(['a', 200, true], ['b', 100, true]), { gutter: 14 });
+  eq(placed[1].row, placed[0].row + placed[0].span,
+    'the next card starts after the span, which already includes the gutter');
+}

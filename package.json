@@ -11,6 +11,7 @@
     "test:browser:build": "node tests/browser/mobile-build.mjs",
     "test:browser:mobile": "node tests/browser/mobile-check.mjs",
     "test:browser:desktop": "node tests/browser/desktop-check.mjs",
+    "test:browser:dashboard": "node tests/browser/dashboard-responsive-check.mjs",
     "test:browser:design": "node tests/browser/design-check.mjs"
   },
   "devDependencies": {
