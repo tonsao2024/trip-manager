@@ -18,22 +18,26 @@
 
 /** @type {ReadonlyArray<DashboardWidget>} Default order = the order of this list. */
 export const DASHBOARD_WIDGETS = Object.freeze([
+  // v38 professional rebalance: pairs always pair, list-heavy cards go full.
+  // Flow: glance → KPIs → time → activity → spending → wishlist → people → teams.
   { key: 'countdown', size: 'half', icon: 'timer', th: 'นับถอยหลัง', en: 'Countdown', hintTh: 'เหลือเวลาอีกกี่วันก่อนออกเดินทาง', hintEn: 'Time left before departure' },
   { key: 'weather', size: 'half', icon: 'cloud-sun', th: 'พยากรณ์อากาศ', en: 'Weather', hintTh: 'อากาศที่ปลายทางตามวันที่ไป', hintEn: 'Forecast for the destination' },
   { key: 'kpis', size: 'full', icon: 'gauge', th: 'ตัวเลขสำคัญ', en: 'Key numbers', hintTh: 'ยอดรวม ยอดของฉัน และงบคงเหลือ', hintEn: 'Total, my share and budget left' },
   { key: 'current', size: 'half', icon: 'target', th: 'กิจกรรมตอนนี้', en: 'Happening now', hintTh: 'กิจกรรมที่กำลังดำเนินอยู่', hintEn: 'What is on right now' },
   { key: 'up-next', size: 'half', icon: 'clock', th: 'กิจกรรมถัดไป', en: 'Up next', hintTh: 'กิจกรรมที่กำลังจะถึง', hintEn: 'What comes next' },
   { key: 'bookings', size: 'half', icon: 'ticket', th: 'การจองที่กำลังจะถึง', en: 'Upcoming bookings', hintTh: 'ตั๋ว ที่พัก และการเดินทางที่ใกล้ถึง', hintEn: 'Tickets, stays and transport coming up' },
+  { key: 'recent-expenses', size: 'half', icon: 'receipt', th: 'รายการล่าสุด', en: 'Recent expenses', hintTh: 'ค่าใช้จ่ายที่บันทึกล่าสุด', hintEn: 'Latest recorded expenses' },
   { key: 'category', size: 'half', icon: 'pie-chart', th: 'ค่าใช้จ่ายตามหมวด', en: 'Spend by category', hintTh: 'สัดส่วนค่าใช้จ่ายแต่ละหมวด', hintEn: 'Spending split by category' },
   { key: 'estimate', size: 'half', icon: 'bar-chart-3', th: 'ประมาณการ vs จ่ายจริง', en: 'Estimated vs actual', hintTh: 'งบที่ประมาณไว้เทียบกับที่จ่ายจริง', hintEn: 'Planned budget vs actual' },
-  // v35: “กระเป๋าของฉัน” (wallet) was folded into the “ยอดของฉัน” stat; its team
-  // board became this card, paired with the estimate card so no half card sits
-  // alone. A saved layout that still lists 'wallet' simply drops the key
-  // (normalizeWidgetOrder) and this card is appended at the end.
-  { key: 'teams', size: 'half', icon: 'users-round', th: 'ทีม', en: 'Teams', hintTh: 'ค่าใช้จ่ายต่อคนและรวมของแต่ละทีม', hintEn: 'Cost per person and per team' },
   { key: 'ideas', size: 'full', icon: 'lightbulb', th: 'สถานที่ที่อยากไป', en: 'Wishlist', hintTh: 'ไอเดียสถานที่ที่รวบรวมไว้', hintEn: 'Places the group wants to visit' },
-  { key: 'members', size: 'half', icon: 'users', th: 'สมาชิก', en: 'Members', hintTh: 'จ่ายไปและรับผิดชอบของแต่ละคน', hintEn: 'Paid and share per person' },
-  { key: 'recent-expenses', size: 'half', icon: 'receipt', th: 'รายการล่าสุด', en: 'Recent expenses', hintTh: 'ค่าใช้จ่ายที่บันทึกล่าสุด', hintEn: 'Latest recorded expenses' }
+  // Members promoted to full-width (v38): a list of people with per-person
+  // paid/share reads better across the full width and removes the orphan
+  // half-card that previously dangled before Teams.
+  { key: 'members', size: 'full', icon: 'users', th: 'สมาชิก', en: 'Members', hintTh: 'จ่ายไปและรับผิดชอบของแต่ละคน', hintEn: 'Paid and share per person' },
+  // Teams promoted to full-width (v38, user request): “ทั้งทริป” summary spans
+  // the whole row so it visually matches the full-width cards above, and sub-teams
+  // flow as a proper grid.
+  { key: 'teams', size: 'full', icon: 'users-round', th: 'ทีม', en: 'Teams', hintTh: 'ค่าใช้จ่ายต่อคนและรวมของแต่ละทีม', hintEn: 'Cost per person and per team' }
 ]);
 
 export const DASHBOARD_WIDGET_KEYS = DASHBOARD_WIDGETS.map(w => w.key);

@@ -499,16 +499,32 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   .kpi-strip .kpi-mini .money-secondary { font-size: 12px; }
 }
 
-/* Dashboard “ทีม” board — cost per person + team total for every sub-group */
-.team-board { display: grid; gap: 12px; }
-@media (min-width: 900px) { .team-board { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); } }
+/* Dashboard “ทีม” board — cost per person + team total for every sub-group.
+   v38: full-width Teams widget — sub-teams flow in a responsive grid, the
+   “ทั้งทริป” summary spans the whole row as the anchor.
+   Multi-column only kicks in above the mobile single-column breakpoint (760px)
+   so on phones the cards stay stacked one-per-row. */
+.team-board { display: grid; gap: 12px; grid-template-columns: 1fr; }
+@media (min-width: 768px) { .team-board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1024px) { .team-board { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); } }
 .team-card {
   display: flex; flex-direction: column; gap: 8px; min-width: 0;
   padding: 16px; border-radius: var(--radius-md, 14px);
   background: var(--surface-2); border: 1.5px solid var(--border-light);
   border-left: 4px solid var(--team-color, var(--primary-raw));
+  transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
 }
-.team-card--trip { border-left-color: var(--primary-raw); }
+.team-card--trip {
+  grid-column: 1 / -1;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 8%, var(--surface)) 0%, color-mix(in srgb, var(--primary) 3%, var(--surface-2)) 100%);
+  border-color: color-mix(in srgb, var(--primary) 25%, var(--border-light));
+  border-left-width: 4px;
+  margin-top: 4px;
+}
+.team-card--full { grid-column: 1 / -1; }
+/* The “ทั้งทริป” summary stands out as the totals anchor for the whole widget. */
+.team-card--trip .team-card-name { font-size: 15px; }
+.team-card--trip .team-facts { padding-top: 8px; margin-top: 4px; border-top: 1px dashed var(--border-light); gap: 8px 16px; font-size: 12px; }
 .team-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .team-card-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; min-width: 0; overflow-wrap: anywhere; }
 .team-card-note { font-size: 12px; color: var(--text-tertiary); }
@@ -516,10 +532,16 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 .member-row[data-mid], .team-card[data-gid] { cursor: pointer; }
 .member-row[data-mid]:focus-visible, .team-card[data-gid]:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .team-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.team-stat { padding: 8px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border-light); min-width: 0; }
+.team-card--trip .team-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (min-width: 768px) {
+  .team-card--trip .team-stats { gap: 12px; }
+}
+.team-stat { padding: 10px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border-light); min-width: 0; }
+.team-card--trip .team-stat { background: var(--surface); padding: 12px 14px; }
 .team-stat-label { display: block; font-size: 12px; font-weight: 600; color: var(--text-tertiary); }
 .team-stat b { display: block; font-family: var(--font-display); font-size: 16px; line-height: 1.2; color: var(--text-strong); overflow-wrap: anywhere; }
-.team-delta { display: block; font-size: 12px; font-weight: 600; color: var(--text-tertiary); overflow-wrap: anywhere; }
+.team-card--trip .team-stat b { font-size: 20px; margin-top: 2px; }
+.team-delta { display: block; font-size: 12px; font-weight: 600; color: var(--text-tertiary); overflow-wrap: anywhere; margin-top: 2px; }
 .team-delta.is-over { color: var(--danger); }
 .team-delta.is-under { color: var(--success); }
 .team-facts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--text-secondary); }
@@ -2679,15 +2701,26 @@ button.idea-pin-line:hover, button.idea-near-line:hover { background: var(--surf
 }
 
 /* ---------- Dashboard cards: shared drag ordering ---------- */
+/* v38 professional rebalance: a consistent 12px gutter, full-width cards
+   visually anchor sections, and every half-card always pairs. */
 .dashboard-board {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: stretch;
+  align-items: start;
+  gap: 14px;
 }
 .dash-widget { min-width: 0; position: relative; }
 .dash-widget--half { grid-column: span 1; }
 .dash-widget--full { grid-column: 1 / -1; }
 .dash-widget > .card { height: 100%; }
+
+/* v38 full-width members: show member rows as a responsive grid so the card
+   fills the wide layout instead of being a long single list. Multi-column
+   only above the mobile breakpoint (760px). */
+.member-board--grid { display: grid; gap: 8px; grid-template-columns: 1fr; }
+@media (min-width: 768px) { .member-board--grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1024px) { .member-board--grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); } }
+.member-board--grid .member-row { margin-bottom: 0; }
 .dash-widget-handle {
   display: none;
   align-items: center;
