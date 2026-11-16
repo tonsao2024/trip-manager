@@ -147,17 +147,18 @@ export function weatherCodeInfo(code) {
 }
 
 /** Tone → the colour tokens used by the weather chips.
- *  v35 round 4: every tone is the same neutral chip — the weather icon
- *  (sun / cloud / rain / snow / storm) carries the meaning, not a tint.
+ *  v37 brings the sky back: each tone is a soft tint mixed into the surface, so
+ *  the chips read as weather at a glance while the label keeps the light ink it
+ *  needs for AA contrast (the mix never darkens the surface below ~#f4f4f5).
  *  The tone keys stay so callers and saved data keep working. */
-const NEUTRAL_WEATHER = { bg: 'var(--bg-secondary)', fg: 'var(--text-secondary)', line: 'var(--border)' };
-export const WEATHER_TONES = {
-  sun: NEUTRAL_WEATHER,
-  cloud: NEUTRAL_WEATHER,
-  rain: NEUTRAL_WEATHER,
-  snow: NEUTRAL_WEATHER,
-  storm: NEUTRAL_WEATHER
+const WEATHER_TONES = {
+  sun:   { bg: 'color-mix(in srgb, #f2b13c 16%, var(--surface))', fg: 'var(--text)', line: 'color-mix(in srgb, #e8930c 42%, var(--border))' },
+  cloud: { bg: 'color-mix(in srgb, #94a3b8 14%, var(--surface))', fg: 'var(--text)', line: 'color-mix(in srgb, #64748b 36%, var(--border))' },
+  rain:  { bg: 'color-mix(in srgb, #3b82f6 13%, var(--surface))', fg: 'var(--text)', line: 'color-mix(in srgb, #2563eb 38%, var(--border))' },
+  snow:  { bg: 'color-mix(in srgb, #38bdf8 12%, var(--surface))', fg: 'var(--text)', line: 'color-mix(in srgb, #0ea5e9 36%, var(--border))' },
+  storm: { bg: 'color-mix(in srgb, #7c3aed 14%, var(--surface))', fg: 'var(--text)', line: 'color-mix(in srgb, #6d28d9 38%, var(--border))' }
 };
+export { WEATHER_TONES };
 
 export function weatherTone(tone = 'cloud') {
   return WEATHER_TONES[tone] || WEATHER_TONES.cloud;

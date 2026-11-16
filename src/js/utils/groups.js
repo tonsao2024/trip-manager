@@ -77,12 +77,37 @@ function paymentsOf(expense = {}) {
 }
 
 /**
+ * Share totals per expense category, for the members in `ids` (null = everyone).
+ * Returns [{ id, amountMinor, count }] — biggest first. `count` is how many
+ * distinct bills of that category the group touched.
+ */
+export function categoryTotals(expenses = [], ids = null) {
+  const rows = new Map();
+  for (const exp of liveExpenses(expenses)) {
+    const key = exp.category || 'general';
+    for (const a of exp.allocations || []) {
+      if (ids && !ids.has(String(a.memberId))) continue;
+      const amount = Number(a.amountMinor) || 0;
+      if (!amount) continue;
+      if (!rows.has(key)) rows.set(key, { id: key, amountMinor: 0, bills: new Set() });
+      const row = rows.get(key);
+      row.amountMinor += amount;
+      row.bills.add(exp.id);
+    }
+  }
+  return [...rows.values()]
+    .map(row => ({ id: row.id, amountMinor: row.amountMinor, count: row.bills.size }))
+    .sort((a, b) => b.amountMinor - a.amountMinor || a.id.localeCompare(b.id));
+}
+
+/**
  * Budget report of ONE group.
  *   paidMinor     — money the group's members fronted for everybody
  *   shareMinor    — what the group's members consumed (their allocations)
  *   netMinor      — paid − share (positive = the group is owed money back)
  *   perPersonMinor — share ÷ people: “เฉลี่ยต่อคนของกลุ่ม”
  *   itemCount     — distinct expenses the group touched
+ *   categories    — what that share is made of, per expense category
  */
 export function groupBudget(group = {}, expenses = [], members = []) {
   const normalized = normalizeGroup(group);
@@ -120,7 +145,8 @@ export function groupBudget(group = {}, expenses = [], members = []) {
     actualMinor: shareMinor - estimatedMinor,
     netMinor: paidMinor - shareMinor,
     perPersonMinor: memberCount ? Math.round(shareMinor / memberCount) : 0,
-    itemCount: touched.size
+    itemCount: touched.size,
+    categories: categoryTotals(liveExpenses(expenses), ids)
   };
 }
 
@@ -139,7 +165,8 @@ export function groupBudgetReport(groups = [], expenses = [], members = []) {
     paidMinor: tripPaidMinor,
     shareMinor: tripShareMinor,
     perPersonMinor: pax ? Math.round(tripShareMinor / pax) : 0,
-    memberCount: pax
+    memberCount: pax,
+    categories: categoryTotals(rows)
   };
   const inSomeGroup = new Set(list.flatMap(g => g.memberIds));
   const ungrouped = members.filter(m => !inSomeGroup.has(m.id));

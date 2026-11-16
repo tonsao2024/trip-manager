@@ -1840,7 +1840,7 @@ function notificationSettingsCardsHtml({ lang = 'th', perms = {}, tripSettings =
     </div>`;
 
   return `
-    <div class="card p-5 space-y-3" id="notify-inapp-card" data-settings-section="notify">
+    <div class="card p-4 space-y-3" id="notify-inapp-card" data-settings-section="notify">
       <h3 class="font-semibold flex items-center gap-2">${icon('bell', 'w-4 h-4')} ${th('การแจ้งเตือนในแอป', 'In-app notifications')}</h3>
       <p class="text-xs text-[var(--text-secondary)]">${th('รายการจะแสดงที่ไอคอนกระดิ่งบนแถบด้านบน พร้อมป๊อปอัปมุมจอเมื่อมีของใหม่', 'Items land in the bell in the top bar, with a corner pop-up when something new arrives.')}</p>
       <label class="settings-toggle-row" for="notify-toggle-enabled">
@@ -1875,7 +1875,7 @@ function notificationSettingsCardsHtml({ lang = 'th', perms = {}, tripSettings =
       <p class="text-xs text-[var(--text-tertiary)]">${th('ค่าตั้งนี้จำไว้ต่ออุปกรณ์ และส่งขึ้นเซิร์ฟเวอร์เพื่อให้ Web Push รู้ว่าคุณอยากได้อะไร', 'These settings are remembered per device and mirrored to the server so Web Push knows what you want.')}</p>
     </div>
 
-    <div class="card p-5 space-y-3" id="notify-push-card" data-settings-section="notify">
+    <div class="card p-4 space-y-3" id="notify-push-card" data-settings-section="notify">
       <h3 class="font-semibold flex items-center gap-2">${icon('bell-ring', 'w-4 h-4')} ${th('แจ้งเตือนแบบพุช (Web Push)', 'Web Push (FCM)')}
         <span class="badge ${isOn ? 'badge-completed' : 'badge-planned'} text-xs">${isOn ? th('เปิดอยู่', 'On') : th('ปิดอยู่', 'Off')}</span></h3>
       <p class="text-xs text-[var(--text-secondary)]">${th('แจ้งเตือนผ่าน FCM ได้แม้ปิดแอป โดย GitHub Actions ส่งคิวปกติทุก 30 นาที (อาจล่าช้า) — Firebase ยังเป็น Spark', 'FCM can reach this device with the app closed. GitHub Actions sends the queue normally every 30 minutes (possibly delayed). Firebase stays on Spark.')}</p>
@@ -1892,7 +1892,7 @@ function notificationSettingsCardsHtml({ lang = 'th', perms = {}, tripSettings =
       <p class="text-xs text-[var(--text-tertiary)]">${th('หมายเหตุ: บน iPhone/iPad ต้อง “เพิ่มไปที่หน้าจอโฮม” ก่อน (iOS 16.4+) จึงจะรับ Web Push ได้ และต้องเปิดเว็บผ่าน https://', 'Note: on iPhone/iPad the app must be added to the Home Screen first (iOS 16.4+) and the page must be served over https://.')}</p>
     </div>
 
-    <div class="card p-5 space-y-3" id="notify-trip-card" data-settings-section="notify">
+    <div class="card p-4 space-y-3" id="notify-trip-card" data-settings-section="notify">
       <h3 class="font-semibold flex items-center gap-2">${icon('calendar-clock', 'w-4 h-4')} ${th('สรุปค่าใช้จ่ายรายวันของทริปนี้', 'Daily summary of this trip')}</h3>
       <p class="text-xs text-[var(--text-secondary)]">${th('เวลาในเขตเวลาของทริป — สรุปสร้างเมื่อมีคนเปิดทริปหลังเวลาที่กำหนด แล้ว GitHub Actions ส่ง Push เป็นรอบ (ไม่มีงานสร้างสรุปฝั่งเซิร์ฟเวอร์)', 'Uses the trip timezone. A client creates the summary after the chosen hour, then GitHub Actions sends queued Push. There is no scheduled summary generator.')}</p>
       <label class="settings-toggle-row" for="notify-trip-daily">
@@ -2828,7 +2828,7 @@ function renderConfigNeeded() {
         <div class="flex justify-center mb-5">${renderLogoMark(48)}</div>
         <h1 class="page-title justify-center mb-2">ตั้งค่า Firebase</h1>
         <p class="text-sm text-[var(--text-secondary)] mb-4 text-center">กรอก Firebase Config เพื่อเริ่มใช้งาน</p>
-        <div class="space-y-5">
+        <div class="space-y-4">
           <div class="input-group">
             <label class="input-label">Firebase Config JSON</label>
             <textarea id="cfg-input" class="input font-mono text-xs" style="min-height:160px;" placeholder='{"apiKey":"...","authDomain":"...","projectId":"..."}'>${escapeHtml(savedPretty)}</textarea>
@@ -3332,7 +3332,7 @@ async function renderTripSelector() {
       </div>
       <div id="trip-grid" class="grid md:grid-cols-2 lg:grid-cols-3 gap-5 mb-5"></div>
 
-      <div class="card p-5 space-y-3" id="join-trip-card">
+      <div class="card p-4 space-y-3" id="join-trip-card">
         <h3 class="font-semibold flex items-center gap-2">${icon('ticket', 'w-4 h-4')} ${lang === 'th' ? 'เข้าร่วมทริปด้วยรหัสเชิญ' : 'Join a trip with an invite code'}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${lang === 'th'
           ? 'ขอรหัส 6 ตัวจากแอดมินทริป แล้วส่งคำขอเข้าร่วม — แอดมินกดอนุมัติแล้วคุณจะเห็นทริปนี้ทันที'
@@ -3669,7 +3669,7 @@ async function renderDashboard(params) {
   const rangeLabel = tripRangeLabel(trip);
   const dragHandle = (what) => `<div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลาก','Drag')}${what}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>`;
   appEl.innerHTML = `
-    <div class="page-enter space-y-5" id="dashboard-view">
+    <div class="page-enter space-y-4" id="dashboard-view">
       <!-- v35: a plain page header. The cover photo shows only when the trip has
            one, as a picture — no scrim, no text on top of it (audit B8 / L2). -->
       <header class="dash-head${coverUrl ? ' has-cover' : ''}">
@@ -3719,7 +3719,7 @@ async function renderDashboard(params) {
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="weather">
           ${dragHandle(th('การ์ดสภาพอากาศ','weather card'))}
-          <div class="card p-4 md:p-5" id="dash-weather-card">
+          <div class="card p-4 md:p-4" id="dash-weather-card">
             <div id="dash-weather-multi"><div class="skeleton h-24"></div></div>
           </div>
         </section>
@@ -3748,7 +3748,7 @@ async function renderDashboard(params) {
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="current">
           ${dragHandle(th('การ์ดกิจกรรมตอนนี้','current activity card'))}
-          <div class="card p-5">
+          <div class="card p-4">
             <div class="card-head">
               <h3 class="card-title">${t('currentActivity')}</h3>
               <button id="dash-today-link" type="button" class="btn btn-ghost btn-sm">${th('ดูวันนี้','Today')}</button>
@@ -3766,7 +3766,7 @@ async function renderDashboard(params) {
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="up-next">
           ${dragHandle(th('การ์ดแผนถัดไป','upcoming plans card'))}
-          <div class="card p-5">
+          <div class="card p-4">
             <div class="card-head">
               <h3 class="card-title">${t('upNext')}</h3>
               <button id="dash-itinerary-link" type="button" class="btn btn-ghost btn-sm">${th('ดูแผนทั้งหมด','All plans')}</button>
@@ -3777,7 +3777,7 @@ async function renderDashboard(params) {
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="category">
           ${dragHandle(th('การ์ดค่าใช้จ่ายตามหมวด','spend by category card'))}
-          <div class="card p-5">
+          <div class="card p-4">
             <div class="card-head">
               <h3 class="card-title">${th('ค่าใช้จ่ายตามหมวด','Spend by category')}</h3>
               <button id="cat-expand-btn" type="button" class="btn btn-ghost btn-sm" style="display:none;"><span data-cat-label>${th('ดูทั้งหมด','Show all')}</span></button>
@@ -3788,7 +3788,7 @@ async function renderDashboard(params) {
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="estimate">
           ${dragHandle(th('การ์ดประมาณการเทียบจ่ายจริง','estimated vs actual card'))}
-          <div class="card p-5">
+          <div class="card p-4">
             <div class="card-head"><h3 class="card-title">${th('ประมาณการเทียบจ่ายจริง','Estimated vs actual')}</h3></div>
             <div id="estimate-compare"></div>
             <div id="summary-stats" class="card-foot"></div>
@@ -3797,7 +3797,7 @@ async function renderDashboard(params) {
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="bookings">
           ${dragHandle(th('การ์ดการจองที่กำลังจะถึง','upcoming bookings card'))}
-          <div class="card p-5">
+          <div class="card p-4">
             <div class="card-head">
               <h3 class="card-title">${th('การจองที่กำลังจะถึง','Upcoming bookings')}</h3>
               <button id="dash-bookings-link" type="button" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</button>
@@ -3807,7 +3807,7 @@ async function renderDashboard(params) {
         </section>
         <section class="dash-widget dash-widget--full" data-dashboard-widget="ideas">
           ${dragHandle(th('การ์ดสถานที่ที่อยากไป','wishlist card'))}
-          <div id="dash-ideas-board" class="card p-5">
+          <div id="dash-ideas-board" class="card p-4">
             <div class="card-head">
               <h3 class="card-title">${th('สถานที่ที่อยากไป','Wishlist')}</h3>
               <a id="dash-ideas-link" href="#/trip/${tripId}/ideas" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</a>
@@ -3818,7 +3818,7 @@ async function renderDashboard(params) {
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="members">
           ${dragHandle(th('การ์ดสมาชิก','members card'))}
-          <div class="card p-5">
+          <div class="card p-4">
             <div class="card-head">
               <h3 class="card-title">${th('สมาชิก · จ่ายไปและส่วนที่รับผิดชอบ','Members · paid and share')}</h3>
               <button id="dash-members-link" type="button" class="btn btn-ghost btn-sm">${th('จัดการ','Manage')}</button>
@@ -3829,7 +3829,7 @@ async function renderDashboard(params) {
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="recent-expenses">
           ${dragHandle(th('การ์ดค่าใช้จ่ายล่าสุด','recent expenses card'))}
-          <div class="card p-5">
+          <div class="card p-4">
             <div class="card-head">
               <h3 class="card-title">${th('รายการล่าสุด','Recent expenses')}</h3>
               <button id="dash-expenses-link" type="button" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</button>
@@ -3840,7 +3840,7 @@ async function renderDashboard(params) {
 
         <section class="dash-widget dash-widget--half" data-dashboard-widget="teams">
           ${dragHandle(th('การ์ดทีม','teams card'))}
-          <div class="card p-5" id="dash-teams-card">
+          <div class="card p-4" id="dash-teams-card">
             <div class="card-head">
               <h3 class="card-title">${th('ทีม · ค่าใช้จ่ายต่อคนและรวมทีม','Teams · cost per person and per team')}</h3>
               <button id="dash-teams-link" type="button" class="btn btn-ghost btn-sm">${th('จัดการทีม','Manage teams')}</button>
@@ -4446,9 +4446,9 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
     const pct = Math.round((total / grand) * 100);
     const empty = !total;
     return `
-      <div class="dash-cat-row cat-stats-compact${empty ? ' is-empty' : ''}" data-cat="${escapeHtml(cat)}">
+      <div class="dash-cat-row cat-stats-compact${empty ? ' is-empty' : ''}" data-cat="${escapeHtml(cat)}" style="--bar-color:${escapeHtml(categoryColor(cat))};">
         <div class="dash-cat-line">
-          <span class="dash-cat-name">${escapeHtml(categoryLabel(cat, lang))}<span class="dash-cat-count">${v.count}</span></span>
+          <span class="dash-cat-name"><span class="dash-cat-dot" aria-hidden="true"></span>${escapeHtml(categoryLabel(cat, lang))}<span class="dash-cat-count">${v.count}</span></span>
           <span class="dash-cat-amount">${fmt(total)}<span class="dash-cat-pct">${pct}%</span>${thbTag(total)}</span>
         </div>
         <div class="progress"><div class="progress-bar" style="width:${empty ? 0 : Math.max(2, Math.round(total / catMax * 100))}%;"></div></div>
@@ -4561,6 +4561,29 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
       } else {
         const report = groupBudgetReport(groups, expenses, members);
         const perPersonTrip = report.trip.perPersonMinor;
+        /**
+         * “ค่าใช้จ่ายแต่ละหมวดคืออะไร” — the categories behind a team's share.
+         * A compact coloured meter per category, not a second table: the card
+         * already answers who/how many, this answers “spent on what”.
+         */
+        const teamCatsHtml = (cats = [], total = 0) => {
+          if (!cats.length) return `<p class="team-card-note">${th('ยังไม่มีรายจ่ายของกลุ่มนี้','No spending for this team yet')}</p>`;
+          const top = cats.slice(0, 4);
+          const rest = cats.slice(4);
+          const restMinor = rest.reduce((n, c) => n + c.amountMinor, 0);
+          const chip = (id, amountMinor, extra = '') => {
+            const pct = total > 0 ? Math.round((amountMinor / total) * 100) : 0;
+            return `<span class="team-cat" style="--cat-color:${escapeHtml(categoryColor(id))};" title="${escapeHtml(categoryLabel(id, lang))} · ${pct}%">
+              <span class="team-cat-dot" aria-hidden="true"></span>
+              <span class="team-cat-name">${escapeHtml(categoryLabel(id, lang))}</span>
+              <b class="team-cat-amount">${fmt(amountMinor)}</b>${extra}
+            </span>`;
+          };
+          return `<div class="team-cats" role="list" aria-label="${th('ค่าใช้จ่ายตามหมวด','Spending by category')}">
+            ${top.map(c => chip(c.id, c.amountMinor)).join('')}
+            ${rest.length ? `<span class="team-cat team-cat--more" role="listitem" title="${rest.map(c => `${categoryLabel(c.id, lang)} ${fmt(c.amountMinor)}`).join(' · ')}">+${rest.length} ${th('หมวด','more')} <b class="team-cat-amount">${fmt(restMinor)}</b></span>` : ''}
+          </div>`;
+        };
         const teamCard = (g) => {
           const delta = g.perPersonMinor - perPersonTrip;
           const places = placesForGroup(g.id, items).length;
@@ -4583,6 +4606,7 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
                   <span class="team-delta">${th('จ่ายไป','paid')} ${fmt(g.paidMinor)}</span>
                 </div>
               </div>
+              ${teamCatsHtml(g.categories, g.shareMinor)}
               <div class="team-facts">
                 <span>${places} ${th('สถานที่','places')}</span>
                 <span>${g.itemCount} ${th('รายการ','items')}</span>
@@ -4613,6 +4637,7 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
                 <span class="team-delta">${th('จ่ายไป','paid')} ${fmt(report.trip.paidMinor)}</span>
               </div>
             </div>
+            ${teamCatsHtml(report.trip.categories, report.trip.shareMinor)}
             ${report.ungrouped.length ? `<div class="team-facts"><span>${th('ยังไม่อยู่ในทีม','Not in a team')}: ${report.ungrouped.map(m => escapeHtml(m.displayName || '')).join(', ')}</span></div>` : ''}
           </article>`;
       }
@@ -6313,7 +6338,7 @@ async function renderItinerary(params) {
     } catch (e) {
       if (isStale(token)) return;
       console.error(e);
-      listEl.innerHTML = `<div class="card p-5 text-center"><p class="text-sm font-semibold" style="color:var(--danger);">${escapeHtml(e.message)}</p><button id="itin-retry" class="btn btn-secondary btn-sm mt-3">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่','Retry')}</button></div>`;
+      listEl.innerHTML = `<div class="card p-4 text-center"><p class="text-sm font-semibold" style="color:var(--danger);">${escapeHtml(e.message)}</p><button id="itin-retry" class="btn btn-secondary btn-sm mt-3">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่','Retry')}</button></div>`;
       bind('itin-retry', 'click', loadItems);
       queueIcons();
     }
@@ -7001,33 +7026,45 @@ async function renderExpenses(params) {
       <!-- เฉลี่ยต่อกลุ่ม แล้วแยกเป็นต่อคนของแต่ละกลุ่ม (a request) -->
       <div id="exp-group-avg" class="group-avg-strip mb-4"></div>
 
-      <div class="chip-row mb-2" id="expense-filters">
-        <button class="chip chip-active" data-filter="all">${icon('layers', 'w-3.5 h-3.5')} ${t('all')}</button>
-        <button class="chip" data-filter="today">${icon('calendar-check', 'w-3.5 h-3.5')} ${t('today')}</button>
-        <button class="chip" data-filter="estimated">${icon('hourglass', 'w-3.5 h-3.5')} ${th('ประมาณการ','Estimated')}</button>
-        <button class="chip" data-filter="actual">${icon('check-circle', 'w-3.5 h-3.5')} ${th('จ่ายจริง','Actual')}</button>
-      </div>
-      <div class="px-1 mb-2 flex items-center justify-between gap-2 flex-wrap">
-        <div class="segmented" id="expense-group-toggle">
-          <button type="button" class="segmented-item active" data-group="list">${icon('list', 'w-3.5 h-3.5')} ${th('เรียงรายการ','List')}</button>
-          <button type="button" class="segmented-item" data-group="day">${icon('calendar-days', 'w-3.5 h-3.5')} ${th('แยกตามวัน','By day')}</button>
+      <div class="expense-filter-bar">
+        <div class="chip-row" id="expense-filters">
+          <button class="chip chip-active" data-filter="all">${icon('layers', 'w-3.5 h-3.5')} ${t('all')}</button>
+          <button class="chip" data-filter="today">${icon('calendar-check', 'w-3.5 h-3.5')} ${t('today')}</button>
+          <button class="chip" data-filter="estimated">${icon('hourglass', 'w-3.5 h-3.5')} ${th('ประมาณการ','Estimated')}</button>
+          <button class="chip" data-filter="actual">${icon('check-circle', 'w-3.5 h-3.5')} ${th('จ่ายจริง','Actual')}</button>
         </div>
-      </div>
-      <button type="button" id="expense-more-filters" class="btn btn-secondary btn-sm expense-more-filters" aria-expanded="false" aria-controls="expense-extra-controls">${icon('sliders-horizontal', 'w-4 h-4')} ${th('ตัวกรองและตัวเลือกเพิ่มเติม', 'More filters and options')} <span data-expense-filter-summary>${th('ทุกหมวด', 'All categories')}</span> ${icon('chevron-down', 'w-4 h-4')}</button>
-      <div id="expense-extra-controls" class="expense-extra-controls">
-        <div class="btn-row expense-extra-actions">
-          <button id="exp-density-btn" class="btn btn-ghost btn-sm text-xs" type="button" aria-pressed="false">${icon('rows-3', 'w-3.5 h-3.5')} <span data-density-label>${th('มุมมองกระทัดรัด','Compact view')}</span></button>
-          <button id="activity-btn" class="link-btn text-xs">${icon('history', 'w-3.5 h-3.5')} ${th('ประวัติการแก้ไข','Activity log')}</button>
-          ${perms.canEditExpense ? `<button id="manage-cats-btn" class="link-btn text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage expense groups')}</button>` : ''}
+        <!-- วิธีจ่าย: กรองเงินสด / บัตรเครดิต (รายใบ) / โอน (a request) -->
+        <div class="chip-row chip-row-scroll" id="method-filters" aria-label="${th('กรองตามวิธีจ่าย','Filter by payment method')}">
+          <button class="chip chip-active" data-method="">${icon('wallet', 'w-3.5 h-3.5')} ${th('ทุกวิธีจ่าย','All methods')}</button>
+          <button class="chip" data-method="cash">${icon('banknote', 'w-3.5 h-3.5')} ${th('เงินสด','Cash')}</button>
+          <button class="chip" data-method="card">${icon('credit-card', 'w-3.5 h-3.5')} ${th('บัตรเครดิต','Card')}</button>
+          <button class="chip" data-method="transfer">${icon('arrow-left-right', 'w-3.5 h-3.5')} ${th('โอนเงิน','Transfer')}</button>
         </div>
-      <div class="chip-row mb-4" id="cat-filters">
-        <button class="chip chip-active" data-cat="">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('ทุกหมวด','All categories')}</button>
-        ${getAllExpenseCategories().map(c => `<button class="chip" data-cat="${escapeHtml(c.id)}">${icon(escapeHtml(c.icon), 'w-3.5 h-3.5')} ${escapeHtml(lang==='th'?(c.th||c.en):(c.en||c.th))}</button>`).join('')}
-      </div>
+        <!-- ใบไหนใช้บัตรใบไหน — the card chips appear when “บัตรเครดิต” is picked -->
+        <div class="chip-row chip-row-scroll hidden" id="card-filters" aria-label="${th('กรองตามบัตรเครดิต','Filter by credit card')}"></div>
+        <!-- กรองเป็นรายกลุ่ม (หมวดค่าใช้จ่าย) — always visible, one tap -->
+        <div class="chip-row chip-row-scroll" id="cat-filters" aria-label="${th('กรองตามกลุ่มค่าใช้จ่าย','Filter by expense group')}">
+          <button class="chip chip-active" data-cat="">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('ทุกกลุ่ม','All groups')}</button>
+          ${getAllExpenseCategories().map(c => `<button class="chip" data-cat="${escapeHtml(c.id)}" style="--chip-color:${escapeHtml(c.color || 'var(--primary)')}">${icon(escapeHtml(c.icon), 'w-3.5 h-3.5')} ${escapeHtml(lang==='th'?(c.th||c.en):(c.en||c.th))}</button>`).join('')}
+        </div>
+        <div class="expense-filter-foot">
+          <div class="segmented" id="expense-group-toggle">
+            <button type="button" class="segmented-item active" data-group="list">${icon('list', 'w-3.5 h-3.5')} ${th('เรียงรายการ','List')}</button>
+            <button type="button" class="segmented-item" data-group="day">${icon('calendar-days', 'w-3.5 h-3.5')} ${th('แยกตามวัน','By day')}</button>
+          </div>
+          <button type="button" id="expense-more-filters" class="btn btn-ghost btn-sm expense-more-filters" aria-expanded="false" aria-controls="expense-extra-controls">${icon('sliders-horizontal', 'w-4 h-4')} ${th('ตัวเลือกเพิ่มเติม','More options')} <span data-expense-filter-summary></span> ${icon('chevron-down', 'w-4 h-4')}</button>
+        </div>
+        <div id="expense-extra-controls" class="expense-extra-controls">
+          <div class="btn-row expense-extra-actions">
+            <button id="exp-density-btn" class="btn btn-ghost btn-sm text-xs" type="button" aria-pressed="false">${icon('rows-3', 'w-3.5 h-3.5')} <span data-density-label>${th('มุมมองกระทัดรัด','Compact view')}</span></button>
+            <button id="activity-btn" class="link-btn text-xs">${icon('history', 'w-3.5 h-3.5')} ${th('ประวัติการแก้ไข','Activity log')}</button>
+            ${perms.canEditExpense ? `<button id="manage-cats-btn" class="link-btn text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage expense groups')}</button>` : ''}
+          </div>
+        </div>
       </div>
 
-      <div id="expense-list" class="space-y-3 stagger"></div>
-      <div id="expense-pagination" class="flex justify-center mt-6"><button id="load-more" class="btn btn-secondary btn-sm">${icon('chevron-down', 'w-4 h-4')} ${th('โหลดเพิ่ม','Load more')}</button></div>
+      <div id="expense-list" class="space-y-2 stagger"></div>
+      <div id="expense-pagination" class="flex justify-center mt-4"><button id="load-more" class="btn btn-secondary btn-sm">${icon('chevron-down', 'w-4 h-4')} ${th('โหลดเพิ่ม','Load more')}</button></div>
     </div>
   `;
   queueIcons();
@@ -7040,6 +7077,9 @@ async function renderExpenses(params) {
   let visibleExpenseCount = 30;
   let activeFilter = 'all';
   let catFilter = '';
+  // วิธีจ่าย / บัตร — the payment filters (a request: “เพิ่มการกรองเป็นรายกลุ่ม”)
+  let methodFilter = '';
+  let cardFilter = '';
   // How the list is presented: one flat list, or grouped per day (a request).
   let groupMode = localStorage.getItem('fuji_exp_group') === 'day' ? 'day' : 'list';
   applyGroupToggle();
@@ -7082,7 +7122,7 @@ async function renderExpenses(params) {
     const expanded = panel.classList.toggle('is-open');
     button.setAttribute('aria-expanded', String(expanded));
   });
-  document.querySelectorAll('#expense-filters .chip, #cat-filters .chip').forEach(btn => btn.setAttribute('aria-pressed', String(btn.classList.contains('chip-active'))));
+  document.querySelectorAll('#expense-filters .chip, #method-filters .chip, #cat-filters .chip').forEach(btn => btn.setAttribute('aria-pressed', String(btn.classList.contains('chip-active'))));
 
   bind('activity-btn', 'click', () => openActivitySheet(tripId, { isAdmin }));
 
@@ -7100,22 +7140,82 @@ async function renderExpenses(params) {
       .catch((e) => console.warn('comments refresh failed', e?.message));
   }
 
+  /** One-tap chip selection (keeps .chip-active + aria-pressed in step). */
+  function selectChip(row, selected) {
+    if (!row) return;
+    row.querySelectorAll('.chip').forEach(c => {
+      const on = c === selected;
+      c.classList.toggle('chip-active', on);
+      c.setAttribute('aria-pressed', String(on));
+    });
+  }
+
+  /** How the money left the wallet, per payer (a bill can mix cash + card). */
+  function paymentMethodsOf(e) {
+    return expensePayments(e).map(p => paymentMethodOf(e, p));
+  }
+
+  /**
+   * Card chips: only while “บัตรเครดิต” is the method filter. They list every
+   * card actually used in this trip, so “which bills went on KTC?” is one tap.
+   */
+  function renderCardFilters() {
+    const box = document.getElementById('card-filters');
+    if (!box) return;
+    const show = methodFilter === 'card';
+    box.classList.toggle('hidden', !show);
+    if (!show) { cardFilter = ''; return; }
+    const names = new Set();
+    allLoaded.forEach(e => paymentMethodsOf(e).forEach(m => { if (m.method === 'card' && m.cardName) names.add(m.cardName); }));
+    const list = [...names].sort((a, b) => a.localeCompare(b, 'th'));
+    if (cardFilter && !list.includes(cardFilter)) cardFilter = '';
+    box.innerHTML = `<button type="button" class="chip ${!cardFilter ? 'chip-active' : ''}" data-card="" aria-pressed="${!cardFilter}">${icon('credit-card', 'w-3.5 h-3.5')} ${th('ทุกบัตร','All cards')}</button>`
+      + list.map(n => `<button type="button" class="chip ${cardFilter === n ? 'chip-active' : ''}" data-card="${escapeHtml(n)}" aria-pressed="${cardFilter === n}">${escapeHtml(n)}</button>`).join('');
+    box.querySelectorAll('[data-card]').forEach(btn => btn.addEventListener('click', () => {
+      cardFilter = btn.dataset.card;
+      visibleExpenseCount = 30;
+      renderCardFilters();
+      applyFilterRender();
+    }));
+    queueIcons();
+  }
+
+  /** The “ตัวเลือกเพิ่มเติม” button names the filter that is currently on. */
+  function updateFilterSummary() {
+    const summary = document.querySelector('[data-expense-filter-summary]');
+    if (!summary) return;
+    const others = activeFilter !== 'all' || methodFilter || cardFilter;
+    // A single category filter keeps the chip's own label (the group name is the
+    // useful thing to see); anything mixed falls back to a count.
+    if (catFilter && !others) {
+      const chip = document.querySelector(`#cat-filters [data-cat="${catFilter}"]`);
+      summary.textContent = chip ? chip.textContent.trim() : categoryLabel(catFilter, lang);
+      return;
+    }
+    const count = (activeFilter !== 'all' ? 1 : 0) + (methodFilter ? 1 : 0) + (cardFilter ? 1 : 0) + (catFilter ? 1 : 0);
+    summary.textContent = count ? `• ${count}` : '';
+  }
+
   document.querySelectorAll('#expense-filters [data-filter]').forEach(btn => btn.addEventListener('click', () => {
     activeFilter = btn.dataset.filter;
     visibleExpenseCount = 30;
-    document.querySelectorAll('#expense-filters .chip').forEach(c => { c.classList.remove('chip-active'); c.setAttribute('aria-pressed', 'false'); });
-    btn.classList.add('chip-active');
-    btn.setAttribute('aria-pressed', 'true');
+    selectChip(document.getElementById('expense-filters'), btn);
+    updateFilterSummary();
+    applyFilterRender();
+  }));
+  document.querySelectorAll('#method-filters [data-method]').forEach(btn => btn.addEventListener('click', () => {
+    methodFilter = btn.dataset.method || '';
+    visibleExpenseCount = 30;
+    selectChip(document.getElementById('method-filters'), btn);
+    renderCardFilters();
+    updateFilterSummary();
     applyFilterRender();
   }));
   document.querySelectorAll('#cat-filters [data-cat]').forEach(btn => btn.addEventListener('click', () => {
     catFilter = btn.dataset.cat;
     visibleExpenseCount = 30;
-    document.querySelectorAll('#cat-filters .chip').forEach(c => { c.classList.remove('chip-active'); c.setAttribute('aria-pressed', 'false'); });
-    btn.classList.add('chip-active');
-    btn.setAttribute('aria-pressed', 'true');
-    const summary = document.querySelector('[data-expense-filter-summary]');
-    if (summary) summary.textContent = btn.textContent.trim();
+    selectChip(document.getElementById('cat-filters'), btn);
+    updateFilterSummary();
     applyFilterRender();
   }));
 
@@ -7125,6 +7225,8 @@ async function renderExpenses(params) {
     if (activeFilter === 'estimated') out = out.filter(e => e.isEstimated);
     if (activeFilter === 'actual') out = out.filter(e => !e.isEstimated);
     if (catFilter) out = out.filter(e => (e.category || 'general') === catFilter);
+    if (methodFilter) out = out.filter(e => paymentMethodsOf(e).some(m => m.method === methodFilter));
+    if (cardFilter) out = out.filter(e => paymentMethodsOf(e).some(m => m.method === 'card' && m.cardName === cardFilter));
     return out;
   }
 
@@ -7283,17 +7385,20 @@ async function renderExpenses(params) {
   function applyFilterRender() {
     const listEl = document.getElementById('expense-list');
     if (!listEl) return;
+    renderCardFilters();
+    updateFilterSummary();
     renderSummary();
     const matchingItems = filterItems(allLoaded);
     renderGroupAverages(matchingItems);
     const items = matchingItems.slice(0, visibleExpenseCount);
     document.getElementById('load-more')?.classList.toggle('hidden', matchingItems.length <= visibleExpenseCount);
     if (!items.length) {
+      const noFilter = activeFilter === 'all' && !catFilter && !methodFilter && !cardFilter;
       listEl.innerHTML = renderEmptyState({
         icon: 'wallet',
-        title: activeFilter === 'all' && !catFilter ? th('ยังไม่มีค่าใช้จ่าย','No expenses') : th('ไม่พบรายการตามตัวกรอง','No items match the filter'),
-        desc: activeFilter === 'all' && !catFilter ? th('เพิ่มรายการแรกเพื่อเริ่มติดตามงบประมาณ','Add your first expense to start tracking') : '',
-        actionHtml: perms.canEditExpense && activeFilter === 'all' && !catFilter ? `<button id="empty-exp-add" class="btn btn-secondary btn-sm mt-3">${icon('plus', 'w-4 h-4')} ${t('addExpense')}</button>` : ''
+        title: noFilter ? th('ยังไม่มีค่าใช้จ่าย','No expenses') : th('ไม่พบรายการตามตัวกรอง','No items match the filter'),
+        desc: noFilter ? th('เพิ่มรายการแรกเพื่อเริ่มติดตามงบประมาณ','Add your first expense to start tracking') : '',
+        actionHtml: perms.canEditExpense && noFilter ? `<button id="empty-exp-add" class="btn btn-secondary btn-sm mt-3">${icon('plus', 'w-4 h-4')} ${t('addExpense')}</button>` : ''
       });
       bind('empty-exp-add', 'click', () => { location.hash = `#/trip/${tripId}/expenses/add`; });
       queueIcons();
@@ -7448,7 +7553,7 @@ async function renderExpenses(params) {
       if (isStale(token)) return;
       console.error(e);
       const listEl2 = document.getElementById('expense-list');
-      if (listEl2) listEl2.innerHTML = `<div class="card p-5 text-center"><p class="text-sm font-semibold" style="color:var(--danger);">${escapeHtml(e.message)}</p><button id="exp-retry" class="btn btn-secondary btn-sm mt-3">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่','Retry')}</button></div>`;
+      if (listEl2) listEl2.innerHTML = `<div class="card p-4 text-center"><p class="text-sm font-semibold" style="color:var(--danger);">${escapeHtml(e.message)}</p><button id="exp-retry" class="btn btn-secondary btn-sm mt-3">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่','Retry')}</button></div>`;
       bind('exp-retry', 'click', () => loadMore(true));
       queueIcons();
     }
@@ -7664,18 +7769,32 @@ function expenseFormSectionsHtml({
               </div>
             </div>
 
-        <div class="grid grid-cols-2 gap-3">
-          <div class="input-group"><label class="input-label">${tx('วิธีจ่าย','Payment method')}</label>
-            <select id="${p}ex-payment" class="input">
-              <option value="cash" ${(e.paymentMethod || 'cash') === 'cash' ? 'selected' : ''}>${tx('เงินสด','Cash')}</option>
-              <option value="card" ${e.paymentMethod === 'card' ? 'selected' : ''}>${tx('บัตรเครดิต','Card')}</option>
-              <option value="transfer" ${e.paymentMethod === 'transfer' ? 'selected' : ''}>${tx('โอนเงิน','Transfer')}</option>
-            </select>
+        <!-- วิธีจ่าย: เงินสด / บัตรเครดิต (เลือกบัตรได้) / โอน — a visible picker,
+             not a buried dropdown (a request). The native select stays as the
+             single source of truth so every older reader keeps working. -->
+        <div class="pay-block" id="${p}pay-block">
+          <div class="pay-block-head">
+            <span class="input-label">${tx('วิธีจ่าย','Payment method')}</span>
+            <button type="button" id="${p}ex-manage-cards" class="link-btn text-xs">${icon('settings-2', 'w-3 h-3')} ${tx('จัดการบัตร','Manage cards')}</button>
           </div>
-          <div class="input-group" id="${p}ex-card-group">
-            <label class="input-label flex items-center justify-between">${tx('บัตรเครดิต','Credit card')}
-              <button type="button" id="${p}ex-manage-cards" class="link-btn text-xs">${icon('settings-2', 'w-3 h-3')} ${tx('จัดการบัตร','Manage cards')}</button>
-            </label>
+          <div class="pay-method-picker" role="radiogroup" aria-label="${tx('วิธีจ่าย','Payment method')}">
+            <button type="button" class="pay-method-option" data-pay-method="cash" role="radio" aria-checked="${(e.paymentMethod || 'cash') === 'cash'}">
+              <span class="pay-method-ico">${icon('banknote', 'w-4 h-4')}</span>${tx('เงินสด','Cash')}
+            </button>
+            <button type="button" class="pay-method-option" data-pay-method="card" role="radio" aria-checked="${e.paymentMethod === 'card'}">
+              <span class="pay-method-ico">${icon('credit-card', 'w-4 h-4')}</span>${tx('บัตรเครดิต','Card')}
+            </button>
+            <button type="button" class="pay-method-option" data-pay-method="transfer" role="radio" aria-checked="${e.paymentMethod === 'transfer'}">
+              <span class="pay-method-ico">${icon('arrow-left-right', 'w-4 h-4')}</span>${tx('โอนเงิน','Transfer')}
+            </button>
+          </div>
+          <select id="${p}ex-payment" class="hidden" tabindex="-1" aria-hidden="true">
+            <option value="cash" ${(e.paymentMethod || 'cash') === 'cash' ? 'selected' : ''}>${tx('เงินสด','Cash')}</option>
+            <option value="card" ${e.paymentMethod === 'card' ? 'selected' : ''}>${tx('บัตรเครดิต','Card')}</option>
+            <option value="transfer" ${e.paymentMethod === 'transfer' ? 'selected' : ''}>${tx('โอนเงิน','Transfer')}</option>
+          </select>
+          <div class="input-group pay-card-group" id="${p}ex-card-group">
+            <label class="input-label" for="${p}ex-card">${tx('บัตรเครดิตที่ใช้','Credit card used')}</label>
             <!-- Managed dropdown only — the trip's card list prevents random card names -->
             <select id="${p}ex-card" class="input"></select>
             <p class="input-hint">${tx('เลือกได้เฉพาะบัตรที่ลงทะเบียนไว้ของทริป — เพิ่ม/แก้ไข/ลบที่ “จัดการบัตร”','Only registered trip cards can be picked — add/edit/delete via “Manage cards”')}</p>
@@ -7806,8 +7925,25 @@ function mountExpenseForm({
     cardGroup?.classList.toggle('hidden', !isCard);
     if (!isCard && cardInput) cardInput.value = '';
   };
-  paymentSel?.addEventListener('change', syncCardField);
-  syncCardField();
+  /* The visible payment picker (เงินสด / บัตร / โอน) writes the hidden select,
+     so the rest of the form keeps one source of truth. */
+  const payOptions = [...root.querySelectorAll('[data-pay-method]')];
+  const syncPayOptions = () => {
+    const value = paymentSel?.value || 'cash';
+    payOptions.forEach(btn => {
+      const on = btn.dataset.payMethod === value;
+      btn.classList.toggle('is-selected', on);
+      btn.setAttribute('aria-checked', String(on));
+    });
+    syncCardField();
+  };
+  payOptions.forEach(btn => btn.addEventListener('click', () => {
+    if (!paymentSel) return;
+    paymentSel.value = btn.dataset.payMethod;
+    paymentSel.dispatchEvent(new Event('change', { bubbles: true }));
+  }));
+  paymentSel?.addEventListener('change', syncPayOptions);
+  syncPayOptions();
 
   /* ---- receipt photo (optional): preview now, upload when the caller saves ---- */
   let pendingReceiptFile = null;
@@ -8328,11 +8464,10 @@ function mountExpenseForm({
     area.querySelectorAll('[data-payer-card]').forEach(sel => sel.addEventListener('change', () => {
       payerCards[sel.dataset.payerCard] = sel.value;
     }));
-    // One bill-level method only makes sense for a single payer; several payers each have their own.
-    [$('ex-payment'), $('ex-card')].forEach(el => {
-      const wrap = el?.closest('.input-group');
-      if (wrap) wrap.style.display = multi ? 'none' : '';
-    });
+    // One bill-level method only makes sense for a single payer; several payers
+    // each carry their own method + card on their row.
+    const payBlock = $('pay-block');
+    if (payBlock) payBlock.style.display = multi ? 'none' : '';
     refreshPayerTotal();
   }
 
@@ -9387,7 +9522,7 @@ async function renderSettlement(params) {
       return `<div class="card p-4">${renderEmptyState({ icon: 'party-popper', title: t('noDebt'), desc: t('allCleared') })}</div>`;
     }
     const payerGroups = groupTransfersByPayer(state.transactions);
-    return `<div class="card p-5" id="tx-card">
+    return `<div class="card p-4" id="tx-card">
       <div class="flex items-center justify-between gap-2 mb-4 flex-wrap">
         <h4 class="font-semibold text-sm flex items-center gap-2">${t('transactions')}
           <span class="badge badge-planned text-xs">${state.transactions.length} ${th('รายการโอน','transfers')}</span></h4>
@@ -9466,7 +9601,7 @@ async function renderSettlement(params) {
     if (!pending.length) return '';
     const total = pending.reduce((s, e) => s + (Number(e.netTotalMinor) || 0), 0);
     return `
-      <div class="card p-5" id="settle-pending">
+      <div class="card p-4" id="settle-pending">
         <div class="flex items-center justify-between gap-2 mb-1 flex-wrap">
           <h4 class="font-semibold text-sm flex items-center gap-2">${th('ยังไม่ระบุเจ้าภาพ','Payer not assigned')}
             <span class="badge badge-pending text-xs">${pending.length}</span></h4>
@@ -9497,21 +9632,75 @@ async function renderSettlement(params) {
     }
     const total = cards.reduce((sum, c) => sum + c.totalMinor, 0);
     return `
-      <div class="mt-5">
-        <h4 class="font-semibold text-sm mb-3 flex items-center gap-2">${th('สรุปบัตรเครดิต','Credit card summary')}
-          <span class="badge badge-planned text-xs">${cards.length}</span>
-        </h4>
+      <div class="mt-4 card-summary-block">
+        <div class="card-summary-head">
+          <h4 class="font-semibold text-sm flex items-center gap-2">${th('สรุปบัตรเครดิต','Credit card summary')}
+            <span class="badge badge-planned text-xs">${cards.length}</span>
+          </h4>
+          <span class="card-summary-hint">${icon('hand-pointer', 'w-3 h-3')} ${th('กดที่บัตรเพื่อดูรายการ','Tap a card for its items')}</span>
+        </div>
         <div class="card-summary-grid">
-          ${cards.map(c => `
-            <div class="card-summary-tile">
-              <div class="card-summary-name">${icon('credit-card', 'w-3.5 h-3.5')} ${escapeHtml(c.card)}</div>
-              <div class="card-summary-amount">${money(c.totalMinor)}</div>
-              ${currency !== 'THB' && thbOf(c.totalMinor) ? `<div class="card-summary-thb">≈ ${thbOf(c.totalMinor)}</div>` : ''}
-              <div class="card-summary-meta">${c.count} ${th('รายการ','items')}${c.estimatedMinor ? ` • ${th('ประมาณการ','est.')} ${money(c.estimatedMinor)}` : ''}${c.holders.length ? ` • ${escapeHtml(c.holders.join(', '))}` : ''}</div>
-            </div>`).join('')}
+          ${cards.map((c, i) => `
+            <button type="button" class="card-summary-tile" data-card-summary="${escapeHtml(c.card)}"
+              aria-haspopup="dialog" aria-label="${escapeHtml(c.card)} — ${money(c.totalMinor)} · ${th('ดูรายการที่ใช้บัตรนี้','view items charged to this card')}"
+              style="--card-accent:${['#2f6fe4', '#0d9488', '#ea580c', '#7c3aed', '#db2777'][i % 5]};">
+              <span class="card-summary-tile-head">
+                <span class="card-summary-name"><span class="card-summary-icon">${icon('credit-card', 'w-3.5 h-3.5')}</span> <span class="truncate">${escapeHtml(c.card)}</span></span>
+                <span class="card-summary-open">${th('ดูรายการ','Items')} ${icon('chevron-right', 'w-3 h-3')}</span>
+              </span>
+              <span class="card-summary-amount">${money(c.totalMinor)}</span>
+              ${currency !== 'THB' && thbOf(c.totalMinor) ? `<span class="card-summary-thb">≈ ${thbOf(c.totalMinor)}</span>` : ''}
+              <span class="card-summary-meta">${c.count} ${th('รายการ','items')}${c.estimatedMinor ? ` • ${th('ประมาณการ','est.')} ${money(c.estimatedMinor)}` : ''}${c.holders.length ? ` • ${escapeHtml(c.holders.join(', '))}` : ''}</span>
+              ${c.items.length ? `<span class="card-summary-preview">${c.items.slice(0, 2).map(it => `<span class="truncate">${escapeHtml(it.title || '')}</span>`).join('')}</span>` : ''}
+            </button>`).join('')}
         </div>
         <div class="receipt-line muted mt-2"><span>${th('รวมทุกบัตร','All cards')}</span><span>${money(total)} ${thbTag(total)}</span></div>
       </div>`;
+  }
+
+  /**
+   * “บัตรนี้ใช้จ่ายอะไรไปบ้าง” — the popup behind a credit-card summary tile.
+   * Lists every bill charged to that card (with the payer, category and the part
+   * of the bill that went on this card) and links each one to its expense.
+   */
+  function openCardSummarySheet(cardName) {
+    const card = cardSummary(state.expenses, state.membersMap).find(c => c.card === cardName);
+    if (!card) return;
+    const sheet = showBottomSheet(`
+      <div class="space-y-3">
+        <div class="flex items-start gap-3">
+          <div class="row-icon">${icon('credit-card', 'w-5 h-5')}</div>
+          <div class="min-w-0 flex-1">
+            <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${escapeHtml(card.card)}</h3>
+            <p class="text-xs text-[var(--text-secondary)]">${card.count} ${th('รายการ','items')}${card.holders.length ? ` • ${escapeHtml(card.holders.join(', '))}` : ''}</p>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" data-cs-close aria-label="${th('ปิด','Close')}" title="${th('ปิด','Close')}">${icon('x', 'w-4 h-4')}</button>
+        </div>
+        <div class="card-summary-sheet-total">
+          <span>${th('ยอดรวมบนบัตรนี้','Charged to this card')}</span>
+          <b>${money(card.totalMinor)}</b>
+          ${card.estimatedMinor ? `<i>${th('รวมประมาณการ','incl. estimated')} ${money(card.estimatedMinor)}</i>` : ''}
+        </div>
+        <div class="card-summary-items">
+          ${card.items.length ? card.items.map(it => `
+            <a class="card-summary-item" href="#/trip/${escapeHtml(tripId)}/expenses/add?id=${encodeURIComponent(it.expenseId)}">
+              <span class="card-summary-item-main">
+                <span class="card-summary-item-title">${escapeHtml(it.title || '')}${it.estimated ? ` <span class="badge badge-skipped text-xs">${th('ประมาณการ','est.')}</span>` : ''}</span>
+                <span class="card-summary-item-meta">${escapeHtml(shortDay(it.date))} • ${escapeHtml(categoryLabel(it.category, lang))}${(it.payerNames || []).length ? ` • ${th('จ่ายโดย','paid by')} ${escapeHtml(it.payerNames.join(', '))}` : ''}</span>
+              </span>
+              <span class="card-summary-item-amount">${money(it.amountMinor)}</span>
+              ${icon('chevron-right', 'w-3.5 h-3.5')}
+            </a>`).join('') : `<p class="text-xs text-[var(--text-secondary)]">${th('ยังไม่มีรายการบนบัตรนี้','No items on this card yet')}</p>`}
+        </div>
+        <p class="text-xs text-[var(--text-tertiary)]">${th('กดรายการเพื่อเปิดค่าใช้จ่ายนั้น','Tap an item to open the expense')}</p>
+        <div class="btn-row">
+          <button type="button" class="btn btn-secondary flex-1" data-cs-close>${th('ปิด','Close')}</button>
+          <a class="btn btn-primary flex-1" href="#/trip/${escapeHtml(tripId)}/expenses">${icon('wallet', 'w-4 h-4')} ${th('ไปหน้าค่าใช้จ่าย','All expenses')}</a>
+        </div>
+      </div>
+    `);
+    queueIcons();
+    sheet.sheet.querySelectorAll('[data-cs-close]').forEach(btn => btn.addEventListener('click', () => sheet.close()));
   }
 
   /**
@@ -9524,7 +9713,7 @@ async function renderSettlement(params) {
     const get = people.filter(m => m.netMinor > 1);
     const totalMove = state.transactions.reduce((n, t) => n + (t.amountMinor || 0), 0);
     return `
-      <section class="card p-5" id="settle-net">
+      <section class="card p-4" id="settle-net">
         <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
           <h4 class="font-semibold text-sm flex items-center gap-2">${th('สรุปการโอน — ใครจ่ายใคร ได้คืนเท่าไร','Transfer summary — who pays whom')}</h4>
           <span class="badge badge-planned text-xs">${state.transactions.length} ${th('รายการโอน','transfers')} • ${money(totalMove)}</span>
@@ -9577,7 +9766,7 @@ async function renderSettlement(params) {
       return acc;
     }, { cash: 0, card: 0, transfer: 0 });
     return `
-      <section class="card p-5" id="settle-overview">
+      <section class="card p-4" id="settle-overview">
         <div class="settle-overview-header mb-4">
           <h4 class="font-semibold text-sm flex items-center gap-2">${th('ภาพรวมทั้งทริป','Trip overview')}</h4>
           <button class="settle-overview-toggle no-export ${overviewDetailsExpanded ? 'is-expanded' : ''}" data-overview-details-toggle type="button" aria-expanded="${overviewDetailsExpanded}" aria-controls="settle-overview-details">
@@ -9872,7 +10061,7 @@ async function renderSettlement(params) {
     const txns = (state.transactions || []).filter(tx => tx?.from && tx?.to && tx.from !== tx.to);
     const membersMap = state.membersMap || {};
     if (!txns.length) {
-      return `<div class="card p-5">${renderEmptyState({ icon: 'party-popper', title: t('noDebt'), desc: t('allCleared') })}</div>`;
+      return `<div class="card p-4">${renderEmptyState({ icon: 'party-popper', title: t('noDebt'), desc: t('allCleared') })}</div>`;
     }
     const tokenColor = (name, fallback) => {
       try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback; }
@@ -10180,7 +10369,7 @@ async function renderSettlement(params) {
       }
     } catch (e) {
       console.error(e);
-      content.innerHTML = `<div class="card p-5 text-center" role="alert"><p class="text-sm font-semibold" style="color:var(--danger);">${th('โหลดข้อมูลเคลียร์บิลไม่สำเร็จ', 'Could not load settlement')}</p><p class="text-sm text-[var(--text-secondary)] mt-2">${th('ยังไม่แสดงยอดเพราะข้อมูลอาจไม่ครบ ตรวจสอบการเชื่อมต่อหรือสิทธิ์เข้าถึง แล้วลองใหม่', 'Balances are hidden because data may be incomplete. Check your connection or access and retry.')}</p><button id="settle-retry" class="btn btn-secondary btn-sm mt-3">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่', 'Retry')}</button></div>`;
+      content.innerHTML = `<div class="card p-4 text-center" role="alert"><p class="text-sm font-semibold" style="color:var(--danger);">${th('โหลดข้อมูลเคลียร์บิลไม่สำเร็จ', 'Could not load settlement')}</p><p class="text-sm text-[var(--text-secondary)] mt-2">${th('ยังไม่แสดงยอดเพราะข้อมูลอาจไม่ครบ ตรวจสอบการเชื่อมต่อหรือสิทธิ์เข้าถึง แล้วลองใหม่', 'Balances are hidden because data may be incomplete. Check your connection or access and retry.')}</p><button id="settle-retry" class="btn btn-secondary btn-sm mt-3">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่', 'Retry')}</button></div>`;
       document.getElementById('settle-retry')?.addEventListener('click', load);
       queueIcons();
     }
@@ -10263,6 +10452,13 @@ async function renderSettlement(params) {
 
   // Delegated: the transactions card is re-rendered by renderView, the container is not.
   document.getElementById('settlement-content')?.addEventListener('click', (e) => {
+    // A credit-card summary tile opens that card's item list (the overview is
+    // re-rendered on every recalculate, so the handler lives on the container).
+    const cardTile = e.target.closest?.('[data-card-summary]');
+    if (cardTile) {
+      openCardSummarySheet(cardTile.dataset.cardSummary);
+      return;
+    }
     const pay = e.target.closest?.('[data-settle-pay]');
     if (pay && canPay) {
       openPayTransferSheet({ fromId: pay.dataset.settleFrom, toId: pay.dataset.settleTo, amountMinor: Number(pay.dataset.settleAmount) });
@@ -11013,7 +11209,7 @@ async function renderMembers(params) {
     } catch (e) {
       if (isStale(token)) return;
       console.error(e);
-      list.innerHTML = `<div class="card p-5 text-center"><p class="text-sm font-semibold" style="color:var(--danger);">${escapeHtml(e.message)}</p><button id="mem-retry" class="btn btn-secondary btn-sm mt-3">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่','Retry')}</button></div>`;
+      list.innerHTML = `<div class="card p-4 text-center"><p class="text-sm font-semibold" style="color:var(--danger);">${escapeHtml(e.message)}</p><button id="mem-retry" class="btn btn-secondary btn-sm mt-3">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่','Retry')}</button></div>`;
       bind('mem-retry', 'click', loadMembersList);
       queueIcons();
     }
@@ -11361,7 +11557,7 @@ async function renderDocuments(params) {
     } catch (e) {
       if (isStale(token)) return;
       console.error('loadDocs failed', e);
-      list.innerHTML = `<div class="card p-5 text-center"><p class="text-sm font-semibold" style="color:var(--danger);">${escapeHtml(e.message)}</p><button id="docs-retry" class="btn btn-secondary btn-sm mt-3">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่','Retry')}</button></div>`;
+      list.innerHTML = `<div class="card p-4 text-center"><p class="text-sm font-semibold" style="color:var(--danger);">${escapeHtml(e.message)}</p><button id="docs-retry" class="btn btn-secondary btn-sm mt-3">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่','Retry')}</button></div>`;
       bind('docs-retry', 'click', loadDocs);
       queueIcons();
     }
@@ -11484,7 +11680,7 @@ async function renderImportExport(params) {
   if (isStale(token)) return;
 
   appEl.innerHTML = `
-    <div class="page-enter max-w-[760px] mx-auto space-y-5">
+    <div class="page-enter max-w-[760px] mx-auto space-y-4">
       <div class="flex items-center justify-between gap-2">
         ${renderPageScene('import', { lang, title: `${icon('package', 'w-5 h-5')} ${t('importExport')}`,
           subtitle: th('เทมเพลต Excel • นำเข้า/ส่งออกแผนและค่าใช้จ่าย (แอดมิน)','Excel templates • import & export itinerary and expenses (admin)') })}
@@ -11507,7 +11703,7 @@ async function renderImportExport(params) {
         </div>
       </div>
 
-      <div class="card p-5 space-y-4">
+      <div class="card p-4 space-y-3">
         <h3 class="font-semibold flex items-center gap-2">${icon('upload', 'w-4 h-4')} ${th('นำเข้าข้อมูล','Import')} <span class="badge badge-skipped text-xs">${th('แอดมิน','admin')}</span></h3>
         <div class="grid sm:grid-cols-2 gap-3">
           <div class="p-3 rounded-xl" style="background:var(--bg-secondary); border:1px solid var(--border);">
@@ -11526,7 +11722,7 @@ async function renderImportExport(params) {
         <div id="import-preview" class="text-sm"></div>
       </div>
 
-      <div class="card p-5 space-y-4">
+      <div class="card p-4 space-y-3">
         <h3 class="font-semibold flex items-center gap-2">${icon('download', 'w-4 h-4')} ${th('ส่งออกข้อมูล','Export')}</h3>
         <div class="btn-row">
           <button id="exp-full" class="btn btn-secondary btn-sm" ${isAdmin ? '' : 'disabled'}>${icon('file-spreadsheet', 'w-4 h-4')} ${th('Excel ทั้งทริป','Full trip Excel')}</button>
@@ -11919,7 +12115,7 @@ async function renderSettings(params) {
 
       <!-- v34: FLAT STYLE CONTROLS — the three knobs that re-shape the whole app.
            Everything is CSS variables, so these buttons never reload the page. -->
-      <div class="card p-5 space-y-3" id="settings-style-card" data-settings-section="appearance">
+      <div class="card p-4 space-y-3" id="settings-style-card" data-settings-section="appearance">
         <h3 class="font-semibold flex items-center gap-2">${th('สไตล์หน้าจอ (Flat)', 'Interface style (Flat)')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('ปรับมุมโค้ง ความแน่นของระยะห่าง และเงา — มีผลทุกหน้าทันที และจำไว้ในเครื่องนี้ ไม่ต้องรีเฟรช', 'Adjust corner radius, spacing density and shadows. It applies to every screen instantly and is remembered on this device.')}</p>
         <div class="appearance-style-grid">
@@ -11955,13 +12151,13 @@ async function renderSettings(params) {
       </div>
 
       <!-- v18: the colour theme picker lives here (LINE / Facebook / IG / custom) -->
-      <div class="card p-5 space-y-3" id="settings-appearance-card" data-settings-section="appearance">
+      <div class="card p-4 space-y-3" id="settings-appearance-card" data-settings-section="appearance">
         <h3 class="font-semibold flex items-center gap-2">${th('ชุดสี & การแสดงผล','Colour theme & display')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เลือกธีมที่ถูกใจ แล้วปรับสี/ความสดใสเองได้ — มีผลทุกหน้า รวมถึงโหมดมืดและรูปที่ส่งออก','Pick a palette you like and fine-tune the colours — it applies everywhere, including dark mode and exported images.')}</p>
         ${themePickerHtml({ idPrefix: 'settings' })}
       </div>
 
-      <div class="card p-5 space-y-3" id="map-default-card" data-settings-section="appearance">
+      <div class="card p-4 space-y-3" id="map-default-card" data-settings-section="appearance">
         <h3 class="font-semibold flex items-center gap-2">${th('แผนที่เริ่มต้น','Default basemap')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เลือกประเภทแผนที่ที่จะเปิดเป็นค่าเริ่มต้นในหน้าแผนการเดินทางและหน้าไอเดีย การตั้งค่านี้ซิงก์ให้สมาชิกทุกอุปกรณ์','Choose which basemap opens by default on the itinerary and ideas maps. This setting syncs to every trip device.')}</p>
         <div class="map-default-options" id="map-default-options">
@@ -11983,7 +12179,7 @@ async function renderSettings(params) {
       </div>
 
       <!-- v18: the profile picture lands here, so the account lives with it -->
-      <div class="card p-5 space-y-3" id="settings-account-card" data-settings-section="appearance">
+      <div class="card p-4 space-y-3" id="settings-account-card" data-settings-section="appearance">
         <h3 class="font-semibold flex items-center gap-2">${th('บัญชีและอุปกรณ์','Account & device')}</h3>
         <div class="flex items-center gap-3">
           <div class="avatar" style="width:44px;height:44px;background:var(--primary);color:var(--on-primary);">${avatarInitialHtml(currentUser)}</div>
@@ -12003,21 +12199,21 @@ async function renderSettings(params) {
         <p class="text-xs text-[var(--text-tertiary)] font-mono">${escapeHtml(currentUser?.uid?.slice(0, 12) || '')}</p>
       </div>
 
-      <div class="card p-5 space-y-3" id="expense-groups-card" data-settings-section="system">
+      <div class="card p-4 space-y-3" id="expense-groups-card" data-settings-section="system">
         <h3 class="font-semibold flex items-center gap-2">${th('กลุ่มค่าใช้จ่าย','Expense groups')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เพิ่ม แก้ไขชื่อ/สี/ไอคอน หรือลบกลุ่มของทริปนี้ได้ ทุกหน้าจะใช้กลุ่มใหม่ทันที','Add, rename, recolour or delete groups for this trip — every screen picks them up.')}</p>
         <div id="settings-cat-list" class="flex flex-wrap gap-2"></div>
         <button id="settings-manage-cats" class="btn btn-secondary btn-sm w-full">${icon('settings-2', 'w-4 h-4')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage groups')}</button>
       </div>
 
-      <div class="card p-5 space-y-3" id="trip-cards-card" data-settings-section="system">
+      <div class="card p-4 space-y-3" id="trip-cards-card" data-settings-section="system">
         <h3 class="font-semibold flex items-center gap-2">${th('บัตรเครดิตของทริป','Trip credit cards')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('ฟอร์มค่าใช้จ่ายจะเลือกบัตรได้จากรายการนี้เท่านั้น — เพิ่ม/แก้ไข/ลบที่นี่ได้ เพื่อป้องกันการกรอกบัตรมั่ว','Expense forms can only pick cards from this list — add/edit/delete here to stop random card names.')}</p>
         <div id="settings-cards-list" class="flex flex-wrap gap-2"></div>
         <button id="settings-manage-cards" class="btn btn-secondary btn-sm w-full">${icon('settings-2', 'w-4 h-4')} ${th('จัดการบัตรเครดิต','Manage cards')}</button>
       </div>
 
-      <div class="card p-5 space-y-3" id="invite-card" data-settings-section="system">
+      <div class="card p-4 space-y-3" id="invite-card" data-settings-section="system">
         <h3 class="font-semibold flex items-center gap-2">${th('รหัสเชิญเข้าร่วมทริป','Trip invite code')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('ส่งรหัสนี้ให้เพื่อน — พวกเขาล็อกอินด้วยบัญชี Google/อีเมล แล้วกรอกรหัสเพื่อขอเข้าร่วม จากนั้นกดอนุมัติได้ที่หน้าสมาชิก','Share this code with friends — they sign in with Google/email, enter it to request access, and you approve them on the Members page.')}</p>
         <div class="flex items-center gap-2 flex-wrap">
@@ -12028,7 +12224,7 @@ async function renderSettings(params) {
         <p class="text-xs text-[var(--text-tertiary)]">${th('รหัสจะสุ่มใหม่ได้ทุกเมื่อ — คนที่ยังไม่ได้อนุมัติจะใช้รหัสเดิมไม่ได้อีก','You can rotate the code anytime — old codes stop working immediately.')}</p>
       </div>
 
-      <div class="card p-5 space-y-3" data-settings-section="system">
+      <div class="card p-4 space-y-3" data-settings-section="system">
         <h3 class="font-semibold flex items-center gap-2">${th('ตรวจสอบระบบ','System check')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เช็กว่าล็อกอินสมาชิก, Cloud Functions และ Firestore Rules พร้อมใช้งานไหม (ใช้เวลาไม่กี่วินาที)','Checks member login, Cloud Functions and Firestore rules (a few seconds).')}</p>
         <button id="run-diagnostics" class="btn btn-secondary w-full">${icon('play', 'w-4 h-4')} ${th('เริ่มตรวจสอบ','Run check')}</button>
@@ -12047,7 +12243,7 @@ async function renderSettings(params) {
         <p class="text-xs text-[var(--text-tertiary)]">${th('รหัสทริป (Trip ID)', 'Trip ID')}: <span class="font-mono">${escapeHtml(tripId)}</span></p>
       </div>
 
-      <div class="card p-5 space-y-2" id="about-card" data-settings-section="advanced">
+      <div class="card p-4 space-y-2" id="about-card" data-settings-section="advanced">
         <h3 class="font-semibold flex items-center gap-2">${th('เกี่ยวกับแอป','About')}</h3>
         <div class="app-wordmark">
           <span class="app-wordmark-logo">${icon('mount-snow', 'w-4 h-4')}</span>
@@ -13163,7 +13359,7 @@ async function renderPrep(params) {
   if (isStale(token)) return;
 
   appEl.innerHTML = `
-    <div class="page-enter max-w-[860px] mx-auto space-y-5">
+    <div class="page-enter max-w-[860px] mx-auto space-y-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         ${renderPageScene('prep', {
           lang,
@@ -13483,7 +13679,7 @@ async function renderIdeas(params) {
   const myId = currentUser?.uid || '';
 
   appEl.innerHTML = `
-    <div class="page-enter max-w-[1000px] mx-auto space-y-5">
+    <div class="page-enter max-w-[1000px] mx-auto space-y-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         ${renderPageScene('ideas', {
           lang,
@@ -13542,7 +13738,7 @@ async function renderIdeas(params) {
         </div>
         <p class="text-xs text-[var(--text-tertiary)] flex items-center gap-1 px-1 pt-2">${icon('info', 'w-3 h-3')} ${th('กดปุ่มหมุดบนการ์ด → แผนที่พาไปที่ไอเดียนั้น • หมุดเขียว = อยู่ในแผนแล้ว','Tap the pin button on a card → the map jumps to that idea • green pin = already in the plan')} • ${th('แผนที่มี 3 โหมดเหมือนหน้าแผนการเดินทาง','Map has 3 modes like itinerary')}</p>
       </div>
-      <div id="ideas-list" class="space-y-5 stagger"></div>
+      <div id="ideas-list" class="space-y-4 stagger"></div>
     </div>
   `;
   queueIcons();
@@ -14184,7 +14380,7 @@ async function renderBookings(params) {
   const nowStamp = dayjs().format('YYYY-MM-DDTHH:mm');
 
   appEl.innerHTML = `
-    <div class="page-enter max-w-[900px] mx-auto space-y-5">
+    <div class="page-enter max-w-[900px] mx-auto space-y-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         ${renderPageScene('bookings', {
           lang,
@@ -14209,7 +14405,7 @@ async function renderBookings(params) {
       </div>
 
       ${loadError ? `<div class="card notice p-4 text-xs">${icon('info', 'w-4 h-4')} ${escapeHtml(loadError)}</div>` : ''}
-      <div id="bookings-list" class="space-y-5 stagger"></div>
+      <div id="bookings-list" class="space-y-4 stagger"></div>
     </div>
   `;
   queueIcons();
@@ -14607,7 +14803,7 @@ async function renderExplore(params) {
   }
 
   appEl.innerHTML = `
-    <div class="page-enter max-w-[1100px] mx-auto space-y-5" id="explore-root">
+    <div class="page-enter max-w-[1100px] mx-auto space-y-4" id="explore-root">
       ${renderPageScene('explore', {
         lang,
         title: `${icon('compass', 'w-5 h-5')} ${th('ชวนไปที่นี่','Explore places')}`,
@@ -14887,7 +15083,7 @@ async function renderCalendar(params) {
   const today = dayjs().format('YYYY-MM-DD');
 
   appEl.innerHTML = `
-    <div class="page-enter max-w-[1000px] mx-auto space-y-5">
+    <div class="page-enter max-w-[1000px] mx-auto space-y-4">
       ${renderPageScene('calendar', {
         lang,
         title: `${icon('calendar-days', 'w-5 h-5')} ${th('ปฏิทินทริป','Trip calendar')}`,

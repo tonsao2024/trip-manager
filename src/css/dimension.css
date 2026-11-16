@@ -1,13 +1,15 @@
 /* Layered surfaces and a little movement for the journey. */
+/* v37: a brighter, cooler canvas so the hue accents (KPI caps, category bars,
+   team washes, weather chips) read as colour instead of sinking into grey. */
 :root {
-  --bg: #edf2f6;
-  --bg-secondary: #e7eef3;
-  --bg-tertiary: #dce6ec;
-  --surface-2: #f2f6f8;
-  --surface-3: #e3ebef;
-  --surface-inset: #eef3f6;
-  --border: rgba(31, 59, 75, .15);
-  --border-light: rgba(31, 59, 75, .10);
+  --bg: #f5f8fc;
+  --bg-secondary: #eef3f9;
+  --bg-tertiary: #e2eaf3;
+  --surface-2: #f1f5fa;
+  --surface-3: #e6eef6;
+  --surface-inset: #eef3f9;
+  --border: rgba(31, 59, 75, .14);
+  --border-light: rgba(31, 59, 75, .09);
 }
 [data-theme="dark"] {
   --bg: #10171d;
@@ -319,7 +321,7 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 .weather-day { position: relative; display: flex; min-width: 0; min-height: 92px; flex-direction: column; align-items: center; gap: 3px; padding: 7px 3px 5px; overflow: hidden; border: 1px solid var(--border-light); border-radius: 12px; background: color-mix(in srgb, var(--surface) 86%, #ffffff 14%); color: var(--text-secondary); cursor: pointer; transition: transform .16s ease, background .16s ease, border-color .16s ease; }
 .weather-day:hover { transform: translateY(-1px); border-color: var(--border-strong); }
 .weather-day-number { display: flex; width: 100%; align-items: center; justify-content: center; gap: 3px; color: var(--text-strong); font-size: 12px; font-weight: 600; line-height: 1.2; }
-.weather-day-number i { color: #e18e34; font-size: 9px; font-style: normal; }
+.weather-day-number i { color: #b45309; font-size: 9px; font-style: normal; } /* 4.75:1 on the trip-day tint */
 .weather-day-icon { display: grid; min-height: 23px; place-items: center; }
 .weather-day-temp { display: flex; align-items: baseline; gap: 4px; color: var(--text-strong); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .weather-day-temp small { color: var(--text-tertiary); font-size: 10px; font-weight: 400; }
@@ -331,6 +333,10 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 [data-theme="dark"] .weather-day.is-trip .weather-day-number { color: #ffd78c; }
 .weather-day.is-selected { outline: 2px solid color-mix(in srgb, var(--primary-raw) 62%, transparent); outline-offset: -2px; }
 .weather-day.is-today .weather-day-number { color: var(--primary-strong); }
+/* dark mode: the tinted day cell needs lighter ink to stay at AA */
+[data-theme="dark"] .weather-day-icon--empty { color: #c4c4c4; }
+[data-theme="dark"] .weather-day-number i { color: #ffd78c; }
+[data-theme="dark"] .weather-day.is-today .weather-day-number { color: #9dbdfa; }
 .weather-day-icon.tone-sun, .weather-selected-icon.tone-sun { color: #e7a027; }
 .weather-day-icon.tone-cloud, .weather-selected-icon.tone-cloud { color: #6d91ac; }
 .weather-day-icon.tone-rain, .weather-selected-icon.tone-rain { color: #428fc7; }
@@ -411,3 +417,46 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 [data-theme="dark"] .jma-day-icon.tone-rain { color: #6fb2e0; }
 [data-theme="dark"] .jma-day-icon.tone-snow { color: #8fc3e0; }
 [data-theme="dark"] .jma-day-icon.tone-storm { color: #ab9ae2; }
+
+/* ==========================================================================
+   v37 compact countdown (owner request: “การ์ดนับถอยหลังสูงเกินไป”)
+   The traveller needed 184px of track margin, which made this card the tallest
+   thing on the dashboard. Half the runner, half the margin: the card now sits
+   level with the weather card next to it.
+   ========================================================================== */
+/* The top row used to be ~400px because the traveller needed 184px of track
+   margin. v37 halves the runner and the margin, so the pair sits level with a
+   normal dashboard card (~215px) and the weather card no longer stretches. */
+.countdown-scene {
+  --cdc-trail-bottom: 34px;
+  --cdc-fuji-w: 104%;
+  --cdc-runner-w: 84px;
+  --cdc-runner-h: 96px;
+  min-height: 176px;
+  gap: 2px;
+  padding: 10px 12px 9px;
+  border-radius: 14px;
+}
+.cdc-title { font-size: 14px; }
+.cdc-sub { font-size: 12px; margin-top: 1px; }
+.cdc-figure.is-text .cdc-days { font-size: 19px; }
+.cdc-unit { font-size: 14px; }
+.cdc-caption { margin-top: 3px; font-size: 12px; }
+.cdc-weather-label { margin-top: 3px; font-size: 11px; }
+.cdc-spacer { min-height: 6px; }
+.cdc-track { height: 5px; margin: 82px 42px 0; }
+.cdc-ends { margin-top: 4px; font-size: 11px; }
+.cdc-horizon { height: 34px; }
+.cdc-horizon::after { height: 20px; }
+.cdc-fuji { max-height: 60%; }
+.cdc-fireworks { right: 18px; top: 22px; width: 76px; height: 64px; }
+/* The figure keeps its display weight but drops from 78–96px to 38–46px. */
+.cdc-figure:not(.is-text) .cdc-days { font-size: clamp(38px, 4.4vw, 46px); font-weight: 600; line-height: .95; animation: none; }
+.cdc-figure.is-long:not(.is-text) .cdc-days { font-size: clamp(26px, 3.2vw, 32px); }
+@media (max-width: 480px) {
+  .countdown-scene { --cdc-runner-w: 76px; --cdc-runner-h: 86px; }
+  .cdc-figure:not(.is-text) .cdc-days { font-size: 36px; }
+  .cdc-figure.is-long:not(.is-text) .cdc-days { font-size: 26px; }
+  .cdc-track { margin: 74px 38px 0; }
+  .cdc-fireworks { right: 14px; top: 18px; width: 64px; height: 56px; }
+}

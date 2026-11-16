@@ -58,6 +58,8 @@ const ROUTES = {
   'add-place': ['#/trip/t1/itinerary?action=add'],
   'member-form': ['#/trip/t1/members', ['#add-member-btn']],
   'expense-popup': ['#/trip/t1/expenses', ['.expense-card']],
+  // clicking a credit-card tile opens the “what went on this card” sheet
+  'card-summary-sheet': ['#/trip/t1/settlement', ['[data-card-summary]']],
   'appearance-sheet': ['#/trip/t1/dashboard', ['#user-avatar-btn', '#appearance-btn']],
   'account-sheet': ['#/trip/t1/dashboard', ['#user-avatar-btn']],
   toasts: ['#/trip/t1/dashboard', [], 'toasts'],
@@ -107,7 +109,7 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
   .replace(/<link[^>]*fonts\.gstatic\.com[^>]*>/g, '')
   .replace(/<noscript>[\s\S]*?<\/noscript>/g, '')
   .replace(/<script type="importmap">[\s\S]*?<\/script>/, '')
-  .replace(/<script type="module" src="\.\/src\/js\/app\.js\?v=\d+"><\/script>/, '<script type="module" src="/tests/browser/out/design/driver.js"></script>')
+  .replace(/<script type="module" src="\.\/src\/js\/app\.js\?[^"]*"><\/script>/, '<script type="module" src="/tests/browser/out/design/driver.js"></script>')
   .replace(/\.\/src\//g, '/src/');
 if (!html.includes('/tests/browser/out/design/driver.js')) throw new Error('design-check: could not swap the app entry for the driver (index.html changed?)');
 fs.writeFileSync(path.join(workDir, 'page.html'), html);

@@ -80,7 +80,11 @@ const TRIP = {
   name: 'ทริปฟูจิ 2027', description: 'ครอบครัว', country: 'Japan', city: 'Fujikawaguchiko',
   startDate: iso(20), endDate: iso(24), baseCurrency: 'JPY', timezone: 'Asia/Tokyo', exchangeRateToTHB: 0.24,
   themeColor: '#2f6fe4', inviteCode: 'FUJI23', inviteEnabled: true, status: 'active', createdBy: 'u1',
-  memberUids: ['u1', 'u2', 'u3'], budgetTotal: 500000, budgetPerPerson: 250000, createdAt: now, coverImage: ''
+  memberUids: ['u1', 'u2', 'u3'], budgetTotal: 500000, budgetPerPerson: 250000, createdAt: now, coverImage: '',
+  cards: [
+    { id: 'c1', name: 'KTC Visa', holderId: 'u1', color: '#2f6fe4' },
+    { id: 'c2', name: 'AEON JCB', holderId: 'u2', color: '#0d9488' }
+  ]
 };
 fsdb.__seed('trips/t1', TRIP);
 fsdb.__seed('trips/t1/members/u1', { displayName: 'สมชาย', username: 'admin', role: 'trip_admin', color: '#2f6fe4', status: 'active', permissions: { canEditItinerary: true, canEditExpense: true, canManageMembers: true }, createdAt: now });
@@ -107,22 +111,25 @@ for (const [id, title, day, time, dur, category, address, coordinates, cost] of 
 }
 
 const expenses = [
-  ['e1', 'โรงแรมฟูจิวิว', 0, 'stay', 32000, 'card', 'u1'],
-  ['e2', 'ค่าตั๋วรถบัสชินจูกุ', 0, 'transport', 4400, 'cash', 'u2'],
-  ['e3', 'มื้อเย็นอิซากายะ', 1, 'food', 8600, 'cash', 'u3'],
-  ['e4', 'ค่าเข้าชม + ของที่ระลึก', 2, 'activity', 3200, 'card', 'u1']
+  ['e1', 'โรงแรมฟูจิวิว', 0, 'stay', 32000, 'card', 'u1', 'KTC Visa'],
+  ['e2', 'ค่าตั๋วรถบัสชินจูกุ', 0, 'transport', 4400, 'cash', 'u2', ''],
+  ['e3', 'มื้อเย็นอิซากายะ', 1, 'food', 8600, 'cash', 'u3', ''],
+  ['e4', 'ค่าเข้าชม + ของที่ระลึก', 2, 'activity', 3200, 'card', 'u1', 'KTC Visa'],
+  ['e5', 'ตั๋วชิงช้าสวรรค์', 3, 'ticket', 4200, 'card', 'u2', 'AEON JCB']
 ];
-for (const [id, title, day, category, amount, method, payer] of expenses) {
+for (const [id, title, day, category, amount, method, payer, cardName] of expenses) {
   fsdb.__seed(`trips/t1/expenses/${id}`, {
     title, date: iso(20 + day), category, currency: 'JPY', baseCurrency: 'JPY',
     subtotalMinor: amount, discountMinor: 0, serviceMinor: 0, taxMinor: 0, cardFeeMinor: 0, netTotalMinor: amount,
     thbRate: 0.24, thbMinor: Math.round(amount * 0.24), payerId: payer, status: 'active', isEstimated: false,
-    actualMinor: amount, paymentMethod: method,
+    actualMinor: amount, paymentMethod: method, cardName,
     allocations: [{ memberId: 'u1', amountMinor: Math.round(amount / 3) }, { memberId: 'u2', amountMinor: Math.round(amount / 3) }, { memberId: 'u3', amountMinor: amount - 2 * Math.round(amount / 3) }],
     createdAt: now
   });
 }
 
+fsdb.__seed('trips/t1/memberGroups/g1', { name: 'กลุ่ม A · สายฟูจิ', color: '#2f6fe4', icon: 'plane', memberIds: ['u1', 'u2'], order: 0 });
+fsdb.__seed('trips/t1/memberGroups/g2', { name: 'กลุ่ม B · สายกิน', color: '#ea580c', icon: 'sun', memberIds: ['u3'], order: 1 });
 fsdb.__seed('trips/t1/reservations/b1', {
   title: 'TG676 BKK → NRT', type: 'flight', date: iso(20), startTime: '08:15', endTime: '16:00',
   confirmation: 'XT4K9P', provider: 'Thai Airways', from: 'BKK', to: 'NRT', costMinor: 2450000, currency: 'THB',
