@@ -17,35 +17,23 @@ const only = process.argv[3];
 const height = width >= 1000 ? 900 : 932;
 
 const STYLE = `
-  <link rel="stylesheet" href="/node_modules/@fontsource/outfit/400.css">
-  <link rel="stylesheet" href="/node_modules/@fontsource/outfit/600.css">
-  <link rel="stylesheet" href="/node_modules/@fontsource/outfit/700.css">
-  <link rel="stylesheet" href="/node_modules/@fontsource/outfit/800.css">
-  <link rel="stylesheet" href="/node_modules/@fontsource/plus-jakarta-sans/400.css">
-  <link rel="stylesheet" href="/node_modules/@fontsource/plus-jakarta-sans/500.css">
-  <link rel="stylesheet" href="/node_modules/@fontsource/plus-jakarta-sans/600.css">
-  <link rel="stylesheet" href="/node_modules/@fontsource/plus-jakarta-sans/700.css">
-  <link rel="stylesheet" href="/node_modules/@fontsource/plus-jakarta-sans/800.css">
-  <link rel="stylesheet" href="/node_modules/@fontsource/noto-sans-thai/400.css">
-  <link rel="stylesheet" href="/node_modules/@fontsource/noto-sans-thai/500.css">
-  <link rel="stylesheet" href="/node_modules/@fontsource/noto-sans-thai/600.css">
-  <link rel="stylesheet" href="/node_modules/@fontsource/noto-sans-thai/700.css">
-  <link rel="stylesheet" href="/tools/preview/out/tailwind.css">
+  <link rel="stylesheet" href="/node_modules/@fontsource/ibm-plex-sans-thai/400.css">
+  <link rel="stylesheet" href="/node_modules/@fontsource/ibm-plex-sans-thai/500.css">
+  <link rel="stylesheet" href="/node_modules/@fontsource/ibm-plex-sans-thai/600.css">
+  <link rel="stylesheet" href="/node_modules/@fontsource/ibm-plex-mono/400.css">
+  <link rel="stylesheet" href="/node_modules/@fontsource/ibm-plex-mono/500.css">
+  <link rel="stylesheet" href="/tests/browser/out/tailwind.css">
   <link rel="stylesheet" href="/src/css/tokens.css">
   <link rel="stylesheet" href="/src/css/components.css">
   <link rel="stylesheet" href="/src/css/refresh.css">
   <link rel="stylesheet" href="/src/css/animations.css">
+  <link rel="stylesheet" href="/src/css/flat.css">
+  <link rel="stylesheet" href="/src/css/dimension.css">
   <style>
     body { padding-bottom: calc(var(--bottom-nav-h) + 28px + env(safe-area-inset-bottom)); background: var(--bg); }
     @media (min-width: 768px) { body { padding-bottom: 0; } .bottom-nav { display: none !important; } }
     .desktop-nav { display: none; }
     @media (min-width: 768px) { .desktop-nav { display: flex; } }
-    #app-header { background: color-mix(in srgb, var(--surface) 80%, transparent); backdrop-filter: blur(22px) saturate(180%); border-bottom: 1px solid var(--border-light); }
-    #bg-decor { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
-    #bg-decor .blob { position: absolute; border-radius: 9999px; filter: blur(74px); opacity: .55; }
-    #bg-decor .blob-1 { width: 44vmax; height: 44vmax; top: -15vmax; left: -11vmax; background: radial-gradient(circle, color-mix(in srgb, var(--grad-1) 24%, transparent), transparent 66%); }
-    #bg-decor .blob-2 { width: 38vmax; height: 38vmax; bottom: -13vmax; right: -9vmax; background: radial-gradient(circle, color-mix(in srgb, var(--brand-mist-raw) 38%, transparent), transparent 66%); }
-    #bg-decor .blob-3 { width: 26vmax; height: 26vmax; top: 36%; left: 56%; background: radial-gradient(circle, color-mix(in srgb, var(--brand-yellow-raw) 20%, transparent), transparent 66%); }
   </style>
 `;
 
@@ -57,7 +45,6 @@ for (const file of targets) {
   const html = `<!DOCTYPE html><html lang="th" data-theme="light"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">${STYLE}</head>
 <body class="min-h-screen bg-[var(--bg)] text-[var(--text)]">
-<div id="bg-decor" aria-hidden="true"><span class="blob blob-1"></span><span class="blob blob-2"></span><span class="blob blob-3"></span></div>
 ${body}
 <script src="/node_modules/lucide/dist/umd/lucide.min.js"></script>
 <script>try { lucide.createIcons(); } catch (e) { console.warn(e); }</script>

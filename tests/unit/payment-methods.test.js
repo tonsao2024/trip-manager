@@ -20,6 +20,17 @@ const split = { id: 'x', date: '2027-01-02', currency: 'THB', netTotalMinor: 100
   { memberId: 'b', amountMinor: 400, paymentMethod: 'cash' }
 ], allocations: [{ memberId: 'a', amountMinor: 500 }, { memberId: 'b', amountMinor: 500 }] };
 
+export function testCardSummaryListsOneRowPerBill() {
+  // both payers charged the same card: one line on the card, amounts added up
+  const bill = { id: 'y', date: '2027-01-03', currency: 'THB', netTotalMinor: 1000, payments: [
+    { memberId: 'a', amountMinor: 600, paymentMethod: 'card', cardName: 'KTC' },
+    { memberId: 'b', amountMinor: 400, paymentMethod: 'card', cardName: 'KTC' }
+  ], allocations: [{ memberId: 'a', amountMinor: 500 }, { memberId: 'b', amountMinor: 500 }] };
+  const [card] = cardSummary([bill], Object.fromEntries(members.map(m => [m.id, m])));
+  eq([card.card, card.totalMinor, card.count, card.items.length], ['KTC', 1000, 1, 1], 'one row per bill');
+  eq([card.items[0].amountMinor, card.items[0].payerNames], [1000, ['เอ', 'บี']], 'merged amount and both payers');
+}
+
 export function testSplitBillCountsEachPayersOwnCard() {
   const cards = cardSummary([split], Object.fromEntries(members.map(m => [m.id, m])));
   eq(cards.map(c => [c.card, c.totalMinor, c.count]), [['KTC', 600, 1]], 'only the card payment lands on the card');

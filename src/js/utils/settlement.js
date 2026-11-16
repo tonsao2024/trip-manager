@@ -321,7 +321,12 @@ export function buildSettlementStatements(expenses, members, { includeEstimated 
  *
  * @param {Array} expenses
  * @param {Object} membersMap  id → member (for the card holder name)
- * @returns {Array<{card:string, totalMinor:number, count:number, holders:string[], currency:string|null, estimatedMinor:number}>}
+ * @returns {Array<{card:string, totalMinor:number, count:number, holders:string[], currency:string|null,
+ *   estimatedMinor:number, items:Array<{expenseId:string,title:string,date:string,amountMinor:number,
+ *   category:string,payerId:string,payerNames:string[],estimated:boolean}>}>}
+ *   `items` powers the “but what did I actually buy with this card?” popup on the
+ *   credit-card summary: one row per bill charged to that card (a bill split
+ *   between two payers on the same card stays one row, amounts added up).
  */
 export function cardSummary(expenses = [], membersMap = {}) {
   const rows = new Map();
@@ -332,21 +337,42 @@ export function cardSummary(expenses = [], membersMap = {}) {
     for (const p of expensePayments(e)) {
       const pay = paymentMethodOf(e, p);
       if (pay.method !== 'card' || !pay.cardName) continue;
-      if (!byCard.has(pay.cardName)) byCard.set(pay.cardName, { amountMinor: 0, holders: [] });
+      if (!byCard.has(pay.cardName)) byCard.set(pay.cardName, { amountMinor: 0, holders: [], items: new Map() });
       const bucket = byCard.get(pay.cardName);
-      bucket.amountMinor += Number(p.amountMinor) || 0;
+      const amountMinor = Number(p.amountMinor) || 0;
+      bucket.amountMinor += amountMinor;
       const holder = membersMap[p.memberId]?.displayName;
       if (holder && !bucket.holders.includes(holder)) bucket.holders.push(holder);
+      // One bill = one line on the card, even when two payers split it on the same card.
+      const itemKey = e.id || `${e.date || ''}|${e.title || ''}`;
+      const item = bucket.items.get(itemKey) || {
+        expenseId: e.id || '',
+        title: e.title || '',
+        date: e.date || '',
+        amountMinor: 0,
+        category: e.category || 'general',
+        payerId: p.memberId || '',
+        payerNames: [],
+        estimated: Boolean(e.isEstimated)
+      };
+      item.amountMinor += amountMinor;
+      if (holder && !item.payerNames.includes(holder)) item.payerNames.push(holder);
+      bucket.items.set(itemKey, item);
     }
     for (const [key, bucket] of byCard) {
-      if (!rows.has(key)) rows.set(key, { card: key, totalMinor: 0, count: 0, holders: [], currency: e.currency || null, estimatedMinor: 0 });
+      if (!rows.has(key)) rows.set(key, { card: key, totalMinor: 0, count: 0, holders: [], currency: e.currency || null, estimatedMinor: 0, items: [] });
       const row = rows.get(key);
       row.totalMinor += bucket.amountMinor;
       row.count += 1;
       if (e.isEstimated) row.estimatedMinor += bucket.amountMinor;
+      row.items.push(...bucket.items.values());
       for (const h of bucket.holders) if (!row.holders.includes(h)) row.holders.push(h);
       if (!row.currency && e.currency) row.currency = e.currency;
     }
+  }
+  for (const row of rows.values()) {
+    // Newest first, then by amount — the same order the expense list uses.
+    row.items.sort((a, b) => String(b.date).localeCompare(String(a.date)) || b.amountMinor - a.amountMinor);
   }
   return [...rows.values()].sort((a, b) => b.totalMinor - a.totalMinor);
 }

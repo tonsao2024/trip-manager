@@ -1910,18 +1910,56 @@ body.is-signed-out #header-more { display: none !important; }
 /* The yen figure after “56%” keeps a gap now that it is plain text. */
 .dash-cat-amount .money-orig { margin-left: 8px; }
 
-/* Settlement: neutral tiles; colour stays on the money figure only. */
+/* Settlement: credit-card tiles are buttons — one tap lists what the card paid. */
+.card-summary-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.card-summary-hint { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-tertiary); }
 .card-summary-tile {
-  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid color-mix(in srgb, var(--card-accent, var(--primary-raw)) 26%, var(--border));
+  border-left: 3px solid var(--card-accent, var(--primary-raw));
   border-radius: var(--radius);
-  background: var(--surface);
-  padding: 12px 16px;
+  background: color-mix(in srgb, var(--card-accent, var(--primary-raw)) 5%, var(--surface));
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
 }
-.card-summary-name { font-weight: 500; color: var(--text-secondary); }
-.card-summary-name > svg { display: none; }
-.card-summary-amount { font-weight: 500; color: var(--text-strong); }
-.card-summary-thb { font-weight: 400; color: var(--text-tertiary); }
-.card-summary-meta { color: var(--text-secondary); }
+.card-summary-tile:hover,
+.card-summary-tile:focus-visible { background: color-mix(in srgb, var(--card-accent, var(--primary-raw)) 10%, var(--surface)); border-color: color-mix(in srgb, var(--card-accent, var(--primary-raw)) 46%, var(--border)); }
+.card-summary-tile-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.card-summary-name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-weight: 600; color: var(--text-strong); font-size: 13px; }
+.card-summary-icon { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; flex: 0 0 auto; background: color-mix(in srgb, var(--card-accent, var(--primary-raw)) 16%, transparent); color: color-mix(in srgb, var(--card-accent, var(--primary-raw)) 72%, var(--text-strong)); }
+.card-summary-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary); /* the card colour tints the pill; text stays AA (the card colour is user-set) */
+  background: color-mix(in srgb, var(--card-accent, var(--primary-raw)) 12%, transparent);
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+.card-summary-amount { font-size: 19px; font-weight: 600; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.card-summary-thb { font-weight: 400; color: var(--text-tertiary); font-size: 12px; }
+.card-summary-meta { color: var(--text-secondary); font-size: 12px; }
+.card-summary-preview { display: flex; flex-direction: column; gap: 0; margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--border); font-size: 12px; color: var(--text-tertiary); }
+.card-summary-sheet-total { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-radius: 12px; background: var(--primary-light); border: 1px solid color-mix(in srgb, var(--primary-raw) 22%, var(--border)); }
+.card-summary-sheet-total > span { font-size: 13px; color: var(--text-secondary); }
+.card-summary-sheet-total > b { font-size: 20px; font-weight: 600; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.card-summary-sheet-total > i { flex: 0 0 100%; font-size: 12px; font-style: normal; color: var(--text-tertiary); }
+.card-summary-items { display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow-y: auto; }
+.card-summary-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); text-decoration: none; color: var(--text); }
+.card-summary-item:hover { background: var(--surface-2); text-decoration: none; }
+.card-summary-item-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+.card-summary-item-title { font-size: 13px; font-weight: 500; color: var(--text-strong); overflow-wrap: anywhere; }
+.card-summary-item-meta { font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.card-summary-item-amount { flex: 0 0 auto; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.card-summary-item > svg { flex: 0 0 auto; color: var(--text-tertiary); }
 
 .net-chip,
 .net-chip.is-in,
@@ -2234,3 +2272,332 @@ a.rcpt-open { min-height: 24px; }
   .trip-menu-btn,
   .activity-del-btn { min-width: 32px; min-height: 32px; }
 }
+
+/* ============================================================================
+   v37 — COLOUR + COMPACT PASS (owner request, 16 Nov 2026)
+   ----------------------------------------------------------------------------
+   The calm pass left the interface precise but colourless. v37 puts colour back
+   where it carries meaning (category, team, card, payment method, weather) and
+   keeps every surface readable: tints are 4–10% of a hue mixed into the card
+   colour, so body text keeps its AA contrast in both modes. At the same time
+   every page loses one step of padding and gap, and the countdown / weather
+   cards shrink to the height of their content.
+
+     1. Palette + a soft page wash
+     2. Colour on cards, KPIs, chips, categories, teams
+     3. Payment-method picker (expense form)
+     4. Expense filter bar (method / card / group)
+     5. Compact rhythm for every page and every dashboard card
+     6. Countdown + weather: shorter, balanced
+   ========================================================================== */
+
+/* --- 1. Palette + page wash -------------------------------------------- */
+:root {
+  --hue-blue: #2f6fe4;
+  --hue-sky: #0ea5e9;
+  --hue-teal: #0d9488;
+  --hue-green: #16a34a;
+  --hue-amber: #e8930c;
+  --hue-orange: #ea580c;
+  --hue-rose: #db2777;
+  --hue-violet: #7c3aed;
+  --hue-slate: #64748b;
+  --wash-1: rgba(47, 111, 228, .10);
+  --wash-2: rgba(232, 147, 12, .11);
+  --wash-3: rgba(13, 148, 136, .09);
+  --wash-4: rgba(219, 39, 119, .05);
+}
+[data-theme="dark"] {
+  --wash-1: rgba(47, 111, 228, .18);
+  --wash-2: rgba(232, 147, 12, .13);
+  --wash-3: rgba(13, 148, 136, .15);
+  --wash-4: rgba(219, 39, 119, .10);
+}
+body {
+  background-image:
+    radial-gradient(ellipse 62% 42% at 4% -8%, var(--wash-1), transparent 62%),
+    radial-gradient(ellipse 48% 38% at 102% -6%, var(--wash-2), transparent 64%),
+    radial-gradient(ellipse 58% 44% at 88% 104%, var(--wash-3), transparent 66%),
+    radial-gradient(ellipse 42% 34% at 12% 104%, var(--wash-4), transparent 68%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+@media print { body { background-image: none; } }
+
+/* A thin colour line under the app header — the one piece of brand colour that
+   is always on screen (flat: a rule, not a gradient surface). */
+#app-header { position: sticky; }
+#app-header::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(90deg, var(--primary-raw) 0%, var(--hue-sky) 28%, var(--hue-teal) 52%, var(--hue-amber) 76%, var(--hue-rose) 100%);
+  opacity: .55;
+}
+[data-theme="dark"] #app-header::after { opacity: .42; }
+
+/* Page titles get a short colour bar, so each screen opens with a mark. */
+.page-head .page-title,
+.dash-head .page-title { position: relative; padding-left: 12px; }
+.page-head .page-title::before,
+.dash-head .page-title::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 4px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--primary-raw), var(--hue-teal));
+}
+
+/* Colour themes keep working: the accent above follows --primary-raw. */
+
+/* --- 2. Colour on cards, KPIs, chips, categories, teams ---------------- */
+/* One hue per dashboard widget; the card keeps a white surface with a 4% wash
+   and a matching 3px cap on its title. */
+[data-dashboard-widget="countdown"] { --widget-accent: var(--hue-blue); }
+[data-dashboard-widget="weather"] { --widget-accent: var(--hue-sky); }
+[data-dashboard-widget="kpis"] { --widget-accent: var(--hue-violet); }
+[data-dashboard-widget="current"] { --widget-accent: var(--hue-teal); }
+[data-dashboard-widget="up-next"] { --widget-accent: #6366f1; }
+[data-dashboard-widget="category"] { --widget-accent: var(--hue-amber); }
+[data-dashboard-widget="estimate"] { --widget-accent: var(--hue-teal); }
+[data-dashboard-widget="bookings"] { --widget-accent: var(--hue-rose); }
+[data-dashboard-widget="ideas"] { --widget-accent: var(--hue-green); }
+[data-dashboard-widget="members"] { --widget-accent: var(--hue-violet); }
+[data-dashboard-widget="recent-expenses"] { --widget-accent: var(--hue-slate); }
+[data-dashboard-widget="teams"] { --widget-accent: var(--hue-orange); }
+
+#dashboard-view .dash-widget--half > .card {
+  background: color-mix(in srgb, var(--widget-accent, var(--primary-raw)) 4%, var(--card));
+  border-color: color-mix(in srgb, var(--widget-accent, var(--primary-raw)) 16%, var(--border));
+}
+[data-theme="dark"] #dashboard-view .dash-widget--half > .card {
+  background: color-mix(in srgb, var(--widget-accent, var(--primary-raw)) 7%, var(--card));
+}
+#dashboard-view .card-title { display: flex; align-items: center; gap: 8px; }
+#dashboard-view .card-title::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 4px;
+  height: 15px;
+  border-radius: 999px;
+  background: var(--widget-accent, var(--primary-raw));
+}
+
+/* KPI tiles: a tinted surface plus a 3px cap in the tile's own hue. */
+.kpi-tile[data-kpi="total"] { --kpi-accent: var(--hue-blue); --kpi-tint: 9%; }
+.kpi-tile[data-kpi="balance"] { --kpi-accent: var(--hue-teal); --kpi-tint: 9%; }
+.kpi-tile[data-kpi="budget"] { --kpi-accent: var(--hue-amber); --kpi-tint: 11%; }
+.kpi-tile.kpi-tile,
+.kpi-tile.kpi-compact {
+  background: color-mix(in srgb, var(--kpi-accent, var(--primary-raw)) var(--kpi-tint, 6%), var(--card));
+  border-color: color-mix(in srgb, var(--kpi-accent, var(--primary-raw)) 22%, var(--border));
+  border-top: 3px solid color-mix(in srgb, var(--kpi-accent, var(--primary-raw)) 78%, var(--card));
+}
+/* The KPI strip (expenses / settlement): five hues in a row. */
+.kpi-strip > .kpi-mini:nth-child(1) { --kpi-accent: var(--hue-blue); }
+.kpi-strip > .kpi-mini:nth-child(2) { --kpi-accent: var(--hue-teal); }
+.kpi-strip > .kpi-mini:nth-child(3) { --kpi-accent: var(--hue-amber); }
+.kpi-strip > .kpi-mini:nth-child(4) { --kpi-accent: var(--hue-rose); }
+.kpi-strip > .kpi-mini:nth-child(5) { --kpi-accent: var(--hue-violet); }
+.kpi-strip > .kpi-mini {
+  background: color-mix(in srgb, var(--kpi-accent, var(--primary-raw)) 7%, var(--surface));
+  border-color: color-mix(in srgb, var(--kpi-accent, var(--primary-raw)) 20%, var(--border));
+  border-left: 3px solid color-mix(in srgb, var(--kpi-accent, var(--primary-raw)) 72%, var(--surface));
+}
+.kpi-strip > .kpi-mini .kpi-mini-label { color: var(--text-secondary); }
+
+/* Selected chips take the accent as a soft tint; the label stays AA. */
+.chip.chip-active {
+  background: color-mix(in srgb, var(--chip-color, var(--primary-raw)) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--chip-color, var(--primary-raw)) 42%, var(--border));
+  color: var(--text-strong);
+}
+.chip.chip-active svg { color: color-mix(in srgb, var(--chip-color, var(--primary-raw)) 80%, var(--text-strong)); }
+.chip > svg[data-lucide] { color: color-mix(in srgb, var(--chip-color, var(--primary-raw)) 70%, var(--text-tertiary)); }
+
+/* Category bars carry the category's own colour (dots + meters). */
+.dash-cat-row .progress-bar { background: var(--bar-color, var(--primary-raw)); }
+.dash-cat-name { display: inline-flex; align-items: center; gap: 6px; }
+.dash-cat-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--bar-color, var(--primary-raw)); flex: 0 0 auto; }
+
+/* Team card: the team colour becomes a wash, and its categories get meters. */
+.team-card {
+  background: color-mix(in srgb, var(--team-color, var(--primary-raw)) 6%, var(--surface));
+  border-color: color-mix(in srgb, var(--team-color, var(--primary-raw)) 20%, var(--border-light));
+}
+[data-theme="dark"] .team-card {
+  background: color-mix(in srgb, var(--team-color, var(--primary-raw)) 9%, var(--surface));
+}
+.team-card--trip { background: color-mix(in srgb, var(--primary-raw) 6%, var(--surface)); }
+/* The categories behind a team's share, as colour-coded chips (four + a rest
+   chip): “spent on what” without a second table. */
+.team-cats { display: flex; flex-wrap: wrap; gap: 4px; }
+.team-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--cat-color, var(--primary-raw)) 22%, var(--border-light));
+  background: color-mix(in srgb, var(--cat-color, var(--primary-raw)) 7%, var(--surface));
+  font-size: 12px;
+  line-height: 1.4;
+}
+.team-cat-dot { width: 7px; height: 7px; border-radius: 999px; flex: 0 0 auto; background: var(--cat-color, var(--primary-raw)); }
+.team-cat-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+.team-cat-amount { color: var(--text-strong); font-weight: 600; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+.team-cat--more { border-style: dashed; border-color: var(--border-strong); background: var(--surface); color: var(--text-tertiary); }
+.team-cat--more .team-cat-amount { color: var(--text-secondary); }
+
+/* Navigation: the active item glows with the accent instead of plain grey. */
+.desktop-nav .menu-item.chip-active,
+.desktop-nav .menu-item.active {
+  background: color-mix(in srgb, var(--primary-raw) 10%, var(--surface));
+  color: var(--primary-strong) !important;
+}
+.bottom-nav-item.active { background: color-mix(in srgb, var(--primary-raw) 8%, transparent); }
+.bottom-nav-item.active::before { height: 3px; width: 30px; }
+
+/* Payment chips on expense rows keep their hue (cash / card / transfer). */
+.rcpt-chip--cash { color: color-mix(in srgb, var(--hue-green) 62%, var(--text-strong)); border-color: color-mix(in srgb, var(--hue-green) 30%, var(--border)); background: color-mix(in srgb, var(--hue-green) 8%, var(--surface)); }
+.rcpt-chip--card { color: color-mix(in srgb, var(--hue-blue) 62%, var(--text-strong)); border-color: color-mix(in srgb, var(--hue-blue) 30%, var(--border)); background: color-mix(in srgb, var(--hue-blue) 8%, var(--surface)); }
+.rcpt-chip--transfer { color: color-mix(in srgb, var(--hue-violet) 58%, var(--text-strong)); border-color: color-mix(in srgb, var(--hue-violet) 30%, var(--border)); background: color-mix(in srgb, var(--hue-violet) 8%, var(--surface)); }
+
+/* --- 3. Payment-method picker (expense form) --------------------------- */
+.pay-block { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--primary-raw) 20%, var(--border)); background: color-mix(in srgb, var(--primary-raw) 4%, var(--surface)); }
+.pay-block-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pay-method-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.pay-method-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+.pay-method-option:hover { border-color: var(--border-strong); color: var(--text-strong); }
+.pay-method-option.is-selected {
+  background: color-mix(in srgb, var(--primary-raw) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--primary-raw) 48%, var(--border));
+  color: var(--text-strong);
+}
+.pay-method-ico { display: inline-grid; place-items: center; color: var(--text-tertiary); }
+.pay-method-option.is-selected .pay-method-ico { color: var(--primary-strong); }
+.pay-method-option[data-pay-method="cash"].is-selected { background: color-mix(in srgb, var(--hue-green) 12%, var(--surface)); border-color: color-mix(in srgb, var(--hue-green) 46%, var(--border)); }
+.pay-method-option[data-pay-method="card"].is-selected { background: color-mix(in srgb, var(--hue-blue) 12%, var(--surface)); border-color: color-mix(in srgb, var(--hue-blue) 46%, var(--border)); }
+.pay-method-option[data-pay-method="transfer"].is-selected { background: color-mix(in srgb, var(--hue-violet) 12%, var(--surface)); border-color: color-mix(in srgb, var(--hue-violet) 44%, var(--border)); }
+.pay-card-group { margin: 0; padding: 8px 10px; border-radius: 10px; border: 1px dashed color-mix(in srgb, var(--hue-blue) 34%, var(--border)); background: var(--surface); }
+.pay-card-group .input-hint { margin-top: 2px; }
+@media (max-width: 420px) {
+  .pay-method-option { font-size: 12px; padding: 6px 4px; gap: 4px; }
+}
+
+/* --- 4. Expense filter bar -------------------------------------------- */
+.expense-filter-bar { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.expense-filter-bar .chip-row { margin: 0; }
+.expense-filter-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.expense-more-filters { color: var(--text-secondary); }
+.expense-extra-controls { display: none; padding: 8px 0 0; }
+.expense-extra-controls.is-open { display: block; }
+#expenses-view .kpi-strip { margin-bottom: 8px; }
+#expenses-view .group-avg-strip { margin-bottom: 8px; }
+#expenses-view .page-head { margin-bottom: 12px; }
+
+/* --- 5. Compact rhythm ------------------------------------------------ */
+/* Page shell: 24px top/bottom → 16px, and one step tighter inside pages. */
+main#app { padding-top: 16px; padding-bottom: 24px; }
+@media (min-width: 768px) { main#app { padding-top: 20px; } }
+.page-head { margin-bottom: 12px; align-items: center; }
+.page-head .page-title { font-size: 21px; }
+.page-sub { margin-top: 2px; font-size: 13px; line-height: 1.45; }
+.dash-head { gap: 10px; }
+.dash-meta { margin-top: 2px; }
+
+/* Card anatomy: less air above and below the content. */
+.card-head { margin-bottom: 8px; align-items: center; }
+.card-title { font-size: 15px; }
+.card-foot { margin-top: 12px; padding-top: 10px; }
+
+/* Dashboard: every card one step shorter, rows on a tighter baseline. */
+#dashboard-view > * + * { margin-top: 12px; }
+/* Cards sit at their content height: a short card no longer paints a tall empty
+   frame to match its neighbour (the old stretch is what made the board feel
+   airy). Pairs still line up because each row starts at the same top edge. */
+#dashboard-view .dashboard-board { gap: 12px; align-items: start; }
+#dashboard-view .dash-widget > .card { height: auto; }
+#dashboard-view .dash-widget[data-dashboard-widget="countdown"] .countdown-scene { height: 100%; }
+#dashboard-view .dash-widget > .card,
+#dashboard-view .dash-widget > .kpi-grid-compact { padding: 14px; }
+#dashboard-view .kpi-tile,
+#dashboard-view .kpi-tile.kpi-compact { padding: 12px 14px; }
+#dashboard-view .kpi-tile .kpi-value { font-size: 24px; margin-top: 4px; }
+#dashboard-view .kpi-tile .kpi-sub { margin-top: 4px; font-size: 12px; }
+#dashboard-view .kpi-tile .stat-bar { margin-top: 6px; }
+#dashboard-view :is(.member-row, .expense-row, .upnext-row, .booking-row, .dash-idea-row) { padding: 7px 10px; }
+#dashboard-view .member-row-avatar { width: 28px !important; height: 28px !important; }
+#dashboard-view .member-row-sub { font-size: 12px; }
+#dashboard-view .team-card { padding: 12px; gap: 6px; }
+#dashboard-view .team-stat { padding: 6px 8px; }
+#dashboard-view .team-stat b { font-size: 15px; }
+#dashboard-view .dash-cat-row { padding-top: 2px; padding-bottom: 2px; }
+#dashboard-view .dash-cat-row + .dash-cat-row { margin-top: 2px; }
+#dashboard-view .progress { height: 5px; }
+#dashboard-view #dash-ideas-board .dash-idea-row { padding: 6px 10px; }
+
+/* Settlement: section cards and receipts stop leaving 20px of air. */
+#settlement-content > * + * { margin-top: 12px; }
+#settlement-content .card { padding: 14px; }
+#settlement-content .card-head { margin-bottom: 6px; }
+#settlement-content .net-summary-grid { gap: 6px; }
+#settlement-content .receipt-grid { gap: 12px; }
+#settlement-content .kpi-strip { gap: 6px; margin-bottom: 6px; }
+#settlement-content .card-summary-grid { gap: 6px; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); }
+#settlement-content .pending-row { padding: 6px 8px; }
+
+/* Expenses list: cards on a tighter baseline (the compact toggle stays). */
+#expenses-view .expense-card { padding: 10px 12px; }
+#expenses-view .expense-day-total-bar { padding: 8px 10px; }
+#expenses-view .chip { min-height: 30px; }
+
+/* Forms across the app: sections one step closer together. */
+.form-section { padding: 14px; }
+.form-section + .form-section { margin-top: 10px; }
+
+/* --- 6. Countdown + weather: shorter, balanced ------------------------ */
+/* The countdown sizes live in dimension.css (which loads after this sheet and
+   owns the runner/track geometry), so they are tuned there — see the
+   “v37 compact countdown” block at its end. Weather follows here. */
+
+/* Weather: today's block and the seven chips lose their oversized frame. */
+#dash-weather-card { padding: 12px; }
+#dash-weather-multi > div:first-child h3 { font-size: 14px; }
+.wx-today { padding: 8px 10px; border-radius: 12px; gap: 8px; }
+.wx-today-kicker { font-size: 12px; }
+.wx-today-temp { font-size: 25px; }
+.wx-today-temp small { font-size: 13px; }
+.wx-today-icon { width: 42px; height: 42px; border-radius: 12px; }
+.wx-today-icon svg { width: 24px; height: 24px; }
+.weather-strip { gap: 6px; }
+.weather-chip { min-width: 52px; padding: 5px 6px; border-radius: 10px; gap: 1px; }
+.weather-chip-day { font-size: 11px; }
+.weather-chip-temp { font-size: 12px; }
+.weather-chip-rain { font-size: 11px; }
+.wx-empty { padding: 8px 4px 4px; }
+#dash-weather-multi > p:last-child { margin-top: 4px; }
