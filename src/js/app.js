@@ -3671,10 +3671,6 @@ async function renderDashboard(params) {
   const dragHandle = (what) => `<div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลาก','Drag')}${what}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>`;
   appEl.innerHTML = `
     <div class="page-enter space-y-4" id="dashboard-view">
-      <!-- v39: a compact, balanced page header. The cover photo sits BESIDE the
-           trip name (a thumbnail on a phone, a 16:9 tile on a wide screen) instead
-           of a full-width banner that pushed the board down — no scrim, no text on
-           top of the picture (audit B8 / L2). -->
       <header class="dash-head${coverUrl ? ' has-cover' : ''}">
         <div class="dash-head-row">
           ${coverUrl ? `<figure class="dash-cover"><img decoding="async" src="${escapeHtml(coverUrl)}" alt="" onerror="this.closest('.dash-cover')?.remove()"></figure>` : ''}
@@ -3896,17 +3892,22 @@ async function renderDashboard(params) {
   const layoutDashboardBoard = () => {
     if (!dashboardBoard) return;
     const boardStyle = getComputedStyle(dashboardBoard);
-    const columns = boardStyle.gridTemplateColumns.split(' ').length;
+    // Implicit grid tracks from the previous desktop placement can remain in
+    // computed gridTemplateColumns after resizing to mobile. Use the same
+    // breakpoint as CSS rather than counting those stale tracks.
+    const wideBoard = window.matchMedia('(min-width: 761px)').matches;
     // In Arrange mode the board goes back to a plain flow: dragging a card has
     // to move the cards around it, not leave them pinned by measured positions.
-    const masonry = columns > 1 && !dashboardLayoutEditing;
+    const masonry = wideBoard && !dashboardLayoutEditing;
     dashboardBoard.classList.toggle('is-masonry', masonry);
     // the row gap IS the gutter: every card's span already includes one gap
     dashboardBoard.style.rowGap = masonry ? '0px' : '';
     const widgets = [...dashboardBoard.querySelectorAll(':scope > [data-dashboard-widget]')]
       .filter(el => !el.classList.contains('is-hidden'));
+    const addTile = document.getElementById('dash-add-tile');
     if (!masonry) {
       for (const el of widgets) { el.style.gridColumn = ''; el.style.gridRow = ''; }
+      if (addTile) addTile.style.gridRow = '';
       return;
     }
     // Measure at the width each card will really have: reset them to one column
@@ -3926,6 +3927,12 @@ async function renderDashboard(params) {
       if (!slot) continue;
       el.style.gridColumn = slot.column ? String(slot.column) : '1 / -1';
       el.style.gridRow = `${slot.row} / span ${slot.span}`;
+    }
+    // Auto-placement ignores explicitly positioned grid items and could put the
+    // add button on top of a card. Anchor it after the last packed row instead.
+    if (addTile) {
+      const lastRow = placed.reduce((end, slot) => Math.max(end, slot.row + slot.span), 1);
+      addTile.style.gridRow = `${lastRow} / span ${Math.ceil(52 / 4)}`;
     }
   };
   const scheduleDashboardLayout = () => {
@@ -4054,6 +4061,7 @@ async function renderDashboard(params) {
       const count = tile.querySelector('[data-add-count]');
       if (count) count.textContent = String(dashboardHidden.size);
     }
+    scheduleDashboardLayout();
   };
   // Each card's drag bar gets a × (visible in Arrange mode) that hides that card.
   dashboardBoard?.querySelectorAll('[data-dashboard-widget]').forEach(section => {

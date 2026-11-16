@@ -95,6 +95,21 @@ async function main() {
     // grid stretch — and our fill fix — is actually exercised.
     await page.evaluate(() => { document.getElementById('dash-weather-card').style.minHeight = '430px'; });
     await sleep(400);
+    // A visible add-card tile must sit below every explicitly packed card,
+    // including after async card growth and a resize.
+    await page.evaluate(() => {
+      document.getElementById('dash-add-tile').classList.remove('hidden');
+      window.dispatchEvent(new Event('resize'));
+    });
+    await sleep(400);
+    const boardGeometry = await page.evaluate(() => {
+      const tile = document.getElementById('dash-add-tile').getBoundingClientRect();
+      const cards = [...document.querySelectorAll('#dashboard-board > [data-dashboard-widget]:not(.is-hidden)')];
+      return { tileTop: tile.top, cardBottom: Math.max(...cards.map(card => card.getBoundingClientRect().bottom)) };
+    });
+    if (boardGeometry.tileTop < boardGeometry.cardBottom - 1) {
+      throw new Error(`Add-card tile overlaps the dashboard at ${width}px: ${JSON.stringify(boardGeometry)}`);
+    }
     report[width] = await page.evaluate(() => {
       const nav = document.getElementById('desktop-nav');
       const navRect = nav.getBoundingClientRect();

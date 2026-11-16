@@ -98,7 +98,7 @@ export function packDashboard(items, options = {}) {
       let y = top;
       for (const { it, span } of column) {
         out.set(it.key, { key: it.key, column: index + 1, row: Math.round(y / rowUnit) + 1, span });
-        y += span * rowUnit + gutter;
+        y += span * rowUnit;
       }
       bottom = Math.max(bottom, y);
     });
@@ -112,7 +112,7 @@ export function packDashboard(items, options = {}) {
       flush(band);
       band = [];
       out.set(item.key, { key: item.key, column: null, row: Math.round(top / rowUnit) + 1, span });
-      top += span * rowUnit + gutter;
+      top += span * rowUnit;
     } else {
       band.push(item);
     }
