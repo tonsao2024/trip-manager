@@ -1386,6 +1386,8 @@ body.is-signed-out #header-more { display: none !important; }
 
 /* --- Dashboard widgets ------------------------------------------------- */
 .dashboard-board { gap: 16px; }
+/* v38: KPI strip — three equal tiles with a clean gutter that matches the
+   dashboard board gap for visual rhythm. */
 .stat-grid,
 .kpi-grid-compact { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 767px) {
@@ -2535,31 +2537,48 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
 .card-title { font-size: 15px; }
 .card-foot { margin-top: 12px; padding-top: 10px; }
 
-/* Dashboard: every card one step shorter, rows on a tighter baseline. */
-#dashboard-view > * + * { margin-top: 12px; }
-/* Cards sit at their content height: a short card no longer paints a tall empty
-   frame to match its neighbour (the old stretch is what made the board feel
-   airy). Pairs still line up because each row starts at the same top edge. */
-#dashboard-view .dashboard-board { gap: 12px; align-items: start; }
+/* Dashboard (v38 professional rebalance): a tighter, more consistent surface.
+   Full-width list cards (ideas, members, teams) get a hair more vertical room
+   so their content breathes, while half-width pairs stay at the compact spec. */
+#dashboard-view > * + * { margin-top: 14px; }
+#dashboard-view .dashboard-board { gap: 14px; align-items: start; }
 #dashboard-view .dash-widget > .card { height: auto; }
 #dashboard-view .dash-widget[data-dashboard-widget="countdown"] .countdown-scene { height: 100%; }
 #dashboard-view .dash-widget > .card,
-#dashboard-view .dash-widget > .kpi-grid-compact { padding: 14px; }
+#dashboard-view .dash-widget > .kpi-grid-compact { padding: 16px; }
+/* KPI hero tiles — stronger hierarchy for the top summary strip. */
 #dashboard-view .kpi-tile,
-#dashboard-view .kpi-tile.kpi-compact { padding: 12px 14px; }
-#dashboard-view .kpi-tile .kpi-value { font-size: 24px; margin-top: 4px; }
-#dashboard-view .kpi-tile .kpi-sub { margin-top: 4px; font-size: 12px; }
-#dashboard-view .kpi-tile .stat-bar { margin-top: 6px; }
-#dashboard-view :is(.member-row, .expense-row, .upnext-row, .booking-row, .dash-idea-row) { padding: 7px 10px; }
-#dashboard-view .member-row-avatar { width: 28px !important; height: 28px !important; }
+#dashboard-view .kpi-tile.kpi-compact { padding: 14px 16px; border-radius: 14px; }
+#dashboard-view .kpi-tile .kpi-value { font-size: 26px; margin-top: 6px; font-weight: 700; letter-spacing: -0.01em; }
+#dashboard-view .kpi-tile .kpi-label { font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+#dashboard-view .kpi-tile .kpi-sub { margin-top: 6px; font-size: 12px; }
+#dashboard-view .kpi-tile .stat-bar { margin-top: 8px; height: 6px; border-radius: 999px; }
+/* List rows: a touch more padding so they read as cards, not cramped lines. */
+#dashboard-view :is(.member-row, .expense-row, .upnext-row, .booking-row, .dash-idea-row) { padding: 9px 12px; margin-bottom: 6px; border-radius: 10px; }
+#dashboard-view .member-row-avatar { width: 30px !important; height: 30px !important; }
 #dashboard-view .member-row-sub { font-size: 12px; }
-#dashboard-view .team-card { padding: 12px; gap: 6px; }
-#dashboard-view .team-stat { padding: 6px 8px; }
-#dashboard-view .team-stat b { font-size: 15px; }
-#dashboard-view .dash-cat-row { padding-top: 2px; padding-bottom: 2px; }
-#dashboard-view .dash-cat-row + .dash-cat-row { margin-top: 2px; }
-#dashboard-view .progress { height: 5px; }
-#dashboard-view #dash-ideas-board .dash-idea-row { padding: 6px 10px; }
+/* Team sub-cards: sit inside the full-width Teams widget with room to breathe. */
+#dashboard-view .team-card { padding: 14px; gap: 8px; border-radius: 14px; }
+#dashboard-view .team-card--trip { padding: 18px; }
+#dashboard-view .team-stat { padding: 10px 12px; border-radius: 12px; }
+#dashboard-view .team-card--trip .team-stat { padding: 12px 14px; }
+#dashboard-view .team-stat b { font-size: 16px; }
+#dashboard-view .team-card--trip .team-stat b { font-size: 22px; }
+#dashboard-view .dash-cat-row { padding-top: 3px; padding-bottom: 3px; }
+#dashboard-view .dash-cat-row + .dash-cat-row { margin-top: 3px; }
+#dashboard-view .progress { height: 6px; border-radius: 999px; }
+#dashboard-view .card-head { margin-bottom: 10px; }
+#dashboard-view .card-title { font-size: 15px; font-weight: 600; letter-spacing: -0.005em; }
+#dashboard-view #dash-ideas-board .dash-idea-row { padding: 8px 12px; }
+/* Compact density override: revert to the tighter spec when user chooses it. */
+#dashboard-view.dash-compact .dashboard-board { gap: 10px; }
+#dashboard-view.dash-compact .dash-widget > .card,
+#dashboard-view.dash-compact .dash-widget > .kpi-grid-compact { padding: 12px; }
+#dashboard-view.dash-compact .kpi-tile,
+#dashboard-view.dash-compact .kpi-tile.kpi-compact { padding: 10px 12px; }
+#dashboard-view.dash-compact .kpi-tile .kpi-value { font-size: 22px; }
+#dashboard-view.dash-compact .team-card { padding: 10px; gap: 6px; }
+#dashboard-view.dash-compact .team-card--trip { padding: 12px; }
 
 /* Settlement: section cards and receipts stop leaving 20px of air. */
 #settlement-content > * + * { margin-top: 12px; }

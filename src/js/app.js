@@ -3775,6 +3775,28 @@ async function renderDashboard(params) {
           </div>
         </section>
 
+        <section class="dash-widget dash-widget--half" data-dashboard-widget="bookings">
+          ${dragHandle(th('การ์ดการจองที่กำลังจะถึง','upcoming bookings card'))}
+          <div class="card p-4">
+            <div class="card-head">
+              <h3 class="card-title">${th('การจองที่กำลังจะถึง','Upcoming bookings')}</h3>
+              <button id="dash-bookings-link" type="button" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</button>
+            </div>
+            <div id="dash-bookings" class="booking-list"><div class="skeleton h-12"></div></div>
+          </div>
+        </section>
+
+        <section class="dash-widget dash-widget--half" data-dashboard-widget="recent-expenses">
+          ${dragHandle(th('การ์ดค่าใช้จ่ายล่าสุด','recent expenses card'))}
+          <div class="card p-4">
+            <div class="card-head">
+              <h3 class="card-title">${th('รายการล่าสุด','Recent expenses')}</h3>
+              <button id="dash-expenses-link" type="button" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</button>
+            </div>
+            <div id="recent-expenses" class="recent-list"><div class="skeleton h-12"></div></div>
+          </div>
+        </section>
+
         <section class="dash-widget dash-widget--half" data-dashboard-widget="category">
           ${dragHandle(th('การ์ดค่าใช้จ่ายตามหมวด','spend by category card'))}
           <div class="card p-4">
@@ -3795,16 +3817,6 @@ async function renderDashboard(params) {
           </div>
         </section>
 
-        <section class="dash-widget dash-widget--half" data-dashboard-widget="bookings">
-          ${dragHandle(th('การ์ดการจองที่กำลังจะถึง','upcoming bookings card'))}
-          <div class="card p-4">
-            <div class="card-head">
-              <h3 class="card-title">${th('การจองที่กำลังจะถึง','Upcoming bookings')}</h3>
-              <button id="dash-bookings-link" type="button" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</button>
-            </div>
-            <div id="dash-bookings" class="booking-list"><div class="skeleton h-12"></div></div>
-          </div>
-        </section>
         <section class="dash-widget dash-widget--full" data-dashboard-widget="ideas">
           ${dragHandle(th('การ์ดสถานที่ที่อยากไป','wishlist card'))}
           <div id="dash-ideas-board" class="card p-4">
@@ -3816,29 +3828,18 @@ async function renderDashboard(params) {
           </div>
         </section>
 
-        <section class="dash-widget dash-widget--half" data-dashboard-widget="members">
+        <section class="dash-widget dash-widget--full" data-dashboard-widget="members">
           ${dragHandle(th('การ์ดสมาชิก','members card'))}
           <div class="card p-4">
             <div class="card-head">
               <h3 class="card-title">${th('สมาชิก · จ่ายไปและส่วนที่รับผิดชอบ','Members · paid and share')}</h3>
               <button id="dash-members-link" type="button" class="btn btn-ghost btn-sm">${th('จัดการ','Manage')}</button>
             </div>
-            <div id="member-board-content" class="member-board"><div class="skeleton h-16"></div></div>
+            <div id="member-board-content" class="member-board member-board--grid"><div class="skeleton h-16"></div></div>
           </div>
         </section>
 
-        <section class="dash-widget dash-widget--half" data-dashboard-widget="recent-expenses">
-          ${dragHandle(th('การ์ดค่าใช้จ่ายล่าสุด','recent expenses card'))}
-          <div class="card p-4">
-            <div class="card-head">
-              <h3 class="card-title">${th('รายการล่าสุด','Recent expenses')}</h3>
-              <button id="dash-expenses-link" type="button" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</button>
-            </div>
-            <div id="recent-expenses" class="recent-list"><div class="skeleton h-12"></div></div>
-          </div>
-        </section>
-
-        <section class="dash-widget dash-widget--half" data-dashboard-widget="teams">
+        <section class="dash-widget dash-widget--full" data-dashboard-widget="teams">
           ${dragHandle(th('การ์ดทีม','teams card'))}
           <div class="card p-4" id="dash-teams-card">
             <div class="card-head">
@@ -4620,7 +4621,7 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
             </article>`;
         };
         teamBox.innerHTML = report.groups.map(teamCard).join('') + `
-          <article class="team-card team-card--trip" data-gid="__trip" role="button" tabindex="0">
+          <article class="team-card team-card--trip team-card--full" data-gid="__trip" role="button" tabindex="0">
             <div class="team-card-head">
               <span class="team-card-name">${th('ทั้งทริป','Whole trip')}</span>
               <span class="badge badge-planned text-xs ml-auto">${report.trip.memberCount} ${th('คน','pax')}</span>
