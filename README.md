@@ -10,6 +10,25 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > คำแนะนำ Functions/Push ในบันทึกเวอร์ชันเก่าด้านล่างไม่ใช่ขั้นตอน deploy ปัจจุบัน
 > ดูขั้นตอนล่าสุดที่ [Deploy Guide](docs/DEPLOY.md)
 
+> **v39 — 16 Nov 2026, แดชบอร์ด: จัดวางให้แน่นและสมดุล (dashboard balance pass).** Three complaints,
+> three fixes, no new card and no new colour. **(1) ปกไม่สมดุล:** the trip cover was a full-width 16:5
+> banner stacked above the title — on a phone it took a whole screen before the first card and pushed
+> the trip name below the picture. The header is now one row: cover tile · name + meta · the one primary
+> action (a 76px square thumbnail on a phone, a 168px 16:9 tile from tablet up). **(2) พื้นที่ว่างเสียเปล่า:**
+> the board was a two-column grid, which gives every card in a row the height of the tallest one — a
+> one-row “การจองที่กำลังจะขึ้น” next to a long list left a 300px hole, and the holes stacked down the page.
+> Cards are now measured and packed into the two columns by their real height (`src/js/dashboard/pack.js`,
+> unit-tested; the CSS is a 4px-row grid that accepts those positions), each run of half cards is split
+> where the two columns end closest to level, and a full-width card still starts its own band. On the
+> sample trip the board went from 2,358px to 2,308px on a laptop **with no hole under any card** (the
+> one-row booking card used to leave ~200px of air under it). Arrange mode drops back to a plain flow so dragging behaves
+> exactly as before, and every card re-packs itself when it grows (ResizeObserver + fonts). **(3) หน้าจอ
+> มือถือเสียพื้นที่:** the KPI strip stacked (first tile full width, two below = 365px); it is now ONE row
+> of three smaller tiles (154px), with the figure sized by `clamp()` so ฿286,320 never wraps. Verified: 219
+> unit tests (8 new for the packer), the jsdom smoke test, the mobile sweep at five iPhone sizes, the
+> desktop check at 1024/1280/1440 and the design check in light + dark. Screenshots:
+> `docs/preview/after/v39-dashboard-*.png`.
+>
 > **v35 — 8 Nov 2026, “calm pass” ตามแนวทาง [unslop](https://github.com/heydamir/unslop).** A design pass
 > that takes the generic “AI template” signs out of the interface without touching the information
 > architecture, the data or the features. Full audit, decisions and before/after redlines:

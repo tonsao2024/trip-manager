@@ -1,5 +1,6 @@
 import { bindMoneyInputs } from './utils/moneyInput.js';
 import { DASHBOARD_WIDGETS, DASHBOARD_WIDGET_KEYS, normalizeWidgetOrder, normalizeHiddenWidgets } from './dashboard/widgets.js';
+import { packDashboard } from './dashboard/pack.js';
 import { ideaCategoryId, placeCategoryLabel, placeCategoryColor, placeCategoryIcon } from './utils/categories.js';
 import { attachMapExpand } from './maps/index.js';
 import { expenseUpdateForCost } from './utils/reservations.js';
@@ -3670,11 +3671,13 @@ async function renderDashboard(params) {
   const dragHandle = (what) => `<div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลาก','Drag')}${what}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>`;
   appEl.innerHTML = `
     <div class="page-enter space-y-4" id="dashboard-view">
-      <!-- v35: a plain page header. The cover photo shows only when the trip has
-           one, as a picture — no scrim, no text on top of it (audit B8 / L2). -->
+      <!-- v39: a compact, balanced page header. The cover photo sits BESIDE the
+           trip name (a thumbnail on a phone, a 16:9 tile on a wide screen) instead
+           of a full-width banner that pushed the board down — no scrim, no text on
+           top of the picture (audit B8 / L2). -->
       <header class="dash-head${coverUrl ? ' has-cover' : ''}">
-        ${coverUrl ? `<div class="dash-cover"><img decoding="async" src="${escapeHtml(coverUrl)}" alt="" onerror="this.closest('.dash-cover')?.remove()"></div>` : ''}
         <div class="dash-head-row">
+          ${coverUrl ? `<figure class="dash-cover"><img decoding="async" src="${escapeHtml(coverUrl)}" alt="" onerror="this.closest('.dash-cover')?.remove()"></figure>` : ''}
           <div class="dash-head-main">
             <h1 class="page-title">${escapeHtml(trip?.name || t('dashboard'))}</h1>
             <p class="dash-meta">
@@ -3879,6 +3882,59 @@ async function renderDashboard(params) {
   let dashboardLayoutEditing = false;
   let dashboardLayoutSaving = false;
   let dashboardSortable = null;
+  /* v39 — a packed, balanced board.
+     A two-column CSS grid gives every card in a row the height of the tallest
+     one, so a short card (a booking list with one row) left a tall empty
+     rectangle under it while its neighbour ran on — the wasted space the owner
+     kept reporting. Each card is now measured and packed into the column that
+     balances the band (see `src/js/dashboard/pack.js`, unit-tested), and the CSS
+     is a 4px-row grid that accepts those positions. The DOM keeps the saved
+     order, so Arrange mode, the keyboard and the shared `dashboardLayout`
+     document are untouched. */
+  let dashboardResizeObserver = null;
+  let dashboardReflowFrame = 0;
+  const layoutDashboardBoard = () => {
+    if (!dashboardBoard) return;
+    const boardStyle = getComputedStyle(dashboardBoard);
+    const columns = boardStyle.gridTemplateColumns.split(' ').length;
+    // In Arrange mode the board goes back to a plain flow: dragging a card has
+    // to move the cards around it, not leave them pinned by measured positions.
+    const masonry = columns > 1 && !dashboardLayoutEditing;
+    dashboardBoard.classList.toggle('is-masonry', masonry);
+    // the row gap IS the gutter: every card's span already includes one gap
+    dashboardBoard.style.rowGap = masonry ? '0px' : '';
+    const widgets = [...dashboardBoard.querySelectorAll(':scope > [data-dashboard-widget]')]
+      .filter(el => !el.classList.contains('is-hidden'));
+    if (!masonry) {
+      for (const el of widgets) { el.style.gridColumn = ''; el.style.gridRow = ''; }
+      return;
+    }
+    // Measure at the width each card will really have: reset them to one column
+    // (a full-width card measured inside a column is too short).
+    for (const el of widgets) {
+      el.style.gridColumn = el.classList.contains('dash-widget--full') ? '1 / -1' : '1';
+      el.style.gridRow = 'auto';
+    }
+    const placed = packDashboard(widgets.map(el => ({
+      key: el.dataset.dashboardWidget,
+      full: el.classList.contains('dash-widget--full'),
+      height: el.getBoundingClientRect().height
+    })), { gutter: parseFloat(boardStyle.columnGap) || 14 });
+    const byKey = new Map(placed.map(p => [p.key, p]));
+    for (const el of widgets) {
+      const slot = byKey.get(el.dataset.dashboardWidget);
+      if (!slot) continue;
+      el.style.gridColumn = slot.column ? String(slot.column) : '1 / -1';
+      el.style.gridRow = `${slot.row} / span ${slot.span}`;
+    }
+  };
+  const scheduleDashboardLayout = () => {
+    if (dashboardReflowFrame) return;
+    dashboardReflowFrame = requestAnimationFrame(() => {
+      dashboardReflowFrame = 0;
+      try { layoutDashboardBoard(); } catch (e) { console.warn('dashboard layout', e); }
+    });
+  };
   const applyDashboardOrder = (raw) => {
     if (!dashboardBoard) return;
     const order = normalizeDashboardOrder(raw);
@@ -3889,6 +3945,7 @@ async function renderDashboard(params) {
     // the “เพิ่มการ์ด” tile always stays after the cards
     const addTile = document.getElementById('dash-add-tile');
     if (addTile) dashboardBoard.appendChild(addTile);
+    scheduleDashboardLayout();
   };
   const paintDashboardLayoutControls = () => {
     document.getElementById('dashboard-view')?.classList.toggle('dashboard-layout-editing', dashboardLayoutEditing);
@@ -3903,6 +3960,27 @@ async function renderDashboard(params) {
     queueIcons();
   };
   applyDashboardOrder(lastDashboardOrder);
+
+  /* Keep the packed layout true: a card that grows (a booking arrives, a list
+     fills, a photo loads, the countdown changes height) re-packs its column, and
+     a phone↔laptop resize switches between one and two columns. */
+  if (typeof ResizeObserver === 'function' && dashboardBoard) {
+    dashboardResizeObserver = new ResizeObserver(() => scheduleDashboardLayout());
+    for (const card of dashboardBoard.querySelectorAll(':scope > [data-dashboard-widget]')) dashboardResizeObserver.observe(card);
+    window.addEventListener('resize', scheduleDashboardLayout, { passive: true });
+    document.addEventListener('routechange', () => {
+      dashboardResizeObserver?.disconnect();
+      dashboardResizeObserver = null;
+      window.removeEventListener('resize', scheduleDashboardLayout);
+      if (dashboardReflowFrame) cancelAnimationFrame(dashboardReflowFrame);
+      dashboardReflowFrame = 0;
+    }, { once: true });
+  }
+  // The board paints its data AFTER this function returns, so re-pack once the
+  // first write lands (and once the web fonts settle the row heights).
+  setTimeout(scheduleDashboardLayout, 120);
+  setTimeout(scheduleDashboardLayout, 600);
+  if (document.fonts?.ready) document.fonts.ready.then(scheduleDashboardLayout).catch(() => {});
 
   async function saveDashboardOrder(order) {
     const next = normalizeDashboardOrder(order);
@@ -3927,6 +4005,7 @@ async function renderDashboard(params) {
   async function setDashboardLayoutEditing(enabled) {
     dashboardLayoutEditing = Boolean(enabled);
     paintDashboardLayoutControls();
+    scheduleDashboardLayout();
     if (!dashboardLayoutEditing) {
       try { dashboardSortable?.destroy(); } catch {}
       dashboardSortable = null;

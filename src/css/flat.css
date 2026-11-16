@@ -1,5 +1,5 @@
 /* ============================================================================
-   Trip Manager v35 — FLAT DESIGN LAYER (calm pass, docs/UNSLOP-AUDIT-2026-11-08.md)
+   Trip Manager v39 — FLAT DESIGN LAYER (calm pass, docs/UNSLOP-AUDIT-2026-11-08.md)
    ----------------------------------------------------------------------------
    This file is the single place where the product's look lives. It is loaded
    AFTER tokens.css / components.css / refresh.css / animations.css and before
@@ -1300,24 +1300,34 @@ body.is-signed-out #header-more { display: none !important; }
   .page-actions { width: 100%; }
 }
 
-/* --- Dashboard header -------------------------------------------------- */
-.dash-head { display: grid; gap: 16px; }
-.dash-cover {
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  aspect-ratio: 16 / 5;
-  max-height: 220px;
-  background: var(--surface-2);
-}
-.dash-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* --- Dashboard header (v39) --------------------------------------------
+   The header is ONE row: cover tile · title + meta · actions. It used to be a
+   full-width 16:5 banner stacked above the title, which on a phone ate a whole
+   screen of height and left the board below the fold. The tile keeps the photo
+   at a fixed, balanced size and the name gets the room instead. */
+.dash-head { display: grid; gap: 10px; }
 .dash-head-row {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px 16px;
+  gap: 10px 16px;
 }
-.dash-head-main { min-width: 0; flex: 1 1 320px; }
+.dash-cover {
+  flex: 0 0 auto;
+  width: 76px;
+  aspect-ratio: 1 / 1;
+  margin: 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.dash-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.dash-head-main { min-width: 0; flex: 1 1 260px; }
+@media (min-width: 768px) {
+  .dash-cover { width: 168px; aspect-ratio: 16 / 9; border-radius: var(--radius-lg); }
+}
 .dash-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1330,6 +1340,12 @@ body.is-signed-out #header-more { display: none !important; }
 /* The dot trails each item, so a wrapped line never starts with “·”. */
 .dash-meta > span:not(:last-child)::after { content: '·'; margin: 0 8px; color: var(--text-tertiary); }
 .dash-head-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+/* Phones: the header's own action row never wraps under the title — it stays on
+   one line with the trip name, so the board starts right below the header. */
+@media (max-width: 767px) {
+  .dash-head-actions .btn { min-height: 40px; padding: 8px 12px; font-size: 13px; }
+  .dash-head-actions .btn.btn-icon { width: 40px; min-width: 40px; padding: 0; }
+}
 
 /* --- Popover menu (“⋯”) ------------------------------------------------ */
 .menu-wrap { position: relative; }
@@ -1384,18 +1400,49 @@ body.is-signed-out #header-more { display: none !important; }
 .card-sub { margin: 2px 0 0; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
 .card-foot { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-light); }
 
-/* --- Dashboard widgets ------------------------------------------------- */
-.dashboard-board { gap: 16px; }
+/* --- Dashboard widgets (v39 balance pass) ------------------------------
+   The board packs cards by their real height instead of a two-column grid.
+   A grid gives every card in a row the height of the tallest one, so a short
+   card next to a tall one left a dead rectangle below it — the wasted space the
+   owner kept seeing. app.js (`layoutDashboardBoard`) measures each card and
+   places it in the shorter of the two columns; the CSS below is only the frame
+   those measured positions land in (a 4px row grid, no row gap: each card's
+   span already includes the 14px gutter). */
+.dashboard-board {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px;
+}
+.dashboard-board.is-masonry {
+  grid-auto-rows: 4px;
+  row-gap: 0;
+}
+.dashboard-board > .dash-widget { min-width: 0; }
+.dashboard-board > .dash-widget--full { grid-column: 1 / -1; }
+.dash-widget > .card { height: auto; }
+@media (max-width: 760px) {
+  .dashboard-board { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .dashboard-board.is-masonry { grid-auto-rows: auto; }
+}
 /* v38: KPI strip — three equal tiles with a clean gutter that matches the
    dashboard board gap for visual rhythm. */
 .stat-grid,
 .kpi-grid-compact { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 767px) {
+  /* v39: three quiet tiles in ONE row on a phone. Stacking the first tile full
+     width and the other two below it made the summary 365px tall — a third of a
+     screen for three numbers. One row: label on top, figure under it, the change
+     line only where it fits. */
   .stat-grid,
-  .kpi-grid-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .stat-grid > .kpi-tile:first-child { grid-column: 1 / -1; }
-  .stat-grid > .kpi-tile:not(:first-child) .kpi-value { font-size: 22px; }
-  .kpi-tile, .kpi-tile.kpi-compact { padding: 16px; }
+  .kpi-grid-compact { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .stat-grid > .kpi-tile:first-child { grid-column: auto; }
+  .stat-grid > .kpi-tile .kpi-value { font-size: 19px; }
+  .kpi-tile, .kpi-tile.kpi-compact { padding: 12px 10px; }
+  .kpi-tile .kpi-label { font-size: 12px; line-height: 1.3; overflow-wrap: anywhere; }
+  .kpi-tile .kpi-sub { gap: 1px; margin-top: 6px; font-size: 12px; line-height: 1.35; }
+  .kpi-tile .kpi-sub > span + span { display: none; }   /* keep one change line */
+  .kpi-tile .money-secondary { font-size: 12px; margin-top: 2px; }
 }
 .dash-widget-handle {
   border: 1px dashed var(--border-strong);
@@ -2570,6 +2617,26 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
 #dashboard-view .card-head { margin-bottom: 10px; }
 #dashboard-view .card-title { font-size: 15px; font-weight: 600; letter-spacing: -0.005em; }
 #dashboard-view #dash-ideas-board .dash-idea-row { padding: 8px 12px; }
+/* Phones: the KPI strip is one row of three (v39) — see the media block above;
+   these later rules would otherwise push it back to 26px figures and 16px padding. */
+@media (max-width: 767px) {
+  #dashboard-view .dash-widget > .kpi-grid-compact { padding: 10px; }
+  #dashboard-view .kpi-tile,
+  #dashboard-view .kpi-tile.kpi-compact { padding: 8px; border-radius: 12px; }
+  /* The figure shrinks with the screen instead of wrapping: three tiles on one
+     row must always show a whole baht amount on one line (the phone check fails
+     on “฿286,320” split over two lines). */
+  #dashboard-view .kpi-tile .kpi-value {
+    font-size: clamp(14px, 4.3vw, 19px);
+    margin-top: 4px;
+    letter-spacing: -0.02em;
+    overflow-wrap: normal;
+    word-break: keep-all;
+  }
+  #dashboard-view .kpi-tile .kpi-label { font-size: 12px; text-transform: none; letter-spacing: 0; }
+  #dashboard-view .kpi-tile .kpi-sub { margin-top: 4px; font-size: 12px; }
+  #dashboard-view .kpi-tile .stat-bar { margin-top: 6px; height: 4px; }
+}
 /* Compact density override: revert to the tighter spec when user chooses it. */
 #dashboard-view.dash-compact .dashboard-board { gap: 10px; }
 #dashboard-view.dash-compact .dash-widget > .card,
