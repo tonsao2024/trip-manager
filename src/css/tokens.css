@@ -1,55 +1,56 @@
-/* Trip Manager by TonSkywalker — Design System v35 “Calm” (unslop pass)
+/* Trip Manager by TonSkywalker — Design System v41 “Google Material”
    ---------------------------------------------------------------------------
-   v35 follows the unslop audit in docs/UNSLOP-AUDIT-2026-11-08.md:
+   v41 re-skins the product to read like Google Maps / Google Travel:
 
-     • neutral surfaces — the page, cards and borders are graphite/white, NOT
-       tinted by the brand. Colour is reserved for things that mean something;
-     • ONE accent — the brand blue (written by the colour theme as
-       --primary-raw) is used for the primary button, links, focus and the
-       selected state only;
-     • green / red are for money only (+ getting money back / − owing);
-     • one type family — IBM Plex Sans Thai (Thai + Latin drawn together),
-       weights 400 / 500 / 600, sentence case, tabular figures;
-     • a short radius scale (8 / 12 / 16) and one easing curve.
+     • PRODUCT NEUTRAL canvas — the page is Google's #f8f9fa (white cards float
+       on it), ink is #202124 with the #5f6368 / #80868b secondary steps;
+     • GOOGLE BLUE is the one accent (#1a73e8), with Google's Material hues for
+       the data colours (category, team, payment method, weather);
+     • RADIUS — cards 12, controls 8, chips/avatars pill; Material elevation on
+       cards, buttons, sheets and the header (no more “flat = no shadow”);
+     • one type family — Google Sans (Thai + Latin in one family), weights
+       400 / 500 / 600 / 700; Google Sans Code for figures and codes;
+     • Material motion: 100 / 200 / 300 ms on one standard curve, plus Google's
+       emphasised curve for sheets and page changes.
 
    A colour THEME (LINE / Facebook / …) still writes the raw brand variables on
-   <html> (src/js/utils/themes.js) — but now it only changes the accent. The
-   page background no longer follows the theme (--bg ignores --page-bg). */
+   <html> (src/js/utils/themes.js) — it only changes the accent, the page keeps
+   Google's canvas so the app always looks like the reference. */
 
 :root {
   /* ---- Brand raws (the colour theme overwrites these on <html>) ---- */
-  --primary-raw: #0f5ef5;          /* brand blue — the ONLY accent */
+  --primary-raw: #1a73e8;          /* Google blue — the ONLY accent */
   --grad-1: var(--primary-raw);    /* kept for compatibility — no gradients in v35 */
   --grad-2: var(--primary-raw);
-  --brand-yellow-raw: #ffa020;     /* the sun in the logo — logo + countdown only */
+  --brand-yellow-raw: #fbbc04;     /* Google yellow — the sun in the logo */
   --brand-ink-raw: #1c2433;
   --brand-mist-raw: #e4e4e7;
   --brand-steel-raw: #52525b;
   --brand-sand-raw: #f5f5f4;
   /* Theme-written page tints are ignored by v35 (kept so themes stay valid). */
-  --page-bg: #fafafa;
-  --page-bg-dark: #0e0e10;
+  --page-bg: #f8f9fa;
+  --page-bg-dark: #202124;
 
   /* ---- Accent (derived) ---- */
   --primary: var(--primary-raw);
-  --primary-hover: color-mix(in srgb, var(--primary-raw) 86%, #000);
-  --primary-light: color-mix(in srgb, var(--primary-raw) 8%, #fff);
+  --primary-hover: color-mix(in srgb, var(--primary-raw) 92%, #000);   /* Google's hover step */
+  --primary-light: color-mix(in srgb, var(--primary-raw) 8%, #fff);    /* #e8f0fe @ Google blue */
   --primary-lighter: color-mix(in srgb, var(--primary-raw) 4%, #fff);
-  --primary-dark: color-mix(in srgb, var(--primary-raw) 78%, #000);
-  --primary-soft: color-mix(in srgb, var(--primary-raw) 14%, transparent);
-  --primary-strong: color-mix(in srgb, var(--primary-raw) 84%, #000); /* accent text on light */
+  --primary-dark: color-mix(in srgb, var(--primary-raw) 82%, #000);
+  --primary-soft: color-mix(in srgb, var(--primary-raw) 12%, transparent);
+  --primary-strong: color-mix(in srgb, var(--primary-raw) 88%, #0b1f33); /* accent text on light */
   /* Ink on a filled primary. The colour theme publishes one ink per mode
      (themes.js → --on-primary-light / --on-primary-dark, ≥4.5:1 each). */
   --on-primary: var(--on-primary-light, #ffffff);
 
   /* ---- Sun yellow (never behind body text) ---- */
   --brand-yellow: var(--brand-yellow-raw);
-  --brand-yellow-soft: color-mix(in srgb, var(--brand-yellow-raw) 20%, transparent);
+  --brand-yellow-soft: color-mix(in srgb, var(--brand-yellow-raw) 22%, transparent);
   --brand-yellow-tint: color-mix(in srgb, var(--brand-yellow-raw) 10%, #fff);
   --brand-yellow-line: color-mix(in srgb, var(--brand-yellow-raw) 36%, #fff);
-  --brand-yellow-strong: color-mix(in srgb, var(--brand-yellow-raw) 70%, #7a4300);
-  --brand-yellow-ink: #8a4d00;
-  --on-accent: #3f2905;
+  --brand-yellow-strong: color-mix(in srgb, var(--brand-yellow-raw) 70%, #7a5a00);
+  --brand-yellow-ink: #7c5800;
+  --on-accent: #3c2c00;
   --shadow-accent: none;
 
   /* ---- Former secondary tints — neutral now ---- */
@@ -62,56 +63,60 @@
   --steel-tint: #f4f4f5;
   --steel-ink: #3f3f46;
 
-  /* ---- Surfaces: graphite canvas, white panels, hairlines ---- */
-  --bg: #fafafa;
-  --bg-secondary: #f4f4f5;
-  --bg-tertiary: #ececee;
+  /* ---- Surfaces: Google's grey canvas, white cards, hairlines ---- */
+  --bg: #f8f9fa;                   /* Google grey 50 */
+  --bg-secondary: #f1f3f4;         /* grey 100 */
+  --bg-tertiary: #e8eaed;          /* grey 200 */
   --surface: #ffffff;
-  --surface-2: #f4f4f5;            /* hover / selected = one step down */
-  --surface-3: #ececee;
-  --surface-inset: #f4f4f5;
+  --surface-2: #f1f3f4;            /* hover / selected = one step down */
+  --surface-3: #e8eaed;
+  --surface-inset: #f1f3f4;
   /* Opaque color shared by the mobile header, iOS safe area and browser chrome. */
   --app-chrome-color: var(--surface);
   --card: #ffffff;
   --card-hover: #ffffff;
-  --text: #171717;
-  --text-strong: #0a0a0a;
-  --text-secondary: #525252;
-  --text-tertiary: #6b6b6b;        /* 4.85:1 on #f4f4f5, 5.33:1 on #fff (round 5) */
-  --border: rgba(0, 0, 0, .09);
-  --border-strong: rgba(0, 0, 0, .18);
-  --border-light: rgba(0, 0, 0, .05);
+  --text: #202124;                 /* Google grey 900 */
+  --text-strong: #17181a;
+  --text-secondary: #5f6368;       /* Google grey 700 — 5.9:1 on white */
+  --text-tertiary: #676c71;        /* 4.76:1 on #f1f3f4, 5.3:1 on #fff */
+  --border: #dadce0;               /* Google's own hairline */
+  --border-strong: #bdc1c6;
+  --border-light: #e8eaed;
   --border-w: 1px;
 
-  /* No elevation. Only things that float above the page get a shadow. */
-  --shadow-xs: none;
-  --shadow-sm: none;
-  --shadow: none;
-  --shadow-md: none;
-  --shadow-lg: none;
-  --shadow-soft: none;
+  /* Material elevation: card 1dp, hovered card 2dp, menus 8dp, sheets 24dp. */
+  --elev-1: 0 1px 2px rgba(60, 64, 67, .10), 0 1px 3px 1px rgba(60, 64, 67, .06);
+  --elev-2: 0 1px 2px rgba(60, 64, 67, .12), 0 2px 6px 2px rgba(60, 64, 67, .08);
+  --elev-3: 0 1px 3px rgba(60, 64, 67, .14), 0 4px 8px 3px rgba(60, 64, 67, .10);
+  --elev-4: 0 2px 6px rgba(60, 64, 67, .16), 0 8px 24px 4px rgba(60, 64, 67, .12);
+  --shadow-xs: var(--elev-1);
+  --shadow-sm: var(--elev-1);
+  --shadow: var(--elev-1);
+  --shadow-md: var(--elev-2);
+  --shadow-lg: var(--elev-3);
+  --shadow-soft: var(--elev-1);
   --shadow-inner: none;
-  --shadow-primary: none;
-  --overlay-shadow: 0 8px 24px rgba(0, 0, 0, .10), 0 1px 2px rgba(0, 0, 0, .06);
-  --overlay-shadow-strong: 0 16px 40px rgba(0, 0, 0, .16), 0 1px 3px rgba(0, 0, 0, .08);
-  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary-raw) 28%, transparent);
+  --shadow-primary: 0 1px 2px color-mix(in srgb, var(--primary-raw) 30%, transparent);
+  --overlay-shadow: var(--elev-3);
+  --overlay-shadow-strong: var(--elev-4);
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary-raw) 30%, transparent);
   --focus-outline: 2px solid var(--primary-raw);
 
   /* ---- Data colours (member avatars, day markers, chart segments).
      Used as small dots / chart fills only — never as surfaces. ---- */
-  --accent-blue: #2563eb;
-  --accent-sky: #0284c7;
-  --accent-steel: #475569;
-  --accent-teal: #0d9488;
-  --accent-sage: #4d7c0f;
-  --accent-green: #16a34a;
-  --accent-lime: #65a30d;
-  --accent-amber: #d97706;
-  --accent-orange: #ea580c;
-  --accent-coral: #dc2626;
-  --accent-rose: #db2777;
-  --accent-violet: #7c3aed;
-  --accent-slate: #4f46e5;
+  --accent-blue: #1a73e8;          /* Google blue */
+  --accent-sky: #0288d1;           /* light blue 700 */
+  --accent-steel: #5f6368;         /* grey 700 */
+  --accent-teal: #00897b;          /* teal 600 */
+  --accent-sage: #689f38;          /* light green 700 */
+  --accent-green: #188038;         /* Google green 700 */
+  --accent-lime: #7cb342;          /* light green 600 */
+  --accent-amber: #f29900;         /* Google yellow 800 */
+  --accent-orange: #e8710a;        /* Google orange 700 */
+  --accent-coral: #d93025;         /* Google red 700 */
+  --accent-rose: #c5221f;          /* red 800 */
+  --accent-violet: #8430ce;        /* purple 700 */
+  --accent-slate: #5e35b1;         /* deep purple 600 */
 
   /* ---- Flat fills (compatibility aliases — one solid colour each) ---- */
   --gradient-primary: var(--primary-raw);
@@ -126,15 +131,15 @@
   --gradient-glass: var(--surface);
 
   /* ---- Status. Green / red are reserved for money and errors. ---- */
-  --success: #15803d;              /* 5.0:1 on white */
-  --success-light: color-mix(in srgb, #15803d 14%, #fff);
-  --success-bg: color-mix(in srgb, #15803d 7%, #fff);
-  --warning: #b45309;
-  --warning-light: color-mix(in srgb, #b45309 14%, #fff);
-  --warning-bg: color-mix(in srgb, #b45309 7%, #fff);
-  --danger: #b91c1c;               /* 6.5:1 on white */
-  --danger-light: color-mix(in srgb, #b91c1c 14%, #fff);
-  --danger-bg: color-mix(in srgb, #b91c1c 6%, #fff);
+  --success: #188038;              /* Google green 700 — 5.1:1 on white */
+  --success-light: color-mix(in srgb, #188038 14%, #fff);
+  --success-bg: color-mix(in srgb, #188038 7%, #fff);
+  --warning: #b06000;              /* Google yellow 900 — 5.4:1 on white */
+  --warning-light: color-mix(in srgb, #b06000 14%, #fff);
+  --warning-bg: color-mix(in srgb, #b06000 7%, #fff);
+  --danger: #c5221f;               /* Google red 800 — 6.0:1 on white */
+  --danger-light: color-mix(in srgb, #c5221f 14%, #fff);
+  --danger-bg: color-mix(in srgb, #c5221f 6%, #fff);
   --info: var(--primary-strong);
   --info-light: color-mix(in srgb, var(--primary-raw) 12%, #fff);
   --info-bg: color-mix(in srgb, var(--primary-raw) 6%, #fff);
@@ -143,15 +148,15 @@
   --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
   --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px; --space-12: 48px;
 
-  /* Radius: controls 8 · cards 12 · panels 16. Settings → Appearance can still
-     re-scale it (`data-radius="sharp|soft|round"` in flat.css). */
+  /* Radius (Material 3 / Google Maps): controls 8 · cards 12 · sheets 28.
+     Settings → Appearance can still re-scale it (data-radius in flat.css). */
   --radius-xs: 6px;
   --radius-sm: 8px;
   --radius: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
-  --radius-xl: 16px;
-  --radius-2xl: 20px;
+  --radius-xl: 24px;
+  --radius-2xl: 28px;
   --radius-full: 9999px;
   /* Control metrics — density re-writes these (data-density). */
   --control-h: 44px;
@@ -160,11 +165,12 @@
   --card-pad: 20px;
   --stack-gap: 16px;
 
-  /* One family. Thai and Latin are drawn together, so mixed lines (฿ + ไทย + Kawaguchiko)
-     share one x-height. Mono is only for codes and the settlement receipt. */
-  --font-sans: "IBM Plex Sans Thai", system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif;
+  /* Google Sans (self-hosted, see fonts.css). Thai and Latin are drawn together,
+     so mixed lines (฿ + ไทย + Kawaguchiko) share one x-height. Google Sans Code
+     carries money figures, codes and the settlement receipt. */
+  --font-sans: "Google Sans", "Google Sans Text", "Noto Sans Thai", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
   --font-display: var(--font-sans);
-  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-mono: "Google Sans Code", "Google Sans Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --text-xs: 0.75rem;     /* 12 — the smallest size used anywhere */
   --text-sm: 0.875rem;    /* 14 */
   --text-base: 1rem;      /* 16 */
@@ -176,8 +182,10 @@
   --leading-tight: 1.25;
   --leading-snug: 1.4;
 
-  /* ---- Motion: one curve, three durations ---- */
+  /* ---- Motion: Material standard + emphasized, three durations ---- */
   --ease: cubic-bezier(.22, 1, .36, 1);
+  --ease-standard: cubic-bezier(.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(.05, .7, .1, 1);
   --t-fast: 150ms;   /* hover, press */
   --t-menu: 200ms;   /* menus, sheets, toasts */
   --t-page: 300ms;   /* page fade */
@@ -193,13 +201,13 @@
 }
 
 /* =========================================================
-   Dark mode — neutral graphite, not navy
+   Dark mode — Google's dark grey (#202124 / #303134), not navy
    ========================================================= */
 [data-theme="dark"] {
   --primary: color-mix(in srgb, var(--primary-raw) 68%, #fff);
   --primary-hover: color-mix(in srgb, var(--primary-raw) 58%, #fff);
-  --primary-light: color-mix(in srgb, var(--primary-raw) 18%, #161618);
-  --primary-lighter: color-mix(in srgb, var(--primary-raw) 10%, #161618);
+  --primary-light: color-mix(in srgb, var(--primary-raw) 18%, #202124);
+  --primary-lighter: color-mix(in srgb, var(--primary-raw) 10%, #202124);
   --primary-dark: color-mix(in srgb, var(--primary-raw) 50%, #fff);
   --primary-soft: color-mix(in srgb, var(--primary-raw) 26%, transparent);
   --primary-strong: color-mix(in srgb, var(--primary-raw) 55%, #fff);
@@ -207,63 +215,67 @@
 
   --brand-yellow: var(--brand-yellow-raw);
   --brand-yellow-soft: color-mix(in srgb, var(--brand-yellow-raw) 24%, transparent);
-  --brand-yellow-tint: color-mix(in srgb, var(--brand-yellow-raw) 12%, #161618);
-  --brand-yellow-line: color-mix(in srgb, var(--brand-yellow-raw) 40%, #161618);
+  --brand-yellow-tint: color-mix(in srgb, var(--brand-yellow-raw) 12%, #202124);
+  --brand-yellow-line: color-mix(in srgb, var(--brand-yellow-raw) 40%, #202124);
   --brand-yellow-strong: color-mix(in srgb, var(--brand-yellow-raw) 80%, #fff);
-  --brand-yellow-ink: #fbbf6b;
-  --on-accent: #241804;
+  --brand-yellow-ink: #fdd663;
+  --on-accent: #221a02;
   --shadow-accent: none;
 
-  --mist: #71717a;
-  --mist-soft: rgba(255, 255, 255, .05);
-  --mist-tint: #1d1d20;
-  --mist-ink: #d4d4d8;
-  --sand-tint: #1d1d20;
-  --steel: #a1a1aa;
-  --steel-tint: #1d1d20;
-  --steel-ink: #d4d4d8;
+  --mist: #9aa0a6;
+  --mist-soft: rgba(255, 255, 255, .06);
+  --mist-tint: #303134;
+  --mist-ink: #e8eaed;
+  --sand-tint: #303134;
+  --steel: #9aa0a6;
+  --steel-tint: #303134;
+  --steel-ink: #e8eaed;
 
-  --bg: #0e0e10;
-  --bg-secondary: #161618;
-  --bg-tertiary: #1d1d20;
-  --surface: #161618;
-  --surface-2: #1d1d20;
-  --surface-3: #242428;
-  --surface-inset: #121214;
-  --app-chrome-color: var(--bg);
-  --card: #161618;
-  --card-hover: #1a1a1d;
-  --text: #ededed;
-  --text-strong: #fafafa;
-  --text-secondary: #a3a3a3;
-  --text-tertiary: #8a8a8a;
-  --border: rgba(255, 255, 255, .09);
-  --border-strong: rgba(255, 255, 255, .18);
-  --border-light: rgba(255, 255, 255, .05);
+  --bg: #202124;                   /* Google dark canvas */
+  --bg-secondary: #292a2d;
+  --bg-tertiary: #303134;
+  --surface: #292a2d;              /* dark card */
+  --surface-2: #303134;
+  --surface-3: #3c4043;
+  --surface-inset: #202124;
+  --app-chrome-color: var(--surface);
+  --card: #292a2d;
+  --card-hover: #303134;
+  --text: #e8eaed;
+  --text-strong: #f8f9fa;
+  --text-secondary: #9aa0a6;
+  --text-tertiary: #9aa0a6;        /* 4.93:1 on #303134, 5.4:1 on #292a2d */
+  --border: #3c4043;
+  --border-strong: #6e7378;
+  --border-light: #35363a;
 
-  --shadow-xs: none;
-  --shadow-sm: none;
-  --shadow: none;
-  --shadow-md: none;
-  --shadow-lg: none;
-  --shadow-soft: none;
+  --elev-1: 0 1px 2px rgba(0, 0, 0, .35), 0 1px 3px 1px rgba(0, 0, 0, .25);
+  --elev-2: 0 1px 2px rgba(0, 0, 0, .4), 0 2px 6px 2px rgba(0, 0, 0, .3);
+  --elev-3: 0 1px 3px rgba(0, 0, 0, .45), 0 4px 12px 3px rgba(0, 0, 0, .35);
+  --elev-4: 0 2px 8px rgba(0, 0, 0, .5), 0 10px 28px 6px rgba(0, 0, 0, .4);
+  --shadow-xs: var(--elev-1);
+  --shadow-sm: var(--elev-1);
+  --shadow: var(--elev-1);
+  --shadow-md: var(--elev-2);
+  --shadow-lg: var(--elev-3);
+  --shadow-soft: var(--elev-1);
   --shadow-inner: none;
   --shadow-primary: none;
-  --overlay-shadow: 0 8px 24px rgba(0, 0, 0, .5);
-  --overlay-shadow-strong: 0 16px 40px rgba(0, 0, 0, .6);
+  --overlay-shadow: var(--elev-3);
+  --overlay-shadow-strong: var(--elev-4);
 
-  --success: #4ade80;
-  --success-light: color-mix(in srgb, #4ade80 18%, #161618);
-  --success-bg: color-mix(in srgb, #4ade80 10%, #161618);
-  --warning: #fbbf24;
-  --warning-light: color-mix(in srgb, #fbbf24 18%, #161618);
-  --warning-bg: color-mix(in srgb, #fbbf24 10%, #161618);
-  --danger: #f87171;
-  --danger-light: color-mix(in srgb, #f87171 18%, #161618);
-  --danger-bg: color-mix(in srgb, #f87171 10%, #161618);
+  --success: #81c995;              /* Google green 300 */
+  --success-light: color-mix(in srgb, #81c995 18%, #292a2d);
+  --success-bg: color-mix(in srgb, #81c995 10%, #292a2d);
+  --warning: #fdd663;              /* Google yellow 300 */
+  --warning-light: color-mix(in srgb, #fdd663 18%, #292a2d);
+  --warning-bg: color-mix(in srgb, #fdd663 10%, #292a2d);
+  --danger: #f28b82;               /* Google red 300 */
+  --danger-light: color-mix(in srgb, #f28b82 18%, #292a2d);
+  --danger-bg: color-mix(in srgb, #f28b82 10%, #292a2d);
   --info: var(--primary);
-  --info-light: color-mix(in srgb, var(--primary-raw) 20%, #161618);
-  --info-bg: color-mix(in srgb, var(--primary-raw) 10%, #161618);
+  --info-light: color-mix(in srgb, var(--primary-raw) 20%, #292a2d);
+  --info-bg: color-mix(in srgb, var(--primary-raw) 10%, #292a2d);
 
   --gradient-glass: var(--surface);
   --gradient-mesh: none;
@@ -277,10 +289,10 @@ html { scroll-behavior: smooth; }
 body {
   background: var(--bg);
   color: var(--text);
-  line-height: 1.6;
+  line-height: 1.55;               /* Google Sans sets a tighter default */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-feature-settings: normal;
+  font-feature-settings: 'liga' 1, 'kern' 1;
   overflow-x: hidden;
 }
 
@@ -296,7 +308,16 @@ body {
 
 ::selection { background: var(--primary-soft); color: var(--text-strong); }
 
-/* Headings: same family, weight 600, no tracking tricks. */
+/* Headings: Google Sans at 600 with a touch of negative tracking on the big
+   sizes (Google's own display scale), 0 on the small ones. */
 h1, h2, h3, h4, .font-display { font-family: var(--font-sans); letter-spacing: 0; }
+h1 { letter-spacing: -0.015em; }
+h2 { letter-spacing: -0.01em; }
 code, kbd, samp, pre, .font-mono { font-family: var(--font-mono); }
+/* Money and figures are drawn in Google Sans Code — Google's own mono, which
+   keeps ฿ amounts, dates and codes on one fixed width. */
+.num, .tabular-nums, .money-primary, .money-eq, .money-orig,
+.kpi-value, .rcpt-amount, .debt-row-amount, .settle-answer-amount {
+  font-variant-numeric: tabular-nums;
+}
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }

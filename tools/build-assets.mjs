@@ -56,10 +56,10 @@ function buildTailwind() {
   theme: {
     extend: {
       fontFamily: {
-        // v35: one family for everything (tokens.css --font-sans).
-        display: ['IBM Plex Sans Thai', 'system-ui', 'Noto Sans Thai', 'sans-serif'],
-        sans: ['IBM Plex Sans Thai', 'system-ui', 'Noto Sans Thai', 'sans-serif'],
-        mono: ['IBM Plex Mono', 'ui-monospace', 'SF Mono', 'Menlo', 'monospace']
+        // v41: Google Sans everywhere (tokens.css --font-sans, self-hosted).
+        display: ['Google Sans', 'Noto Sans Thai', 'Roboto', 'system-ui', 'sans-serif'],
+        sans: ['Google Sans', 'Noto Sans Thai', 'Roboto', 'system-ui', 'sans-serif'],
+        mono: ['Google Sans Code', 'ui-monospace', 'SF Mono', 'Menlo', 'monospace']
       }
     }
   }

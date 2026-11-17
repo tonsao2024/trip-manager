@@ -125,27 +125,31 @@ hr, .divider { border: 0; border-top: 1px solid var(--border-light); }
 .btn:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
 
 .btn-primary {
+  /* Google blue with a Material 1dp shadow; the ink pairs with the mode
+     (white on #1a73e8 = 4.51:1, near-black on the lighter dark-mode blue). */
   background: var(--primary);
   background-image: none;
   color: var(--on-primary);
   border-color: transparent;
+  box-shadow: var(--elev-1);
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--primary-hover);
-  box-shadow: none;
+  box-shadow: var(--elev-2);
   transform: none;
 }
 
 .btn-secondary {
+  /* Google's outlined button: white, hairline, blue label. */
   background: var(--surface);
-  color: var(--text);
-  border-color: var(--border-strong);
+  color: var(--primary-strong);
+  border-color: var(--border);
   box-shadow: none;
 }
 .btn-secondary:hover:not(:disabled) {
-  background: var(--surface-2);
-  border-color: var(--border-strong);
-  color: var(--text-strong);
+  background: color-mix(in srgb, var(--primary-raw) 8%, var(--surface));
+  border-color: var(--border);
+  color: var(--primary-strong);
   transform: none;
 }
 /* Toggle buttons show "on" as a surface step + stronger hairline — never as a
@@ -160,12 +164,12 @@ hr, .divider { border: 0; border-top: 1px solid var(--border-light); }
 
 .btn-ghost {
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--primary-strong);
   border-color: transparent;
 }
 .btn-ghost:hover {
-  background: var(--surface-2);
-  color: var(--text-strong);
+  background: color-mix(in srgb, var(--primary-raw) 8%, transparent);
+  color: var(--primary-strong);
 }
 
 .btn-danger {
@@ -228,6 +232,7 @@ hr, .divider { border: 0; border-top: 1px solid var(--border-light); }
  * 2. Header + navigation
  * ------------------------------------------------------------------ */
 #app-header {
+  /* Google's app bar: pure white, one hairline, no colour rule underneath. */
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   box-shadow: none;
@@ -235,9 +240,9 @@ hr, .divider { border: 0; border-top: 1px solid var(--border-light); }
   -webkit-backdrop-filter: none;
 }
 
-/* Brand mark: a flat rounded square, no glow, no float. */
+/* Brand mark: a Material circle (was a rounded square). */
 .logo-badge {
-  border-radius: var(--radius) !important;
+  border-radius: 50% !important;
   border: 0 !important;
   background: var(--primary) !important;
   box-shadow: none !important;
@@ -255,14 +260,15 @@ hr, .divider { border: 0; border-top: 1px solid var(--border-light); }
   color: var(--primary-strong);
 }
 
-/* --- Desktop menu row ------------------------------------------------- */
-.header-nav-row { border-top: 1px solid var(--border-light); }
-.desktop-nav { gap: 2px !important; }
+/* --- Desktop menu row: Google Maps' rounded tab row -------------------- */
+.header-nav-row { border-top: 0; }
+.desktop-nav { gap: 4px !important; }
 .desktop-nav .menu-item,
 .chip.menu-item {
   position: relative;
-  min-height: 34px;
-  border-radius: var(--radius-sm);
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: var(--radius-full);
   border-color: transparent;
   background: transparent;
   color: var(--text-secondary);
@@ -275,28 +281,19 @@ hr, .divider { border: 0; border-top: 1px solid var(--border-light); }
   transform: none;
   border-color: transparent;
 }
-/* Active = one surface step + accent label + a 2px bar (no solid pill). */
+/* Active = a filled Google-blue pill (the Maps tab); the ink follows the mode. */
 .desktop-nav .menu-item.chip-active,
 .desktop-nav .menu-item.active {
-  background: var(--surface-2);
-  color: var(--primary-strong) !important;
+  background: var(--primary);
+  color: var(--on-primary) !important;
   border-color: transparent;
-  border-radius: var(--radius-sm);
-  box-shadow: none;
+  border-radius: var(--radius-full);
+  box-shadow: var(--elev-1);
 }
 .desktop-nav .menu-item.chip-active::after,
-.desktop-nav .menu-item.active::after {
-  content: '';
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 0;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--primary);
-}
+.desktop-nav .menu-item.active::after { display: none; }
 .desktop-nav .menu-item.chip-active svg,
-.desktop-nav .menu-item.active svg { color: var(--primary-strong); }
+.desktop-nav .menu-item.active svg { color: var(--on-primary); }
 
 /* “เพิ่มเติม ▾” — the secondary pages, at the end of the menu row (v35). */
 .header-more { position: relative; flex: 0 0 auto; display: none; }
@@ -305,9 +302,9 @@ hr, .divider { border: 0; border-top: 1px solid var(--border-light); }
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 34px;
-  padding: 0 8px;
-  border-radius: var(--radius-sm);
+  height: 36px;
+  padding: 0 14px;
+  border-radius: var(--radius-full);
   border: 0;
   background: transparent;
   color: var(--text-secondary);
@@ -371,6 +368,7 @@ hr, .divider { border: 0; border-top: 1px solid var(--border-light); }
   right: 0;
   bottom: 0;
   height: calc(64px + env(safe-area-inset-bottom, 0px));
+  padding-top: 0;
   max-width: none;
   margin: 0;
   padding: 0 max(8px, env(safe-area-inset-left, 0px)) env(safe-area-inset-bottom, 0px) max(8px, env(safe-area-inset-right, 0px));
@@ -390,39 +388,30 @@ hr, .divider { border: 0; border-top: 1px solid var(--border-light); }
 .bottom-nav-item {
   flex: 1 1 0;
   min-width: 0;
-  min-height: 44px;
-  gap: 4px;
-  padding: 8px 2px;
-  border-radius: 0;
-  color: var(--text-tertiary);
-  font-size: 12px;
+  min-height: 48px;
+  gap: 3px;
+  padding: 6px 2px;
+  margin: 8px 2px;
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  font-size: 11px;
   font-weight: 500;
   letter-spacing: 0;
   justify-content: center;
-  transition: color var(--t-fast) var(--ease);
+  transition: background-color var(--t-fast) var(--ease-standard), color var(--t-fast) var(--ease-standard);
   position: relative;
 }
-.bottom-nav-item:hover { background: transparent; color: var(--text-secondary); }
+.bottom-nav-item:hover { background: var(--surface-2); color: var(--text-strong); }
 .bottom-nav-item.active {
   color: var(--primary-strong);
-  background: transparent;
+  background: color-mix(in srgb, var(--primary-raw) 10%, transparent);
   transform: none;
 }
 [data-theme="dark"] .bottom-nav-item.active,
 [data-theme="dark"] .bottom-nav-item.active svg { color: var(--primary); }
-.bottom-nav-item.active::before {
-  content: '';
-  display: block;   /* refresh.css hides the legacy marker — v34 brings it back */
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 24px;
-  height: 2px;
-  border-radius: 0 0 2px 2px;
-  background: var(--primary);
-  animation: none;
-}
+[data-theme="dark"] .bottom-nav-item.active { background: color-mix(in srgb, var(--primary-raw) 18%, transparent); }
+/* The top marker bar of the previous skin is gone — the pill carries the state. */
+.bottom-nav-item.active::before { display: none; animation: none; }
 .bottom-nav-item.active svg { transform: none; }
 .bottom-nav-item svg { width: 20px; height: 20px; }
 .bottom-nav-item:focus-visible { outline-offset: -3px; border-radius: var(--radius-xs); }
@@ -436,10 +425,10 @@ hr, .divider { border: 0; border-top: 1px solid var(--border-light); }
   width: auto;
   min-width: 56px;
   height: 56px;
-  padding: 0 16px;
-  border-radius: var(--radius-md);
+  padding: 0 18px;
+  border-radius: var(--radius-lg);
   border: 0;
-  background: var(--primary);
+  background: var(--primary-raw);
   background-image: none;
   color: var(--on-primary);
   font-size: 14px;
@@ -464,11 +453,12 @@ hr, .divider { border: 0; border-top: 1px solid var(--border-light); }
  * 3. Cards, panels, lists
  * ------------------------------------------------------------------ */
 .card {
+  /* Google card: white, 12px radius, Material 1dp elevation. */
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  box-shadow: none;
-  transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
+  box-shadow: var(--elev-1);
+  transition: box-shadow var(--t-fast) var(--ease-standard), border-color var(--t-fast) var(--ease-standard);
   will-change: auto;
   overflow: hidden;
 }
@@ -482,8 +472,8 @@ hr, .divider { border: 0; border-top: 1px solid var(--border-light); }
 .card:hover { border-color: var(--border); }
 .card-hover:hover {
   transform: none;
-  box-shadow: none;
-  border-color: var(--border-strong);
+  box-shadow: var(--elev-2);
+  border-color: var(--border);
   background: var(--card);
 }
 .card:active { transform: none; }
@@ -527,7 +517,7 @@ h1 .row-icon, h2 .row-icon, h3 .row-icon, h4 .row-icon, .card-title .row-icon,
 .input {
   min-height: var(--control-h);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  border-radius: 4px;   /* Google's outlined text field */
   background: var(--surface);
   color: var(--text);
   font-size: 14px;
@@ -570,9 +560,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary-raw); 
  * 5. Chips, segmented controls, badges, progress
  * ------------------------------------------------------------------ */
 .chip {
-  min-height: 34px;
+  min-height: 32px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-full); /* Google filter chip: a pill */
   background: var(--surface);
   color: var(--text-secondary);
   font-weight: 500;
@@ -586,11 +576,12 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary-raw); 
   transform: none;
   box-shadow: none;
 }
-/* Selected filter = ink on a surface step + hairline, not a solid accent pill. */
+/* Selected filter = Google's filter chip: a tinted blue fill, a blue hairline and
+   blue ink (the surface step + accent bar of v35 is gone in v41). */
 .chip-active, .chip-active:hover {
-  background: var(--surface-2);
-  border-color: var(--text-secondary);
-  color: var(--text-strong);
+  background: color-mix(in srgb, var(--primary-raw) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--primary-raw) 45%, transparent);
+  color: var(--primary-strong);
   box-shadow: none;
 }
 .chip-active svg { color: var(--text-strong); }
@@ -705,13 +696,14 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary-raw); 
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  box-shadow: none;
+  box-shadow: var(--elev-1);
   padding: 16px;
-  transition: border-color var(--t-fast) var(--ease);
+  transition: box-shadow var(--t-fast) var(--ease-standard);
 }
 .kpi-tile::before,
 .kpi-tile::after { display: none !important; }
-.kpi-tile:hover { transform: none; box-shadow: none; border-color: var(--border-strong); }
+/* v41: the coloured “wash” behind the page is gone — Google's canvas is flat grey. */
+.kpi-tile:hover { transform: none; box-shadow: var(--elev-2); border-color: var(--border); }
 .kpi-tile .kpi-icon { display: none !important; }
 .kpi-tile .kpi-label,
 .kpi-tile.kpi-compact .kpi-label { font-size: 13px; font-weight: 400; color: var(--text-secondary); letter-spacing: 0; text-transform: none; }
@@ -838,7 +830,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary-raw); 
  * ------------------------------------------------------------------ */
 
 /* --- Itinerary -------------------------------------------------------- */
-.itin-card { border-radius: var(--radius-md); box-shadow: none; }
+.itin-card { border-radius: var(--radius-md); box-shadow: var(--elev-1); }
 .itin-card.is-focused {
   border-color: var(--primary);
   box-shadow: 0 0 0 2px var(--primary-soft);
@@ -872,7 +864,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary-raw); 
   border-top: 1px solid var(--border);
   box-shadow: var(--overlay-shadow);
 }
-.receipt { box-shadow: none; border: 1px solid var(--border); }
+.receipt { box-shadow: var(--elev-1); border: 1px solid var(--border); }
 .receipt-picker-item { border-radius: var(--radius-sm); }
 .picker-item.is-active, .receipt-picker-item.is-active { border-color: var(--text-secondary); background: var(--surface-2); }
 
@@ -912,9 +904,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary-raw); 
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--surface);
-  box-shadow: none;
+  box-shadow: var(--elev-1);
 }
-.place-card:hover { transform: none; box-shadow: none; border-color: var(--border-strong); }
+.place-card:hover { transform: none; box-shadow: var(--elev-2); border-color: var(--border); }
 .place-thumb { border-radius: var(--radius-sm); }
 .place-thumb { background: var(--surface-2); }
 .reco-card { border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); }
@@ -1084,8 +1076,8 @@ html[data-density="roomy"] .bottom-nav { height: calc(72px + env(safe-area-inset
 
 /* --- Depth ------------------------------------------------------------ */
 html[data-depth="flat"] {
-  --overlay-shadow: none;
-  --overlay-shadow-strong: none;
+  --overlay-shadow: var(--elev-3);
+  --overlay-shadow-strong: var(--elev-4);
   --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary-raw) 34%, transparent);
 }
 html[data-depth="flat"] .bottom-sheet,
@@ -2342,15 +2334,17 @@ a.rcpt-open { min-height: 24px; }
 
 /* --- 1. Palette + page wash -------------------------------------------- */
 :root {
-  --hue-blue: #2f6fe4;
-  --hue-sky: #0ea5e9;
-  --hue-teal: #0d9488;
-  --hue-green: #16a34a;
-  --hue-amber: #e8930c;
-  --hue-orange: #ea580c;
-  --hue-rose: #db2777;
-  --hue-violet: #7c3aed;
-  --hue-slate: #64748b;
+  /* v41: Google's Material palette (blue 600 · light blue 500 · teal 600 ·
+     green 600 · yellow 800 · orange 700 · red 700 · purple 600 · grey 600). */
+  --hue-blue: #1a73e8;
+  --hue-sky: #03a9f4;
+  --hue-teal: #00897b;
+  --hue-green: #1e8e3e;
+  --hue-amber: #f29900;
+  --hue-orange: #e8710a;
+  --hue-rose: #d93025;
+  --hue-violet: #8430ce;
+  --hue-slate: #5f6368;
   --wash-1: rgba(47, 111, 228, .10);
   --wash-2: rgba(232, 147, 12, .11);
   --wash-3: rgba(13, 148, 136, .09);
@@ -2363,46 +2357,22 @@ a.rcpt-open { min-height: 24px; }
   --wash-4: rgba(219, 39, 119, .10);
 }
 body {
-  background-image:
-    radial-gradient(ellipse 62% 42% at 4% -8%, var(--wash-1), transparent 62%),
-    radial-gradient(ellipse 48% 38% at 102% -6%, var(--wash-2), transparent 64%),
-    radial-gradient(ellipse 58% 44% at 88% 104%, var(--wash-3), transparent 66%),
-    radial-gradient(ellipse 42% 34% at 12% 104%, var(--wash-4), transparent 68%);
-  background-attachment: fixed;
-  background-repeat: no-repeat;
+  /* v41 (Google): the four-colour wash is gone — the canvas is #f8f9fa, exactly
+     like maps.google.com. (Kept as a no-op override so the v37 block below can
+     stay in place for reference.) */
+  background-image: none;
+  background-color: var(--bg);
 }
 @media print { body { background-image: none; } }
 
-/* A thin colour line under the app header — the one piece of brand colour that
-   is always on screen (flat: a rule, not a gradient surface). */
+/* v41: the app bar is one flat white surface — Google has no rainbow rule under
+   it, and page titles carry no coloured bar. */
 #app-header { position: sticky; }
-#app-header::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 2px;
-  pointer-events: none;
-  background: linear-gradient(90deg, var(--primary-raw) 0%, var(--hue-sky) 28%, var(--hue-teal) 52%, var(--hue-amber) 76%, var(--hue-rose) 100%);
-  opacity: .55;
-}
-[data-theme="dark"] #app-header::after { opacity: .42; }
-
-/* Page titles get a short colour bar, so each screen opens with a mark. */
+#app-header::after { display: none; }
 .page-head .page-title,
-.dash-head .page-title { position: relative; padding-left: 12px; }
+.dash-head .page-title { position: relative; padding-left: 0; }
 .page-head .page-title::before,
-.dash-head .page-title::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 2px;
-  bottom: 2px;
-  width: 4px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, var(--primary-raw), var(--hue-teal));
-}
+.dash-head .page-title::before { display: none; }
 
 /* Colour themes keep working: the accent above follows --primary-raw. */
 
@@ -2423,11 +2393,14 @@ body {
 [data-dashboard-widget="teams"] { --widget-accent: var(--hue-orange); }
 
 #dashboard-view .dash-widget--half > .card {
-  background: color-mix(in srgb, var(--widget-accent, var(--primary-raw)) 4%, var(--card));
-  border-color: color-mix(in srgb, var(--widget-accent, var(--primary-raw)) 16%, var(--border));
+  /* v41: every dashboard card is white; the widget's hue is a 3px bar next to
+     the title only (Google's section mark). */
+  background: var(--card);
+  border-color: var(--border);
+  box-shadow: var(--elev-1);
 }
 [data-theme="dark"] #dashboard-view .dash-widget--half > .card {
-  background: color-mix(in srgb, var(--widget-accent, var(--primary-raw)) 7%, var(--card));
+  background: var(--card);
 }
 #dashboard-view .card-title { display: flex; align-items: center; gap: 8px; }
 #dashboard-view .card-title::before {
@@ -2439,15 +2412,16 @@ body {
   background: var(--widget-accent, var(--primary-raw));
 }
 
-/* KPI tiles: a tinted surface plus a 3px cap in the tile's own hue. */
+/* KPI tiles: white cards on Google's canvas; the metric's hue is a 3px cap. */
 .kpi-tile[data-kpi="total"] { --kpi-accent: var(--hue-blue); --kpi-tint: 9%; }
 .kpi-tile[data-kpi="balance"] { --kpi-accent: var(--hue-teal); --kpi-tint: 9%; }
 .kpi-tile[data-kpi="budget"] { --kpi-accent: var(--hue-amber); --kpi-tint: 11%; }
 .kpi-tile.kpi-tile,
 .kpi-tile.kpi-compact {
-  background: color-mix(in srgb, var(--kpi-accent, var(--primary-raw)) var(--kpi-tint, 6%), var(--card));
-  border-color: color-mix(in srgb, var(--kpi-accent, var(--primary-raw)) 22%, var(--border));
-  border-top: 3px solid color-mix(in srgb, var(--kpi-accent, var(--primary-raw)) 78%, var(--card));
+  background: var(--card);
+  border-color: var(--border);
+  border-top: 3px solid var(--kpi-accent, var(--primary-raw));
+  box-shadow: var(--elev-1);
 }
 /* The KPI strip (expenses / settlement): five hues in a row. */
 .kpi-strip > .kpi-mini:nth-child(1) { --kpi-accent: var(--hue-blue); }
@@ -2456,9 +2430,9 @@ body {
 .kpi-strip > .kpi-mini:nth-child(4) { --kpi-accent: var(--hue-rose); }
 .kpi-strip > .kpi-mini:nth-child(5) { --kpi-accent: var(--hue-violet); }
 .kpi-strip > .kpi-mini {
-  background: color-mix(in srgb, var(--kpi-accent, var(--primary-raw)) 7%, var(--surface));
-  border-color: color-mix(in srgb, var(--kpi-accent, var(--primary-raw)) 20%, var(--border));
-  border-left: 3px solid color-mix(in srgb, var(--kpi-accent, var(--primary-raw)) 72%, var(--surface));
+  background: var(--surface);
+  border-color: var(--border);
+  border-left: 3px solid var(--kpi-accent, var(--primary-raw));
 }
 .kpi-strip > .kpi-mini .kpi-mini-label { color: var(--text-secondary); }
 
@@ -2478,8 +2452,11 @@ body {
 
 /* Team card: the team colour becomes a wash, and its categories get meters. */
 .team-card {
-  background: color-mix(in srgb, var(--team-color, var(--primary-raw)) 6%, var(--surface));
-  border-color: color-mix(in srgb, var(--team-color, var(--primary-raw)) 20%, var(--border-light));
+  /* v41: white card + the team colour kept as a 3px left edge (a legend mark,
+     not a wash) — Google cards stay white in both modes. */
+  background: var(--surface);
+  border-color: var(--border);
+  border-left: 3px solid var(--team-color, var(--primary-raw));
 }
 [data-theme="dark"] .team-card {
   background: color-mix(in srgb, var(--team-color, var(--primary-raw)) 9%, var(--surface));
@@ -2507,14 +2484,15 @@ body {
 .team-cat--more { border-style: dashed; border-color: var(--border-strong); background: var(--surface); color: var(--text-tertiary); }
 .team-cat--more .team-cat-amount { color: var(--text-secondary); }
 
-/* Navigation: the active item glows with the accent instead of plain grey. */
+/* Navigation: the active item is a filled Google-blue pill (desktop) and a
+   tinted pill (phone dock) — the Google Maps pattern. */
 .desktop-nav .menu-item.chip-active,
 .desktop-nav .menu-item.active {
-  background: color-mix(in srgb, var(--primary-raw) 10%, var(--surface));
-  color: var(--primary-strong) !important;
+  background: var(--primary);
+  color: var(--on-primary) !important;
 }
-.bottom-nav-item.active { background: color-mix(in srgb, var(--primary-raw) 8%, transparent); }
-.bottom-nav-item.active::before { height: 3px; width: 30px; }
+.bottom-nav-item.active { background: color-mix(in srgb, var(--primary-raw) 10%, transparent); }
+.bottom-nav-item.active::before { display: none; }
 
 /* Payment chips on expense rows keep their hue (cash / card / transfer). */
 .rcpt-chip--cash { color: color-mix(in srgb, var(--hue-green) 62%, var(--text-strong)); border-color: color-mix(in srgb, var(--hue-green) 30%, var(--border)); background: color-mix(in srgb, var(--hue-green) 8%, var(--surface)); }
@@ -2825,3 +2803,40 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
 .weather-chip-rain { font-size: 11px; }
 .wx-empty { padding: 8px 4px 4px; }
 #dash-weather-multi > p:last-child { margin-top: 4px; }
+
+/* ============================================================================
+   v41 — GOOGLE SKIN (owner request, 17 Nov 2026)
+   ----------------------------------------------------------------------------
+   The product now reads like Google Maps / Google Travel:
+
+     • white cards with Material elevation on Google's #f8f9fa canvas;
+     • Google blue (#1a73e8) as the one action colour; the mode-aware --primary /
+       --on-primary pair keeps the filled buttons AA in both modes;
+     • navigation as rounded tabs — the active one is a filled blue pill on
+       desktop and a tinted pill on the phone dock;
+     • Google filter chips, outlined text fields (4px), outlined secondary
+       buttons with a blue label, a black snackbar toast;
+     • Google Sans (self-hosted, fonts.css) and Google Sans Code for figures.
+
+   The rules above stay: one accent, green/red for money, 8/12/16/24px radii and
+   the 150/200/300ms motion. Only the surface treatment changed.
+   ========================================================================== */
+/* Snackbar: Material's dark toast, white ink, no coloured stripe. */
+.toast {
+  background: #202124;
+  border: 0;
+  color: #f1f3f4;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--elev-3);
+}
+.toast-close { color: #bdc1c6; border-radius: var(--radius-full); }
+.toast-close:hover { background: rgba(255, 255, 255, .12); color: #fff; }
+.toast-success, .toast-error, .toast-warning, .toast-info, .toast-loading { border: 0; }
+[data-theme="dark"] .toast { background: #e8eaed; color: #202124; }
+[data-theme="dark"] .toast-close { color: #5f6368; }
+
+/* Notification badge on the bell: Google's red dot, white ring. */
+#bell-badge, .bell-badge { box-shadow: 0 0 0 2px var(--surface); }
+
+/* Text inputs inside overlays keep Google's outlined box (no inner shadow). */
+.input:focus-visible, .input:focus, textarea.input:focus { box-shadow: inset 0 0 0 2px var(--primary-raw); }

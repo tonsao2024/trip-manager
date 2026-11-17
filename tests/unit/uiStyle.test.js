@@ -13,17 +13,19 @@ function fakeRoot() {
   return { dataset: {} };
 }
 
-export function testDefaultsAreFlat() {
+export function testDefaultsAreMaterial() {
+  // v41: the Google Material skin is the shipped look, so the default depth is
+  // “soft” (Material elevation) — “flat” is still offered in Settings.
   const style = normalizeUiStyle(undefined);
   assert(style.radius === 'soft', 'the default corners are soft');
   assert(style.density === 'regular', 'the default density is regular');
-  assert(style.depth === 'flat', 'the default has no elevation');
+  assert(style.depth === 'soft', 'the default keeps Material elevation');
   assert(JSON.stringify(style) === JSON.stringify(UI_STYLE_DEFAULTS), 'defaults are the exported constant');
 }
 
 export function testBadValuesCannotPoisonThePage() {
   const style = normalizeUiStyle({ radius: 'banana', density: 42, depth: '<script>' });
-  assert(style.radius === 'soft' && style.density === 'regular' && style.depth === 'flat',
+  assert(style.radius === 'soft' && style.density === 'regular' && style.depth === 'soft',
     'unknown values fall back to the defaults');
 }
 
@@ -54,7 +56,7 @@ export function testSaveAndReadRoundTrip() {
   assert(next.density === 'roomy', 'save returns the merged style');
   assert(readUiStyle().density === 'roomy', 'the saved density is read back');
   const stored = JSON.parse(localStorage.getItem(UI_STYLE_KEY) || '{}');
-  assert(stored.radius === 'soft' && stored.depth === 'flat', 'a partial patch keeps the other keys');
+  assert(stored.radius === 'soft' && stored.depth === 'soft', 'a partial patch keeps the other keys');
   assert(setUiStyle({ radius: 'round' }).radius === 'round', 'setUiStyle persists in one call');
   const root = fakeRoot();
   resetUiStyle(root);
@@ -65,7 +67,7 @@ export function testSaveAndReadRoundTrip() {
 export function testCorruptStorageNeverThrows() {
   try { localStorage.setItem(UI_STYLE_KEY, '{not json'); } catch { /* ignore */ }
   const style = readUiStyle();
-  assert(style.radius === 'soft' && style.depth === 'flat', 'corrupt storage falls back quietly');
+  assert(style.radius === 'soft' && style.depth === 'soft', 'corrupt storage falls back quietly');
   try { localStorage.removeItem(UI_STYLE_KEY); } catch { /* ignore */ }
 }
 
@@ -74,5 +76,5 @@ export function testLabelsFollowLanguage() {
   const en = uiStyleLabel({ radius: 'sharp', density: 'compact', depth: 'soft' }, 'en');
   assert(th.radius === 'คม' && en.radius === 'Sharp', 'radius label is localised');
   assert(th.density === 'กะทัดรัด' && en.density === 'Compact', 'density label is localised');
-  assert(th.depth === 'เงานุ่ม' && en.depth === 'Soft', 'depth label is localised');
+  assert(th.depth === 'เงานุ่ม (Google)' && en.depth === 'Soft (Google)', 'depth label is localised');
 }

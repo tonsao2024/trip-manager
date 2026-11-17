@@ -17,11 +17,7 @@ const only = process.argv[3];
 const height = width >= 1000 ? 900 : 932;
 
 const STYLE = `
-  <link rel="stylesheet" href="/node_modules/@fontsource/ibm-plex-sans-thai/400.css">
-  <link rel="stylesheet" href="/node_modules/@fontsource/ibm-plex-sans-thai/500.css">
-  <link rel="stylesheet" href="/node_modules/@fontsource/ibm-plex-sans-thai/600.css">
-  <link rel="stylesheet" href="/node_modules/@fontsource/ibm-plex-mono/400.css">
-  <link rel="stylesheet" href="/node_modules/@fontsource/ibm-plex-mono/500.css">
+  <link rel="stylesheet" href="/src/css/fonts.css">
   <link rel="stylesheet" href="/tests/browser/out/tailwind.css">
   <link rel="stylesheet" href="/src/css/tokens.css">
   <link rel="stylesheet" href="/src/css/components.css">
@@ -29,6 +25,7 @@ const STYLE = `
   <link rel="stylesheet" href="/src/css/animations.css">
   <link rel="stylesheet" href="/src/css/flat.css">
   <link rel="stylesheet" href="/src/css/dimension.css">
+  <link rel="stylesheet" href="/src/css/material.css">
   <style>
     body { padding-bottom: calc(var(--bottom-nav-h) + 28px + env(safe-area-inset-bottom)); background: var(--bg); }
     @media (min-width: 768px) { body { padding-bottom: 0; } .bottom-nav { display: none !important; } }
@@ -37,6 +34,8 @@ const STYLE = `
   </style>
 `;
 
+// The headless Chromium in this sandbox links no libnss, and this wrapper reads
+// the same design tokens, so it is enough to compare layout + type across routes.
 const files = fs.readdirSync(outDir).filter(f => f.endsWith('.html') && !f.endsWith('.full.html'));
 const targets = only ? files.filter(f => f.startsWith(only)) : files;
 

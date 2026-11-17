@@ -10,6 +10,22 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > continue to use Firestore + **FCM/GitHub Actions**, not Cloud Functions — see
 > [ตั้งค่า Push](docs/PUSH-ACTIONS.md). Push is best-effort (normally every 30 minutes).
 
+> **v41 — 17 Nov 2026, หน้าตาใหม่ทั้งระบบแบบ Google Material (Google Maps / Google Travel).** ตามคำขอของเจ้าของ
+> โปรเจกต์: ให้ทั้งเว็บดูเหมือนผลิตภัณฑ์ของ Google และใช้ฟอนต์ Google Sans. **สี:** Google blue `#1a73e8`
+> เป็นสีเน้นเดียวบนพื้น Google grey `#f8f9fa` / การ์ดขาว, ตัวอักษร `#202124` / `#5f6368`, เส้นบาง `#dadce0`,
+> เขียว `#188038` / แดง `#c5221f` เฉพาะเงิน (ทุกคู่ผ่าน AA — ดูตารางใน `docs/GOOGLE-MATERIAL-2026-11-17.md`).
+> **ผิว:** การ์ดขาวมุม 12px เงา Material 1dp (`--elev-1`) ยกขึ้น 2dp ตอน hover, แถบนำทางเป็นแท็บกลม
+> (desktop = พิลน้ำเงินทึบ, มือถือ = พิลพื้น tint), ชิปตัวกรองแบบ Google (พิล, active = tint 10% + ขอบน้ำเงิน),
+> ช่องกรอกแบบ outlined 4px, ปุ่มรอง outlined ตัวอักษรน้ำเงิน, ปุ่มหลักเป็นพิล, snackbar ดำแบบ Material.
+> **ฟอนต์:** Google Sans (self-host 12 ไฟล์ใน `src/fonts/` + `src/css/fonts.css`, subset ไทย/ละติน/ละติน-ext,
+> OFL — `docs/licenses/OFL-GoogleSans.txt`) และ Google Sans Code สำหรับตัวเลขในใบเสร็จ (ไม่มี subset ไทย
+> จึงใช้เฉพาะอักษรละติน/ตัวเลข). **ไฟล์:** ชั้นสกินใหม่อยู่ท้าย `src/css/flat.css` (§ v41 — Google Skin) +
+> `src/css/material.css` (เฉพาะรายละเอียดที่ flat.css ไม่ได้ดูแล: โลโก้/อวตาร์, การ์ดแดชบอร์ด, โดเมน).
+> **แลกกับ v35:** “ไม่มีเงา / พื้นผิวเดียว / หนึ่งสีเน้นแบบเรียบ” ถูกผ่อนเป็น “เงา Material 1–2dp / การ์ดขาว /
+> หนึ่งสีเน้น + tint” ตามที่ Google ต้องการ — เหตุผลและขอบเขตอยู่ใน `docs/GOOGLE-MATERIAL-2026-11-17.md`.
+> โทเคน `--primary`/`--on-primary` ยังเป็นคู่ที่พลิกตามโหมด จึงไม่มีปัญหา “ขาวบนน้ำเงินอ่อน” ในโหมดมืด.
+> ตรวจ: 235 unit tests, smoke test ผ่าน (แก้ 5 ข้อที่ปัก hex ของ v35 ให้ตรง v41).
+>
 > **v40 — 17 Nov 2026, แผนการเดินทาง: เวลาต่อเนื่อง + เมนู “เพิ่มเติม” กดได้จริง.** Five fixes.
 > **(1) เวลาไม่ต่อเนื่อง:** saving a place used to update only that card, so the rest of the day kept
 > stale times (a 07:00 start followed by 10:00). Every day is now one chain — `start(next) = end(prev)

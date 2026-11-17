@@ -1,47 +1,44 @@
-/* Layered surfaces and a little movement for the journey. */
-/* v37: a brighter, cooler canvas so the hue accents (KPI caps, category bars,
-   team washes, weather chips) read as colour instead of sinking into grey. */
+/* Layered surfaces and a little movement for the journey.
+   v41: the canvas is Google's grey (tokens.css) — this block only keeps the
+   depth rules that the layered look needs, stepped with Material elevation. */
 :root {
-  --bg: #f5f8fc;
-  --bg-secondary: #eef3f9;
-  --bg-tertiary: #e2eaf3;
-  --surface-2: #f1f5fa;
-  --surface-3: #e6eef6;
-  --surface-inset: #eef3f9;
-  --border: rgba(31, 59, 75, .14);
-  --border-light: rgba(31, 59, 75, .09);
+  --bg: #f8f9fa;
+  --bg-secondary: #f1f3f4;
+  --bg-tertiary: #e8eaed;
+  --surface-2: #f1f3f4;
+  --surface-3: #e8eaed;
+  --surface-inset: #f1f3f4;
+  --border: #dadce0;
+  --border-light: #e8eaed;
 }
 [data-theme="dark"] {
-  --bg: #10171d;
-  --bg-secondary: #17232b;
-  --bg-tertiary: #20303a;
-  --surface: #1b2831;
-  --card: #1b2831;
-  --surface-2: #23343e;
-  --surface-3: #30434d;
-  --surface-inset: #152129;
-  --text-tertiary: #b3bbc1;
-  --border: rgba(211, 231, 239, .16);
-  --border-light: rgba(211, 231, 239, .10);
+  --bg: #202124;
+  --bg-secondary: #292a2d;
+  --bg-tertiary: #303134;
+  --surface: #292a2d;
+  --card: #292a2d;
+  --surface-2: #303134;
+  --surface-3: #3c4043;
+  --surface-inset: #202124;
+  --text-tertiary: #9aa0a6;
+  --border: #3c4043;
+  --border-light: #35363a;
 }
 
 .card, .kpi-tile, .kpi-tile.kpi-compact, .place-card, .group-card {
   border-color: var(--border);
-  box-shadow: 0 3px 12px rgba(27, 52, 66, .07), 0 1px 2px rgba(27, 52, 66, .04);
+  box-shadow: var(--elev-1);
 }
 .card-hover:hover, .place-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: 0 6px 18px rgba(27, 52, 66, .12);
+  border-color: var(--border);
+  box-shadow: var(--elev-2);
 }
 [data-theme="dark"] :is(.card, .kpi-tile, .place-card, .group-card) {
-  box-shadow: 0 3px 14px rgba(0, 0, 0, .2);
+  box-shadow: var(--elev-1);
 }
 /* Respect the explicit flat-depth preference; colour and borders still separate surfaces. */
 html[data-depth="flat"] :is(.card, .kpi-tile, .place-card, .group-card),
 html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: none; }
-.kpi-tile[data-kpi="total"] { background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
-.kpi-tile[data-kpi="balance"] { background: color-mix(in srgb, #20a69a 7%, var(--surface)); }
-.kpi-tile[data-kpi="budget"] { background: color-mix(in srgb, #e8a53b 9%, var(--surface)); }
 
 /* Individual records remain easy to scan inside larger dashboard panels. */
 #upnext-list .upnext-row, .recent-list .expense-row, .booking-list .booking-row,
