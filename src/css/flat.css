@@ -2977,3 +2977,199 @@ body::before {
 /* --- 7. Cards: hover lifts 2dp, Google's own behaviour ------------------ */
 .card { border-color: color-mix(in srgb, var(--border) 70%, transparent); }
 .card-hover:hover { box-shadow: var(--elev-2); }
+
+/* ============================================================================
+   v41 — RECEIPT & DEBT MAP, REBUILT (owner request, 17 Nov 2026)
+   ----------------------------------------------------------------------------
+   “ใบเสร็จรายคนใหม่ทั้งหมด … แยกส่วนที่ต้องรับ ต้องจ่าย และจ่ายสุทธิพร้อมจ่าย
+    ใครบ้าง ใช้สีแยกให้ชัดเจนกว่านี้ กดดูแบบกระทัดรัดและรายละเอียดได้”
+   “แผนที่หนี้ … ตัวเลขบนเส้นทับกัน … ออกแบบใหม่ทั้งหมด”
+
+   THE RECEIPT, in four colour-coded answer cards that read top to bottom:
+
+     1. ต้องรับ  (green)  — money this person put out
+     2. ต้องจ่าย (red)    — this person's share of every bill
+     3. สุทธิ    (blue or green/red) — the one number that matters
+     4. โอนให้ใคร (list)  — exactly who to pay / who pays them
+
+   The three answer cards are ALWAYS visible, in both densities; only the item
+   rows change between ละเอียด (detailed) and กระทัดรัด (compact).
+   ========================================================================== */
+
+/* --- 1. The receipt sheet ------------------------------------------------ */
+.receipt {
+  /* Measured on the tinted card (not on white), so the label, the amount and
+     the note all clear AA: green 6.34, red 5.55, blue 4.68. */
+  --rcpt-in: #0d652d;          /* ต้องรับ / receive  — Google green 900 */
+  --rcpt-in-bg: #e6f4ea;
+  --rcpt-out: #b3261e;         /* ต้องจ่าย / pay     — Material error 700 */
+  --rcpt-out-bg: #fce8e6;
+  --rcpt-net: #1967d2;         /* สุทธิ / net        — Google blue 700 */
+  --rcpt-net-bg: #e8f0fe;
+}
+
+/* --- 2. The four answer cards ------------------------------------------- */
+.rcpt-cards { display: grid; gap: 10px; margin-top: 14px; }
+@media (min-width: 720px) {
+  .rcpt-cards { grid-template-columns: 1fr 1fr; align-items: stretch; }
+  .rcpt-cards > .rcpt-card--net { grid-column: 1 / -1; }
+}
+.rcpt-card {
+  position: relative;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 14px 16px;
+  overflow: hidden;
+}
+.rcpt-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.rcpt-card-head svg { width: 16px; height: 16px; }
+.rcpt-card-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.rcpt-card-meta { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+.rcpt-card--in { background: var(--rcpt-in-bg); border-color: color-mix(in srgb, var(--rcpt-in) 32%, transparent); }
+.rcpt-card--in .rcpt-card-head { color: var(--rcpt-in); }
+.rcpt-card--in .rcpt-card-amount { color: var(--text-strong); }
+.rcpt-card--in .rcpt-card-mark { background: var(--rcpt-in); }
+.rcpt-card--out { background: var(--rcpt-out-bg); border-color: color-mix(in srgb, var(--rcpt-out) 30%, transparent); }
+.rcpt-card--out .rcpt-card-head { color: var(--rcpt-out); }
+.rcpt-card--out .rcpt-card-amount { color: var(--text-strong); }
+.rcpt-card--out .rcpt-card-mark { background: var(--rcpt-out); }
+/* The net card is the headline: it reads first, even on a phone. */
+.rcpt-card--net { order: -1; }
+@media (min-width: 720px) { .rcpt-card--net { order: 0; } }
+.rcpt-card--net { background: var(--rcpt-net-bg); border-color: color-mix(in srgb, var(--rcpt-net) 30%, transparent); }
+.rcpt-card--net .rcpt-card-head { color: var(--rcpt-net); }
+.rcpt-card--net.is-pos { background: var(--rcpt-in-bg); border-color: color-mix(in srgb, var(--rcpt-in) 32%, transparent); }
+.rcpt-card--net.is-pos .rcpt-card-head { color: var(--rcpt-in); }
+.rcpt-card--net.is-neg { background: var(--rcpt-out-bg); border-color: color-mix(in srgb, var(--rcpt-out) 30%, transparent); }
+.rcpt-card--net.is-neg .rcpt-card-head { color: var(--rcpt-out); }
+.rcpt-card--net.is-clear { background: var(--surface-2); border-color: var(--border); }
+.rcpt-card--net .rcpt-card-amount { font-size: 30px; }
+.rcpt-card--net.is-pos .rcpt-card-amount { color: var(--rcpt-in); }
+.rcpt-card--net.is-neg .rcpt-card-amount { color: var(--rcpt-out); }
+.rcpt-card--net.is-clear .rcpt-card-amount { color: var(--text-secondary); }
+/* A 4px colour rail on the left edge, so the three answers stay tellable apart
+   even in a monochrome screenshot / print. */
+.rcpt-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--rcpt-net);
+}
+.rcpt-card--in::before { background: var(--rcpt-in); }
+.rcpt-card--out::before { background: var(--rcpt-out); }
+.rcpt-card--net.is-pos::before { background: var(--rcpt-in); }
+.rcpt-card--net.is-neg::before { background: var(--rcpt-out); }
+
+/* --- 3. “โอนให้ใคร” — the transfer answer inside the receipt -------------- */
+.rcpt-card--who { grid-column: 1 / -1; background: var(--surface); }
+.rcpt-who-list { display: grid; gap: 8px; margin-top: 10px; }
+.rcpt-who-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  text-align: left;
+}
+.rcpt-who-row:hover { background: var(--surface-2); }
+.rcpt-who-row.is-out { border-left: 3px solid var(--rcpt-out); }
+.rcpt-who-row.is-in { border-left: 3px solid var(--rcpt-in); }
+.rcpt-who-dir {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+.rcpt-who-row.is-out .rcpt-who-dir { background: var(--rcpt-out-bg); color: var(--rcpt-out); }
+.rcpt-who-row.is-in .rcpt-who-dir { background: var(--rcpt-in-bg); color: var(--rcpt-in); }
+.rcpt-who-name { flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 500; color: var(--text-strong); }
+.rcpt-who-role { display: block; font-size: 11px; font-weight: 400; color: var(--text-secondary); }
+.rcpt-who-amount { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.rcpt-who-row.is-out .rcpt-who-amount { color: var(--rcpt-out); }
+.rcpt-who-row.is-in .rcpt-who-amount { color: var(--rcpt-in); }
+.rcpt-who-clear {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--rcpt-in-bg);
+  color: var(--rcpt-in);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* --- 4. The item lists stay as evidence, one colour per side ------------- */
+.rcpt-block--recv .rcpt-block-head { background: var(--rcpt-in-bg); color: var(--rcpt-in); }
+.rcpt-block--recv { border-color: color-mix(in srgb, var(--rcpt-in) 26%, transparent); }
+.rcpt-block--deduct .rcpt-block-head { background: var(--rcpt-out-bg); color: var(--rcpt-out); }
+.rcpt-block--deduct { border-color: color-mix(in srgb, var(--rcpt-out) 24%, transparent); }
+.rcpt-block--balance .rcpt-block-head { background: var(--rcpt-net-bg); color: var(--rcpt-net); }
+.rcpt-block { border-radius: var(--radius-lg); }
+.rcpt-block-head { padding: 10px 14px; font-size: 13px; }
+.rcpt-block-body { padding: 10px 14px 14px; }
+.rcpt-row-amount { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* --- 5. Density: compact keeps all three answers, hides only the item rows */
+.is-compact .rcpt-cards { margin-top: 10px; }
+.is-compact .rcpt-card-amount { font-size: 22px; }
+.is-compact .rcpt-card--net .rcpt-card-amount { font-size: 26px; }
+.is-compact .rcpt-card-meta,
+.is-compact .rcpt-card-head svg { display: none; }
+.is-compact .rcpt-details { display: none !important; }
+.is-compact .rcpt-who-list { gap: 6px; }
+
+/* Compact print / PNG: the same information, no paper waste. */
+@media print {
+  .rcpt-cards { grid-template-columns: 1fr 1fr; }
+  .rcpt-card { break-inside: avoid; }
+}
+
+/* --- 6. Dark mode: tints instead of pastels ------------------------------ */
+[data-theme="dark"] .receipt {
+  --rcpt-in: #81c995;
+  --rcpt-in-bg: color-mix(in srgb, #81c995 16%, var(--surface));
+  --rcpt-out: #f28b82;
+  --rcpt-out-bg: color-mix(in srgb, #f28b82 16%, var(--surface));
+  --rcpt-net: #8ab4f8;
+  --rcpt-net-bg: color-mix(in srgb, #8ab4f8 16%, var(--surface));
+}
+[data-theme="dark"] .rcpt-card-amount { color: var(--text-strong); }
+[data-theme="dark"] .rcpt-card--net.is-pos .rcpt-card-amount { color: var(--rcpt-in); }
+[data-theme="dark"] .rcpt-card--net.is-neg .rcpt-card-amount { color: var(--rcpt-out); }
+
+/* --- 7. Phones: one card per row, the net answer still first-class ------- */
+@media (max-width: 719px) {
+  .rcpt-cards { grid-template-columns: 1fr; }
+  .rcpt-card--net .rcpt-card-amount { font-size: 26px; }
+  .rcpt-who-row { flex-wrap: wrap; }
+  .rcpt-who-amount { margin-left: 38px; }
+}

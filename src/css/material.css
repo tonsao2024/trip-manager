@@ -127,6 +127,38 @@
 }
 .net-chip:hover, .settle-answer-row:hover, .rd-person:hover { background: var(--surface-2); }
 .debt-payer-list .debt-tx-row { border-left: 0; border-radius: 0; }
+/* v41 debt map: the transfer rows are Material list items — a coloured rail in
+   the receiver's hue, the number in a matching chip, and the amount on the
+   right where the eye expects money. */
+.debt-payer-list { display: grid; gap: 8px; }
+.debt-payer-list .debt-tx-row {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--debt-edge-color, var(--primary));
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: 12px;
+  box-shadow: none;
+}
+.debt-payer-list .debt-tx-row:hover { background: var(--surface-2); box-shadow: var(--elev-1); }
+.debt-step {
+  background: color-mix(in srgb, var(--debt-edge-color, var(--primary)) 14%, var(--surface));
+  border: 0;
+  color: var(--text-strong);
+  font-weight: 600;
+  font-size: 12px;
+}
+.debt-person-link { border: 0; background: transparent; border-radius: var(--radius-sm); }
+.debt-person-link:hover { background: var(--surface-2); }
+.debt-person-role { letter-spacing: 0; }
+.debt-row-pays { background: color-mix(in srgb, var(--debt-edge-color, var(--primary)) 12%, var(--surface)); color: var(--text-strong); }
+.debt-amount-block { min-width: 148px; }
+.debt-row-amount { font-family: var(--font-mono); font-size: 17px; font-weight: 600; color: var(--text-strong); }
+.debt-offgraph-note { display: block; margin-top: 2px; font-size: 11px; line-height: 1.4; font-style: normal; color: var(--text-tertiary); text-align: right; }
+.debt-tx-row--offgraph { border-left-style: dashed; }
+.debt-map-svg { background: var(--surface-2); border-radius: var(--radius-md); }
+.debt-pill-amount { font-family: var(--font-mono); }
+.debt-pill-tag { font-family: var(--font-mono); }
+[data-theme="dark"] .debt-map-svg { background: var(--surface-2); }
 .debt-map-svg { background: var(--surface-2); border-radius: var(--radius-md); }
 
 /* The receipt is Google's document sheet; the figures use Google Sans Code. */

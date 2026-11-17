@@ -197,6 +197,13 @@ for (const [name, hash, wait] of ROUTES) {
   if (only && only !== name) continue;
   await goto(hash);
   await sleep(wait);
+  // Settlement opens on a view switch; the preview needs the receipts + debt map.
+  if (process.env.PREVIEW_SETTLE_VIEW && name === 'settlement') {
+    const doc0 = window.document;
+    const want = process.env.PREVIEW_SETTLE_VIEW;
+    doc0.querySelector(`#settle-views [data-view="${want}"]`)?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await sleep(600);
+  }
   const doc = window.document;
   const header = doc.getElementById('app-header')?.outerHTML || '';
   const bottomNav = doc.getElementById('bottom-nav')?.outerHTML || '';
@@ -204,7 +211,8 @@ for (const [name, hash, wait] of ROUTES) {
   const desktopNav = doc.getElementById('desktop-nav')?.outerHTML || '';
   const main = appEl()?.outerHTML || '';
   const body = `<div id="page">\n${header}\n${desktopNav}\n${main}\n${fab}\n${bottomNav}\n</div>\n<div id="toast-container"></div>`;
-  fs.writeFileSync(path.join(outDir, `${name}.html`), body, 'utf8');
-  console.log(`saved tools/preview/out/${name}.html (${Math.round(body.length / 1024)} kB)`);
+  const suffix = (name === 'settlement' && process.env.PREVIEW_SETTLE_VIEW) ? `-${process.env.PREVIEW_SETTLE_VIEW}` : '';
+  fs.writeFileSync(path.join(outDir, `${name}${suffix}.html`), body, 'utf8');
+  console.log(`saved tools/preview/out/${name}${suffix}.html (${Math.round(body.length / 1024)} kB)`);
 }
 process.exit(0);

@@ -1547,6 +1547,13 @@ console.log('\n▶ v10: per-person receipts are colour-coded and the overview is
   check(!!q('#receipt-u1 .rcpt-block--recv') && !!q('#receipt-u1 .rcpt-block--deduct') && !!q('#receipt-u1 .rcpt-block--balance'), 'receipt: each section has its own colour');
   check(!!q('#receipt-u1 .rcpt-chip--cash, #receipt-u1 .rcpt-chip--card, #receipt-u1 .rcpt-chip--transfer'), 'receipt: payment methods appear as coloured chips');
   check(!!q('#receipt-u1 .rcpt-sum-total'), 'receipt: the balance is boxed at the bottom');
+  // v41: the answer is four colour-coded cards — ต้องรับ · ต้องจ่าย · สุทธิ · โอนให้ใคร.
+  check(!!q('#receipt-u1 .rcpt-card--in') && !!q('#receipt-u1 .rcpt-card--out') && !!q('#receipt-u1 .rcpt-card--net'),
+    'receipt: receive / pay / net are separate colour-coded cards');
+  check(!!q('#receipt-u1 .rcpt-card--who .rcpt-who-row, #receipt-u1 .rcpt-card--who .rcpt-who-clear'),
+    'receipt: the net answer names exactly who to pay / who pays back');
+  check(/ต้องรับ/.test(q('#receipt-u1 .rcpt-card--in')?.textContent || '') && /ต้องจ่าย/.test(q('#receipt-u1 .rcpt-card--out')?.textContent || '') && /สุทธิ/.test(q('#receipt-u1 .rcpt-card--net')?.textContent || ''),
+    'receipt: each answer card is labelled in Thai');
   check(/รับ[\s\S]*หัก[\s\S]*คงเหลือ/.test(q('#receipt-u1')?.textContent || ''), 'receipt: รับ → หัก → คงเหลือ in order');
   const css = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8');
   check(/\.export-flat \.receipt \.rcpt-block--recv \.rcpt-block-head/.test(css), 'receipt: the colours survive the PNG export (export-flat overrides)');
@@ -2531,6 +2538,16 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   await sleep(220);
   check(window.localStorage.getItem('fuji_rcpt_density') === 'full', 'settlement: switching back to detailed persists too');
 
+  // v41: กระทัดรัด folds the item rows, never the answers. Both densities must
+  // keep ต้องรับ / ต้องจ่าย / สุทธิ / โอนให้ใคร on screen.
+  await click('#receipt-density [data-density="compact"]');
+  await sleep(200);
+  check(!!q('#receipt-u1 .rcpt-card--in') && !!q('#receipt-u1 .rcpt-card--out') && !!q('#receipt-u1 .rcpt-card--net') && !!q('#receipt-u1 .rcpt-card--who'),
+    'receipt: compact mode keeps all four answer cards (only the item rows fold)');
+  check(!!q('#receipt-u1 .rcpt-details'), 'receipt: compact mode keeps the item lists in the DOM for printing/export');
+  await click('#receipt-density [data-density="full"]');
+  await sleep(200);
+
   // ---- 8) the debt map is ONE map with a connecting line per transfer ----
   await click('#settle-views [data-view="debt-map"]');
   await waitFor(() => q('.debt-map-container') || q('.debt-map-node'), { timeout: 8000, label: 'debt map' }).catch(() => {});
@@ -2923,6 +2940,17 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
   const v28spots = v28amounts.map(t => `${t.getAttribute('x')},${t.getAttribute('y')}`);
   check(v28amounts.length > 0 && new Set(v28spots).size === v28spots.length,
     'debt map: every money label sits in its own spot');
+  // v41: each on-map amount is a numbered pill that belongs to exactly one line,
+  // and the number matches the transfer list below the graph.
+  const pills = qa('.debt-pill[data-pill]');
+  check(pills.length === qa('.debt-map-edge:not([data-offgraph])').length && pills.length > 0,
+    `debt map: every drawn line carries its own numbered pill (${pills.length})`);
+  const pillNumbers = pills.map(p => p.dataset.pill).sort();
+  const rowNumbers = qa('.debt-tx-row').map(r => r.dataset.debtStep).sort();
+  check(pillNumbers.every(n => rowNumbers.includes(n)),
+    'debt map: the pill number on a line is the number of a row in the list');
+  check(qa('.debt-offgraph-note').length === qa('.debt-map-edge[data-offgraph]').length,
+    'debt map: a transfer that cannot fit on the drawing says so instead of moving its money elsewhere');
 
   // ---- 3) footer ขนาดเล็กลง ----
   const footCss = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');

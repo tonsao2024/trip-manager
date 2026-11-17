@@ -1,3 +1,47 @@
+/**
+ * Where an amount pill sits on its own transfer arc.
+ *
+ * v41 fix (owner report: “ตัวเลขบนเส้นทับกัน / บางอันไปโผล่ที่อื่นจนไม่รู้ว่า
+ * ของใคร”): every transfer now keeps its amount ON its own line. The pill walks
+ * outwards from the middle of the arc until it finds free space; if the whole
+ * arc is blocked it returns `null` and the caller puts the amount in the
+ * numbered list below the drawing — it never lands on another person’s line.
+ *
+ * @param {{start:{x,y}, control:{x,y}, end:{x,y}, width:number, height:number}} edge
+ * @param {Array<{left:number,top:number,right:number,bottom:number}>} obstacles  nodes + already placed pills
+ * @param {{width:number,height:number,padding?:number,gap?:number}} canvas
+ * @returns {{x:number,y:number,width:number,height:number,t:number}|null}
+ */
+export function placeDebtMapPill(edge, obstacles = [], { width = 820, height = 500, padding = 8, gap = 5 } = {}) {
+  if (!edge?.start || !edge?.control || !edge?.end) return null;
+  const pillWidth = Math.max(24, Number(edge.width) || 52);
+  const pillHeight = Math.max(12, Number(edge.height) || 22);
+  const pointAt = (t) => ({
+    x: (1 - t) * (1 - t) * edge.start.x + 2 * (1 - t) * t * edge.control.x + t * t * edge.end.x,
+    y: (1 - t) * (1 - t) * edge.start.y + 2 * (1 - t) * t * edge.control.y + t * t * edge.end.y
+  });
+  // Always start at the middle and walk symmetrically outwards, so a pill only
+  // slides along its own arc and the drawing stays balanced.
+  const samples = [0.5, 0.34, 0.66, 0.24, 0.76, 0.17, 0.83, 0.12, 0.88];
+  for (const t of samples) {
+    const point = pointAt(t);
+    const box = {
+      left: point.x - pillWidth / 2,
+      right: point.x + pillWidth / 2,
+      top: point.y - pillHeight / 2,
+      bottom: point.y + pillHeight / 2
+    };
+    if (box.left < padding || box.right > width - padding || box.top < padding || box.bottom > height - padding) continue;
+    const blocked = (obstacles || []).some(obstacle => !(
+      box.right + gap <= obstacle.left || obstacle.right + gap <= box.left ||
+      box.bottom + gap <= obstacle.top || obstacle.bottom + gap <= box.top
+    ));
+    if (blocked) continue;
+    return { x: point.x, y: point.y, width: pillWidth, height: pillHeight, t };
+  }
+  return null;
+}
+
 /** Stable, high-contrast colours for debt-map participants and transfer lines. */
 export function debtMapColor(index = 0) {
   const numericIndex = Number.isFinite(Number(index)) ? Number(index) : 0;
