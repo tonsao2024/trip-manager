@@ -1912,7 +1912,11 @@ body.is-signed-out #header-more { display: none !important; }
 .more-account-uid { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); }
 .more-tip { margin: 0; text-align: center; font-size: 12px; color: var(--text-tertiary); }
 
-/* Members: one list card, rows on hairlines; role and rights as plain text. */
+/* Members — v42.3 compact rows.
+   Owner report: “แต่ละรายชื่อมีกรอบและมีความสูงของกรอบมากเกินไป … ต้องเลื่อนลง
+   นานกว่าจะดูสมาชิกครบ”. One list card, hairline rows ~46px tall: avatar + name +
+   one muted meta line (state · username · email · group dots). Role is a small
+   chip, extra rights a key glyph with a tooltip — no second/third text line. */
 .people-list {
   overflow: hidden;
   border: 1px solid var(--border);
@@ -1924,9 +1928,9 @@ body.is-signed-out #header-more { display: none !important; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   margin: 0;
-  padding: 16px;
+  padding: 7px 12px;
   border: 0;
   border-bottom: 1px solid var(--border-light);
   border-radius: 0;
@@ -1935,39 +1939,162 @@ body.is-signed-out #header-more { display: none !important; }
   transform: none;
 }
 .people-list > .card.people-row:last-child { border-bottom: 0; }
-.people-row > div:first-child { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.people-row > .people-main { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; }
 .people-avatar {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   overflow: hidden;
   border-radius: 50%;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
   color: #ffffff;
 }
-.people-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; font-weight: 500; color: var(--text-strong); }
-.people-sub { margin-top: 2px; font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
-.people-tags { margin-top: 2px; font-size: 12px; color: var(--text-tertiary); }
-.people-groups { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.group-tag {
-  display: inline-flex;
+.people-body { min-width: 0; flex: 1 1 auto; }
+.people-name {
+  display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 8px;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13.5px;
+  /* ≥1.4: a clipped Thai line below that cuts ที่ / ปู่ / ฎ (design-check rule) */
+  line-height: 1.45;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.people-role {
+  flex: 0 0 auto;
+  padding: 0 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius-full);
-  font-size: 12px;
-  line-height: 20px;
+  background: var(--surface-2);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 16px;
   color: var(--text-secondary);
 }
-.group-tag-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
-.people-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.people-perm { display: inline-flex; align-items: center; flex: 0 0 auto; color: var(--text-tertiary); }
+.people-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 1px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-tertiary);
+}
+.people-sub-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people-groups { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; margin: 0; }
+.people-group-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
+.people-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
 .people-actions .icon-btn { background: transparent; border-color: transparent; color: var(--text-tertiary); }
 .people-actions .icon-btn:hover { background: var(--surface-2); color: var(--text-strong); }
 .people-actions .icon-btn-danger:hover { background: var(--surface-2); color: var(--danger); }
+
+/* ------------------------------------------------------------------
+   v42.3 — สถิติการเข้าชม (Members page)
+   One card under the member list: last visit, visit count and accumulated
+   time per member, with a three-way sort. The data is one tiny document per
+   member (src/js/visits/index.js) — switching the sort is pure client work.
+   ------------------------------------------------------------------ */
+.visit-card { margin-top: 16px; padding: 16px; }
+.visit-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.visit-sort {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+}
+.visit-sort-btn {
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  min-height: 32px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background .15s var(--ease), color .15s var(--ease);
+}
+.visit-sort-btn:hover { color: var(--text-strong); }
+.visit-sort-btn.is-active { background: var(--surface); color: var(--text-strong); box-shadow: 0 1px 2px rgba(15, 23, 42, .08); }
+.visit-summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 6px; }
+.visit-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.visit-pill b { color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.visit-pill--live {
+  border-color: color-mix(in srgb, #34a853 38%, var(--border));
+  background: color-mix(in srgb, #34a853 10%, var(--surface));
+  color: #1c7a35;
+}
+[data-theme="dark"] .visit-pill--live { color: #9fe3b1; }
+.visit-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #34a853;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #34a853 22%, transparent);
+}
+.visit-list { display: flex; flex-direction: column; }
+.visit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--border-light);
+}
+.visit-row:last-child { border-bottom: 0; }
+.visit-person { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; }
+.visit-body { min-width: 0; flex: 1 1 auto; }
+.visit-name { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-strong); }
+.visit-live {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, #34a853 16%, transparent);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  color: #1c7a35;
+}
+[data-theme="dark"] .visit-live { color: #9fe3b1; }
+.visit-sub {
+  margin-top: 1px;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.visit-bar { margin-top: 4px; height: 3px; width: min(180px, 100%); border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.visit-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--primary-raw); }
+.visit-metrics { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
+.visit-metric { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+.visit-metric b { font-size: 13px; font-weight: 600; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.visit-metric small { font-size: 10.5px; color: var(--text-tertiary); }
+.visit-empty { display: flex; align-items: center; gap: 8px; padding: 14px 2px 4px; font-size: 12px; color: var(--text-tertiary); }
+.visit-foot { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 11px; color: var(--text-tertiary); }
+@media (max-width: 560px) {
+  .visit-card { padding: 14px; }
+  .visit-metrics { gap: 10px; }
+  .visit-bar { width: 100%; }
+}
 
 /* Sub-groups empty state: a quiet line, not a dashed tinted box. */
 .groups-empty {
@@ -2696,6 +2823,24 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
     padding: 14px 16px;
   }
   #dashboard-view .dash-widget--half > .card > .card-foot { margin-top: auto; }
+
+  /* v42.3 — a stretched card must look filled, not padded out (owner: “แม้การ์ด
+     จะเท่ากันแต่เนื้อหาด้านในโล่งยืดมาก็ดูไม่สวย”). The rows themselves take the
+     spare height and share it, so a one-booking card reads as a calm, centred
+     row instead of a row pinned to the top of a 348px frame. */
+  #dashboard-view .dash-widget--half :is(#dash-bookings, #recent-expenses, #dash-ideas-list, #member-board-content) {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-evenly;
+  }
+  #dashboard-view .dash-widget--half #dash-ideas-list > .dash-idea-list {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-evenly;
+  }
   #dashboard-view :is(.dash-scroll-body, #upnext-list, #dash-bookings, #recent-expenses, #category-stats) {
     max-height: none;
     overflow-y: visible;
@@ -2833,6 +2978,24 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
 
 /* Weather: today's block and the seven chips lose their oversized frame. */
 #dash-weather-card { padding: 12px; }
+
+/* v42.3 — equal height is only half the job (owner: “แม้การ์ดจะเท่ากันแต่เนื้อหา
+   ด้านในโล่งยืดมาก็ดูไม่สวย”). The weather card is a column: the header and
+   today's block keep their size, the seven-day strip absorbs whatever height
+   the grid hands down (its chips grow with it, centred) and the credit line
+   rests on the bottom edge — so a 244px card reads as a designed 244px card,
+   not as a 120px card with 124px of empty space under it. */
+#dash-weather-card { display: flex; flex-direction: column; }
+#dash-weather-multi { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+#dash-weather-multi > .weather-strip { flex: 1 1 auto; align-items: stretch; }
+#dash-weather-multi > .weather-strip > .weather-chip { justify-content: center; }
+#dash-weather-multi > .wx-empty { flex: 1 1 auto; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; text-align: left; }
+#dash-weather-multi > .wx-empty > .btn { align-self: flex-start; }
+#dash-weather-multi > p:last-child { margin-top: auto; padding-top: 6px; }
+@media (max-width: 760px) {
+  /* One card per row on a phone: nothing is stretched, so nothing needs to fill. */
+  #dash-weather-multi > .weather-strip { flex: 0 0 auto; }
+}
 #dash-weather-multi > div:first-child h3 { font-size: 14px; }
 .wx-today { padding: 8px 10px; border-radius: 12px; gap: 8px; }
 .wx-today-kicker { font-size: 12px; }

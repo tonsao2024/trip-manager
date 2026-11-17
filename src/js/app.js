@@ -55,6 +55,13 @@ import { mountCountdown, computeCountdown, countdownHeadline, setCountdownWeathe
 import { initReveal, countUp, confetti, celebrateFrom, restagger } from './components/effects.js';
 import { resolvePermissions, clearPermissionsCache } from './utils/permissions.js';
 import { cacheForget } from './utils/datacache.js';
+// v42.3 — สถิติการเข้าชม (Members page): one tiny document per member, written
+// once per session + once a minute while the tab is visible (see visits/index.js).
+import { trackVisit, stopVisit, loadVisitStats } from './visits/index.js';
+import {
+  visitRow, sortVisitRows, formatVisitDuration, visitStamp, visitRelative,
+  isVisitingNow, summarizeVisits, VISIT_ONLINE_MS
+} from './utils/visits.js';
 import {
   notificationMeta, unreadCount, visibleNotifications, groupNotifications,
   isReadBy, notifMillis, relativeTime, dayKeyInZone, classifyNotifyError
@@ -2102,6 +2109,7 @@ async function doLogout() {
   } catch (e) {
     console.warn('signOut issue (forced local logout):', e);
   }
+  try { stopVisit(); } catch {}
   currentUser = null;
   currentTrip = null;
   currentTripId = null;
@@ -2725,11 +2733,18 @@ router.beforeEach = (matched) => {
   try { document.dispatchEvent(new CustomEvent('routechange')); } catch {}
   if (matched.params?.tripId) {
     setTrip(matched.params.tripId);
+    // 🕒 สถิติการเข้าชม — one write when a session starts, then a quiet
+    // once-a-minute heartbeat while the tab is visible (free-plan friendly).
+    try { if (currentUser?.uid) trackVisit({ tripId: matched.params.tripId, uid: currentUser.uid }); } catch {}
     // 🔔 start watching this trip's notifications (badge + toasts), then let the
     // daily summary catch up in the background.
     startNotificationWatch(matched.params.tripId);
     setTimeout(() => { maybeDailySummary(matched.params.tripId).catch(() => {}); }, 2500);
     setTimeout(() => { paintBell(); }, 300);
+  } else {
+    // Leaving every trip (login / trip picker) closes the visit session and
+    // banks the remaining minutes.
+    try { stopVisit(); } catch {}
   }
   renderDesktopNav();
   renderHeaderMoreMenu();
@@ -11269,6 +11284,26 @@ async function renderMembers(params) {
       </div>
 
       <div id="members-list" class="people-list"></div>
+
+      <!-- v42.3 — สถิติการเข้าชม: last visit, visit count and accumulated time
+           per member, sortable by recency / frequency / time. Numbers come from
+           one tiny document per member (src/js/visits/index.js). -->
+      <div class="card visit-card" id="visit-stats-card">
+        <div class="visit-head">
+          <div class="min-w-0">
+            <h3 class="font-semibold flex items-center gap-2">${icon('activity', 'w-4 h-4')} ${th('สถิติการเข้าชม', 'Visit statistics')}</h3>
+            <p class="text-xs text-[var(--text-secondary)]">${th('เข้าล่าสุด · จำนวนครั้ง · เวลารวมในเว็บนี้ (นับเฉพาะตอนเปิดหน้านี้อยู่)', 'Last visit · visits · total time in this app (counted only while the tab is open).')}</p>
+          </div>
+          <div class="visit-sort" role="group" aria-label="${th('เรียงลำดับสถิติ', 'Sort statistics')}">
+            <button type="button" class="visit-sort-btn is-active" data-visit-sort="recent">${th('เข้าล่าสุด', 'Recent')}</button>
+            <button type="button" class="visit-sort-btn" data-visit-sort="frequent">${th('เข้าบ่อยสุด', 'Most visits')}</button>
+            <button type="button" class="visit-sort-btn" data-visit-sort="duration">${th('เวลามากสุด', 'Longest')}</button>
+          </div>
+        </div>
+        <div id="visit-summary" class="visit-summary"></div>
+        <div id="visit-list" class="visit-list" aria-live="polite"><div class="skeleton h-12"></div></div>
+        <p class="visit-foot">${icon('shield-check', 'w-3 h-3')} ${th('เก็บเป็นเอกสารเล็ก ๆ 1 ใบต่อคน — เขียนตอนเข้า 1 ครั้ง แล้ว 1 ครั้ง/นาทีที่เปิดหน้าจอ (ไม่กระทบโควตาฟรีของ Firebase)', 'One tiny document per member — one write on entry, then one per visible minute (well inside the free Firebase quota).')}</p>
+      </div>
     </div>
   `;
   queueIcons();
@@ -11406,34 +11441,43 @@ async function renderMembers(params) {
         });
         bind('empty-add-member', 'click', () => openMemberForm(tripId, null, { onSaved: loadMembersList, canSetRoles: perms.isAdmin }));
         queueIcons();
+        paintVisitStats();
         return;
       }
-      list.innerHTML = members.map(m => `
+      // v42.3 — compact rows (owner: “แต่ละรายชื่อมีกรอบและมีความสูงมากเกินไป”):
+      // one line of identity + one quiet meta line, no per-row cards inside the list.
+      const permNotes = (m) => [
+        m.permissions?.canEditExpense ? th('แก้ค่าใช้จ่ายได้','can edit expenses') : '',
+        m.permissions?.canManageMembers ? th('จัดการสมาชิกได้','can manage members') : ''
+      ].filter(Boolean);
+      list.innerHTML = members.map(m => {
+        const badges = memberGroupBadges(groups, m.id);
+        const perms = permNotes(m);
+        return `
         <div class="card people-row" data-member="${m.id}">
-          <div class="flex items-center gap-3 min-w-0">
+          <div class="people-main">
             <div class="people-avatar" style="${avatarStyle(m.color)}">
               ${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}
             </div>
-            <div class="min-w-0">
+            <div class="people-body">
               <div class="people-name">
                 <span class="truncate">${escapeHtml(m.displayName || 'Member')}</span>
                 ${m.id === currentUser.uid ? `<span class="you-badge">${th('คุณ','You')}</span>` : ''}
+                <span class="people-role" title="${escapeHtml(roleLabel(m.role, lang))}">${escapeHtml(roleLabel(m.role, lang))}</span>
+                ${perms.length ? `<span class="people-perm" title="${escapeHtml(perms.join(' · '))}" aria-label="${escapeHtml(perms.join(', '))}">${icon('key-round', 'w-3 h-3')}</span>` : ''}
               </div>
-              <div class="people-sub">${[
-                escapeHtml(memberStateLabel(m.status, lang)),
-                m.username ? `@${escapeHtml(m.username)}` : '',
-                m.authType === 'account' ? th('บัญชี Google/อีเมล','Google/email account') : '',
-                m.email ? escapeHtml(m.email) : '',
-                m.authType === 'local' ? th('ไม่มีล็อกอิน','no login') : ''
-              ].filter(Boolean).join(' · ')}</div>
-              ${memberGroupBadges(groups, m.id).length ? `<div class="people-groups" data-member-groups>
-                ${memberGroupBadges(groups, m.id).map(b => `<span class="group-tag"><span class="group-tag-dot" style="background:${escapeHtml(b.color)}"></span>${escapeHtml(b.name)}</span>`).join('')}
-              </div>` : ''}
-              <div class="people-tags">${[
-                escapeHtml(roleLabel(m.role, lang)),
-                m.permissions?.canEditExpense ? th('แก้ค่าใช้จ่ายได้','can edit expenses') : '',
-                m.permissions?.canManageMembers ? th('จัดการสมาชิกได้','can manage members') : ''
-              ].filter(Boolean).join(' · ')}</div>
+              <div class="people-sub">
+                <span class="people-sub-text">${[
+                  escapeHtml(memberStateLabel(m.status, lang)),
+                  m.username ? `@${escapeHtml(m.username)}` : '',
+                  m.authType === 'account' ? th('บัญชี Google/อีเมล','Google/email account') : '',
+                  m.email ? escapeHtml(m.email) : '',
+                  m.authType === 'local' ? th('ไม่มีล็อกอิน','no login') : ''
+                ].filter(Boolean).join(' · ')}</span>
+                ${badges.length ? `<span class="people-groups" data-member-groups title="${escapeHtml(badges.map(b => b.name).join(', '))}">
+                  ${badges.map(b => `<span class="people-group-dot" style="background:${escapeHtml(b.color)}"></span>`).join('')}
+                </span>` : ''}
+              </div>
             </div>
           </div>
           <div class="people-actions">
@@ -11441,7 +11485,8 @@ async function renderMembers(params) {
             <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${m.id}" title="${t('delete')}" aria-label="${t('delete')} ${escapeHtml(m.displayName || '')}">${icon('trash-2', 'w-4 h-4')}</button>
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
       list.querySelectorAll('[data-act]').forEach(btn => btn.addEventListener('click', async () => {
         const member = members.find(x => x.id === btn.dataset.id);
         if (!member) return;
@@ -11450,6 +11495,7 @@ async function renderMembers(params) {
       }));
       queueIcons();
       initReveal(list);
+      loadVisitStatsCard();
     } catch (e) {
       if (isStale(token)) return;
       console.error(e);
@@ -11458,6 +11504,104 @@ async function renderMembers(params) {
       queueIcons();
     }
   }
+
+  /**
+   * v42.3 — สถิติการเข้าชม (visit statistics).
+   *
+   * Owner request: “เก็บระยะเวลา และวันเวลาที่เข้าล่าสุดของสมาชิก … พร้อมเวลา
+   * สะสม … เรียงลำดับผู้เข้าชมบ่อยสุด และผู้ใช้เวลาชมมากที่สุดได้”.
+   *
+   * Data: one `visitStats/{uid}` document per member (see src/js/visits/index.js)
+   * — read once per page view, then sorted locally so switching the sort never
+   * costs another Firestore read.
+   */
+  let visitSort = 'recent';
+  let visitStatsCache = null;
+  let visitRows = [];
+
+  async function loadVisitStatsCard() {
+    const box = document.getElementById('visit-list');
+    if (!box) return;
+    if (!visitStatsCache) {
+      box.innerHTML = `<div class="skeleton h-12"></div><div class="skeleton h-12 mt-2"></div>`;
+      try { visitStatsCache = await loadVisitStats(memberRows.map(m => m.uid || m.id), tripId); } catch { visitStatsCache = new Map(); }
+      if (isStale(token)) return;
+    }
+    paintVisitStats();
+  }
+
+  function paintVisitStats() {
+    const listEl = document.getElementById('visit-list');
+    if (!listEl) return;
+    visitRows = memberRows.map(m => {
+      const entry = visitStatsCache?.get(m.uid || m.id) || null;
+      return visitRow(m, entry?.stats || null, entry?.trip || null);
+    });
+    const sum = summarizeVisits(visitRows);
+
+    const summaryEl = document.getElementById('visit-summary');
+    if (summaryEl) {
+      const bits = [
+        `<span class="visit-pill"><b>${sum.tracked}</b>/${sum.total} ${th('คนมีข้อมูล', 'tracked')}</span>`,
+        sum.online ? `<span class="visit-pill visit-pill--live"><span class="visit-live-dot"></span>${th(`กำลังใช้งาน ${sum.online}`, `${sum.online} online`)}</span>` : '',
+        `<span class="visit-pill">${th('เข้าทั้งหมด', 'Visits')} <b>${sum.sessions}</b></span>`,
+        `<span class="visit-pill">${th('เวลารวม', 'Total time')} <b>${formatVisitDuration(sum.tripMs, lang)}</b></span>`
+      ].filter(Boolean);
+      summaryEl.innerHTML = bits.join('');
+    }
+
+    const sorted = sortVisitRows(visitRows, visitSort);
+    if (!sorted.length) {
+      listEl.innerHTML = `<p class="visit-empty">${th('ยังไม่มีสมาชิกให้บันทึก', 'No members to track yet')}</p>`;
+      return;
+    }
+    if (!sorted.some(r => r.tracked)) {
+      listEl.innerHTML = `<p class="visit-empty">${icon('clock', 'w-4 h-4')} ${th('ยังไม่มีข้อมูลการเข้าชม — ระบบจะเริ่มบันทึกเมื่อสมาชิกเปิดแอปครั้งถัดไป', 'No visits recorded yet — tracking starts the next time a member opens the app.')}</p>`;
+      queueIcons();
+      return;
+    }
+
+    const now = Date.now();
+    const maxMs = Math.max(1, ...sorted.map(r => r.tripMs));
+    listEl.innerHTML = sorted.map(row => {
+      const seen = row.tripLastSeen ?? row.appLastSeen ?? null;
+      const live = isVisitingNow(row.tripLastSeen, now);
+      const rel = visitRelative(row.tripLastSeen, now, lang);
+      return `
+        <div class="visit-row" data-visit="${escapeHtml(row.id)}">
+          <div class="visit-person">
+            <div class="people-avatar" style="${avatarStyle(row.color)}">
+              ${row.photoURL ? `<img decoding="async" src="${escapeHtml(row.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(row.name || 'M'))}
+            </div>
+            <div class="visit-body">
+              <div class="visit-name">
+                <span class="truncate">${escapeHtml(row.name || 'Member')}</span>
+                ${live ? `<span class="visit-live">${th('กำลังใช้งาน', 'online')}</span>` : ''}
+              </div>
+              <div class="visit-sub">${visitStamp(seen, now, lang)}${rel ? ` · ${rel}` : ''}${row.appMs > row.tripMs ? ` · ${th('ทั้งแอป', 'app')} ${formatVisitDuration(row.appMs, lang)}` : ''}</div>
+              <div class="visit-bar" aria-hidden="true"><span style="width:${row.tripMs > 0 ? Math.max(4, Math.round((row.tripMs / maxMs) * 100)) : 0}%"></span></div>
+            </div>
+          </div>
+          <div class="visit-metrics">
+            <span class="visit-metric"><b>${formatVisitDuration(row.tripMs, lang)}</b><small>${th('เวลารวม', 'time')}</small></span>
+            <span class="visit-metric"><b>${row.tripSessions}</b><small>${th('ครั้ง', 'visits')}</small></span>
+          </div>
+        </div>`;
+    }).join('');
+    queueIcons();
+  }
+
+  document.querySelectorAll('[data-visit-sort]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      visitSort = btn.dataset.visitSort || 'recent';
+      document.querySelectorAll('[data-visit-sort]').forEach(b => {
+        const on = b === btn;
+        b.classList.toggle('is-active', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      paintVisitStats();
+    });
+  });
 
   bind('add-member-btn', 'click', () => openMemberForm(tripId, null, { onSaved: loadMembersList, canSetRoles: perms.isAdmin }));
   if (canManageGroups) bind('add-group-btn', 'click', () => openGroupForm(null));
