@@ -41,7 +41,7 @@ import { calculateSettlement, buildSettlementStatements, transactionSources, car
 import { debtMapColor, layoutDebtMapAmounts } from './utils/debtMap.js';
 import { splitCustom, splitEqual, participantsOf, averagePerPerson, scaleToTotal } from './utils/split.js';
 import { escapeHtml, sanitizeUrl } from './utils/sanitize.js';
-import { APP_VERSION, APP_VERSION_LABEL, APP_UPDATED_ISO, APP_NAME, APP_AUTHOR, APP_NAME_BY, appUpdatedLabel, appUpdatedShort, appBuildLabel, appFooterLabel, copyrightNote } from './utils/buildInfo.js';
+import { APP_VERSION, APP_VERSION_LABEL, APP_UPDATED_ISO, APP_NAME, APP_AUTHOR, APP_NAME_BY, appUpdatedLabel, appUpdatedShort, copyrightNote } from './utils/buildInfo.js';
 import { BRAND, BRAND_PRIMARY, brandPalette, brandPrimary, memberColors as themeMemberColors, dayHues as themeDayHues, memberColorAt, categoryColorChoices } from './utils/brand.js';
 import {
   THEMES, DEFAULT_THEME_ID, CUSTOM_THEME_ID, themeName, applyStoredTheme, applyTheme,
@@ -735,34 +735,6 @@ function syncBuildMeta() {
   if (meta && meta.getAttribute('content') !== APP_UPDATED_ISO) meta.setAttribute('content', APP_UPDATED_ISO);
   const version = document.querySelector('meta[name="app-version"]');
   if (version && version.getAttribute('content') !== APP_VERSION) version.setAttribute('content', APP_VERSION);
-  paintAppFooter();
-}
-
-/**
- * v18: the footer under every page carries the version, the last-updated date, the
- * live palette and the copyright line. The markup ships in index.html so it is
- * readable before the app boots; this pass replaces those static values with the
- * real ones (and keeps them right after a language or palette change).
- */
-function paintAppFooter() {
-  const lang = getLang();
-  const th = (a, b) => (String(lang).startsWith('th') ? a : b);
-  const state = (() => { try { return readStoredTheme(); } catch { return { id: DEFAULT_THEME_ID }; } })();
-  const palette = themeName(state?.id, lang) || APP_PALETTE;
-  const set = (sel, text) => {
-    document.querySelectorAll(sel).forEach(el => { if (text) el.textContent = text; });
-  };
-  set('#app-footer [data-footer-version]', APP_VERSION_LABEL);
-  set('#app-footer [data-footer-updated]', `${th('อัปเดตล่าสุด', 'Updated')} ${appUpdatedShort(lang)}`);
-  set('#app-footer [data-footer-palette]', `${th('ชุดสี', 'Palette')} ${palette}`);
-  set('#app-footer [data-footer-copyright]', copyrightNote(lang));
-  const stamp = document.querySelector('#app-footer [data-build-stamp]');
-  if (stamp) {
-    // Compact chip: “build 8 พ.ย. 2569”, full label on hover (round 5: Thai
-    // screens count years in พ.ศ.; only the “© 2024–2026” line keeps CE).
-    stamp.textContent = `build ${appUpdatedShort(lang)}`;
-    stamp.title = appBuildLabel(lang, palette);
-  }
   const title = document.getElementById('app-title');
   if (title && /Fuji Planner/i.test(title.textContent)) title.textContent = APP_NAME_BY;
 }
@@ -868,7 +840,6 @@ function chooseTheme(id, custom = null, { silent = false } = {}) {
   document.dispatchEvent(new CustomEvent('themepalette', { detail: { id: state.id } }));
   document.dispatchEvent(new CustomEvent('themechange', { detail: { mode: getStoredMode(), eff: effectiveTheme(), palette: state.id } }));
   renderDesktopNav();
-  paintAppFooter();
   if (!silent) {
     const name = themeName(state.id, getLang());
     toast.success(getLang() === 'th' ? `ใช้ชุดสี ${name}` : `${name} palette applied`);
@@ -1095,40 +1066,50 @@ document.addEventListener('click', (e) => { if (!e.target.closest('.menu-wrap'))
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenuPops(); });
 document.addEventListener('routechange', () => closeMenuPops());
 
-function renderFAB(route) {
-  if (!currentTripId || !currentUser) { fabEl.classList.add('hidden'); return; }
+// Invalidate in-flight permission checks whenever the route changes. A slow
+// response for a previous trip or screen must not reveal (or hide) this FAB.
+let fabRenderToken = 0;
+function renderFAB(route, { pageReady = false } = {}) {
+  const token = ++fabRenderToken;
+  const tripId = currentTripId;
+  const uid = currentUser?.uid;
   const cleanRoute = route.split('?')[0];
-  // The expense editor has its own floating save bar (v22) — an “add” FAB would sit
-  // right on top of it (and there is nothing left to add while you are editing).
-  if (/\/expenses\/add\/?$/.test(cleanRoute)) { fabEl.classList.add('hidden'); return; }
-  if (cleanRoute.includes('/itinerary') || cleanRoute.includes('/expenses') || cleanRoute.includes('/documents')) {
-    fabEl.classList.remove('hidden');
-    // v34: the FAB says what it will add. A bare “+” forced people to guess, and
-    // the same button created three different things on three screens.
-    const thFab = getLang() === 'th';
-    const fabLabel = cleanRoute.includes('/itinerary') ? (thFab ? 'เพิ่มสถานที่' : 'Add place')
-      : cleanRoute.includes('/expenses') ? (thFab ? 'เพิ่มค่าใช้จ่าย' : 'Add expense')
-      : (thFab ? 'เพิ่มเอกสาร' : 'Add document');
-    const fabLabelEl = document.getElementById('fab-label');
-    if (fabLabelEl) fabLabelEl.textContent = fabLabel;
-    fabEl.setAttribute('aria-label', fabLabel);
-    fabEl.setAttribute('title', fabLabel);
-    // 👤 v30 — the FAB follows the same permissions the rules enforce.
-    const p = (lastPerms.tripId === currentTripId && lastPerms.uid === (currentUser?.uid || null)) ? lastPerms.data : null;
-    const applyFabPerms = (perms) => {
-      if (!perms) { resolvePermsCached(currentTripId).then(applyFabPerms).catch(() => {}); return; }
-      const needs = cleanRoute.includes('/expenses') ? 'canEditExpense'
-        : cleanRoute.includes('/itinerary') ? 'canEditItinerary'
-        : (perms.isViewer ? 'viewer' : null);
-      if (needs === 'viewer' || (needs && perms[needs] === false)) fabEl.classList.add('hidden');
-    };
-    applyFabPerms(p);
-    fabEl.onclick = () => {
-      if (cleanRoute.includes('/itinerary')) location.hash = `#/trip/${currentTripId}/itinerary?action=add`;
-      if (cleanRoute.includes('/expenses')) location.hash = `#/trip/${currentTripId}/expenses/add`;
-      if (cleanRoute.includes('/documents')) location.hash = `#/trip/${currentTripId}/documents?action=add`;
-    };
-  } else fabEl.classList.add('hidden');
+  const itinerary = /\/itinerary\/?$/.test(cleanRoute);
+  const expenses = /\/expenses\/?$/.test(cleanRoute);
+  const documents = /\/documents\/?$/.test(cleanRoute);
+  fabEl.classList.add('hidden');
+  fabEl.classList.toggle('fab--persistent', itinerary || expenses);
+  if (!tripId || !uid || (!itinerary && !expenses && !documents)) return;
+
+  const thFab = getLang() === 'th';
+  const fabLabel = itinerary ? (thFab ? 'เพิ่มสถานที่' : 'Add place')
+    : expenses ? (thFab ? 'เพิ่มค่าใช้จ่าย' : 'Add expense')
+    : (thFab ? 'เพิ่มเอกสาร' : 'Add document');
+  const fabLabelEl = document.getElementById('fab-label');
+  if (fabLabelEl) fabLabelEl.textContent = fabLabel;
+  fabEl.setAttribute('aria-label', fabLabel);
+  fabEl.setAttribute('title', fabLabel);
+  fabEl.onclick = () => {
+    // Reuse the page action instead of navigating to ?action=add: this keeps
+    // the selected itinerary day and works again after a sheet was closed.
+    if (itinerary) document.querySelector('#itinerary-view #add-itinerary-btn')?.click();
+    else if (expenses) document.querySelector('#expenses-view #add-expense-btn')?.click();
+    else location.hash = `#/trip/${tripId}/documents?action=add`;
+  };
+
+  const applyFabPerms = (perms) => {
+    if (token !== fabRenderToken || currentTripId !== tripId || currentUser?.uid !== uid) return;
+    const allowed = itinerary ? perms?.canEditItinerary === true
+      : expenses ? perms?.canEditExpense === true : !!perms && !perms.isViewer;
+    // The page button only exists after its render has finished and permissions
+    // have been applied. The page calls renderFAB again after binding it.
+    const ready = documents || (pageReady && !!document.querySelector(itinerary
+      ? '#itinerary-view #add-itinerary-btn' : '#expenses-view #add-expense-btn'));
+    fabEl.classList.toggle('hidden', !allowed || !ready);
+  };
+  const cached = lastPerms.tripId === tripId && lastPerms.uid === uid ? lastPerms.data : null;
+  if (cached) applyFabPerms(cached);
+  else resolvePermsCached(tripId).then(applyFabPerms).catch(() => {});
 }
 
 // --- Header Controls - language, light/dark/auto mode, theme picker ---
@@ -2892,7 +2873,6 @@ function renderConfigNeeded() {
 
 function renderLogin() {
   if (!isFirebaseConfigured) return renderConfigNeeded();
-  const lang = getLang();
   appEl.innerHTML = `
     <div class="login-wrap page-enter">
       <div class="login-card">
@@ -2906,7 +2886,6 @@ function renderLogin() {
         </button>
         <p class="login-note">ใช้บัญชี Google ของคุณเอง แล้วขอรหัสเชิญจากแอดมินทริปเพื่อเข้าร่วม</p>
       </div>
-      <p class="build-stamp text-center" data-build-stamp>${escapeHtml(appBuildLabel(lang))}</p>
     </div>
   `;
   queueIcons();
@@ -7085,6 +7064,7 @@ async function renderItinerary(params) {
   paintImportTool();
 
   bind('add-itinerary-btn', 'click', () => openItemForm(null, showAll ? null : selectedDate));
+  renderFAB(location.hash.slice(1), { pageReady: true });
   loadItems();
   // ?action=add opens one sheet — a second paint of the same route (data refresh,
   // a repeated hashchange) must not stack another form with the same ids.
@@ -7232,6 +7212,7 @@ async function renderExpenses(params) {
   initReveal(appEl);
 
   bind('add-expense-btn', 'click', () => { location.hash = `#/trip/${tripId}/expenses/add`; });
+  renderFAB(location.hash.slice(1), { pageReady: true });
   bind('manage-cats-btn', 'click', () => openCategoryManager(tripId, { onSaved: () => renderExpenses(params) }));
 
   let allLoaded = [];
@@ -7480,9 +7461,9 @@ async function renderExpenses(params) {
           ${icon(categoryIcon(e.category), 'w-5 h-5')}
         </div>
         <div class="flex-1 min-w-0">
-          <div class="flex items-start justify-between gap-2">
-            <h3 class="font-semibold text-sm truncate">${escapeHtml(e.title)}</h3>
-            <div class="text-right flex-shrink-0">
+          <div class="expense-heading flex items-start justify-between gap-2">
+            <h3 class="expense-title font-semibold text-sm truncate">${escapeHtml(e.title)}</h3>
+            <div class="expense-amount text-right flex-shrink-0">
               ${moneyHtml(e.netTotalMinor || 0, e.currency || currency, e.thbRate || resolveTripThbRate(trip, allLoaded, e.currency || currency))}
             </div>
           </div>
@@ -7916,14 +7897,14 @@ function expenseFormSectionsHtml({
             <div class="input-group">
               <label class="input-label">${tx('คนจ่าย (เลือกได้หลายคน)','Paid by (select one or more)')} *</label>
               <div id="${p}payer-tiles" class="tile-grid">
-                <button type="button" class="tile tile-pending ${e.payerPending ? 'tile-selected' : ''} ${e.isEstimated ? '' : 'hidden'}" data-payer="__pending" title="${tx('ประมาณการที่ยังไม่ทราบผู้จ่าย','Estimated item with no payer assigned yet')}">
+                <button type="button" class="tile tile-pending ${e.payerPending ? 'tile-selected' : ''} ${e.isEstimated ? '' : 'hidden'}" data-payer="__pending" aria-pressed="${Boolean(e.payerPending && e.isEstimated)}" title="${tx('ประมาณการที่ยังไม่ทราบผู้จ่าย','Estimated item with no payer assigned yet')}">
                   <span class="flex items-center gap-2 min-w-0">
                     <span class="avatar w-8 h-8 text-xs" style="background:var(--bg-secondary);color:var(--text-secondary);width:32px;height:32px;border:1.5px dashed var(--border);">${icon('help-circle', 'w-4 h-4')}</span>
                     <span class="text-sm font-medium">${tx('ยังไม่ระบุเจ้าภาพ','Payer TBD')}</span>
                   </span>
                 </button>
                 ${members.map(m => `
-                  <button type="button" class="tile ${initialPayers.has(m.id) ? 'tile-selected' : ''}" data-payer="${m.id}" title="${escapeHtml(m.displayName)}">
+                  <button type="button" class="tile ${initialPayers.has(m.id) ? 'tile-selected' : ''}" data-payer="${m.id}" aria-pressed="${initialPayers.has(m.id)}" title="${escapeHtml(m.displayName)}">
                     <span class="flex items-center gap-2 min-w-0">
                       <span class="avatar w-8 h-8 text-xs" style="${avatarStyle(m.color)};width:32px;height:32px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                       <span class="text-sm font-medium truncate">${escapeHtml(m.displayName)}</span>
@@ -7972,7 +7953,7 @@ function expenseFormSectionsHtml({
               </div>
               <div id="${p}share-tiles" class="tile-grid">
                 ${members.map(m => `
-                  <button type="button" class="tile ${selectedShare.some(x => x.id === m.id) ? 'tile-selected' : ''}" data-share="${m.id}" title="${escapeHtml(m.displayName)}">
+                  <button type="button" class="tile ${selectedShare.some(x => x.id === m.id) ? 'tile-selected' : ''}" data-share="${m.id}" aria-pressed="${selectedShare.some(x => x.id === m.id)}" title="${escapeHtml(m.displayName)}">
                     <span class="flex items-center gap-2 min-w-0">
                       <span class="avatar w-8 h-8 text-xs" style="${avatarStyle(m.color)};width:32px;height:32px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
                       <span class="text-sm font-medium truncate">${escapeHtml(m.displayName)}</span>
@@ -8178,12 +8159,15 @@ function mountExpenseForm({
   const isEstimatedExpense = () => $('ex-type')?.value === 'estimated';
   const syncPayerTiles = () => payerTiles().forEach(btn => {
     const isPendingChoice = btn.dataset.payer === '__pending';
-    if (isPendingChoice) {
-      btn.classList.toggle('hidden', !isEstimatedExpense());
-      btn.classList.toggle('tile-selected', payerPending);
-    } else {
-      btn.classList.toggle('tile-selected', !payerPending && selectedPayers.has(btn.dataset.payer));
-    }
+    const selected = isPendingChoice ? payerPending : !payerPending && selectedPayers.has(btn.dataset.payer);
+    if (isPendingChoice) btn.classList.toggle('hidden', !isEstimatedExpense());
+    btn.classList.toggle('tile-selected', selected);
+    btn.setAttribute('aria-pressed', String(selected));
+  });
+  const syncShareTiles = () => shareTiles().forEach(btn => {
+    const selected = selectedShare.has(btn.dataset.share);
+    btn.classList.toggle('tile-selected', selected);
+    btn.setAttribute('aria-pressed', String(selected));
   });
 
   payerTiles().forEach(btn => btn.addEventListener('click', () => {
@@ -8224,17 +8208,20 @@ function mountExpenseForm({
 
   shareTiles().forEach(btn => btn.addEventListener('click', () => {
     const id = btn.dataset.share;
-    if (selectedShare.has(id)) { selectedShare.delete(id); btn.classList.remove('tile-selected'); }
-    else { selectedShare.add(id); btn.classList.add('tile-selected'); }
+    if (selectedShare.has(id)) selectedShare.delete(id);
+    else selectedShare.add(id);
+    syncShareTiles();
     renderSplitArea();
   }));
 
   on('share-all', 'click', () => {
     const isAll = selectedShare.size === members.length;
     selectedShare = new Set(isAll ? [] : members.map(m => m.id));
-    shareTiles().forEach(t => t.classList.toggle('tile-selected', !isAll));
+    syncShareTiles();
     renderSplitArea();
   });
+
+  syncShareTiles();
 
   const netPreview = $('net-preview');
   const thbPreview = $('thb-preview');
@@ -8972,6 +8959,7 @@ async function openExpenseSheet({
       </form>
     </div>
   `);
+  sheet.sheet.classList.add('expense-sheet');
   queueIcons();
   bind('sh-close', 'click', () => sheet.close());
   bind('sh-cancel', 'click', () => sheet.close());

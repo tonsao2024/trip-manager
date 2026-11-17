@@ -68,13 +68,13 @@
   <!-- Design System v35 “Calm” (cache-busted) — tokens.css explains the rules -->
   <link rel="stylesheet" href="./src/css/tokens.css?v=41">
   <link rel="stylesheet" href="./src/css/components.css?v=41">
-  <link rel="stylesheet" href="./src/css/refresh.css?v=41">
+  <link rel="stylesheet" href="./src/css/refresh.css?v=41&amp;footer=removed">
   <link rel="stylesheet" href="./src/css/animations.css?v=41">
   <!-- FLAT DESIGN LAYER (v34 → v35 calm pass) — every surface, button, card and
        menu is shaped here. It loads after the legacy sheets and before the
        compiled Tailwind utilities; Settings → Appearance can re-scale radius /
        density / depth live. -->
-  <link rel="stylesheet" href="./src/css/flat.css?v=41">
+  <link rel="stylesheet" href="./src/css/flat.css?v=41&amp;theme-fix=3">
   <!-- Tailwind: precompiled static utilities (tools/build-assets.mjs).
        Replaces the Play CDN runtime compiler. Loaded AFTER the app stylesheets
        to keep the same cascade order the CDN's injected <style> used to have. -->
@@ -84,7 +84,7 @@
        Google Maps / Google Travel (Google Sans, white cards on the grey canvas,
        Google blue, Material elevation, pill chips). Everything it overrides is
        listed at the top of the file. -->
-  <link rel="stylesheet" href="./src/css/material.css?v=41">
+  <link rel="stylesheet" href="./src/css/material.css?v=41&amp;theme-fix=3">
 
   <!-- Lucide icons: local subset (272 icons) instead of the full ~1500-icon CDN
        bundle. Deferred so it never blocks first paint; runs before app.js. -->
@@ -379,25 +379,22 @@
     <button data-route="#/trip/more" class="bottom-nav-item"><i data-lucide="more-horizontal"></i><span>เพิ่มเติม</span></button>
   </nav>
 
-  <!-- Global footer (v35) — one quiet line: product, build, last update and the
-       owner's copyright note. Values are painted from src/js/utils/buildInfo.js
-       on boot (paintAppFooter). -->
-  <footer id="app-footer" class="app-footer">
-    <p class="app-footer-line">
-      <span class="app-footer-wordmark">Trip Manager</span>
-      <span class="app-footer-by">by TonSkywalker</span>
-      <span class="app-footer-dot" aria-hidden="true">·</span>
-      <span data-footer-version>v36</span>
-      <span class="app-footer-dot" aria-hidden="true">·</span>
-      <span data-footer-updated>อัปเดตล่าสุด 9 พ.ย. 2569</span>
-      <span class="app-footer-dot app-footer-build-dot" aria-hidden="true">·</span>
-      <span class="app-footer-build" data-build-stamp></span>
-    </p>
-    <p class="app-footer-legal">
-      <!-- full © line, painted from buildInfo.js on boot / language change -->
-      <span data-footer-copyright>© 2024–2026 TonSkywalker — สงวนลิขสิทธิ์</span>
-    </p>
-  </footer>
+  <!-- Available across routes after scrolling, independent of the add action. -->
+  <button id="back-to-top" class="back-to-top" type="button" aria-label="เลื่อนขึ้นไปบนสุด" title="เลื่อนขึ้นไปบนสุด" hidden>
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+  </button>
+  <script>
+    (() => {
+      const button = document.getElementById('back-to-top');
+      const sync = () => { button.hidden = window.scrollY < 200; };
+      window.addEventListener('scroll', sync, { passive: true });
+      button.addEventListener('click', () => {
+        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+      });
+      sync();
+    })();
+  </script>
 
   <!-- FAB -->
   <!-- FAB: an extended, LABELLED action (v34). A bare “+” made people guess what
@@ -441,6 +438,6 @@
   <script src="./fcm-vapid.js"></script>
 
   <!-- App (cache-busted) -->
-  <script type="module" src="./src/js/app.js?v=41"></script>
+  <script type="module" src="./src/js/app.js?v=41&amp;expense-fix=3"></script>
 </body>
 </html>
