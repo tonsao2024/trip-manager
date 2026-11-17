@@ -13,14 +13,16 @@ service cloud.firestore {
     }
 
     function isTripMember(tripId) {
+      let tripPath = /databases/$(database)/documents/trips/$(tripId);
+      let memberPath = /databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid);
       return isAuthenticated() && (
-        isSuperAdmin() ||
-        exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)) ||
-        (exists(/databases/$(database)/documents/trips/$(tripId)) && (
-          get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid ||
-          (get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids != null
-            && get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids.hasAny([request.auth.uid]))
-        ))
+        isSuperAdmin()
+        || (exists(tripPath) && get(tripPath).data.createdBy == request.auth.uid)
+        || (exists(memberPath) && get(memberPath).data.get('status', 'active') != 'inactive')
+        // Keep the legacy memberUids fallback only when no member document exists.
+        // An inactive member document must revoke access even if an old array entry remains.
+        || (!exists(memberPath) && exists(tripPath)
+          && get(tripPath).data.get('memberUids', []).hasAny([request.auth.uid]))
       );
     }
 
@@ -107,7 +109,53 @@ service cloud.firestore {
     /** A co-admin keeps the role and the switches exactly as they are. */
     function sameRoleAndPermissions() {
       return request.resource.data.get('role', 'member') == resource.data.get('role', 'member')
-        && request.resource.data.get('permissions', {}) == resource.data.get('permissions', {});
+        && request.resource.data.get('permissions', {}) == resource.data.get('permissions', {})
+        && request.resource.data.get('status', 'active') == resource.data.get('status', 'active');
+    }
+
+    /** A delegated member manager may update membership lists, not other trip settings. */
+    function managerOnlyChangesMemberUids(tripId) {
+      return canManageMembers(tripId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids', 'updatedAt'])
+        && request.resource.data.memberUids is list
+        && request.resource.data.memberUids.size() <= 500;
+    }
+
+    /** Shared dashboard preferences are not trip administration; viewers stay read-only. */
+    function memberMayUpdateDashboard(tripId) {
+      return canWriteContent(tripId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['dashboardLayout', 'dashboardHidden', 'updatedAt']);
+    }
+
+    /** Shared map defaults follow the itinerary permission. */
+    function memberMayUpdateMapDefault(tripId) {
+      return canEditItinerary(tripId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['defaultMapLayer', 'updatedAt']);
+    }
+
+    /** Shared payment-card choices follow the expense permission. */
+    function memberMayUpdateCards(tripId) {
+      return canEditExpense(tripId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['cards', 'updatedAt']);
+    }
+
+    /** Co-admins may add ordinary members/viewers, but cannot grant admin rights. */
+    function mayCreateMember(tripId) {
+      return canManageMembers(tripId) && (
+        isTripAdmin(tripId)
+        || (request.resource.data.get('role', 'member') in ['member', 'viewer']
+          && request.resource.data.get('permissions', {}).get('canManageMembers', false) != true)
+      );
+    }
+
+    function tripNoLongerListsMember(tripId, memberId, memberUid) {
+      let tripPath = /databases/$(database)/documents/trips/$(tripId);
+      return !existsAfter(tripPath)
+        || (existsAfter(tripPath)
+          && !getAfter(tripPath).data.get('memberUids', []).hasAny([memberId, memberUid]));
     }
 
     /** Legitimate self-service edits of a member document (profile only). */
@@ -121,15 +169,106 @@ service cloud.firestore {
         && request.resource.data.get('username', '') == resource.data.get('username', '');
     }
 
-    // Users collection - only self or super admin
+    function validProfileFields(uid) {
+      return request.resource.data.keys().hasOnly([
+          'uid', 'displayName', 'email', 'photoURL', 'updatedAt', 'role', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll(['uid', 'displayName', 'email', 'photoURL', 'updatedAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() <= 120
+        && (request.resource.data.email == null
+          || (request.resource.data.email is string && request.resource.data.email.size() <= 254))
+        && (request.resource.data.photoURL == null
+          || (request.resource.data.photoURL is string
+            && request.resource.data.photoURL.size() <= 2048
+            && request.resource.data.photoURL.matches('https://.*')))
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function validPublicProfile(uid) {
+      return request.resource.data.keys().hasOnly(['uid', 'displayName', 'email', 'photoURL', 'updatedAt'])
+        && request.resource.data.keys().hasAll(['uid', 'displayName', 'email', 'photoURL', 'updatedAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() <= 120
+        && request.resource.data.email == request.auth.token.get('email', null)
+        && (request.resource.data.email == null
+          || (request.resource.data.email is string && request.resource.data.email.size() <= 254))
+        && (request.resource.data.photoURL == null
+          || (request.resource.data.photoURL is string
+            && request.resource.data.photoURL.size() <= 2048
+            && request.resource.data.photoURL.matches('https://.*')))
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function invitePreviewMatchesTrip(tripId, inviteCode) {
+      let tripPath = /databases/$(database)/documents/trips/$(tripId);
+      let tripAfter = getAfter(tripPath);
+      return existsAfter(tripPath)
+        && request.resource.data.keys().hasOnly(['tripId', 'name', 'startDate', 'endDate'])
+        && request.resource.data.keys().hasAll(['tripId', 'name', 'startDate', 'endDate'])
+        && request.resource.data.tripId == tripId
+        && request.resource.data.name is string
+        && request.resource.data.startDate is string
+        && request.resource.data.endDate is string
+        && tripAfter.data.inviteCode == inviteCode
+        && tripAfter.data.inviteEnabled == true
+        && request.resource.data.name == tripAfter.data.name
+        && request.resource.data.startDate == tripAfter.data.startDate
+        && request.resource.data.endDate == tripAfter.data.endDate;
+    }
+
+    function mayWriteInvitePreview(tripId) {
+      let tripPath = /databases/$(database)/documents/trips/$(tripId);
+      return isAuthenticated() && (
+        canManageMembers(tripId)
+        || (existsAfter(tripPath) && getAfter(tripPath).data.createdBy == request.auth.uid)
+      );
+    }
+
+    function currentInvitePreviewIsEnabled(inviteCode) {
+      let tripId = resource.data.tripId;
+      let tripPath = /databases/$(database)/documents/trips/$(tripId);
+      let trip = get(tripPath);
+      return isAuthenticated()
+        && tripId is string
+        && exists(tripPath)
+        && trip.data.inviteCode == inviteCode
+        && trip.data.inviteEnabled == true
+        && resource.data.keys().hasOnly(['tripId', 'name', 'startDate', 'endDate'])
+        && resource.data.name == trip.data.name
+        && resource.data.startDate == trip.data.startDate
+        && resource.data.endDate == trip.data.endDate;
+    }
+
+    function memberHasNoClientCredentialFields(data) {
+      return !data.keys().hasAny(['pinHash', 'pinSalt', 'pinIterations', 'pinAlgo']);
+    }
+
+    function userHasNoServerOnlyFields(data) {
+      return !data.keys().hasAny([
+        'pinHash', 'pinSalt', 'pinIterations', 'pinAlgo',
+        'lastStepUp', 'lastStepUpAction', 'stepUpExpiry'
+      ]);
+    }
+
+    // Users collection - only self or super admin. Self-writes are a fixed profile
+    // schema; authentication/step-up fields are server-managed by Admin SDK.
     match /users/{uid} {
-      allow read: if isAuthenticated() && (request.auth.uid == uid || isSuperAdmin());
-      // A member signing in with Google/email creates their own profile doc.
-      // They may never choose an admin role for themselves.
+      allow read: if isAuthenticated()
+        && (request.auth.uid == uid || isSuperAdmin())
+        && userHasNoServerOnlyFields(resource.data);
       allow create: if isAuthenticated() && request.auth.uid == uid
+        && validProfileFields(uid)
         && (!request.resource.data.keys().hasAny(['role']) || request.resource.data.role == 'member');
-      allow update: if isSuperAdmin() || (isAuthenticated() && request.auth.uid == uid
-        && (!request.resource.data.keys().hasAny(['role']) || request.resource.data.role == resource.data.role));
+      allow update: if userHasNoServerOnlyFields(request.resource.data)
+        && (isSuperAdmin() || (isAuthenticated() && request.auth.uid == uid
+          && validProfileFields(uid)
+          && request.resource.data.get('role', 'member') == resource.data.get('role', 'member')
+          && request.resource.data.get('createdAt', null) == resource.data.get('createdAt', null)
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['uid', 'displayName', 'email', 'photoURL', 'updatedAt'])));
       allow delete: if isSuperAdmin();
 
       // Mirror of the join requests this member sent (so they can see the status).
@@ -148,74 +287,86 @@ service cloud.firestore {
       }
     }
 
-    // Public directory: name / email / photo only, so a trip admin can find the
-    // account of somebody who wants to join. No trip data, no permissions here.
+    // Public directory data is owner-readable only. Email search is a callable
+    // that checks canManageMembers(tripId) and returns one allowlisted profile.
     match /publicProfiles/{uid} {
-      allow get, list: if isAuthenticated();
-      allow write: if isAuthenticated() && request.auth.uid == uid;
+      allow get: if isAuthenticated() && request.auth.uid == uid;
+      allow list: if false;
+      allow create: if isAuthenticated() && request.auth.uid == uid && validPublicProfile(uid);
+      allow update: if isAuthenticated() && request.auth.uid == uid
+        && validPublicProfile(uid)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['uid', 'displayName', 'email', 'photoURL', 'updatedAt']);
+      allow delete: if isAuthenticated() && request.auth.uid == uid;
     }
 
-    // loginAccounts - never allow client read, only via cloud functions
+    // Legacy account PINs and step-up metadata are kept outside readable profiles.
+    // Callable Functions use the Admin SDK; no browser can read or write this path.
+    match /userSecrets/{uid} {
+      allow read, write: if false;
+    }
+
+    // Minimal invite preview: a known code returns only the trip name and dates.
+    // These documents are never enumerable and must mirror an enabled trip.
+    match /publicTripInvites/{inviteCode} {
+      allow get: if currentInvitePreviewIsEnabled(inviteCode);
+      allow list: if false;
+      allow create: if mayWriteInvitePreview(request.resource.data.tripId)
+        && !exists(/databases/$(database)/documents/publicTripInvites/$(inviteCode))
+        && invitePreviewMatchesTrip(request.resource.data.tripId, inviteCode);
+      allow update: if mayWriteInvitePreview(request.resource.data.tripId)
+        && resource.data.tripId == request.resource.data.tripId
+        && invitePreviewMatchesTrip(request.resource.data.tripId, inviteCode);
+      allow delete: if isAuthenticated() && (
+        isSuperAdmin()
+        || canManageMembers(resource.data.tripId)
+        || (exists(/databases/$(database)/documents/trips/$(resource.data.tripId))
+          && get(/databases/$(database)/documents/trips/$(resource.data.tripId)).data.createdBy == request.auth.uid)
+      );
+    }
+
+    // Server-only authentication records; callable Functions use the Admin SDK.
     match /loginAccounts/{username} {
       allow read, write: if false;
     }
 
-    // Separated member PIN hashes (never enumerable via list; only writable by trip admin).
-    // ⚠️ `get` is open to signed-in accounts because the member login page reads it
-    // before the PIN is verified; see docs/PERMISSIONS.md → “known risks” (deploy the
-    // Cloud Function `loginWithUsernamePin` and the account never needs this read).
     match /memberSecrets/{secretId} {
-      allow get: if isAuthenticated();
-      allow list: if false;
-      allow create, update: if isAuthenticated()
-        && request.resource.data.tripId is string
-        && canManageMembers(request.resource.data.tripId);
-      allow delete: if isAuthenticated()
-        && resource.data.tripId is string
-        && canManageMembers(resource.data.tripId);
+      allow read, write: if false;
     }
 
-    // Public username → trip/member lookup used by the login page.
-    // Enumeration via list is forbidden; only trip admins of the target trip may modify entries.
     match /publicMemberLogins/{username} {
-      allow get: if true;
-      allow list: if false;
-      allow create, update: if isAuthenticated()
-        && request.resource.data.tripId is string
-        && canManageMembers(request.resource.data.tripId);
-      allow delete: if isAuthenticated()
-        && resource.data.tripId is string
-        && canManageMembers(resource.data.tripId);
+      allow read, write: if false;
     }
 
     // Trips - isolated to trip members, creator, or super admin
     match /trips/{tripId} {
-      allow get: if isAuthenticated() && (
-        isSuperAdmin() ||
-        isTripMember(tripId) ||
-        resource.data.createdBy == request.auth.uid ||
-        (resource.data.memberUids != null && resource.data.memberUids.hasAny([request.auth.uid]))
-      );
-      // List is allowed for own/member trips, or single-trip lookup by invite code
+      allow get: if isAuthenticated() && isTripMember(tripId);
+      // Lists are scoped to trips the caller already belongs to. Invite-code
+      // previews are resolved through publicTripInvites/{code}, never by listing trips.
       allow list: if isAuthenticated() && (
         isSuperAdmin() ||
         resource.data.createdBy == request.auth.uid ||
-        (resource.data.memberUids != null && resource.data.memberUids.hasAny([request.auth.uid])) ||
-        (resource.data.inviteEnabled == true && request.query.limit <= 1)
+        (resource.data.memberUids != null
+          && resource.data.memberUids.hasAny([request.auth.uid])
+          && (!exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid))
+            || get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.get('status', 'active') != 'inactive'))
       );
       allow create: if isAuthenticated()
         && request.resource.data.createdBy == request.auth.uid;
-      allow update: if isAuthenticated() && (
-        isSuperAdmin() ||
-        isTripAdmin(tripId) ||
-        (isTripMember(tripId)
-          && request.resource.data.createdBy == resource.data.createdBy
-          && request.resource.data.memberUids == resource.data.memberUids
-          // Rotating the invite code / closing the trip to new members is a
-          // trip-admin action (v30 — it used to be possible for any member).
-          && request.resource.data.get('inviteCode', '') == resource.data.get('inviteCode', '')
-          && request.resource.data.get('inviteEnabled', true) == resource.data.get('inviteEnabled', true))
-      );
+      // Ownership is immutable through client writes, including for current admins.
+      allow update: if isAuthenticated()
+        && request.resource.data.get('createdBy', null) == resource.data.get('createdBy', null)
+        && (
+          isSuperAdmin() ||
+          isTripAdmin(tripId) ||
+          // A delegated member manager may change only memberUids. Member-document
+          // Rules require removals to be paired with the matching membership batch.
+          managerOnlyChangesMemberUids(tripId) ||
+          // Non-admin writes are limited to fields covered by their specific capability.
+          memberMayUpdateDashboard(tripId) ||
+          memberMayUpdateMapDefault(tripId) ||
+          memberMayUpdateCards(tripId)
+        );
       // Creator, super admin or a trip admin may delete the trip
       allow delete: if isSuperAdmin()
         || (isAuthenticated() && resource.data.createdBy == request.auth.uid)
@@ -234,17 +385,21 @@ service cloud.firestore {
       // member may edit their own profile, but NEVER their role, permissions or
       // status — those stay admin-only).
       match /members/{memberId} {
-        allow read: if isTripMember(tripId);
-        allow create: if canManageMembers(tripId)
-          || (isAuthenticated() && request.auth.uid == memberId
-              && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid);
+        allow read: if isTripMember(tripId) && memberHasNoClientCredentialFields(resource.data);
+        allow create: if memberHasNoClientCredentialFields(request.resource.data)
+          && mayCreateMember(tripId);
         // A trip admin may change anything on a member (except another admin's
         // doc); a *co-admin* (`canManageMembers`) may edit profiles but not the
         // role or the three switches — granting rights stays a trip-admin action.
-        allow update: if (canManageMembers(tripId) && protectsAdminDoc(tripId)
-            && (isTripAdmin(tripId) || sameRoleAndPermissions()))
-          || memberSelfUpdateOnlyProfile(tripId, memberId);
-        allow delete: if canManageMembers(tripId) && protectsAdminDoc(tripId);
+        allow update: if memberHasNoClientCredentialFields(request.resource.data)
+          && (((canManageMembers(tripId) && protectsAdminDoc(tripId)
+                && (isTripAdmin(tripId) || sameRoleAndPermissions()))
+              && (request.resource.data.get('status', resource.data.get('status', 'active')) != 'inactive'
+                || tripNoLongerListsMember(tripId, memberId, resource.data.get('uid', memberId))))
+            || memberSelfUpdateOnlyProfile(tripId, memberId));
+        allow delete: if canManageMembers(tripId) && protectsAdminDoc(tripId)
+          && (isTripAdmin(tripId)
+            || tripNoLongerListsMember(tripId, memberId, resource.data.get('uid', memberId)));
       }
 
       // Days

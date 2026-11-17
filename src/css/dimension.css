@@ -178,6 +178,42 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 #settle-views .chip:nth-child(1) { --chip-tone: #4b83ee; }
 #settle-views .chip:nth-child(2) { --chip-tone: #a064d8; }
 #settle-views .chip:nth-child(3) { --chip-tone: #1d9e8a; }
+
+/* On phones, keep each filter family as its own swipeable chip strip. */
+@media (max-width: 767px) {
+  .expense-filter-bar { gap: 8px; }
+  .expense-filter-row { align-items: stretch; flex-direction: column; gap: 8px; }
+  .expense-filter-group { align-items: stretch; flex-direction: column; gap: 3px; padding: 0; border: 0; }
+  /* Chip text identifies the filter on phones; hiding the extra overline keeps
+     the long swipe rows clear of the fixed add-expense button. */
+  .expense-filter-row--primary .expense-filter-label { display: none; }
+  .expense-filter-label { font-size: 11px; line-height: 1.25; }
+  .expense-filter-group .chip-row {
+    width: 100%;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 0 4px;
+    scroll-snap-type: x proximity;
+  }
+  .expense-filter-group .chip { flex: 0 0 auto; min-height: 36px; padding: 5px 12px; font-size: 12px; }
+  .expense-filter-group--view { flex-direction: row; align-items: center; justify-content: space-between; }
+  .expense-filter-row--secondary { gap: 8px; padding-top: 8px; border-top: 1px solid var(--border-light); }
+  .expense-filter-group--cats { width: 100%; }
+  .expense-filter-foot { width: 100%; margin: 0; }
+  .expense-filter-foot .expense-more-filters {
+    width: auto;
+    max-width: min(220px, calc(100vw - 174px));
+    min-height: 44px;
+    margin: 0;
+    flex: 0 1 auto;
+    white-space: nowrap;
+  }
+}
+@media (max-width: 360px) {
+  .expense-more-filters [data-expense-filter-summary] { display: none; }
+}
 #settle-views .chip.chip-active { color: color-mix(in srgb, var(--chip-tone) 72%, var(--text-strong)); border-color: color-mix(in srgb, var(--chip-tone) 45%, var(--border)); background: color-mix(in srgb, var(--chip-tone) 14%, var(--surface)); }
 #settle-views .chip svg { color: var(--chip-tone); }
 .dash-meta > span:not([hidden]) { display: inline-flex; align-items: center; min-height: 25px; margin: 3px 5px 0 0; padding: 2px 9px; border: 1px solid color-mix(in srgb, var(--primary-raw) 16%, var(--border)); border-radius: 999px; background: color-mix(in srgb, var(--primary-raw) 7%, var(--surface)); }

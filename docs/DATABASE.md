@@ -5,14 +5,28 @@
 ### users/{uid}
 ```json
 {
-  "role": "super_admin",
+  "role": "super_admin|member",
   "displayName": "Admin",
   "email": "admin@example.com",
-  "pinHash": "bcrypt hash for step-up",
-  "lastStepUp": "timestamp",
-  "stepUpExpiry": "ISO string"
+  "photoURL": "https://...",
+  "createdAt": "timestamp",
+  "updatedAt": "timestamp"
 }
 ```
+The user document is a profile only. PIN hashes and step-up state belong in the server-only
+`userSecrets/{uid}` collection; the Rules deny browser reads while a legacy profile still contains
+private fields. Run `migrate:legacy-pins` before publishing those Rules.
+
+### publicProfiles/{uid}
+```json
+{ "uid": "uid", "displayName": "Member", "email": "member@example.com", "photoURL": null, "updatedAt": "timestamp" }
+```
+Owner `get` only; client list is denied. Managers search exact email through the authenticated
+`findMemberProfileByEmail` callable, which returns one allowlisted profile.
+
+### userSecrets/{uid}
+Server-only PIN credential and step-up metadata for legacy account-level PIN flows. No browser
+read/write is allowed; callable Functions use the Admin SDK.
 
 #### users/{uid}/pushTokens/{tokenId}  (v30)
 One document per registered browser/device — owner-only in the rules, read by the
@@ -49,7 +63,37 @@ The push-relevant part of the device switches, mirrored so the server knows what
   "disabled": false
 }
 ```
-**Never readable by client.**
+**Legacy bcrypt account records. Never readable or writable by clients.** New PIN material is stored
+under `memberSecrets` and username lookup under `publicMemberLogins`.
+
+### memberSecrets/{tripId}_{memberId}
+```json
+{
+  "tripId": "trip123",
+  "memberId": "memberUid",
+  "username": "alice",
+  "pinHash": "$2b$10$...",
+  "pinAlgo": "bcrypt",
+  "updatedAt": "timestamp"
+}
+```
+New PINs use bcrypt. Existing PBKDF2-SHA256 records also retain `pinSalt` (16-byte hex) and
+`pinIterations` (normally 100000) for server-side verification. Server-only; never return hashes.
+
+### publicMemberLogins/{username}
+```json
+{ "tripId": "trip123", "memberId": "memberUid", "disabled": false, "updatedAt": "timestamp" }
+```
+Despite the historical collection name, this username index is server-only. Callable Functions
+resolve it after authentication and rate-limit PIN attempts.
+
+### publicTripInvites/{code}
+```json
+{ "tripId": "trip123", "name": "Fuji 2027", "startDate": "2027-11-10", "endDate": "2027-11-14" }
+```
+Authenticated users may `get` a known, currently enabled code; listing is denied. This is a minimal
+preview, not a trip document. Only trip member managers maintain it; existing records are backfilled
+with the Admin SDK.
 
 ### trips/{tripId}
 ```json

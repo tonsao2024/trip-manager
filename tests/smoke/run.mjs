@@ -186,6 +186,32 @@ async function goto(hash) {
 }
 const q = (sel) => window.document.querySelector(sel);
 const qa = (sel) => [...window.document.querySelectorAll(sel)];
+
+console.log('\n▶ JSON expense import batch boundaries');
+const expenseModule = await import(pathToFileURL(path.join(outDir, 'expenses/index.js')).href);
+for (const size of [0, 1, 399, 400, 401, 800, 801]) {
+  const tripId = `json-import-${size}`;
+  const expenses = Array.from({ length: size }, (_, index) => ({
+    title: `Imported ${index + 1}`,
+    date: '2026-11-16',
+    category: 'food',
+    currency: 'THB',
+    netTotalMinor: 100
+  }));
+  const before = fsdb.__batchStats();
+  const result = await expenseModule.importExpensesFromJson(tripId, expenses, 'u1');
+  const after = fsdb.__batchStats();
+  const expectedCommits = [
+    ...Array(Math.floor(size / 400)).fill(400),
+    ...(size % 400 ? [size % 400] : [])
+  ];
+  const actualCommits = after.commits.slice(before.commits.length);
+  const savedPrefix = `trips/${tripId}/expenses/`;
+  const savedCount = [...fsdb.__store.keys()].filter(key => key.startsWith(savedPrefix)).length;
+  check(result === size && savedCount === size, `JSON import: persists ${size} records`);
+  check(JSON.stringify(actualCommits) === JSON.stringify(expectedCommits), `JSON import: ${size} records commit in ${JSON.stringify(expectedCommits)} fresh batch(es)`);
+}
+
 function submit(form) {
   form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
 }
@@ -754,6 +780,17 @@ await waitFor(() => qa('[data-tpl]').length > 0, { label: 'member import page' }
 check(qa('[data-tpl]').every(b => b.disabled), 'permissions: Excel template buttons disabled for members');
 check(qa('#exp-full, #exp-itinerary-xl, #exp-expenses-xl').every(b => b.disabled), 'permissions: Excel export buttons disabled for members');
 check(!q('#exp-itinerary-png').disabled, 'permissions: PNG export still available to members');
+await goto('#/trip/t1/settings');
+await waitFor(() => q('#save-settings'), { label: 'member settings page' });
+check(q('#save-settings').disabled && q('#save-budget').disabled, 'permissions: trip details and budgets are read-only for members');
+check(!q('#del-trip') && !q('#invite-code-regen'), 'permissions: members cannot delete trips or rotate invite codes');
+check(!q('#settings-manage-cards').disabled, 'permissions: members with expense rights may manage payment cards');
+await goto('#/trip/t1/dashboard');
+await waitFor(() => q('#dashboard-view'), { label: 'member dashboard' });
+check(!q('#dash-edit-trip'), 'permissions: members cannot edit trip details from the dashboard');
+check(!q('.cdc-edit'), 'permissions: the countdown has no trip-settings shortcut for members');
+authStub.__emitAuth({ uid: 'u1', email: 'admin@test.com', displayName: 'สมชาย', photoURL: null });
+await sleep(60);
 
 console.log('\n▶ Excel round trip (real SheetJS)');
 const XLSX = await import('xlsx');
@@ -853,8 +890,8 @@ await waitFor(() => qa('#diag-results [data-diag]').length >= 5, { timeout: 8000
 const diagRows = qa('#diag-results [data-diag]');
 check(diagRows.length >= 5, `system check: ran every probe (${diagRows.length} rows)`);
 const fnRow = q('[data-diag="functions"]');
-check(!!fnRow && fnRow.dataset.status === 'ok', 'system check: Spark does not require Cloud Functions');
-check(!!fnRow && /Spark|GitHub Actions/.test(fnRow.textContent), 'system check: explains the free Actions sender');
+check(!!fnRow && fnRow.dataset.status === 'warn', 'system check: missing optional Blaze Functions is a warning on Spark');
+check(!!fnRow && /optional on Spark|Spark|GitHub Actions/.test(fnRow.textContent), 'system check: explains the optional Functions path on Spark');
 check(q('[data-diag="push-sender"]')?.dataset.status === 'warn', 'system check: Actions setup must be verified by the owner');
 check(!!q('[data-diag="security-pins"]'), 'system check: verifies PIN documents stay private');
 check(!!q('#diag-copy'), 'system check: report can be copied');
@@ -1718,6 +1755,8 @@ console.log('\n▶ v8: rules not published yet → actionable help instead of a 
 }
 
 console.log('\n▶ v7: admin shares the invite code from Settings');
+authStub.__emitAuth({ uid: 'u1', email: 'admin@example.com', displayName: 'Admin', photoURL: null, providerData: [{ providerId: 'password' }] });
+await sleep(60);
 await goto('#/trip/t1/settings');
 await waitFor(() => q('#invite-code-value'), { label: 'invite code card' });
 check((q('#invite-code-value').textContent || '').replace(/[^A-Z0-9]/g, '') === 'FUJI23', 'invite: settings shows the trip code formatted (ABC-123)');
@@ -3304,8 +3343,12 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
     'rules: plan writes require สิทธิ์ “แก้ไขแผนการเดินทาง”');
   check(/request\.resource\.data\.get\('permissions', \{\}\) == resource\.data\.get\('permissions', \{\}\)/.test(rules30),
     'rules: a member cannot grant themselves rights (self-update is profile-only)');
-  check(/request\.resource\.data\.get\('inviteCode', ''\) == resource\.data\.get\('inviteCode', ''\)/.test(rules30),
-    'rules: rotating the invite code stays admin-only');
+  check(/function memberMayUpdateDashboard\(tripId\)/.test(rules30)
+    && /function memberMayUpdateMapDefault\(tripId\)/.test(rules30)
+    && /function memberMayUpdateCards\(tripId\)/.test(rules30),
+    'rules: shared trip updates use field-specific capability checks');
+  check(/allow update: if isAuthenticated\(\)[\s\S]{0,180}createdBy', null\) == resource\.data\.get\('createdBy', null\)/.test(rules30),
+    'rules: trip creator identity is immutable through client writes');
   check(/function sameRoleAndPermissions/.test(rules30), 'rules: a co-admin cannot change roles or the switches');
   check(/function guardedTransfer\(operation\)/.test(rules30) && /guardedTransfer\('create'\)/.test(rules30) && /guardedTransfer\('delete'\)/.test(rules30),
     'rules: a transfer create/delete must arrive with its guard bump in the same write');

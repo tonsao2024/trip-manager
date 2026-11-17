@@ -24,7 +24,8 @@
 
 ## 1. เปิด Firebase ที่จำเป็น (ยังคง Spark)
 
-1. Authentication → เปิด Google/Email+Password; เพิ่มโดเมนเว็บใน Authorized domains
+1. Authentication → เปิด **Google** (เป็นวิธีที่หน้าเว็บปัจจุบันแสดง) และเพิ่มโดเมนเว็บใน Authorized domains
+   ไม่ต้องเปิด Email/Password เว้นแต่ deployment ของคุณจะแสดงหน้าล็อกอินที่เปิด provider นี้จริง
 2. Google Cloud Console → APIs & Services → เปิด **Firebase Cloud Messaging API (HTTP v1)**
    (`fcm.googleapis.com`) ถ้ายังไม่เปิด ไม่ต้องเปิด Cloud Functions/Artifact Registry
 3. Firebase Console → Project settings → Cloud Messaging → Web Push certificates → Generate key pair
@@ -93,7 +94,7 @@ Repository → Settings → Secrets and variables → Actions:
 
 ## 4. ทดสอบจริงสองอุปกรณ์
 
-1. ผู้รับ B ล็อกอินด้วย Google/Email และได้รับอนุมัติเป็นสมาชิกทริป
+1. ผู้รับ B ล็อกอินด้วย Google (วิธีที่หน้าเว็บปัจจุบันแสดง) และได้รับอนุมัติเป็นสมาชิกทริป
 2. Settings → การแจ้งเตือน → เปิด Push บนอุปกรณ์นี้ → อนุญาตเบราว์เซอร์
 3. กดส่งการแจ้งเตือนทดสอบ จะเพิ่ม `pushDelivery: {state: 'pending'}` ใน notification
    **จะไม่สร้าง popup จำลองในเครื่อง** เพราะอาจทำให้เข้าใจว่าตัวส่งทำงานทั้งที่ยังไม่ได้ส่ง

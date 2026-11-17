@@ -29,12 +29,14 @@ export async function loginMember(username, pin, tripId, remember = true) {
   if (!isFirebaseConfigured) throw new Error('Firebase not configured');
   if (!auth || !functions) throw new Error('Auth/Functions not initialized');
   
-  if (!username || username.trim().length < 2) throw new Error('กรุณากรอกชื่อผู้ใช้');
-  if (!pin || pin.length < 4) throw new Error('PIN ต้องอย่างน้อย 4 ตัว');
+  const usernameValue = String(username || '').trim();
+  if (!usernameValue) throw new Error('กรุณากรอกชื่อผู้ใช้');
+  const pinValue = String(pin ?? '');
+  if (pinValue.length < 4 || pinValue.length > 12) throw new Error('PIN ต้อง 4-12 ตัวอักษร');
   
   try {
     const fn = httpsCallable(functions, 'loginWithUsernamePin');
-    const res = await fn({ username: username.trim(), pin, tripId: tripId || null });
+    const res = await fn({ username: usernameValue, pin: pinValue, tripId: tripId || null });
     const { token } = res.data;
     if (!token) throw new Error('No token returned from function');
     
@@ -42,8 +44,8 @@ export async function loginMember(username, pin, tripId, remember = true) {
     const cred = await signInWithCustomToken(auth, token);
     return cred.user;
   } catch (error) {
-    // Expected on projects where functions were never deployed (the app falls back
-    // to local username + PIN auth) — a warning, not an error.
+    // Missing or unavailable callables are expected during a staged rollout, but
+    // PIN login still fails closed; the UI must never fall back to local PIN auth.
     const expected = /internal|unavailable|not-found|unimplemented|failed-precondition/i.test(String(error?.code || '') + String(error?.message || ''));
     (expected ? console.warn : console.error)('loginMember error:', error);
     // Handle function errors

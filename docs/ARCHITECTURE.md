@@ -1,7 +1,7 @@
 # Architecture
 
 ## Overview
-Fuji Trip Planner is a static SPA hosted on GitHub Pages, backed entirely by Firebase. No custom backend server. All sensitive operations go through Cloud Functions.
+Fuji Trip Planner is a static SPA hosted on GitHub Pages and backed by Firebase. Firestore Rules authorize the browser's trip-data reads and writes; callable Cloud Functions handle credential verification, guarded profile lookup, invite fallback, and selected scheduled/notification work.
 
 ## Frontend
 - **SPA Router**: Hash-based, lightweight, no library. Routes defined in `src/js/app.js` + `router.js`.
@@ -42,7 +42,7 @@ Fuji Trip Planner is a static SPA hosted on GitHub Pages, backed entirely by Fir
   only** (FCM background messages + click routing); there is no offline app shell/cache.
 
 ## Firebase Services
-- **Auth**: Email/Password for admins, Custom Token for members (username+PIN verified server-side via bcrypt).
+- **Auth**: Google sign-in in the current visible UI; Email/Password APIs remain available to deployments that expose that provider. Legacy member username/PIN APIs are callable-backed (not shown on the current sign-in screen). New PINs use server-side bcrypt; the login callable also verifies existing PBKDF2-SHA256 secrets during migration.
 - **Firestore**: Trip-isolated collections under `trips/{tripId}/...`. Money in minor units. Indexes defined in `firestore.indexes.json`.
 - **Storage**: Receipts, avatars, covers, place images, settlement proofs, segregated by trip.
 - **Functions**: Region `asia-southeast1`, Node 20, 10 max instances. See `functions/src/index.js`.
@@ -69,9 +69,9 @@ Fuji Trip Planner is a static SPA hosted on GitHub Pages, backed entirely by Fir
 - Since v30 the member document's `permissions{}` map (`canEditItinerary`, `canEditExpense`,
   `canManageMembers`, or the read-only `viewer` role) is enforced by `firestore.rules` — the UI hides what
   the rules deny. Full audit + known risks: `docs/PERMISSIONS.md`.
-- No client can read `loginAccounts`.
-- Step-up PIN session stored server-side, expiry 10 min, checked before sensitive actions.
-- Audit logs written via function, read only by trip admin / super admin.
+- Clients cannot read or write `loginAccounts`, `memberSecrets`, `userSecrets`, or `publicMemberLogins`; member PIN and username lookup operations go through authenticated callable Functions.
+- Legacy PIN and step-up fields are migrated out of readable user/member profiles before the stricter Rules are published. The optional step-up callable returns a 10-minute session expiry; the Firestore Rules remain the actual authorization boundary.
+- Trip activity logs are readable and appendable by trip members; only trip admins may edit or delete them. Callable Functions write audit entries for their own server-side actions.
 - All money validation both client and server.
 
 ## Data Flow Example: Add Expense

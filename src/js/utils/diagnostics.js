@@ -1,9 +1,9 @@
 /**
  * System diagnostics.
  *
- * Member login has three moving parts that live outside the app:
+ * Legacy member-PIN login has three moving parts that live outside the app:
  *   1. Cloud Functions (`loginWithUsernamePin`) deployed in asia-southeast1
- *   2. Firestore rules that allow the username lookup (`publicMemberLogins`)
+ *   2. Firestore Rules that keep credential and username-index documents server-only
  *   3. Members that actually have a username + PIN
  *
  * When one of them is missing Firebase only says `functions/internal: internal`,
@@ -19,8 +19,8 @@ import { validateVapidKey } from './notifications.js';
 export const DIAG = { ok: 'ok', warn: 'warn', fail: 'fail' };
 
 export const FIX = {
-  deployFunctions: 'firebase deploy --only functions   (โปรเจกต์ต้องอยู่แผน Blaze ก่อน)',
-  runInvoker: 'gcloud run services add-iam-policy-binding loginwithusernamepin --region=asia-southeast1 --member=allUsers --role=roles/run.invoker',
+  deployFunctions: 'firebase deploy --only functions:healthCheck,functions:findMemberProfileByEmail,functions:lookupTripByInviteCode,functions:setMemberPin,functions:publishMemberLoginLookup,functions:clearMemberPin,functions:loginWithUsernamePin,functions:verifySensitiveActionPin (Blaze required; see docs/DEPLOY.md)',
+  runInvoker: 'Review the callable invoker policy and function logs with your Firebase administrator; do not grant allUsers without confirming the intended access. See docs/DEPLOY.md.',
   deployRules: 'firebase deploy --only firestore:rules   (หรือเปิด Firebase Console > Firestore Database > Rules วางไฟล์ firestore.rules แล้วกด Publish)',
   deployWorkflow: 'push ขึ้น main (หรือ Actions > “Deploy Firestore rules & indexes (Spark)” > Run workflow) หลังตั้ง secret ชื่อ FIREBASE_SERVICE_ACCOUNT หรือ FIREBASE_TOKEN หนึ่งครั้ง',
   setVapid: 'ตั้ง GitHub Actions secret ชื่อ FCM_VAPID_KEY = “Key pair” (Firebase Console → Project settings → Cloud Messaging → Web Push certificates) แล้ว deploy ใหม่',
@@ -36,14 +36,9 @@ export function classifyFunctionError(err, lang = 'th') {
   const msg = String(err?.message || '').trim();
   const lower = msg.toLowerCase();
 
-  // The JS SDK reports `internal` / "internal" whenever the endpoint answered
-  // with something that is not a callable payload (404 HTML page, Cloud Run
-  // 403 HTML page, gateway error). Practically it means: not deployed, deployed
-  // in another region, or Cloud Run blocks anonymous invocation.
+  // The JS SDK may report `internal` when the endpoint is missing, in another
+  // region, blocked by invoker policy, or has an unhandled server error.
   if (code === 'internal') {
-    // `functions/internal` is what the SDK reports for a 404/403 HTML page (not
-    // deployed, wrong region, Cloud Run IAM) and also for unhandled crashes —
-    // either way the deploy/IAM checklist is the right first step.
     const raw = msg && lower !== 'internal' && !lower.includes('<!doctype') ? ` — ${msg}` : '';
     return {
       key: 'not-deployed',
@@ -51,9 +46,9 @@ export function classifyFunctionError(err, lang = 'th') {
       th: `เรียก Cloud Functions ไม่ได้ (ตอบกลับว่า "internal") — มักเกิดจากยังไม่ได้ deploy ฟังก์ชัน หรือ deploy คนละ region${raw}`,
       en: `Cloud Functions did not answer (returned "internal") — usually the function is not deployed yet or lives in another region${raw}`,
       fixTh: FIX.deployFunctions,
-      fixEn: 'firebase deploy --only functions   (the project must be on the Blaze plan)',
-      extraTh: `ถ้า deploy แล้วแต่ยังเรียกไม่ได้ ให้เปิดสิทธิ์ผู้เรียก Cloud Run (คำสั่งด้านล่าง): ${FIX.runInvoker}`,
-      extraEn: `If it is deployed and still fails, allow anonymous invocation: ${FIX.runInvoker}`
+      fixEn: FIX.deployFunctions,
+      extraTh: `ถ้า deploy แล้วแต่ยังเรียกไม่ได้ ให้ตรวจ log และนโยบาย invoker กับผู้ดูแล Firebase — อย่าเปิด allUsers โดยไม่ยืนยันนโยบายที่ตั้งใจไว้: ${FIX.runInvoker}`,
+      extraEn: `If it is deployed and still fails, review logs and the intended invoker policy with your Firebase administrator; do not grant allUsers blindly: ${FIX.runInvoker}`
     };
   }
   if (code === 'unavailable' || /network|failed to fetch|cors/i.test(lower)) {
@@ -70,10 +65,10 @@ export function classifyFunctionError(err, lang = 'th') {
     return {
       key: 'permission',
       status: DIAG.warn,
-      th: 'ฟังก์ชันตอบกลับว่าต้องมีสิทธิ์ (ผู้ใช้/PIN ไม่ถูกต้อง หรือ Cloud Run ไม่ได้เปิดให้ผู้ไม่ระบุตัวตนเรียก)',
-      en: 'The function requires permission (wrong user/PIN, or Cloud Run blocks anonymous calls)',
-      fixTh: `ตรวจชื่อผู้ใช้/PIN อีกครั้ง · ถ้าเป็นทุกคนให้เปิดสิทธิ์: ${FIX.runInvoker}`,
-      fixEn: `Re-check the username/PIN · to allow everyone run: ${FIX.runInvoker}`
+      th: 'ฟังก์ชันปฏิเสธคำขอ — ตรวจสถานะการเข้าสู่ระบบ, PIN และสิทธิ์ของผู้เรียก',
+      en: 'The callable rejected the request — check sign-in, PIN, and caller permissions',
+      fixTh: `เข้าสู่ระบบ/ตรวจ PIN อีกครั้ง แล้วตรวจ log และนโยบาย invoker ที่ตั้งใจไว้: ${FIX.runInvoker}`,
+      fixEn: `Sign in or re-check the PIN, then review function logs and the intended invoker policy: ${FIX.runInvoker}`
     };
   }
   if (code === 'not-found') {
@@ -83,7 +78,7 @@ export function classifyFunctionError(err, lang = 'th') {
       th: `ฟังก์ชันที่เรียกไม่ถูก deploy (${msg || 'not found'})`,
       en: `The called function is not deployed (${msg || 'not found'})`,
       fixTh: FIX.deployFunctions,
-      fixEn: 'firebase deploy --only functions'
+      fixEn: FIX.deployFunctions
     };
   }
   return {
@@ -145,7 +140,7 @@ async function loadDeps() {
     isStorageAvailable: fb.isStorageAvailable,
     auth: fb.auth,
     db: fb.db,
-    freePlan: true,
+    pushActions: true,
     functions: fb.functions,
     httpsCallable: fb.httpsCallable,
     getMemberSession: memberAuth.getMemberSession,
@@ -167,8 +162,8 @@ function functionUserMessage(err, lang) {
   const msg = String(err?.message || '');
   if (/internal/i.test(code + msg) && String(msg).trim().toLowerCase() === 'internal') {
     return pick(lang,
-      'Cloud Function ไม่ตอบกลับ (internal) — ยังไม่ได้ deploy หรือ Cloud Run ไม่ได้เปิดให้ผู้ไม่ระบุตัวตนเรียก',
-      'Cloud Function did not answer (internal) — not deployed, or Cloud Run blocks anonymous calls');
+      'Cloud Function ไม่ตอบกลับ (internal) — อาจยังไม่ได้ deploy, อยู่คนละ region หรือเกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์',
+      'Cloud Function did not answer (internal) — it may be undeployed, in another region, or failing server-side');
   }
   return msg || code;
 }
@@ -242,24 +237,25 @@ export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeout
   const user = d.auth?.currentUser || null;
   if (user) {
     add('session', pick(lang, 'เซสชันผู้ใช้', 'User session'), DIAG.ok,
-      pick(lang, `ล็อกอินด้วยบัญชี Google/อีเมล (${user.email || user.uid})`, `Signed in with Google/email (${user.email || user.uid})`));
+      pick(lang, `ล็อกอิน Firebase แล้ว (${user.email || user.uid})`, `Signed in to Firebase (${user.email || user.uid})`));
   } else if (session?.memberId) {
     add('session', pick(lang, 'เซสชันผู้ใช้', 'User session'), DIAG.warn,
-      pick(lang, `ล็อกอินเป็นสมาชิก "${session.username || session.memberId}" แบบไม่ใช้ Cloud Functions`,
-                `Signed in as member "${session.username || session.memberId}" without Cloud Functions`),
-      pick(lang, 'เข้าสู่ระบบด้วย Google/อีเมลเพื่อซิงก์และส่ง Push บนแผนฟรี', 'Sign in with Google/email for sync and Push on the free plan'));
+      pick(lang, `พบเซสชันสมาชิกแบบเก่าของ "${session.username || session.memberId}" — แสดงได้เฉพาะข้อมูลแคช ไม่ได้เข้าสู่ระบบ Firebase`,
+                `Legacy device-only session for "${session.username || session.memberId}" — cached data only; not signed in to Firebase`),
+      pick(lang, 'เข้าสู่ระบบด้วย Google แล้วขอเข้าร่วมทริปอีกครั้งเพื่อซิงก์ข้อมูล', 'Sign in with Google and request to join the trip again to sync data'));
   } else {
     add('session', pick(lang, 'เซสชันผู้ใช้', 'User session'), DIAG.warn,
       pick(lang, 'ยังไม่ได้ล็อกอิน', 'Not signed in'));
   }
 
-  // 3. Cloud Functions
-  if (d.freePlan) {
-    add('functions', 'Cloud Functions', DIAG.ok,
-      pick(lang, 'ไม่ใช้ในแผน Spark — Push ส่งเป็นรอบด้วย GitHub Actions', 'Not used on Spark — GitHub Actions sends queued Push'));
-  } else if (!d.functions) {
-    add('functions', 'Cloud Functions', DIAG.fail,
-      pick(lang, 'ยังไม่ได้ตั้งค่า Firebase Functions', 'Firebase Functions is not initialised'),
+  // 3. Cloud Functions are optional on Spark, but when configured we verify the
+  // callable path so Blaze users can distinguish an available API from a deploy issue.
+  const optionalFunctionsNote = pick(lang,
+    'ฟังก์ชันเป็นทางเลือกบน Spark; PIN/ค้นหาอีเมล/repair invite ต้องใช้ Blaze',
+    'Functions are optional on Spark; PIN, email lookup, and invite repair require Blaze');
+  if (!d.functions) {
+    add('functions', 'Cloud Functions', DIAG.warn,
+      `${pick(lang, 'ยังไม่ได้ตั้งค่า Firebase Functions', 'Firebase Functions is not initialised')} · ${optionalFunctionsNote}`,
       FIX.deployFunctions);
   } else {
     try {
@@ -269,11 +265,15 @@ export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeout
           `${pick(lang, 'พร้อมใช้งาน', 'Available')} · ${probe.detail}`);
       } else {
         const info = classifyFunctionError(probe.error, lang);
-        add('functions', 'Cloud Functions', info.status, info.th && isTh(lang) ? info.th : info.en,
-          (isTh(lang) ? info.fixTh : info.fixEn) + (info.extraTh && isTh(lang) ? `\n${info.extraTh}` : ''));
+        const detail = isTh(lang) ? info.th : info.en;
+        const extra = isTh(lang) ? info.extraTh : info.extraEn;
+        add('functions', 'Cloud Functions', DIAG.warn,
+          `${detail} · ${optionalFunctionsNote}`,
+          `${isTh(lang) ? info.fixTh : info.fixEn}${extra ? `\n${extra}` : ''}`);
       }
     } catch (e) {
-      add('functions', 'Cloud Functions', DIAG.fail, e.message, FIX.deployFunctions);
+      add('functions', 'Cloud Functions', DIAG.warn,
+        `${e.message} · ${optionalFunctionsNote}`, FIX.deployFunctions);
     }
   }
 
@@ -294,37 +294,25 @@ export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeout
     }
   }
 
-  // 5. Rules: username → trip lookup used by the login page
+  // 5. Rules: public directory profile is owner-readable; email search is a guarded callable.
   if (d.db) {
-    try {
-      await withTimeout(d.getDoc(d.doc(d.db, 'publicMemberLogins', '__diagnostic_probe__')), timeoutMs, 'publicMemberLogins');
-      add('rules-login', pick(lang, 'Firestore Rules สำหรับล็อกอินสมาชิก', 'Member-login Firestore rules'), DIAG.ok,
-        pick(lang, 'อ่านตารางชื่อผู้ใช้สำหรับล็อกอินได้ (publicMemberLogins)', 'Username lookup is readable (publicMemberLogins)'));
-    } catch (e) {
-      const info = classifyFirestoreError(e, pick(lang, 'ตารางชื่อผู้ใช้ (publicMemberLogins)', 'the username lookup (publicMemberLogins)'), lang);
-      add('rules-login', pick(lang, 'Firestore Rules สำหรับล็อกอินสมาชิก', 'Member-login Firestore rules'),
-        info.status,
-        pick(lang, 'ยังอ่านตารางชื่อผู้ใช้ไม่ได้ — สมาชิกจะล็อกอินได้เฉพาะเครื่องที่เคยสร้างบัญชี',
-                  'The username lookup is not readable — members can only sign in on the device that created them'),
-        FIX.deployRules);
-    }
-
-    // 5b. Rules: public directory used by "add member by email"
+    // Owner-readability does not prove that the callable is deployed; the Functions probe above
+    // checks endpoint availability and `findMemberProfileByEmail` enforces the manager boundary.
     if (d.auth?.currentUser?.uid) {
       try {
         await withTimeout(d.getDoc(d.doc(d.db, 'publicProfiles', d.auth.currentUser.uid)), timeoutMs, 'publicProfiles');
-        add('rules-profiles', pick(lang, 'Rules ไดเรกทอรีบัญชี (publicProfiles)', 'Account directory rules'), DIAG.ok,
-          pick(lang, 'แอดมินค้นหาสมาชิกด้วยอีเมลได้', 'Admins can find members by email'));
+        add('rules-profiles', pick(lang, 'Rules โปรไฟล์บัญชี (publicProfiles)', 'Account profile rules'), DIAG.ok,
+          pick(lang, 'อ่านโปรไฟล์ของบัญชีตัวเองได้; ค้นหาอีเมลใช้ callable ที่ตรวจสิทธิ์', 'Your own profile is readable; email search uses the guarded callable'));
       } catch (e) {
         const info = classifyFirestoreError(e, pick(lang, 'ไดเรกทอรีบัญชี', 'the account directory'), lang);
-        add('rules-profiles', pick(lang, 'Rules ไดเรกทอรีบัญชี (publicProfiles)', 'Account directory rules'), info.status,
-          pick(lang, 'ยังอ่านไดเรกทอรีบัญชีไม่ได้ — ปุ่ม "เพิ่มด้วยอีเมล" จะใช้ไม่ได้',
-                    'The account directory is not readable — "Add by email" will not work'),
+        add('rules-profiles', pick(lang, 'Rules โปรไฟล์บัญชี (publicProfiles)', 'Account profile rules'), info.status,
+          pick(lang, 'ยังอ่านโปรไฟล์ของตัวเองไม่ได้ — การซิงก์โปรไฟล์อาจล้มเหลว',
+                    'The owner profile is not readable — profile sync may fail'),
           FIX.deployRules);
       }
     }
 
-    // 5c. Rules: invite-code lookup + join requests (members joining a trip)
+    // 5b. Rules: invite-code lookup + join requests (members joining a trip)
     if (tripId) {
       try {
         await withTimeout(d.getDocs(d.query(d.collection(d.db, 'trips', tripId, 'joinRequests'), d.limit(1))), timeoutMs, 'joinRequests');
@@ -375,36 +363,60 @@ export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeout
       }
     }
 
-    // 7. Security: PIN hashes must never be client readable
-    try {
-      const snap = await withTimeout(d.getDoc(d.doc(d.db, 'loginAccounts', '__diagnostic_probe__')), timeoutMs, 'loginAccounts');
-      // Reading `loginAccounts` must always fail — the PIN hashes live there.
+    // 7. Security: credential and username-index collections must be server-only.
+    if (!user?.uid) {
       add('security-pins', pick(lang, 'ความปลอดภัยของ PIN', 'PIN security'), DIAG.warn,
-        pick(lang, `อ่านเอกสาร loginAccounts จากฝั่งเว็บได้ (${snap.exists() ? 'พบเอกสาร' : 'ไม่พบเอกสาร'}) ควรปิดด้วย rules`,
-                   `loginAccounts is client readable (${snap.exists() ? 'document found' : 'no document'}) — lock it down with rules`),
-        FIX.deployRules);
-    } catch (e) {
-      const denied = String(e?.code || '').includes('permission-denied');
-      add('security-pins', pick(lang, 'ความปลอดภัยของ PIN', 'PIN security'), denied ? DIAG.ok : DIAG.warn,
-        denied
-          ? pick(lang, 'PIN ถูกเก็บฝั่งเซิร์ฟเวอร์ (อ่านจากเว็บไม่ได้)', 'PIN hashes stay server-side (not client readable)')
-          : pick(lang, `ตรวจสอบไม่สำเร็จ: ${e.message}`, `Check failed: ${e.message}`));
+        pick(lang, 'ต้องเข้าสู่ระบบ Firebase ก่อนจึงจะตรวจสิทธิ์อ่านเอกสารลับได้',
+                  'Sign in to Firebase to verify that private credential documents are unreadable'));
+    } else {
+      const privateDocs = [
+        ['loginAccounts', '__diagnostic_probe__'],
+        ['memberSecrets', '__diagnostic_probe__'],
+        ['userSecrets', '__diagnostic_probe__'],
+        ['publicMemberLogins', '__diagnostic_probe__']
+      ];
+      const checks = await Promise.allSettled(privateDocs.map(async ([collectionName, id]) => {
+        await withTimeout(d.getDoc(d.doc(d.db, collectionName, id)), timeoutMs, collectionName);
+        return collectionName;
+      }));
+      const readable = checks.filter((check) => check.status === 'fulfilled').map((check) => check.value);
+      const unexpectedErrors = checks.filter((check) => check.status === 'rejected'
+        && !String(check.reason?.code || '').includes('permission-denied'));
+      if (readable.length) {
+        add('security-pins', pick(lang, 'ความปลอดภัยของ PIN', 'PIN security'), DIAG.fail,
+          pick(lang, `เอกสารลับอ่านได้จากเว็บ: ${readable.join(', ')} — ปิดการอ่านด้วย Firestore Rules`,
+                    `Private records are browser-readable: ${readable.join(', ')} — deny reads in Firestore Rules`),
+          FIX.deployRules);
+      } else if (unexpectedErrors.length) {
+        const error = unexpectedErrors[0].reason;
+        add('security-pins', pick(lang, 'ความปลอดภัยของ PIN', 'PIN security'), DIAG.warn,
+          pick(lang, `ตรวจสิทธิ์เอกสารลับไม่สำเร็จ: ${error?.message || error}`,
+                    `Could not verify private-record rules: ${error?.message || error}`),
+          FIX.deployRules);
+      } else {
+        add('security-pins', pick(lang, 'ความปลอดภัยของ PIN', 'PIN security'), DIAG.ok,
+          pick(lang, 'PIN และดัชนีชื่อผู้ใช้อ่านจากเว็บไม่ได้ (ทำงานผ่าน callable เท่านั้น)',
+                    'PINs and username indexes are not browser-readable (callable Functions only)'));
+      }
     }
 
     // 8. Do the members actually have a username + PIN yet?
     if (tripId) {
       try {
         const snap = await withTimeout(d.getDocs(d.query(d.collection(d.db, 'trips', tripId, 'members'), d.limit(20))), timeoutMs, 'members');
-        const ready = snap.docs.filter(x => x.data()?.loginReady || x.data()?.pinHash || x.data()?.username);
-        add('member-pins', pick(lang, 'สมาชิกที่ล็อกอินได้', 'Members who can sign in'),
+        const ready = snap.docs.filter((x) => {
+          const member = x.data() || {};
+          return member.status === 'active' && member.loginReady !== false && Boolean(member.username);
+        });
+        add('member-pins', pick(lang, 'สมาชิกที่ตั้งชื่อผู้ใช้แล้ว', 'Members with username login configured'),
           ready.length ? DIAG.ok : DIAG.warn,
           ready.length
-            ? pick(lang, `มี ${ready.length} คนที่ล็อกอินได้`, `${ready.length} member(s) can sign in`)
-            : pick(lang, 'ยังไม่มีสมาชิกที่ล็อกอินได้ — เชิญด้วยรหัสเชิญ หรือตั้งชื่อผู้ใช้ + PIN ให้สมาชิก',
-                            'No member can sign in yet — invite them with the trip code, or set a username + PIN'),
+            ? pick(lang, `มีสมาชิกที่ยังใช้งานได้ ${ready.length} คนตั้งชื่อผู้ใช้ล็อกอินแล้ว`, `${ready.length} active member(s) have a username login configured`)
+            : pick(lang, 'ยังไม่มีสมาชิกที่ตั้งชื่อผู้ใช้ล็อกอิน — เชิญด้วยรหัสเชิญ หรือให้ผู้ดูแลตั้งชื่อผู้ใช้ + PIN',
+                            'No active member has a username login configured — invite them with the trip code, or ask an admin to set a username + PIN'),
           ready.length ? null : FIX.setMemberPin);
       } catch (e) {
-        add('member-pins', pick(lang, 'สมาชิกที่ล็อกอินได้', 'Members who can sign in'), DIAG.warn,
+        add('member-pins', pick(lang, 'สมาชิกที่ตั้งชื่อผู้ใช้แล้ว', 'Members with username login configured'), DIAG.warn,
           pick(lang, `อ่านรายชื่อสมาชิกไม่ได้: ${e.message}`, `Cannot read members: ${e.message}`),
           pick(lang, 'ตรวจสอบว่าเป็นสมาชิกของทริปนี้', 'Make sure you are a member of this trip'));
       }
@@ -471,7 +483,7 @@ export async function runSystemDiagnostics({ tripId = null, lang = 'th', timeout
       pick(lang, 'ข้ามการทดสอบ (ไม่มีตัวตรวจการแจ้งเตือน)', 'Skipped (no notification probe available)'));
   }
 
-  if (d.freePlan) {
+  if (d.pushActions) {
     add('push-sender', 'GitHub Actions Push sender', DIAG.warn,
       pick(lang, 'เว็บตรวจ Secrets/สถานะ Actions ไม่ได้ — ผู้ดูแลต้องเปิด workflow Send FCM Push (Spark); ปกติทุก 30 นาทีและอาจล่าช้า',
         'The browser cannot inspect Actions secrets/status. Enable Send FCM Push (Spark); normally every 30 minutes, possibly delayed'),

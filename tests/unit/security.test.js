@@ -104,6 +104,12 @@ export function testCloudFunctionsAuthorizationHardened() {
     'validateExpenseAllocations verifies trip membership');
   assert(!/export const recalculateSettlement/.test(fnSource),
     'the unused recalculateSettlement callable is removed (the client computes settlement itself)');
+  assert(/async function isTripMember\(tripId, uid\)[\s\S]*?if \(memberSnap\.exists\) return memberSnap\.data\(\)\.status !== 'inactive';/.test(fnSource),
+    'an inactive member document overrides legacy memberUids membership');
+  assert(/disableMemberAccount[\s\S]*?status: 'inactive'[\s\S]*?memberUids: FieldValue\.arrayRemove\(memberUid\)/.test(fnSource),
+    'member disablement revokes active status and trip-list membership together');
+  assert(/recalculateItinerarySchedule[\s\S]*?items\.length > 400[\s\S]*?itemIds\.has\(item\.id\)[\s\S]*?canEditItinerary\(tripId, uid\)/.test(fnSource),
+    'itinerary recalculation checks batch size, unique document IDs, and edit permission');
   assert(/writeAuditLog[\s\S]*?isTripMember\(tripId,\s*uid\)/.test(fnSource),
     'writeAuditLog verifies trip membership');
 }
