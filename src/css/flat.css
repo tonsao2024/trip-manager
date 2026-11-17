@@ -1442,16 +1442,13 @@ body.is-signed-out #header-more { display: none !important; }
   align-items: start;
   gap: 14px;
 }
-.dashboard-board.is-masonry {
-  grid-auto-rows: 4px;
-  row-gap: 0;
-}
+/* v42: the board is a plain two-column grid; cards fill their row so a pair
+   always ends on the same line (the measured masonry board is gone). */
 .dashboard-board > .dash-widget { min-width: 0; }
 .dashboard-board > .dash-widget--full { grid-column: 1 / -1; }
-.dash-widget > .card { height: auto; }
+.dash-widget > .card { height: 100%; }
 @media (max-width: 760px) {
   .dashboard-board { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .dashboard-board.is-masonry { grid-auto-rows: auto; }
 }
 /* v38: KPI strip — three equal tiles with a clean gutter that matches the
    dashboard board gap for visual rhythm. */
@@ -2687,8 +2684,8 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
    Full-width list cards (ideas, members, teams) get a hair more vertical room
    so their content breathes, while half-width pairs stay at the compact spec. */
 #dashboard-view > * + * { margin-top: 14px; }
-#dashboard-view .dashboard-board { gap: 14px; align-items: start; }
-#dashboard-view .dash-widget > .card { height: auto; }
+#dashboard-view .dashboard-board { gap: 14px; align-items: stretch; }
+#dashboard-view .dash-widget > .card { height: 100%; }
 #dashboard-view .dash-widget[data-dashboard-widget="countdown"] .countdown-scene { height: 100%; }
 #dashboard-view .dash-widget > .card { padding: 16px; }
 @media (min-width: 761px) {
@@ -2707,13 +2704,14 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
   }
   #dashboard-view :is(.dash-scroll-body, #upnext-list, #dash-bookings, #recent-expenses, #category-stats)::-webkit-scrollbar { display: none; }
   /* Weather card matches countdown height on desktop — both in first band share row */
-  #dashboard-view .dashboard-board.is-masonry .dash-widget[data-dashboard-widget="countdown"],
-  #dashboard-view .dashboard-board.is-masonry .dash-widget[data-dashboard-widget="weather"] {
+  /* The countdown scene and the weather card both fill their row height. */
+  #dashboard-view .dash-widget[data-dashboard-widget="countdown"],
+  #dashboard-view .dash-widget[data-dashboard-widget="weather"] {
     display: flex;
     flex-direction: column;
   }
-  #dashboard-view .dashboard-board.is-masonry .dash-widget[data-dashboard-widget="countdown"] > #countdown-scene,
-  #dashboard-view .dashboard-board.is-masonry .dash-widget[data-dashboard-widget="weather"] > .card {
+  #dashboard-view .dash-widget[data-dashboard-widget="countdown"] > #countdown-scene,
+  #dashboard-view .dash-widget[data-dashboard-widget="weather"] > .card {
     flex: 1 1 auto;
     height: 100%;
     min-height: 0;

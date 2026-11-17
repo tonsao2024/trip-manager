@@ -1,6 +1,5 @@
 import { bindMoneyInputs } from './utils/moneyInput.js';
 import { DASHBOARD_WIDGETS, DASHBOARD_WIDGET_KEYS, normalizeWidgetOrder, normalizeHiddenWidgets } from './dashboard/widgets.js';
-import { packDashboard } from './dashboard/pack.js';
 import { ideaCategoryId, placeCategoryLabel, placeCategoryColor, placeCategoryIcon } from './utils/categories.js';
 import { attachMapExpand } from './maps/index.js';
 import { expenseUpdateForCost } from './utils/reservations.js';
@@ -3899,80 +3898,15 @@ async function renderDashboard(params) {
   let dashboardLayoutEditing = false;
   let dashboardLayoutSaving = false;
   let dashboardSortable = null;
-  /* v39 — a packed, balanced board.
-     A two-column CSS grid gives every card in a row the height of the tallest
-     one, so a short card (a booking list with one row) left a tall empty
-     rectangle under it while its neighbour ran on — the wasted space the owner
-     kept reporting. Each card is now measured and packed into the column that
-     balances the band (see `src/js/dashboard/pack.js`, unit-tested), and the CSS
-     is a 4px-row grid that accepts those positions. The DOM keeps the saved
-     order, so Arrange mode, the keyboard and the shared `dashboardLayout`
-     document are untouched. */
-  let dashboardResizeObserver = null;
-  let dashboardReflowFrame = 0;
-  const layoutDashboardBoard = () => {
-    if (!dashboardBoard) return;
-    const boardStyle = getComputedStyle(dashboardBoard);
-    // Implicit grid tracks from the previous desktop placement can remain in
-    // computed gridTemplateColumns after resizing to mobile. Use the same
-    // breakpoint as CSS rather than counting those stale tracks.
-    const wideBoard = window.matchMedia('(min-width: 761px)').matches;
-    // In Arrange mode the board goes back to a plain flow: dragging a card has
-    // to move the cards around it, not leave them pinned by measured positions.
-    const masonry = wideBoard && !dashboardLayoutEditing;
-    dashboardBoard.classList.toggle('is-masonry', masonry);
-    // the row gap IS the gutter: every card's span already includes one gap
-    dashboardBoard.style.rowGap = masonry ? '0px' : '';
-    const widgets = [...dashboardBoard.querySelectorAll(':scope > [data-dashboard-widget]')]
-      .filter(el => !el.classList.contains('is-hidden'));
-    const addTile = document.getElementById('dash-add-tile');
-    if (!masonry) {
-      for (const el of widgets) { el.style.gridColumn = ''; el.style.gridRow = ''; }
-      if (addTile) addTile.style.gridRow = '';
-      return;
-    }
-    // Measure at the width each card will really have: reset them to one column
-    // (a full-width card measured inside a column is too short).
-    for (const el of widgets) {
-      el.style.gridColumn = el.classList.contains('dash-widget--full') ? '1 / -1' : '1';
-      el.style.gridRow = 'auto';
-    }
-    const placed = packDashboard(widgets.map(el => ({
-      key: el.dataset.dashboardWidget,
-      full: el.classList.contains('dash-widget--full'),
-      height: el.getBoundingClientRect().height
-    })), { gutter: parseFloat(boardStyle.columnGap) || 14 });
-    const byKey = new Map(placed.map(p => [p.key, p]));
-    // Weather card matches countdown height on desktop when they share a row
-    if (masonry) {
-      const cd = byKey.get('countdown');
-      const wx = byKey.get('weather');
-      if (cd && wx && cd.column && wx.column && cd.column !== wx.column && cd.row === wx.row) {
-        const maxSpan = Math.max(cd.span, wx.span);
-        cd.span = maxSpan;
-        wx.span = maxSpan;
-      }
-    }
-    for (const el of widgets) {
-      const slot = byKey.get(el.dataset.dashboardWidget);
-      if (!slot) continue;
-      el.style.gridColumn = slot.column ? String(slot.column) : '1 / -1';
-      el.style.gridRow = `${slot.row} / span ${slot.span}`;
-    }
-    // Auto-placement ignores explicitly positioned grid items and could put the
-    // add button on top of a card. Anchor it after the last packed row instead.
-    if (addTile) {
-      const lastRow = placed.reduce((end, slot) => Math.max(end, slot.row + slot.span), 1);
-      addTile.style.gridRow = `${lastRow} / span ${Math.ceil(52 / 4)}`;
-    }
-  };
-  const scheduleDashboardLayout = () => {
-    if (dashboardReflowFrame) return;
-    dashboardReflowFrame = requestAnimationFrame(() => {
-      dashboardReflowFrame = 0;
-      try { layoutDashboardBoard(); } catch (e) { console.warn('dashboard layout', e); }
-    });
-  };
+  /* v42 — cards pair into rows again.
+     The owner: “การ์ดสองการ์ด … มีความสูงไม่เท่ากัน มองแล้วไม่เป็นระเบียบ”.
+     v39 measured every card and packed it into whichever column was shorter, so
+     two cards side by side ended at different heights. The board is a plain
+     two-column grid again (flat.css): each row is as tall as its tallest card
+     and the neighbour stretches to match, so a pair shares one top and one
+     bottom. Full-width cards take a row of their own, and the saved order still
+     decides which cards pair up — so Arrange mode and the shared
+     `dashboardLayout` document are untouched. */
   const applyDashboardOrder = (raw) => {
     if (!dashboardBoard) return;
     const order = normalizeDashboardOrder(raw);
@@ -3983,7 +3917,6 @@ async function renderDashboard(params) {
     // the “เพิ่มการ์ด” tile always stays after the cards
     const addTile = document.getElementById('dash-add-tile');
     if (addTile) dashboardBoard.appendChild(addTile);
-    scheduleDashboardLayout();
   };
   const paintDashboardLayoutControls = () => {
     document.getElementById('dashboard-view')?.classList.toggle('dashboard-layout-editing', dashboardLayoutEditing);
@@ -3998,27 +3931,6 @@ async function renderDashboard(params) {
     queueIcons();
   };
   applyDashboardOrder(lastDashboardOrder);
-
-  /* Keep the packed layout true: a card that grows (a booking arrives, a list
-     fills, a photo loads, the countdown changes height) re-packs its column, and
-     a phone↔laptop resize switches between one and two columns. */
-  if (typeof ResizeObserver === 'function' && dashboardBoard) {
-    dashboardResizeObserver = new ResizeObserver(() => scheduleDashboardLayout());
-    for (const card of dashboardBoard.querySelectorAll(':scope > [data-dashboard-widget]')) dashboardResizeObserver.observe(card);
-    window.addEventListener('resize', scheduleDashboardLayout, { passive: true });
-    document.addEventListener('routechange', () => {
-      dashboardResizeObserver?.disconnect();
-      dashboardResizeObserver = null;
-      window.removeEventListener('resize', scheduleDashboardLayout);
-      if (dashboardReflowFrame) cancelAnimationFrame(dashboardReflowFrame);
-      dashboardReflowFrame = 0;
-    }, { once: true });
-  }
-  // The board paints its data AFTER this function returns, so re-pack once the
-  // first write lands (and once the web fonts settle the row heights).
-  setTimeout(scheduleDashboardLayout, 120);
-  setTimeout(scheduleDashboardLayout, 600);
-  if (document.fonts?.ready) document.fonts.ready.then(scheduleDashboardLayout).catch(() => {});
 
   async function saveDashboardOrder(order) {
     const next = normalizeDashboardOrder(order);
@@ -4043,7 +3955,6 @@ async function renderDashboard(params) {
   async function setDashboardLayoutEditing(enabled) {
     dashboardLayoutEditing = Boolean(enabled);
     paintDashboardLayoutControls();
-    scheduleDashboardLayout();
     if (!dashboardLayoutEditing) {
       try { dashboardSortable?.destroy(); } catch {}
       dashboardSortable = null;
@@ -4092,7 +4003,6 @@ async function renderDashboard(params) {
       const count = tile.querySelector('[data-add-count]');
       if (count) count.textContent = String(dashboardHidden.size);
     }
-    scheduleDashboardLayout();
   };
   // Each card's drag bar gets a × (visible in Arrange mode) that hides that card.
   dashboardBoard?.querySelectorAll('[data-dashboard-widget]').forEach(section => {
