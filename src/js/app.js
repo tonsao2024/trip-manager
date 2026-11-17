@@ -8566,18 +8566,22 @@ function mountExpenseForm({
       + (selected && !cards.some(c => c.name === selected) ? `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}</option>` : '');
   }
 
-  /** The second line of a payer row: how that person paid, and the card if it was a card. */
-  function payerPayLineHtml(m) {
+  /** The "how paid" select of a payer row — sits in its own labelled field so it
+      always spans the full width of that field (the card picker, when shown,
+      drops to a full-width row below the two fields). */
+  function payerMethodSelectHtml(m) {
     if (!payerMethods[m.id]) payerMethods[m.id] = $('ex-payment')?.value || 'cash';
     const pm = payerMethods[m.id];
-    return `<div class="payer-pay-line">
-      <select class="input" data-payer-method="${escapeHtml(m.id)}" aria-label="${escapeHtml(m.displayName)} ${tx('วิธีจ่าย', 'How paid')}">
+    return `<select class="input" data-payer-method="${escapeHtml(m.id)}" aria-label="${escapeHtml(m.displayName)} ${tx('วิธีจ่าย', 'How paid')}">
         <option value="cash" ${pm === 'cash' ? 'selected' : ''}>${tx('เงินสด', 'Cash')}</option>
         <option value="card" ${pm === 'card' ? 'selected' : ''}>${tx('บัตรเครดิต', 'Card')}</option>
         <option value="transfer" ${pm === 'transfer' ? 'selected' : ''}>${tx('โอนเงิน', 'Transfer')}</option>
-      </select>
-      <select class="input" data-payer-card="${escapeHtml(m.id)}" aria-label="${escapeHtml(m.displayName)} ${tx('บัตร', 'Card')}" style="${pm === 'card' ? '' : 'display:none'}">${payerCardOptionsHtml(payerCards[m.id] || '')}</select>
-    </div>`;
+      </select>`;
+  }
+
+  function payerCardSelectHtml(m) {
+    const pm = payerMethods[m.id] || 'cash';
+    return `<select class="input payer-card-select" data-payer-card="${escapeHtml(m.id)}" aria-label="${escapeHtml(m.displayName)} ${tx('บัตร', 'Card')}" style="${pm === 'card' ? '' : 'display:none'}">${payerCardOptionsHtml(payerCards[m.id] || '')}</select>`;
   }
 
   function renderPayers() {
@@ -8585,18 +8589,30 @@ function mountExpenseForm({
     if (!area) return;
     const picked = members.filter(m => selectedPayers.has(m.id));
     const multi = !payerPending && picked.length > 1;
-    const rows = multi ? `
-      <div class="payer-columns"><span>${tx('คนจ่าย','Payer')}</span><span>${tx('กรอกยอด','Typed')}</span><span>${tx('ยอดจ่ายจริง','Paid')}</span></div>
-      ${picked.map(m => `
+    const rows = multi ? picked.map(m => `
         <div class="payer-row" data-payer-row="${m.id}">
-          <span class="payer-name">
-            <span class="avatar" style="${avatarStyle(m.color)};width:26px;height:26px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
-            <span class="truncate text-xs font-medium" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
-          </span>
-          <input class="input money-input" type="text" inputmode="decimal" data-payment="${m.id}" aria-label="${escapeHtml(m.displayName)} ${tx('ยอดที่จ่าย','Amount paid')}" value="${escapeHtml(payerAmounts[m.id] || '')}" placeholder="0.00">
-          <span class="payer-final" data-payer-final="${m.id}">—</span>
-          ${payerPayLineHtml(m)}
-        </div>`).join('')}` : '';
+          <div class="payer-row-head">
+            <span class="payer-name">
+              <span class="avatar" style="${avatarStyle(m.color)};width:28px;height:28px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>
+              <span class="truncate text-sm font-medium" title="${escapeHtml(m.displayName)}">${escapeHtml(m.displayName)}</span>
+            </span>
+            <span class="payer-final-wrap">
+              <span class="payer-final-label">${tx('ยอดจ่ายจริง','Paid')}</span>
+              <span class="payer-final" data-payer-final="${m.id}">—</span>
+            </span>
+          </div>
+          <div class="payer-row-fields">
+            <label class="payer-field">
+              <span class="payer-field-label">${tx('กรอกยอด','Typed')}</span>
+              <input class="input money-input" type="text" inputmode="decimal" data-payment="${m.id}" aria-label="${escapeHtml(m.displayName)} ${tx('ยอดที่จ่าย','Amount paid')}" value="${escapeHtml(payerAmounts[m.id] || '')}" placeholder="0.00">
+            </label>
+            <label class="payer-field">
+              <span class="payer-field-label">${tx('วิธีจ่าย','How paid')}</span>
+              ${payerMethodSelectHtml(m)}
+            </label>
+          </div>
+          ${payerCardSelectHtml(m)}
+        </div>`).join('') : '';
     area.innerHTML = `<p class="input-hint">${payerPending
       ? tx('ยังไม่มีคนรับผิดชอบจ่าย — เลือกผู้จ่ายได้ภายหลัง','No one has volunteered to pay yet — assign a payer later.')
       : tx('เลือกคนจ่ายได้หลายคน • กรอกยอดของคนแรกที่จ่าย ระบบจะคำนวณส่วนที่เหลือให้คนที่ยังว่างอัตโนมัติ','Pick several payers • type the first payer’s amount and the rest is worked out for the blank payers.')}</p>${rows}<div id="payer-total-hint" aria-live="polite"></div>`;
