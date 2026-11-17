@@ -1,6 +1,7 @@
 // Unit tests — the day-schedule repair (continuous times, fixed flight/hotel anchors).
 import {
-  zonedDateTime, chainDaySchedule, anchorDayEnd, planTripSchedule, scheduleUpdates, DEFAULT_DAY_START
+  zonedDateTime, chainDaySchedule, anchorDayEnd, planTripSchedule, scheduleUpdates, DEFAULT_DAY_START,
+  planDurationFills, defaultVisitMinutes, estimateTravelMinutes
 } from '../../src/js/itinerary/scheduleRepair.js';
 import { dayjs } from '../../src/js/utils/date.js';
 
@@ -116,4 +117,50 @@ export function testTimezoneConstruction() {
   assert(+zonedDateTime('2026-01-16', '07:45', 'Asia/Tokyo') === Date.parse('2026-01-15T22:45:00Z'), 'Tokyo is UTC+9');
   const minutes = (zonedDateTime('2026-01-16', '07:45', 'Asia/Tokyo') - zonedDateTime('2026-01-16', '00:25', 'Asia/Ho_Chi_Minh')) / 60000;
   assert(minutes === 320, `the connection takes 5h20m (got ${minutes})`);
+}
+
+export function testDurationFillsOnlyEmptyFields() {
+  const items = [
+    { id: 'a', date: '2026-01-18', order: 0, category: 'sightseeing', durationMinutes: 0, travelToNextMinutes: 0, coordinates: '35.5000,138.7600' },
+    { id: 'b', date: '2026-01-18', order: 1, category: 'food', durationMinutes: 45, travelToNextMinutes: 0, coordinates: '35.5100,138.7700' },
+    { id: 'c', date: '2026-01-18', order: 2, category: 'general', durationMinutes: 0, travelToNextMinutes: 0, coordinates: '' }
+  ];
+  const fills = planDurationFills(items);
+  assert(fills.get('a').durationMinutes === 90, 'an empty sightseeing stop gets 90 minutes');
+  assert(!fills.get('b').durationMinutes, 'a typed 45-minute lunch is never replaced');
+  assert(fills.get('c').durationMinutes === 60, 'a general stop gets 60 minutes');
+  assert(fills.get('a').travelToNextMinutes > 0, 'the leg to the next stop is filled');
+  assert(fills.get('b').travelToNextMinutes === 10, 'no coordinates → a conservative 10-minute leg');
+  assert(!fills.has('c') || fills.get('c').travelToNextMinutes == null, 'the last stop has no leg to fill');
+}
+
+export function testTitleHintsChooseVisitLength() {
+  assert(defaultVisitMinutes({ title: 'เช็คอิน The OneFive', category: 'stay' }) === 30, 'check-in is a short stop');
+  assert(defaultVisitMinutes({ title: 'วัดเซ็นโซจิ', category: 'general' }) === 60, 'a temple gets an hour');
+  assert(defaultVisitMinutes({ title: 'Ichiran Ramen', category: 'general' }) === 60, 'a meal gets an hour');
+  assert(defaultVisitMinutes({ title: 'ดองกี้ ชิบูย่า', category: 'shopping' }) === 90, 'shopping gets 90 minutes');
+}
+
+export function testTravelEstimateScalesWithDistance() {
+  const at = (lat, lng) => ({ coordinates: `${lat},${lng}` });
+  const same = estimateTravelMinutes(at(35.5, 139.7), at(35.5, 139.7));
+  assert(same === 0, 'the same pin needs no travel time');
+  const walk = estimateTravelMinutes(at(35.5, 139.7), at(35.505, 139.7)); // ~0.56 km
+  assert(walk >= 8 && walk <= 20, `a short hop is a walk (${walk} min)`);
+  const city = estimateTravelMinutes(at(35.5, 139.7), at(35.56, 139.7)); // ~6.7 km
+  assert(city >= 20 && city <= 45, `a cross-town hop takes city transport (${city} min)`);
+  assert(estimateTravelMinutes({}, {}) === 10, 'unknown coordinates fall back to 10 minutes');
+}
+
+export function testFilledDurationsProduceAContinuousDay() {
+  const items = [
+    { id: 'a', date: '2026-01-18', order: 0, category: 'sightseeing', durationMinutes: 0, travelToNextMinutes: 0, coordinates: '35.5000,138.7600' },
+    { id: 'b', date: '2026-01-18', order: 1, category: 'food', durationMinutes: 0, travelToNextMinutes: 0, coordinates: '35.5100,138.7700' }
+  ];
+  const fills = planDurationFills(items);
+  const enriched = items.map(i => ({ ...i, ...(fills.get(i.id) || {}) }));
+  const [day] = planTripSchedule(enriched, { timezone: 'Asia/Tokyo' });
+  assert(hhmm(day.items[0].startAt) === '07:00', 'the day still starts at 07:00');
+  assert(+day.items[0].endAt === +day.items[0].startAt + 90 * 60000, 'the first stop lasts its filled 90 minutes');
+  assert(+day.items[1].startAt === +day.items[0].endAt + day.items[0].travelToNextMinutes * 60000, 'the next stop starts after the filled travel time');
 }

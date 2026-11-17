@@ -21,9 +21,83 @@
  * Pure functions only (no Firestore) so the logic is unit-tested in Node.
  */
 import { dayjs } from '../utils/date.js';
+import { haversineKm, hasCoords } from '../utils/route.js';
 
 /** Every sightseeing day leaves the hotel at 07:00 unless it has its own anchor. */
 export const DEFAULT_DAY_START = '07:00';
+
+/**
+ * Sensible visit length when a place has none yet (`durationMinutes` empty/0).
+ * Only EVER fills an empty field — a duration the owner typed stays untouched.
+ */
+export const DEFAULT_VISIT_MINUTES = Object.freeze({
+  sightseeing: 90,
+  food: 60,
+  transport: 30,
+  stay: 60,
+  activity: 90,
+  shopping: 60,
+  general: 60
+});
+
+const TITLE_HINTS = [
+  [/เช็คอิน|เช็คเอาท์|check.?in|check.?out/i, 30],
+  [/วัด|ศาลเจ้า|temple|shrine|pagoda/i, 60],
+  [/มื้อ|อาหาร|breakfast|lunch|dinner|ราเมง|ramen|cafe|คาเฟ่|coffee/i, 60],
+  [/ช้อป|shopping|ดองกี้|don quijote|donki/i, 90]
+];
+
+/** Visit minutes for a place without one: title hint first, then its category. */
+export function defaultVisitMinutes(item = {}) {
+  const text = `${item.title || ''} ${item.description || ''}`;
+  for (const [re, minutes] of TITLE_HINTS) if (re.test(text)) return minutes;
+  return DEFAULT_VISIT_MINUTES[item.category] || DEFAULT_VISIT_MINUTES.general;
+}
+
+/**
+ * Rough door-to-door travel time between two stops, from their coordinates.
+ * Walk for short hops, city transport for medium ones, longer rides beyond.
+ * No coordinates → 10 min (a conservative same-day connection).
+ */
+export function estimateTravelMinutes(from, to) {
+  if (!hasCoords(from) || !hasCoords(to)) return 10;
+  const km = haversineKm(from.coordinates, to.coordinates);
+  if (!(km > 0.05)) return 0;
+  if (km <= 1.2) return Math.max(3, Math.round((km / 4.5) * 60) + 2);
+  if (km <= 5) return Math.round((km / 15) * 60) + 8;
+  return Math.min(180, Math.round((km / 30) * 60) + 10);
+}
+
+/**
+ * Which existing fields need filling for a usable plan — visit length
+ * (`durationMinutes`) and the leg to the next stop (`travelToNextMinutes`).
+ * Fields that already hold a positive value are never changed.
+ *
+ * @returns {Map<string, { durationMinutes?: number, travelToNextMinutes?: number }>}
+ */
+export function planDurationFills(items = []) {
+  const byDate = new Map();
+  for (const item of items) {
+    if (!item?.date) continue;
+    if (!byDate.has(item.date)) byDate.set(item.date, []);
+    byDate.get(item.date).push(item);
+  }
+  const fills = new Map();
+  const put = (id, patch) => fills.set(id, { ...(fills.get(id) || {}), ...patch });
+  for (const dayItems of byDate.values()) {
+    const ordered = sortDayItems(dayItems);
+    ordered.forEach((item, i) => {
+      if (!(Number(item.durationMinutes) > 0)) {
+        put(item.id, { durationMinutes: defaultVisitMinutes(item) });
+      }
+      if (i < ordered.length - 1 && !(Number(item.travelToNextMinutes) > 0)) {
+        const minutes = estimateTravelMinutes(item, ordered[i + 1]);
+        if (minutes > 0) put(item.id, { travelToNextMinutes: minutes });
+      }
+    });
+  }
+  return fills;
+}
 
 /** A “YYYY-MM-DD” date + “HH:mm” time read in a specific IANA timezone → Date. */
 export function zonedDateTime(dateStr, time, timezone = 'Asia/Bangkok') {

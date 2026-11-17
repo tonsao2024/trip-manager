@@ -10,7 +10,7 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > continue to use Firestore + **FCM/GitHub Actions**, not Cloud Functions — see
 > [ตั้งค่า Push](docs/PUSH-ACTIONS.md). Push is best-effort (normally every 30 minutes).
 
-> **v40 — 17 Nov 2026, แผนการเดินทาง: เวลาต่อเนื่อง + เมนู “เพิ่มเติม” กดได้จริง.** Four fixes.
+> **v40 — 17 Nov 2026, แผนการเดินทาง: เวลาต่อเนื่อง + เมนู “เพิ่มเติม” กดได้จริง.** Five fixes.
 > **(1) เวลาไม่ต่อเนื่อง:** saving a place used to update only that card, so the rest of the day kept
 > stale times (a 07:00 start followed by 10:00). Every day is now one chain — `start(next) = end(prev)
 > + travel` — and saving a stop re-chains the following stops while **keeping the visit order**
@@ -24,6 +24,11 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > each end prints in its own zone. **(4) เมนูโดนกรอบบัง:** flat.css (loaded last) re-declared
 > `.card { overflow: hidden }`, which clipped the itinerary card's 3-dot menu and blocked its items.
 > `.itin-card.card { overflow: visible }` restores the menu at every breakpoint.
+> **(5) เติมระยะเวลาให้แผนใช้งานได้จริง:** the repair also fills the two fields that already exist —
+> `durationMinutes` (visit length: category default, 90 min sightseeing/activity, 60 food/shopping/general,
+> 30 check-in) and `travelToNextMinutes` (distance-based: walk ≤1.2 km, city transport ≤5 km, longer rides
+> beyond; 10 min when a stop has no pin) — **only where the field is empty**; anything typed by the owner is
+> kept. The day is then chained with those values, so every stop has a real start, an end and a leg to the next.
 >
 > **v39 — 16 Nov 2026, แดชบอร์ด: จัดวางให้แน่นและสมดุล (dashboard balance pass).** Three complaints,
 > three fixes, no new card and no new colour. **(1) ปกไม่สมดุล:** the trip cover was a full-width 16:5

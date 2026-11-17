@@ -258,6 +258,8 @@ every one of them is exported as a calendar event by the `.ics` writer in `src/j
   `startAt(next) = endAt(prev) + travelToNextMinutes`. Saving a place re-chains the
   following stops in the same order (`rescheduleDay`); the 07:00 day start and the
   flight/check-in anchors are applied by `itinerary/scheduleRepair.js`.
+  The Jan-trip repair also fills `durationMinutes` and `travelToNextMinutes` where they
+  are empty (never overwriting typed values), so the plan has usable visit/travel times.
 - `estimateAmount` is in **major units** (converted with the trip currency's decimals).
 - `estimatePayerPending` (v13): `true` → nobody fronts this estimate yet; the synced expense
   gets `payerId: null`, `payerPending: true` and stays out of every balance until a payer is

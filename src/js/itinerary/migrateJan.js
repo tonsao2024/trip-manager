@@ -24,7 +24,9 @@
 import { db, auth, serverTimestamp } from '../firebase.js';
 import { collection, doc, addDoc, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { fetchItinerary } from './index.js';
-import { planTripSchedule, zonedDateTime, sameInstant, DEFAULT_DAY_START } from './scheduleRepair.js';
+import {
+  planTripSchedule, planDurationFills, zonedDateTime, sameInstant, DEFAULT_DAY_START
+} from './scheduleRepair.js';
 
 export const JAN_TRIP_DATES = ['2026-01-15', '2026-01-16', '2026-01-22'];
 
@@ -212,13 +214,24 @@ export async function repairJanItinerary(tripId, { userId, timezone = 'Asia/Toky
     throw new Error('ทริปนี้ไม่ใช่แผนญี่ปุ่น 15–22 ม.ค. 2026 (ไม่พบรายการในช่วงนั้น)');
   }
 
-  const report = { created: 0, days: 0, updated: 0, flights: [], hotel: null };
+  const report = { created: 0, days: 0, updated: 0, filledDurations: 0, filledTravel: 0, flights: [], hotel: null };
   const flightItems = {};
   for (const spec of FLIGHTS) {
     const item = await ensureFlight(tripId, items, spec, uid, report);
     flightItems[spec.date] = item.startAt;
   }
   const hotelItem = await ensureHotel(tripId, items, uid, report);
+
+  // Fill the two fields the plan already has — visit length and the leg to the
+  // next stop — but only where they are empty. Typed values are never replaced.
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const fills = planDurationFills(items);
+  for (const [id, patch] of fills) {
+    const target = byId.get(id);
+    if (target) Object.assign(target, patch);
+  }
+  report.filledDurations = [...fills.values()].filter((p) => p.durationMinutes != null).length;
+  report.filledTravel = [...fills.values()].filter((p) => p.travelToNextMinutes != null).length;
 
   const startOverrides = {
     '2026-01-15': flightItems['2026-01-15'],
@@ -247,8 +260,10 @@ export async function repairJanItinerary(tripId, { userId, timezone = 'Asia/Toky
     const current = patches.get(report.hotel.id) || {};
     patches.set(report.hotel.id, { ...current, ...report.hotel.patch });
   }
+  for (const [id, patch] of fills) {
+    patches.set(id, { ...(patches.get(id) || {}), ...patch });
+  }
 
-  const byId = new Map(items.map((it) => [it.id, it]));
   let batch = writeBatch(db);
   let pending = 0;
   for (const day of days) {

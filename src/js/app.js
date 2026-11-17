@@ -12235,8 +12235,8 @@ async function runScheduleRepair(tripId, timezone) {
     title: th('จัดเวลาแผนเดินทางใหม่?','Repair the schedule?'),
     message: th('ระบบจะปรับเวลาเริ่ม/สิ้นสุดของแต่ละสถานที่ให้ต่อเนื่องกัน ลำดับสถานที่ไม่เปลี่ยน',
       'Start and end times will be re-chained. The visit order does not change.'),
-    detail: th('วันที่ 15 ม.ค. เริ่ม 20:50 • 16 ม.ค. ถึง 07:45 • ทุกวันออกจากที่พัก 07:00 • 22 ม.ค. เช็คอิน 21:00',
-      '15 Jan 20:50 • 16 Jan arrives 07:45 • every day starts 07:00 • 22 Jan check-in 21:00'),
+    detail: th('วันที่ 15 ม.ค. เริ่ม 20:50 • 16 ม.ค. ถึง 07:45 • ทุกวันออกจากที่พัก 07:00 • 22 ม.ค. เช็คอิน 21:00 • เติมระยะเวลาเที่ยวและเวลาเดินทางให้ช่องที่ว่าง',
+      '15 Jan 20:50 • 16 Jan arrives 07:45 • every day starts 07:00 • 22 Jan check-in 21:00 • empty visit/travel durations filled'),
     confirmText: th('จัดเวลาเลย','Repair now'),
     icon: 'clock'
   });
@@ -12524,8 +12524,8 @@ async function renderSettings(params) {
       ${isJan2026Plan ? `<div class="card p-4 space-y-3" id="schedule-repair-card" data-settings-section="advanced">
         <h3 class="font-semibold flex items-center gap-2">${th('จัดเวลาแผนเดินทาง','Repair the schedule')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">
-          ${th('ตั้งเวลาเริ่มเที่ยวแต่ละวันเป็น 07:00 และไล่เวลาสถานที่ถัดไปให้ต่อเนื่องกัน (ระยะเวลา + เวลาเดินทาง) โดยไม่สลับลำดับสถานที่ • ตรึงเที่ยวบิน 15 ม.ค. 20:50–22:40 / 16 ม.ค. 00:25–07:45 และเช็คอิน 22 ม.ค. 21:00',
-               'Starts every sightseeing day at 07:00 and chains the following stops (duration + travel) without reordering anything. Pins the 15 Jan 20:50–22:40 and 16 Jan 00:25–07:45 flights and the 22 Jan 21:00 check-in.')}
+          ${th('ตั้งเวลาเริ่มเที่ยวแต่ละวันเป็น 07:00 ไล่เวลาสถานที่ถัดไปให้ต่อเนื่องกัน (ระยะเวลา + เวลาเดินทาง) โดยไม่สลับลำดับสถานที่ • เติมระยะเวลาเที่ยว/เดินทางในช่องเดิมให้สถานที่ที่ยังว่างอยู่ (ไม่ทับค่าที่ตั้งไว้) • ตรึงเที่ยวบิน 15 ม.ค. 20:50–22:40 / 16 ม.ค. 00:25–07:45 และเช็คอิน 22 ม.ค. 21:00',
+               'Starts every sightseeing day at 07:00 and chains the following stops (duration + travel) without reordering anything. Fills empty visit/travel durations in the existing fields (typed values are kept). Pins the 15 Jan 20:50–22:40 and 16 Jan 00:25–07:45 flights and the 22 Jan 21:00 check-in.')}
         </p>
         <button id="run-schedule-repair" type="button" class="btn btn-secondary w-full" ${perms.canEditItinerary ? '' : 'disabled'}>
           ${icon('clock', 'w-4 h-4')} ${th('จัดเวลาให้ต่อเนื่อง','Make the times continuous')}
@@ -13119,8 +13119,8 @@ async function renderSettings(params) {
       const report = await runScheduleRepair(tripId, trip?.timezone);
       if (report && out) {
         out.innerHTML = `${icon('circle-check', 'w-3.5 h-3.5')} ${th(
-          `อัปเดต ${report.updated} รายการ • เพิ่มใหม่ ${report.created} • ครอบคลุม ${report.days} วัน`,
-          `Updated ${report.updated} items • created ${report.created} • ${report.days} days`) }`;
+          `อัปเดต ${report.updated} รายการ • เพิ่มใหม่ ${report.created} • เติมเวลาเที่ยว ${report.filledDurations || 0} • เติมเวลาเดินทาง ${report.filledTravel || 0} • ครอบคลุม ${report.days} วัน`,
+          `Updated ${report.updated} items • created ${report.created} • visit times filled ${report.filledDurations || 0} • travel times filled ${report.filledTravel || 0} • ${report.days} days`) }`;
         queueIcons();
       }
     } finally {
