@@ -1277,23 +1277,21 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 .itin-layout.map-hidden { grid-template-columns: minmax(0, 1fr); }
 .itin-col-days { min-width: 0; }
 .itin-col-map { min-width: 0; align-self: start; position: sticky; top: calc(var(--header-h) + 10px); max-height: calc(100dvh - var(--header-h) - 16px); }
-/* v42 — on a computer the map frame is pinned to the screen (owner request:
-   “fix ไปกับหน้าจอ ไม่ขยับขึ้นลงตาม scrolling”). The card keeps all of its
-   Leaflet controls, because it stays the same node — only its position changes.
-   The column keeps its measured height so the day list cannot slide under it.
-   Phones are untouched (the rule lives inside the desktop breakpoint). */
+/* v42 — on a computer the map frame stays on screen while the plan scrolls
+   (owner request: “fix ไปกับหน้าจอ ไม่ขยับขึ้นลงตาม scrolling”; follow-up:
+   “ต้องไม่บัง ไม่เหลื่อม และปุ่มอื่นต้องกดได้”).
+   The card is sticky *inside* its column: the column stretches to the full
+   height of the day list, so the card travels with the viewport but can never
+   leave its column — it cannot cover the toolbar above the plan, the day list
+   beside it, or the footer below it. Sticky keeps the card in flow, so the page
+   layout (and every button) stays exactly where it was. Phones are untouched. */
 @media (min-width: 1024px) {
-  .itin-col-map { position: static; max-height: none; }
-  .itin-col-map #map-card[data-map-pinned="1"] {
-    position: fixed;
+  .itin-col-map { position: static; max-height: none; align-self: stretch; }
+  .itin-col-map > #map-card {
+    position: sticky;
     top: calc(var(--header-h) + 12px);
-    left: var(--map-pin-left);
-    width: var(--map-pin-width);
-    margin: 0;
-    z-index: 6;
-    box-shadow: var(--elev-2);
+    z-index: 5;
   }
-  .itin-col-map:has(#map-card[data-map-pinned="1"]) { position: static; }
 }
 
 /* ------------------------------------------------------------------ *

@@ -5404,7 +5404,6 @@ async function renderItinerary(params) {
       btn.className = mapVisible ? 'btn btn-secondary btn-sm is-active' : 'btn btn-secondary btn-sm';
       btn.setAttribute('aria-pressed', String(mapVisible));
     }
-    pinDesktopMapCard();
     if (mapVisible) {
       setTimeout(async () => {
         fitMapToViewport();
@@ -5509,39 +5508,7 @@ async function renderItinerary(params) {
       : Math.round(Math.min(Math.max(window.innerHeight - headerHeight - 156, 320), 760));
     mapEl.style.setProperty('--itin-map-h', `${h}px`);
     import('./maps/index.js').then(({ refreshMapSize }) => refreshMapSize('map')).catch(() => {});
-    pinDesktopMapCard();
     if (refit && visibleItems.some(i => i.coordinates)) refreshMap(visibleItems, { fit: true });
-  }
-
-  /**
-   * v42 (owner request): “กรอบแผนที่ fix ไปกับหน้าจอตอนดูบนคอม”.
-   *
-   * On a computer the map card is pinned to the viewport while the day list
-   * scrolls. `position: sticky` could not do this: the grid row was usually only
-   * as tall as the card itself, so there was no room to travel and the frame
-   * drifted up with the page. A pinned card also keeps every Leaflet control
-   * (zoom, layers, expand) inside the same container, so nothing is lost.
-   * Phones keep the normal in-flow map above the plan.
-   */
-  function pinDesktopMapCard() {
-    const card = document.getElementById('map-card');
-    const col = document.getElementById('itin-layout')?.querySelector('.itin-col-map');
-    if (!card || !col) return;
-    // Reset first so the column is measured in its natural, unpinned layout.
-    card.removeAttribute('data-map-pinned');
-    card.style.removeProperty('--map-pin-left');
-    card.style.removeProperty('--map-pin-width');
-    col.style.removeProperty('min-height');
-    const desktop = window.matchMedia('(min-width: 1024px)').matches;
-    if (!desktop || !mapVisible || card.classList.contains('hidden')) return;
-    const rect = col.getBoundingClientRect();
-    const cardHeight = card.offsetHeight;
-    if (rect.width < 220 || cardHeight < 120) return;
-    card.style.setProperty('--map-pin-left', `${Math.round(rect.left)}px`);
-    card.style.setProperty('--map-pin-width', `${Math.round(rect.width)}px`);
-    // Keep the column's own height so the day list never slides under the map.
-    col.style.minHeight = `${cardHeight}px`;
-    card.setAttribute('data-map-pinned', '1');
   }
 
   // Keep the map fitted while the window/orientation changes (debounced).
@@ -5552,9 +5519,6 @@ async function renderItinerary(params) {
   };
   window.addEventListener('resize', onViewportChange);
   window.addEventListener('orientationchange', onViewportChange);
-  // Re-measure once the page has settled (web fonts land after first paint and
-  // change the card's height by a pixel or two).
-  requestAnimationFrame(() => requestAnimationFrame(pinDesktopMapCard));
   const stopViewportWatch = () => {
     clearTimeout(mapFitTimer);
     window.removeEventListener('resize', onViewportChange);
