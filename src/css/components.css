@@ -980,6 +980,38 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 .map-tool-btn.is-active:hover { background: var(--surface-2); color: var(--text-strong); border-color: var(--text-secondary); }
 .map-tool-btn svg { width: 14px; height: 14px; }
 .leaflet-control-attribution { font-size: 9px !important; }
+/* Map date bar — only visible when expanded, acts as day switcher from the map */
+.map-date-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  z-index: 650;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 24px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgba(0,0,0,.16);
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.map-date-bar::-webkit-scrollbar { display: none; }
+.map-expanded .map-date-bar { display: flex; }
+.map-date-bar .chip {
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-size: 12px;
+  padding: 6px 10px;
+  min-height: 28px;
+}
+.map-date-bar:empty { display: none !important; }
 .nav-link-btn {
   display: inline-flex;
   align-items: center;

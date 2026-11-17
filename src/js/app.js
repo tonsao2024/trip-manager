@@ -71,7 +71,7 @@ import {
 } from './notifications/push.js';
 import { renderPageScene } from './components/scenes.js';
 import { listNotes, createNote, updateNote, deleteNote, NOTE_COLORS, noteColorHex, setNoteArchived, localArchivedIds } from './notes/index.js';
-import { googleMapsPlaceUrl, googleMapsDirectionsUrl, BASE_LAYERS, setMapLayer, getStoredLayerId, setStoredLayerId, refreshMapLabels, getStoredLabelsVisible, setStoredLabelsVisible } from './maps/index.js';
+import { googleMapsPlaceUrl, googleMapsDirectionsUrl, BASE_LAYERS, setMapLayer, getStoredLayerId, setStoredLayerId, refreshMapLabels, getStoredLabelsVisible, setStoredLabelsVisible, getStoredRailwayVisible, setRailwayOverlay } from './maps/index.js';
 import {
   EXPENSE_CATEGORIES, CATEGORY_ICONS, categoryLabel, categoryIcon, categoryColor,
   ITINERARY_CATEGORIES, ITINERARY_STATUSES, normalizeCategory,
@@ -3933,6 +3933,16 @@ async function renderDashboard(params) {
       height: el.getBoundingClientRect().height
     })), { gutter: parseFloat(boardStyle.columnGap) || 14 });
     const byKey = new Map(placed.map(p => [p.key, p]));
+    // Weather card matches countdown height on desktop when they share a row
+    if (masonry) {
+      const cd = byKey.get('countdown');
+      const wx = byKey.get('weather');
+      if (cd && wx && cd.column && wx.column && cd.column !== wx.column && cd.row === wx.row) {
+        const maxSpan = Math.max(cd.span, wx.span);
+        cd.span = maxSpan;
+        wx.span = maxSpan;
+      }
+    }
     for (const el of widgets) {
       const slot = byKey.get(el.dataset.dashboardWidget);
       if (!slot) continue;
@@ -5154,7 +5164,9 @@ async function renderItinerary(params) {
                 <button type="button" class="map-tool-btn" data-layer="satellite">${icon('satellite', 'w-3.5 h-3.5')} ${th('ดาวเทียม','Satellite')}</button>
                 <button type="button" class="map-tool-btn" data-layer="terrain">${icon('mountain', 'w-3.5 h-3.5')} ${th('ภูมิประเทศ','Terrain')}</button>
                 <button type="button" class="map-tool-btn" id="map-labels-btn" aria-pressed="${getStoredLabelsVisible()}">${icon('tags', 'w-3.5 h-3.5')} ${th('ชื่อสถานที่','Labels')}</button>
+                <button type="button" class="map-tool-btn" id="map-railway-btn" aria-pressed="${getStoredRailwayVisible()}">${icon('train-front', 'w-3.5 h-3.5')} ${th('รถไฟ','Rail')}</button>
               </div>
+              <div id="map-date-bar" class="map-date-bar"></div>
               <div id="map-status" class="map-status" role="status" aria-live="polite"><span class="skeleton" style="width:26px;height:26px;border-radius:50%;"></span> <span>${th('กำลังโหลดแผนที่...','Loading map...')}</span></div>
               <div id="map-empty" class="map-status hidden"><div class="text-center px-4">
                 <div class="row-icon mx-auto mb-2">${icon('map-pin', 'w-5 h-5')}</div>
@@ -5250,6 +5262,37 @@ async function renderItinerary(params) {
         pos.textContent = `${th('วันที่','Day')} ${idx + 1}/${tripDayStrs.length}`;
       }
     }
+    // Keep the expanded-map date bar in sync (same state, same selection)
+    syncMapDateBar();
+  }
+
+  function syncMapDateBar() {
+    const bar = document.getElementById('map-date-bar');
+    if (!bar) return;
+    bar.querySelectorAll('.chip').forEach(c => c.classList.remove('chip-active'));
+    const mActive = showAll
+      ? bar.querySelector('[data-map-date="__all"]')
+      : bar.querySelector(`[data-map-date="${selectedDate}"]`);
+    mActive?.classList.add('chip-active');
+  }
+
+  function renderMapDateBar() {
+    const bar = document.getElementById('map-date-bar');
+    if (!bar) return;
+    bar.innerHTML = tripDays.map(d => {
+      const ds = dayjs(d).format('YYYY-MM-DD');
+      const isActive = ds === selectedDate && !showAll;
+      return `<button data-map-date="${ds}" class="chip ${isActive ? 'chip-active' : ''}">${icon('calendar', 'w-3.5 h-3.5')} ${thaiDate(d, { year: false })}</button>`;
+    }).join('') + `<button data-map-date="__all" class="chip ${showAll ? 'chip-active' : ''}">${icon('layers', 'w-3.5 h-3.5')} ${th('ทั้งหมด','All')}</button>`;
+    bar.querySelectorAll('[data-map-date]').forEach(btn => btn.addEventListener('click', () => {
+      const ds = btn.dataset.mapDate;
+      if (ds === '__all') { showAll = true; }
+      else { showAll = false; selectedDate = ds; }
+      syncDayUi();
+      loadItems();
+    }));
+    queueIcons();
+    syncMapDateBar();
   }
   function stepDay(dir) {
     if (!tripDayStrs.length) return;
@@ -5277,6 +5320,7 @@ async function renderItinerary(params) {
     // (strip scroll only — the page itself must stay at the top on phones).
     setTimeout(() => centerChipInStrip(chipsEl.querySelector('.chip-active'), { smooth: false }), 60);
   }
+  renderMapDateBar();
   syncDayUi();
 
   bind('view-all-btn', 'click', () => {
@@ -5634,6 +5678,12 @@ async function renderItinerary(params) {
       labelsBtn.classList.toggle('is-active', on);
       labelsBtn.setAttribute('aria-pressed', String(on));
     }
+    const railwayBtn = document.getElementById('map-railway-btn');
+    if (railwayBtn) {
+      const on = getStoredRailwayVisible();
+      railwayBtn.classList.toggle('is-active', on);
+      railwayBtn.setAttribute('aria-pressed', String(on));
+    }
   }
   document.querySelectorAll('#map-layer-bar [data-layer]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -5660,6 +5710,20 @@ async function renderItinerary(params) {
     toast.success(next
       ? (lang === 'th' ? 'แสดงชื่อสถานที่บนแผนที่แล้ว' : 'Place names shown on the map')
       : (lang === 'th' ? 'ซ่อนชื่อสถานที่บนแผนที่แล้ว' : 'Place names hidden on the map'));
+  });
+  // Railway overlay (OpenRailwayMap) — shows train/metro lines on top of base map
+  document.getElementById('map-railway-btn')?.addEventListener('click', () => {
+    const next = !getStoredRailwayVisible();
+    setRailwayOverlay('map', next);
+    const railwayBtn = document.getElementById('map-railway-btn');
+    if (railwayBtn) {
+      railwayBtn.classList.toggle('is-active', next);
+      railwayBtn.setAttribute('aria-pressed', String(next));
+    }
+    paintLayerButtons();
+    toast.success(next
+      ? (lang === 'th' ? 'แสดงเส้นทางรถไฟแล้ว' : 'Railway lines shown')
+      : (lang === 'th' ? 'ซ่อนเส้นทางรถไฟแล้ว' : 'Railway lines hidden'));
   });
   paintLayerButtons();
 
