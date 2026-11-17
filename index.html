@@ -18,9 +18,14 @@
       const darkMode = savedMode === 'dark' || (savedMode !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
       if (darkMode) {
         document.documentElement.setAttribute('data-theme', 'dark');
-        document.getElementById('meta-theme-color').setAttribute('content', '#0e0e10');
+        // Same surface tokens.css uses (--app-chrome-color) — the old #0e0e10
+        // painted a navy strip above Google's #292a2d header.
+        document.getElementById('meta-theme-color').setAttribute('content', '#292a2d');
         document.getElementById('meta-apple-status-bar-style').setAttribute('content', 'black-translucent');
       }
+      // Native controls (date picker, select menu, file button, scrollbars)
+      // follow the resolved mode before the first paint.
+      document.documentElement.style.colorScheme = darkMode ? 'dark' : 'light';
     } catch {}
   </script>
   <!-- Appearance preferences (radius / density / depth). Applied before the

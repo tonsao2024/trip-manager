@@ -134,6 +134,13 @@ const TRIP = {
 fsdb.__seed('trips/t1', TRIP);
 fsdb.__seed('trips/t1/members/u1', { displayName: 'สมชาย', username: 'admin', role: 'trip_admin', color: '#8bb89a', status: 'active', permissions: { canEditItinerary: true, canEditExpense: true, canManageMembers: true }, createdAt: now });
 fsdb.__seed('trips/t1/members/u2', { displayName: 'นุ่น', username: 'nun', role: 'member', color: '#e0a17a', status: 'active', permissions: { canEditItinerary: true, canEditExpense: true }, createdAt: now });
+
+// v42.3 — visit statistics (one tiny document per account, plus one per trip).
+const visitAgo = (min) => ({ seconds: Math.floor(Date.now() / 1000) - min * 60, nanoseconds: 0 });
+fsdb.__seed('visitStats/u1', { uid: 'u1', sessions: 5, totalMs: 10800000, lastSeenAt: visitAgo(3), tripIds: ['t1'] });
+fsdb.__seed('visitStats/u1/trips/t1', { tripId: 't1', sessions: 5, ms: 7200000, lastSeenAt: visitAgo(3) });
+fsdb.__seed('visitStats/u2', { uid: 'u2', sessions: 2, totalMs: 600000, lastSeenAt: visitAgo(60 * 24 * 2), tripIds: ['t1'] });
+fsdb.__seed('visitStats/u2/trips/t1', { tripId: 't1', sessions: 2, ms: 600000, lastSeenAt: visitAgo(60 * 24 * 2) });
 fsdb.__seed('trips/t1/itineraryItems/i1', {
   title: 'ทะเลสาบคาวากุจิ', date: TRIP.startDate, startAt: new Date(`${TRIP.startDate}T09:00:00+09:00`),
   durationMinutes: 120, order: 0, category: 'sightseeing', status: 'planned', address: 'Kawaguchiko, Yamanashi',
@@ -2564,17 +2571,27 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   const amounts = qa('.debt-map-amount');
   check(amounts.length === qa('.debt-map-edge').length && amounts.length >= 1,
     `debt map: every transfer carries an amount tag (${amounts.length})`);
-  const labelBoxes = qa('.debt-map-amount-label rect').map(rect => ({
-    left: Number(rect.getAttribute('x')), top: Number(rect.getAttribute('y')),
-    right: Number(rect.getAttribute('x')) + Number(rect.getAttribute('width')),
-    bottom: Number(rect.getAttribute('y')) + Number(rect.getAttribute('height'))
-  }));
+  // v42.1: the amount sits ON its own transfer line inside a
+  // <g transform="translate(x y) rotate(a)">; the rect inside is centred on that
+  // point. jsdom has no layout engine, so the boxes are rebuilt from the real
+  // transform + the rect's own size (the numbers the layout just wrote).
+  const labelBoxes = qa('.debt-map-amount-label').map(g => {
+    const m = /translate\(([-\d.]+)[ ,]+([-\d.]+)\)(?:\s*rotate\(([-\d.]+)\))?/.exec(g.getAttribute('transform') || '');
+    const rect = g.querySelector('rect');
+    if (!m || !rect) return null;
+    const tx = Number(m[1]), ty = Number(m[2]);
+    const rad = (Number(m[3] || 0) * Math.PI) / 180;
+    const hw = Number(rect.getAttribute('width')) / 2, hh = Number(rect.getAttribute('height')) / 2;
+    const cos = Math.abs(Math.cos(rad)), sin = Math.abs(Math.sin(rad));
+    const halfW = cos * hw + sin * hh, halfH = sin * hw + cos * hh;
+    return { left: tx - halfW, right: tx + halfW, top: ty - halfH, bottom: ty + halfH };
+  }).filter(Boolean);
   let labelsDoNotOverlap = true;
   for (let i = 0; i < labelBoxes.length; i++) for (let j = i + 1; j < labelBoxes.length; j++) {
     const a = labelBoxes[i], b = labelBoxes[j];
-    if (!(a.right + 5 <= b.left || b.right + 5 <= a.left || a.bottom + 5 <= b.top || b.bottom + 5 <= a.top)) labelsDoNotOverlap = false;
+    if (!(a.right + 2 <= b.left || b.right + 2 <= a.left || a.bottom + 2 <= b.top || b.bottom + 2 <= a.top)) labelsDoNotOverlap = false;
   }
-  check(labelsDoNotOverlap, 'debt map: amount-tag boxes have guaranteed spacing (no overlap)');
+  check(labelBoxes.length >= 1 && labelsDoNotOverlap, 'debt map: amount-tag boxes have guaranteed spacing (no overlap)');
   // v29 contract: a line’s colour is the RECEIVER’s colour — every edge stroke
   // must equal its receiver node’s fill (lines into the same person share it),
   // while the people themselves keep pairwise-distinct node colours.
@@ -2591,8 +2608,12 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   check(nodes.every(n => n.getAttribute('aria-label')) && q('.debt-map-svg')?.getAttribute('role') === 'group', 'debt map: graph nodes expose full names to assistive technology');
   check(/รับเงิน|จ่ายเงิน|GETS|PAYS/.test(q('#settlement-content')?.textContent || ''), 'debt map: labels spell out who pays / who gets');
   check(!!q('.debt-map-legend'), 'debt map: legend explains the colours');
-  // v26: the payer rows open the PAYER (they used to open the receiver)
-  check(q('.debt-graph-details') && !q('.debt-graph-details').open, 'debt map: transfer instructions come first and graph starts collapsed');
+  // v42.1: the owner asked for the map itself on top with the amounts written on
+  // the transfer lines — the old “กราฟ (ยุบไว้)” drawer is gone for good.
+  check(!q('.debt-graph-details') && q('#settlement-content')?.firstElementChild?.classList.contains('debt-map-card'),
+    'debt map: the map comes first, always expanded (no collapsed drawer)');
+  check(qa('.debt-map-amount-label').length === qa('.debt-map-edge').length,
+    'debt map: every transfer line carries its own amount tag');
   check(qa('.debt-tx-row').length === qa('.debt-map-edge').length && qa('.debt-tx-row').every(row => row.querySelectorAll('.debt-person-role').length === 2 && row.querySelector('.debt-row-amount')), 'debt map: each transfer clearly labels payer, receiver and amount');
   const payRows = qa('.debt-tx-row');
   const payRowsOk = payRows.length > 0 && payRows.every(r => {
@@ -2716,6 +2737,29 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   const stored = [...fsdb.__store.entries()].find(([k]) => k.includes('/memberGroups/'));
   check(!!stored, 'groups: the group is saved to Firestore (memberGroups)');
   check(!!q('[data-member-groups] span'), 'groups: members show their group badge');
+
+  // ---- visit statistics (v42.3): last visit, visit count, accumulated time ----
+  check(!!q('#visit-stats-card'), 'visits: the Members page carries a statistics card');
+  await waitFor(() => qa('#visit-list .visit-row').length >= 2, { timeout: 8000, label: 'visit statistics' }).catch(() => {});
+  const visitNames = () => qa('#visit-list .visit-row .visit-name span').map(el => el.textContent.trim());
+  const memberCount = qa('#members-list .people-row').length;
+  check(qa('#visit-list .visit-row').length === memberCount, `visits: one row per member (${memberCount})`);
+  check(/2 ชม/.test(q('#visit-list')?.textContent || ''), 'visits: the accumulated time is shown');
+  check(/วันนี้/.test(q('#visit-list')?.textContent || ''), 'visits: the last visit is shown as a date/time');
+  check(/ยังไม่เคยเข้า/.test(q('#visit-list')?.textContent || ''), 'visits: a member with no data says so');
+  check(/เข้าทั้งหมด/.test(q('#visit-summary')?.textContent || '') && /เวลารวม/.test(q('#visit-summary')?.textContent || ''),
+    'visits: the summary counts the visits and the total time');
+  await click('[data-visit-sort="frequent"]');
+  check(visitNames()[0]?.includes('สมชาย'), 'visits: “เข้าบ่อยสุด” puts the most frequent visitor first');
+  await click('[data-visit-sort="duration"]');
+  check(visitNames()[0]?.includes('สมชาย'), 'visits: “เวลามากสุด” puts the longest time first');
+  await click('[data-visit-sort="recent"]');
+  check(visitNames()[0]?.includes('สมชาย'), 'visits: “เข้าล่าสุด” puts the latest visit first');
+  // The session tracker writes a document for the signed-in member.
+  const myVisit = [...fsdb.__store.entries()].find(([k]) => k === 'visitStats/u1');
+  check(!!myVisit && myVisit[1].sessions >= 5, 'visits: opening the app counts a session (visitStats/{uid})');
+  const myTripVisit = [...fsdb.__store.entries()].find(([k]) => k === 'visitStats/u1/trips/t1');
+  check(!!myTripVisit && myTripVisit[1].sessions >= 5, 'visits: …and the per-trip slice (visitStats/{uid}/trips/{tripId})');
 
   // edit round-trip
   await click(`[data-group-act="edit"][data-id="${gid}"]`);
@@ -2937,7 +2981,7 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
   await waitFor(() => q('.debt-map-svg'), { timeout: 8000, label: 'debt map' }).catch(() => {});
   check(qa('.debt-map-svg').length === 1, 'debt map: rendered as ONE map');
   const v28amounts = qa('.debt-map-amount');
-  const v28spots = v28amounts.map(t => `${t.getAttribute('x')},${t.getAttribute('y')}`);
+  const v28spots = v28amounts.map(t => (t.closest('.debt-map-amount-label') || t).getAttribute('transform') || '');
   check(v28amounts.length > 0 && new Set(v28spots).size === v28spots.length,
     'debt map: every money label sits in its own spot');
   // v41: each on-map amount is a numbered pill that belongs to exactly one line,

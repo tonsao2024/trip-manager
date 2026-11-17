@@ -744,7 +744,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   background: rgba(255,255,255,0.92); color: #333; border: 0; cursor: pointer;
   transition: transform 0.16s var(--ease), background 0.2s var(--ease);
 }
-.trip-menu-btn:hover { background: #fff; }
+.trip-menu-btn:hover { background: var(--surface-2); }
 .trip-menu-btn svg { width: 16px; height: 16px; }
 
 /* ------------------------------------------------------------------
@@ -940,8 +940,10 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 .note-tag { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; white-space: nowrap; } /* never split “7 Oct” mid-date on narrow phones */
 .note-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s var(--ease); }
 .note-card:hover .note-actions, .note-card:focus-within .note-actions { opacity: 1; }
-.note-actions button { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; background: rgba(255, 255, 255, 0.65); border: 0; color: #4b4232; cursor: pointer; }
-.note-actions button:hover { background: #fff; }
+/* v42: the chip rides on the note's own pastel paper, so it uses the surface
+   token instead of a hard white (a white pill flashed on every dark-mode note). */
+.note-actions button { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--surface) 72%, transparent); border: 0; color: var(--text-secondary); cursor: pointer; }
+.note-actions button:hover { background: var(--surface); color: var(--text-strong); }
 .note-actions svg { width: 13px; height: 13px; }
 .note-pin { position: absolute; top: 6px; right: 8px; opacity: 0.85; }
 .note-pin svg { width: 13px; height: 13px; }
@@ -1132,7 +1134,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   justify-content: center;
   gap: 8px;
 }
-.btn-google:hover { background: #f8fafc; }
+.btn-google:hover { background: var(--surface-2); }
 
 [data-mode="dark"] .btn-google {
   background: #1f2430;
@@ -1275,6 +1277,22 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 .itin-layout.map-hidden { grid-template-columns: minmax(0, 1fr); }
 .itin-col-days { min-width: 0; }
 .itin-col-map { min-width: 0; align-self: start; position: sticky; top: calc(var(--header-h) + 10px); max-height: calc(100dvh - var(--header-h) - 16px); }
+/* v42 — on a computer the map frame stays on screen while the plan scrolls
+   (owner request: “fix ไปกับหน้าจอ ไม่ขยับขึ้นลงตาม scrolling”; follow-up:
+   “ต้องไม่บัง ไม่เหลื่อม และปุ่มอื่นต้องกดได้”).
+   The card is sticky *inside* its column: the column stretches to the full
+   height of the day list, so the card travels with the viewport but can never
+   leave its column — it cannot cover the toolbar above the plan, the day list
+   beside it, or the footer below it. Sticky keeps the card in flow, so the page
+   layout (and every button) stays exactly where it was. Phones are untouched. */
+@media (min-width: 1024px) {
+  .itin-col-map { position: static; max-height: none; align-self: stretch; }
+  .itin-col-map > #map-card {
+    position: sticky;
+    top: calc(var(--header-h) + 12px);
+    z-index: 5;
+  }
+}
 
 /* ------------------------------------------------------------------ *
  * Itinerary toolbar (grouped actions) + sticky day bar.
@@ -1469,8 +1487,8 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   padding: 1px 8px;
 }
 .notes-board--done { opacity: .92; }
-.note-actions button[data-note-act="done"]:hover { background: #dcfce7; }
-.note-actions button[data-note-act="restore"]:hover { background: #dbeafe; }
+.note-actions button[data-note-act="done"]:hover { background: color-mix(in srgb, var(--success) 16%, var(--surface)); color: color-mix(in srgb, var(--success) 65%, var(--text-strong)); }
+.note-actions button[data-note-act="restore"]:hover { background: color-mix(in srgb, var(--primary) 14%, var(--surface)); color: color-mix(in srgb, var(--primary) 65%, var(--text-strong)); }
 
 /* ============================================================
    v11 — comments / questions on expenses, activity log,
@@ -1508,11 +1526,14 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   gap: 4px;
   padding: 2px 8px;
   border-radius: 999px;
-  background: #d3ecff;
-  color: #006fd6;
+  /* v42: derived from the accent + the current surface, so the chip is a soft
+     blue on the light canvas and a deep tint on Google's dark card (it used to
+     stay sky-blue in dark mode). */
+  background: color-mix(in srgb, var(--primary-raw) 10%, var(--surface));
+  color: color-mix(in srgb, var(--primary-raw) 68%, var(--text-strong));
   font-size: 12px;
   font-weight: 600;
-  border: 1px solid #a8dcff;
+  border: 1px solid color-mix(in srgb, var(--primary-raw) 26%, var(--border));
 }
 .comment-chip svg { width: 10px; height: 10px; }
 
@@ -2744,7 +2765,9 @@ button.idea-pin-line:hover, button.idea-near-line:hover { background: var(--surf
 .dashboard-board {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
+  /* v42: a row's two cards share one top and one bottom (owner: “การ์ดสองการ์ด
+     มีความสูงไม่เท่ากัน”). `stretch` + `height: 100%` on the card does it. */
+  align-items: stretch;
   gap: 14px;
 }
 .dash-widget { min-width: 0; position: relative; }
@@ -3161,38 +3184,88 @@ button.idea-pin-line:hover, button.idea-near-line:hover { background: var(--surf
 }
 
 .notify-sheet { display: flex; flex-direction: column; min-height: 0; }
+.notify-sheet-icon {
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface));
+  color: var(--primary-strong);
+}
+/* The filter row mirrors the type colours, so “ค่าใช้จ่าย” is the same blue as
+   its rows and “สรุป / วัน” the same amber. */
+.notify-filter-chip[data-notify-filter-type="all"] { --notify-hue: var(--primary); }
+.notify-filter-chip[data-notify-filter-type="expense"] { --notify-hue: var(--accent-blue, var(--primary)); }
+.notify-filter-chip[data-notify-filter-type="daily_summary"] { --notify-hue: var(--accent-amber, var(--warning)); }
+.notify-filter-chip[data-notify-filter-type="settlement"] { --notify-hue: var(--accent-green, var(--success)); }
+.notify-filter-chip[data-notify-filter-type=""] { --notify-hue: var(--primary); }
+.notify-filter-chip svg { color: color-mix(in srgb, var(--notify-hue, var(--primary)) 80%, var(--text-secondary)); }
+.notify-filter-chip.chip-active {
+  border-color: color-mix(in srgb, var(--notify-hue, var(--primary)) 55%, var(--border));
+  background: color-mix(in srgb, var(--notify-hue, var(--primary)) 12%, var(--surface));
+  color: color-mix(in srgb, var(--notify-hue, var(--primary)) 58%, var(--text-strong));
+}
+.notify-filter-chip.chip-active svg { color: inherit; }
 .notify-list { display: flex; flex-direction: column; gap: 12px; max-height: min(58vh, 460px); overflow-y: auto; }
 .notify-group { display: flex; flex-direction: column; gap: 8px; }
 .notify-group-label {
+  display: flex; align-items: center; gap: 6px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   padding: 2px 2px 0;
 }
-.notify-entry { position: relative; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); overflow: hidden; }
-.notify-entry.is-unread { background: var(--surface-2); }
-.notify-entry.is-expanded { border-color: var(--border-strong); }
+.notify-group-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+
+/* v42 — colour per notification type. Every value is derived from the app's
+   data palette with color-mix(), so the same colours read correctly on the
+   light canvas and on Google's dark #292a2d card. */
+.notify-entry[data-notify-type="expense"] { --notify-hue: var(--accent-blue, var(--primary)); }
+.notify-entry[data-notify-type="daily_summary"] { --notify-hue: var(--accent-amber, var(--warning)); }
+.notify-entry[data-notify-type="settlement"] { --notify-hue: var(--accent-green, var(--success)); }
+.notify-entry[data-notify-type="member"] { --notify-hue: var(--accent-violet, var(--primary)); }
+.notify-entry[data-notify-type="trip"] { --notify-hue: var(--accent-teal, var(--primary)); }
+.notify-entry[data-notify-type="test"] { --notify-hue: var(--accent-steel, var(--text-secondary)); }
+
+.notify-entry {
+  position: relative; min-width: 0;
+  border: 1px solid var(--border);
+  border-left: 3px solid color-mix(in srgb, var(--notify-hue, var(--primary)) 55%, var(--border));
+  border-radius: var(--radius-md); background: var(--surface); overflow: hidden;
+  --notify-ink: color-mix(in srgb, var(--notify-hue, var(--primary)) 62%, var(--text-strong));
+}
+.notify-entry.is-unread { background: color-mix(in srgb, var(--notify-hue, var(--primary)) 7%, var(--surface)); border-left-color: var(--notify-hue, var(--primary)); }
+.notify-entry.is-expanded { border-color: color-mix(in srgb, var(--notify-hue, var(--primary)) 40%, var(--border)); border-left-color: var(--notify-hue, var(--primary)); }
 .notify-row {
-  display: grid; grid-template-columns: 16px minmax(0, 1fr) auto;
-  align-items: start; gap: 12px; width: 100%; min-width: 0; text-align: left;
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: start; gap: 10px; width: 100%; min-width: 0; text-align: left;
   padding: 12px; padding-right: 40px; border: 0; border-radius: 0;
   background: transparent; cursor: pointer;
   transition: background-color 0.15s var(--ease);
 }
-.notify-row:hover { background: var(--surface-2); }
+.notify-row:hover { background: color-mix(in srgb, var(--notify-hue, var(--primary)) 6%, var(--surface)); }
 .notify-entry.is-unread .notify-row { background: transparent; }
 .notify-row-icon {
-  display: grid; place-items: center; width: 16px; height: 20px;
-  color: var(--text-tertiary);
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px;
+  background: color-mix(in srgb, var(--notify-hue, var(--primary)) 14%, var(--surface));
+  color: var(--notify-ink, var(--text-secondary));
 }
-.notify-row-icon svg { width: 16px; height: 16px; }
-.notify-row-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.notify-row-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.notify-entry.is-unread .notify-row-icon {
+  background: color-mix(in srgb, var(--notify-hue, var(--primary)) 20%, var(--surface));
+}
+.notify-row-icon svg { width: 17px; height: 17px; }
+.notify-row-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.notify-row-title { font-size: 13px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
 .notify-row-text { font-size: 12px; color: var(--text-secondary); line-height: 1.45; }
-.notify-row-meta { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+.notify-row-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 12px; color: var(--text-tertiary); margin-top: 3px; }
+.notify-type-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 7px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; line-height: 1.5;
+  color: var(--notify-ink, var(--text-secondary));
+  background: color-mix(in srgb, var(--notify-hue, var(--primary)) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--notify-hue, var(--primary)) 28%, var(--border));
+}
 .notify-dot {
-  width: 8px; height: 8px; border-radius: 50%; margin-top: 6px;
-  background: var(--primary);
+  width: 9px; height: 9px; border-radius: 50%; margin-top: 5px;
+  background: var(--notify-hue, var(--primary));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--notify-hue, var(--primary)) 18%, transparent);
 }
 .notify-row-del {
   position: absolute; top: 8px; right: 8px; z-index: 1;
@@ -3240,6 +3313,25 @@ button.idea-pin-line:hover, button.idea-near-line:hover { background: var(--surf
 .notify-status-dot.is-ok { background: var(--success); }
 .notify-status-dot.is-off { background: var(--warning); }
 
+/* v42 — native form controls inside the app's own fields. `color-scheme`
+   (tokens.css) fixes the popup calendars and <select> menus; the file button
+   is the one control Chrome still paints with its default chrome, so it gets
+   the app's button skin in both modes. */
+input[type="file"] { color: var(--text-secondary); max-width: 100%; }
+input[type="file"]::file-selector-button {
+  margin-right: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-strong);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+input[type="file"]::file-selector-button:hover { background: var(--surface-3); border-color: var(--border-strong); }
+
 /* “ดูอย่างเดียว” chip — shown instead of the buttons a permission hides. */
 .ro-chip {
   display: inline-flex;
@@ -3256,7 +3348,7 @@ button.idea-pin-line:hover, button.idea-near-line:hover { background: var(--surf
 
 @media (max-width: 640px) {
   .notify-list { max-height: min(52vh, 420px); }
-  .notify-row { grid-template-columns: 28px minmax(0, 1fr) auto; }
+  .notify-row { grid-template-columns: 34px minmax(0, 1fr) auto; gap: 8px; }
   .notify-row-del { width: 40px; height: 40px; }
   .notify-status-value { font-size: 12px; }
 }

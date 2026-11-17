@@ -1,6 +1,5 @@
 import { bindMoneyInputs } from './utils/moneyInput.js';
 import { DASHBOARD_WIDGETS, DASHBOARD_WIDGET_KEYS, normalizeWidgetOrder, normalizeHiddenWidgets } from './dashboard/widgets.js';
-import { packDashboard } from './dashboard/pack.js';
 import { ideaCategoryId, placeCategoryLabel, placeCategoryColor, placeCategoryIcon } from './utils/categories.js';
 import { attachMapExpand } from './maps/index.js';
 import { expenseUpdateForCost } from './utils/reservations.js';
@@ -39,7 +38,7 @@ import { listMembers, createMember, updateMember, deleteMember, countMemberRefer
 import { dayjs, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay, parseDurationInput, thaiDate, thaiDateRange } from './utils/date.js';
 import { expensesInThb, convertCurrency, formatCurrency, formatCurrencyHtml, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually, tripCurrencyList } from './utils/currency.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses, groupTransfersByPayer } from './utils/settlement.js';
-import { debtMapColor, placeDebtMapPill } from './utils/debtMap.js';
+import { debtMapColor, layoutDebtMapAmounts } from './utils/debtMap.js';
 import { splitCustom, splitEqual, participantsOf, averagePerPerson, scaleToTotal } from './utils/split.js';
 import { escapeHtml, sanitizeUrl } from './utils/sanitize.js';
 import { APP_VERSION, APP_VERSION_LABEL, APP_UPDATED_ISO, APP_NAME, APP_AUTHOR, APP_NAME_BY, appUpdatedLabel, appUpdatedShort, appBuildLabel, appFooterLabel, copyrightNote } from './utils/buildInfo.js';
@@ -56,6 +55,13 @@ import { mountCountdown, computeCountdown, countdownHeadline, setCountdownWeathe
 import { initReveal, countUp, confetti, celebrateFrom, restagger } from './components/effects.js';
 import { resolvePermissions, clearPermissionsCache } from './utils/permissions.js';
 import { cacheForget } from './utils/datacache.js';
+// v42.3 — สถิติการเข้าชม (Members page): one tiny document per member, written
+// once per session + once a minute while the tab is visible (see visits/index.js).
+import { trackVisit, stopVisit, loadVisitStats } from './visits/index.js';
+import {
+  visitRow, sortVisitRows, formatVisitDuration, visitStamp, visitRelative,
+  isVisitingNow, summarizeVisits, VISIT_ONLINE_MS
+} from './utils/visits.js';
 import {
   notificationMeta, unreadCount, visibleNotifications, groupNotifications,
   isReadBy, notifMillis, relativeTime, dayKeyInZone, classifyNotifyError
@@ -810,9 +816,16 @@ function updateModeIcons() {
     el.classList.toggle('active', el.dataset.mode === mode);
   });
 }
+function syncNativeColorScheme(eff = effectiveTheme()) {
+  // tokens.css already answers to [data-theme], but the pre-paint script writes
+  // an inline `color-scheme` so the first frame is right; keep that inline value
+  // in step with every later switch (inline wins over the stylesheet).
+  document.documentElement.style.colorScheme = eff === 'dark' ? 'dark' : 'light';
+}
 function applyMode(mode, { silent = false } = {}) {
   localStorage.setItem('fuji_theme', mode);
   document.documentElement.setAttribute('data-theme', resolveMode(mode));
+  syncNativeColorScheme(resolveMode(mode));
   updateModeIcons();
   updateMetaThemeColor();
   if (!silent) {
@@ -836,6 +849,7 @@ function initTheme() {
   // before the first paint, then the light/dark mode on top of it.
   try { applyStoredTheme(); } catch (e) { console.warn('[Theme] apply failed', e?.message); }
   document.documentElement.setAttribute('data-theme', resolveMode(getStoredMode()));
+  syncNativeColorScheme(resolveMode(getStoredMode()));
   updateMetaThemeColor();
   syncBuildMeta();
   // Defer icon updates until DOM/lucide ready
@@ -1584,7 +1598,7 @@ function notificationRowHtml(n, { uid, isAdmin, expanded = false }) {
         <span class="notify-row-body">
           <span class="notify-row-title">${escapeHtml(n.title || meta.label)}</span>
           ${n.body ? `<span class="notify-row-text">${escapeHtml(n.body)}</span>` : ''}
-          <span class="notify-row-meta">${escapeHtml(relativeTime(n.createdAt, lang))} · ${th(expanded ? 'แตะเพื่อย่อรายละเอียด' : 'แตะเพื่อดูรายละเอียด', expanded ? 'Tap to collapse' : 'Tap for details')}</span>
+          <span class="notify-row-meta"><span class="notify-type-chip">${escapeHtml(meta.label)}</span><span>${escapeHtml(relativeTime(n.createdAt, lang))}</span><span>·</span><span>${th(expanded ? 'แตะเพื่อย่อรายละเอียด' : 'แตะเพื่อดูรายละเอียด', expanded ? 'Tap to collapse' : 'Tap for details')}</span></span>
         </span>
         ${unread ? '<span class="notify-dot" aria-hidden="true"></span>' : ''}
       </button>
@@ -1602,7 +1616,7 @@ function notificationFilterChipsHtml() {
     { id: 'settlement', label: lang === 'th' ? 'เคลียร์บิล' : 'Settlement', icon: 'hand-coins' }
   ];
   return chips.map(c => `
-    <button type="button" class="chip ${(notifyState.sheetFilter || '') === c.id ? 'chip-active' : ''}" data-notify-filter="${c.id}">
+    <button type="button" class="chip notify-filter-chip ${(notifyState.sheetFilter || '') === c.id ? 'chip-active' : ''}" data-notify-filter="${c.id}" data-notify-filter-type="${c.id || 'all'}">
       ${icon(c.icon, 'w-3.5 h-3.5')} ${escapeHtml(c.label)}
     </button>`).join('');
 }
@@ -1659,7 +1673,7 @@ async function openNotificationsSheet() {
   const sheet = showBottomSheet(`
     <div id="notify-sheet" class="notify-sheet">
       <div class="flex items-center gap-3 mb-2">
-        <div class="row-icon">${icon('bell', 'w-5 h-5')}</div>
+        <div class="row-icon notify-sheet-icon">${icon('bell', 'w-5 h-5')}</div>
         <div class="min-w-0 flex-1">
           <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${th('การแจ้งเตือน', 'Notifications')}</h3>
           <p class="text-xs text-[var(--text-tertiary)]" id="notify-subtitle">${th('กำลังโหลด...', 'Loading...')}</p>
@@ -1710,7 +1724,7 @@ async function openNotificationsSheet() {
       listEl.innerHTML = groupNotifications(filtered, { today, yesterday, lang })
         .map(group => `
           <div class="notify-group">
-            <div class="notify-group-label">${escapeHtml(group.label)}</div>
+            <div class="notify-group-label"><span class="notify-group-dot" aria-hidden="true"></span>${escapeHtml(group.label)}</div>
             ${group.items.map(n => notificationRowHtml(n, { uid, isAdmin, expanded: notifyState.sheetSelectedId === n.id })).join('')}
           </div>`).join('');
     }
@@ -2095,6 +2109,7 @@ async function doLogout() {
   } catch (e) {
     console.warn('signOut issue (forced local logout):', e);
   }
+  try { stopVisit(); } catch {}
   currentUser = null;
   currentTrip = null;
   currentTripId = null;
@@ -2718,11 +2733,18 @@ router.beforeEach = (matched) => {
   try { document.dispatchEvent(new CustomEvent('routechange')); } catch {}
   if (matched.params?.tripId) {
     setTrip(matched.params.tripId);
+    // 🕒 สถิติการเข้าชม — one write when a session starts, then a quiet
+    // once-a-minute heartbeat while the tab is visible (free-plan friendly).
+    try { if (currentUser?.uid) trackVisit({ tripId: matched.params.tripId, uid: currentUser.uid }); } catch {}
     // 🔔 start watching this trip's notifications (badge + toasts), then let the
     // daily summary catch up in the background.
     startNotificationWatch(matched.params.tripId);
     setTimeout(() => { maybeDailySummary(matched.params.tripId).catch(() => {}); }, 2500);
     setTimeout(() => { paintBell(); }, 300);
+  } else {
+    // Leaving every trip (login / trip picker) closes the visit session and
+    // banks the remaining minutes.
+    try { stopVisit(); } catch {}
   }
   renderDesktopNav();
   renderHeaderMoreMenu();
@@ -3891,80 +3913,15 @@ async function renderDashboard(params) {
   let dashboardLayoutEditing = false;
   let dashboardLayoutSaving = false;
   let dashboardSortable = null;
-  /* v39 — a packed, balanced board.
-     A two-column CSS grid gives every card in a row the height of the tallest
-     one, so a short card (a booking list with one row) left a tall empty
-     rectangle under it while its neighbour ran on — the wasted space the owner
-     kept reporting. Each card is now measured and packed into the column that
-     balances the band (see `src/js/dashboard/pack.js`, unit-tested), and the CSS
-     is a 4px-row grid that accepts those positions. The DOM keeps the saved
-     order, so Arrange mode, the keyboard and the shared `dashboardLayout`
-     document are untouched. */
-  let dashboardResizeObserver = null;
-  let dashboardReflowFrame = 0;
-  const layoutDashboardBoard = () => {
-    if (!dashboardBoard) return;
-    const boardStyle = getComputedStyle(dashboardBoard);
-    // Implicit grid tracks from the previous desktop placement can remain in
-    // computed gridTemplateColumns after resizing to mobile. Use the same
-    // breakpoint as CSS rather than counting those stale tracks.
-    const wideBoard = window.matchMedia('(min-width: 761px)').matches;
-    // In Arrange mode the board goes back to a plain flow: dragging a card has
-    // to move the cards around it, not leave them pinned by measured positions.
-    const masonry = wideBoard && !dashboardLayoutEditing;
-    dashboardBoard.classList.toggle('is-masonry', masonry);
-    // the row gap IS the gutter: every card's span already includes one gap
-    dashboardBoard.style.rowGap = masonry ? '0px' : '';
-    const widgets = [...dashboardBoard.querySelectorAll(':scope > [data-dashboard-widget]')]
-      .filter(el => !el.classList.contains('is-hidden'));
-    const addTile = document.getElementById('dash-add-tile');
-    if (!masonry) {
-      for (const el of widgets) { el.style.gridColumn = ''; el.style.gridRow = ''; }
-      if (addTile) addTile.style.gridRow = '';
-      return;
-    }
-    // Measure at the width each card will really have: reset them to one column
-    // (a full-width card measured inside a column is too short).
-    for (const el of widgets) {
-      el.style.gridColumn = el.classList.contains('dash-widget--full') ? '1 / -1' : '1';
-      el.style.gridRow = 'auto';
-    }
-    const placed = packDashboard(widgets.map(el => ({
-      key: el.dataset.dashboardWidget,
-      full: el.classList.contains('dash-widget--full'),
-      height: el.getBoundingClientRect().height
-    })), { gutter: parseFloat(boardStyle.columnGap) || 14 });
-    const byKey = new Map(placed.map(p => [p.key, p]));
-    // Weather card matches countdown height on desktop when they share a row
-    if (masonry) {
-      const cd = byKey.get('countdown');
-      const wx = byKey.get('weather');
-      if (cd && wx && cd.column && wx.column && cd.column !== wx.column && cd.row === wx.row) {
-        const maxSpan = Math.max(cd.span, wx.span);
-        cd.span = maxSpan;
-        wx.span = maxSpan;
-      }
-    }
-    for (const el of widgets) {
-      const slot = byKey.get(el.dataset.dashboardWidget);
-      if (!slot) continue;
-      el.style.gridColumn = slot.column ? String(slot.column) : '1 / -1';
-      el.style.gridRow = `${slot.row} / span ${slot.span}`;
-    }
-    // Auto-placement ignores explicitly positioned grid items and could put the
-    // add button on top of a card. Anchor it after the last packed row instead.
-    if (addTile) {
-      const lastRow = placed.reduce((end, slot) => Math.max(end, slot.row + slot.span), 1);
-      addTile.style.gridRow = `${lastRow} / span ${Math.ceil(52 / 4)}`;
-    }
-  };
-  const scheduleDashboardLayout = () => {
-    if (dashboardReflowFrame) return;
-    dashboardReflowFrame = requestAnimationFrame(() => {
-      dashboardReflowFrame = 0;
-      try { layoutDashboardBoard(); } catch (e) { console.warn('dashboard layout', e); }
-    });
-  };
+  /* v42 — cards pair into rows again.
+     The owner: “การ์ดสองการ์ด … มีความสูงไม่เท่ากัน มองแล้วไม่เป็นระเบียบ”.
+     v39 measured every card and packed it into whichever column was shorter, so
+     two cards side by side ended at different heights. The board is a plain
+     two-column grid again (flat.css): each row is as tall as its tallest card
+     and the neighbour stretches to match, so a pair shares one top and one
+     bottom. Full-width cards take a row of their own, and the saved order still
+     decides which cards pair up — so Arrange mode and the shared
+     `dashboardLayout` document are untouched. */
   const applyDashboardOrder = (raw) => {
     if (!dashboardBoard) return;
     const order = normalizeDashboardOrder(raw);
@@ -3975,7 +3932,6 @@ async function renderDashboard(params) {
     // the “เพิ่มการ์ด” tile always stays after the cards
     const addTile = document.getElementById('dash-add-tile');
     if (addTile) dashboardBoard.appendChild(addTile);
-    scheduleDashboardLayout();
   };
   const paintDashboardLayoutControls = () => {
     document.getElementById('dashboard-view')?.classList.toggle('dashboard-layout-editing', dashboardLayoutEditing);
@@ -3990,27 +3946,6 @@ async function renderDashboard(params) {
     queueIcons();
   };
   applyDashboardOrder(lastDashboardOrder);
-
-  /* Keep the packed layout true: a card that grows (a booking arrives, a list
-     fills, a photo loads, the countdown changes height) re-packs its column, and
-     a phone↔laptop resize switches between one and two columns. */
-  if (typeof ResizeObserver === 'function' && dashboardBoard) {
-    dashboardResizeObserver = new ResizeObserver(() => scheduleDashboardLayout());
-    for (const card of dashboardBoard.querySelectorAll(':scope > [data-dashboard-widget]')) dashboardResizeObserver.observe(card);
-    window.addEventListener('resize', scheduleDashboardLayout, { passive: true });
-    document.addEventListener('routechange', () => {
-      dashboardResizeObserver?.disconnect();
-      dashboardResizeObserver = null;
-      window.removeEventListener('resize', scheduleDashboardLayout);
-      if (dashboardReflowFrame) cancelAnimationFrame(dashboardReflowFrame);
-      dashboardReflowFrame = 0;
-    }, { once: true });
-  }
-  // The board paints its data AFTER this function returns, so re-pack once the
-  // first write lands (and once the web fonts settle the row heights).
-  setTimeout(scheduleDashboardLayout, 120);
-  setTimeout(scheduleDashboardLayout, 600);
-  if (document.fonts?.ready) document.fonts.ready.then(scheduleDashboardLayout).catch(() => {});
 
   async function saveDashboardOrder(order) {
     const next = normalizeDashboardOrder(order);
@@ -4035,7 +3970,6 @@ async function renderDashboard(params) {
   async function setDashboardLayoutEditing(enabled) {
     dashboardLayoutEditing = Boolean(enabled);
     paintDashboardLayoutControls();
-    scheduleDashboardLayout();
     if (!dashboardLayoutEditing) {
       try { dashboardSortable?.destroy(); } catch {}
       dashboardSortable = null;
@@ -4084,7 +4018,6 @@ async function renderDashboard(params) {
       const count = tile.querySelector('[data-add-count]');
       if (count) count.textContent = String(dashboardHidden.size);
     }
-    scheduleDashboardLayout();
   };
   // Each card's drag bar gets a × (visible in Arrange mode) that hides that card.
   dashboardBoard?.querySelectorAll('[data-dashboard-widget]').forEach(section => {
@@ -5497,7 +5430,7 @@ async function renderItinerary(params) {
     // full frame stays usable instead of extending below the sticky column.
     const h = isMobile
       ? Math.round(Math.min(Math.max(window.innerHeight * 0.38, 240), 380))
-      : Math.round(Math.min(Math.max(window.innerHeight - headerHeight - 132, 320), 760));
+      : Math.round(Math.min(Math.max(window.innerHeight - headerHeight - 156, 320), 760));
     mapEl.style.setProperty('--itin-map-h', `${h}px`);
     import('./maps/index.js').then(({ refreshMapSize }) => refreshMapSize('map')).catch(() => {});
     if (refit && visibleItems.some(i => i.coordinates)) refreshMap(visibleItems, { fit: true });
@@ -10428,12 +10361,25 @@ async function renderSettlement(params) {
     const nodeColors = new Map(order.map((id, i) => [id, debtMapColor(sortedTx.length + 24 + i)]));
     const markerDefs = [];
 
+    /* ---- where each person's name/role is printed (amount labels avoid it) -- */
+    const nodeTextBoxes = [];
+    const nodeBoxes = order.map(id => {
+      const p = posOf.get(id);
+      const person = membersMap[id] || {};
+      const above = labelAbove(p);
+      const nameY = above ? p.y - nodeR - 24 : p.y + nodeR + (compact ? 20 : 18);
+      const roleY = above ? p.y - nodeR - 8 : p.y + nodeR + (compact ? 35 : 32);
+      const nameChars = Math.min((person.displayName || '?').length, 16);
+      nodeTextBoxes.push({ left: p.x - (nameChars * FS.nameCharW) / 2 - 4, right: p.x + (nameChars * FS.nameCharW) / 2 + 4, top: nameY - FS.name - 2, bottom: nameY + 4 });
+      nodeTextBoxes.push({ left: p.x - 26, right: p.x + 26, top: roleY - FS.role - 2, bottom: roleY + 4 });
+      return { left: p.x - nodeR - 8, right: p.x + nodeR + 8, top: p.y - nodeR - 8, bottom: p.y + nodeR + 8 };
+    });
+
     /**
-     * Every transfer = one arc bent towards the middle of the circle. The amount
-     * is NEVER loose on the drawing: it sits on a small pill in the middle of
-     * its own arc, always rotated with the arc, and the arc is drawn *behind*
-     * the pills. Because each arc owns a private angle, two pills cannot land on
-     * the same spot; and each pill is numbered (#1, #2 …) to match the list.
+     * Every transfer = one arc bent towards the middle of the circle. Amounts are
+     * printed ON that arc, rotated with the line and never on a person's name
+     * (utils/debtMap.js owns the collision rules). A dense map falls back to a
+     * numbered dot on the line; the numbered list below always carries the amount.
      */
     const edgeRows = sortedTx.map((tx, i) => {
       const p1 = posOf.get(tx.from), p2 = posOf.get(tx.to);
@@ -10455,63 +10401,55 @@ async function renderSettlement(params) {
         x: (start.x + end.x) / 2 - uy * bend,
         y: (start.y + end.y) / 2 + ux * bend
       };
-      // Midpoint of the quadratic + the direction the pill has to follow.
-      const mid = {
-        x: 0.25 * start.x + 0.5 * control.x + 0.25 * end.x,
-        y: 0.25 * start.y + 0.5 * control.y + 0.25 * end.y
-      };
-      const tangent = { x: (end.x - start.x) * 0.5 + (control.x - start.x), y: (end.y - start.y) * 0.5 + (control.y - start.y) };
-      let angle = Math.atan2(tangent.y, tangent.x) * 180 / Math.PI;
-      if (angle > 90 || angle < -90) angle += 180; // keep the text upright
-      return { tx, index: i, payer, receiver, color, markerId, start, control, end, mid, angle, amountLabel: money(tx.amountMinor) };
+      return { tx, index: i, payer, receiver, color, markerId, start, control, end, arc: len, label: money(tx.amountMinor) };
     }).filter(Boolean);
 
-    // Arc positions (bend, mid, angle) are computed above; now spread the pills
-    // along their arcs so no two pills touch, and keep them inside the canvas.
-    const pillH = 22;
-    const pillW = (label) => Math.max(70, Math.ceil([...label].length * FS.charW + 40));
-    const placed = [];
-    const nodeBoxes = order.map(id => {
-      const p = posOf.get(id);
-      return { left: p.x - nodeR - 8, right: p.x + nodeR + 8, top: p.y - nodeR - 8, bottom: p.y + nodeR + 8 };
-    });
-    edgeRows.forEach((edge) => {
-      const width = pillW(edge.amountLabel);
-      edge.pillWidth = width;
-      edge.pillHeight = pillH;
-      // The pill never leaves its own arc (utils/debtMap.js). If the whole arc
-      // is blocked, the amount moves to the numbered list — it is never dropped
-      // somewhere else on the drawing.
-      const obstacles = [...nodeBoxes, ...placed];
-      const pill = placeDebtMapPill(
-        { start: edge.start, control: edge.control, end: edge.end, width, height: pillH },
-        obstacles,
-        { width: W, height: GRAPH_H, padding: 6, gap: 5 }
-      );
-      edge.pill = pill;
-      if (pill) placed.push({ left: pill.x - width / 2, right: pill.x + width / 2, top: pill.y - pillH / 2, bottom: pill.y + pillH / 2 });
-    });
-    const offGraph = edgeRows.filter(e => !e.pill);
+    // Short lines make room first: a long arc can host its label almost anywhere,
+    // a short one has only a few free spots.
+    const placements = layoutDebtMapAmounts(
+      edgeRows
+        .map((edge, i) => ({ i, edge }))
+        .sort((a, b) => a.edge.arc - b.edge.arc)
+        .map(({ edge }) => ({ start: edge.start, control: edge.control, end: edge.end, label: edge.label })),
+      [...nodeBoxes, ...nodeTextBoxes],
+      {
+        width: W,
+        height: GRAPH_H,
+        padding: 7,
+        gap: 4,
+        labelHeight: compact ? 23 : 21,
+        charWidth: FS.charW,
+        numberSize: compact ? 23 : 21
+      }
+    );
+    const placementByIndex = new Map(
+      edgeRows.map((edge, i) => [i, edge]).sort((a, b) => a[1].arc - b[1].arc).map(([i], k) => [i, placements[k]])
+    );
+    edgeRows.forEach((edge, i) => { edge.placement = placementByIndex.get(i) || { kind: 'none' }; });
 
     let edgesHtml = '';
+    let labelsHtml = '';
     edgeRows.forEach((edge) => {
-      const { tx, payer, receiver, color, markerId } = edge;
+      const { tx, payer, receiver, color, markerId, placement } = edge;
       const d = `M${edge.start.x.toFixed(1)},${edge.start.y.toFixed(1)} Q${edge.control.x.toFixed(1)},${edge.control.y.toFixed(1)} ${edge.end.x.toFixed(1)},${edge.end.y.toFixed(1)}`;
-      // The pill is drawn at absolute coordinates (never rotated) so the amount
-      // text has one unique anchor per transfer — easy to test, easy to read.
-      const onLine = edge.pill
-        ? `<g class="debt-pill debt-map-amount-label" data-pill="${edge.index + 1}" data-overflow-label="false">
-             <rect x="${(edge.pill.x - edge.pill.width / 2).toFixed(1)}" y="${(edge.pill.y - pillH / 2).toFixed(1)}" width="${edge.pill.width.toFixed(1)}" height="${pillH}" rx="${pillH / 2}" fill="var(--surface)" stroke="${escapeHtml(color)}" stroke-width="1.5"/>
-             <circle cx="${(edge.pill.x - edge.pill.width / 2 + 11).toFixed(1)}" cy="${edge.pill.y.toFixed(1)}" r="7" fill="${escapeHtml(color)}"/>
-             <text class="debt-pill-tag" x="${(edge.pill.x - edge.pill.width / 2 + 11).toFixed(1)}" y="${edge.pill.y.toFixed(1)}" text-anchor="middle" dominant-baseline="central" fill="${escapeHtml(avatarInk(color))}" font-size="9.5" font-weight="700">${edge.index + 1}</text>
-             <text class="debt-pill-amount debt-map-amount" x="${(((edge.pill.x + edge.pill.width / 2) + (edge.pill.x - edge.pill.width / 2 + 22)) / 2).toFixed(1)}" y="${edge.pill.y.toFixed(1)}" text-anchor="middle" dominant-baseline="central" fill="var(--text-strong)" font-size="${compact ? 12 : 11.5}" font-weight="600">${escapeHtml(edge.amountLabel)}</text>
+      const onLine = placement.kind === 'label'
+        ? `<g class="debt-pill debt-map-amount-label is-amount" data-pill="${edge.index + 1}" data-label-kind="label" data-overflow-label="false" transform="translate(${placement.x.toFixed(1)} ${placement.y.toFixed(1)}) rotate(${placement.angle.toFixed(1)})">
+             <rect x="${(-placement.width / 2).toFixed(1)}" y="${(-placement.height / 2).toFixed(1)}" width="${placement.width.toFixed(1)}" height="${placement.height.toFixed(1)}" rx="${(placement.height / 2).toFixed(1)}" fill="var(--surface)" stroke="${escapeHtml(color)}" stroke-opacity=".55" stroke-width="1"/>
+             <circle cx="${(-placement.width / 2 + 10).toFixed(1)}" cy="0" r="6.2" fill="${escapeHtml(color)}"/>
+             <text class="debt-pill-tag" x="${(-placement.width / 2 + 10).toFixed(1)}" y="0.4" text-anchor="middle" dominant-baseline="central" fill="${escapeHtml(avatarInk(color))}" font-size="9" font-weight="600">${edge.index + 1}</text>
+             <text class="debt-pill-amount debt-map-amount" x="7" y="0.4" text-anchor="middle" dominant-baseline="central" fill="var(--text-strong)" font-size="${compact ? 12 : 11.5}" font-weight="600">${escapeHtml(edge.label)}</text>
            </g>`
-        : '';
+        : placement.kind === 'number'
+          ? `<g class="debt-pill debt-map-amount-label is-number" data-pill="${edge.index + 1}" data-label-kind="number" data-overflow-label="true" transform="translate(${placement.x.toFixed(1)} ${placement.y.toFixed(1)})">
+               <circle r="${(placement.width / 2).toFixed(1)}" fill="var(--surface)" stroke="${escapeHtml(color)}" stroke-width="1.6"/>
+               <text class="debt-pill-tag" x="0" y="0.4" text-anchor="middle" dominant-baseline="central" fill="var(--text-strong)" font-size="10" font-weight="600">${edge.index + 1}</text>
+             </g>`
+          : '';
+      labelsHtml += onLine;
       edgesHtml += `
-        <g class="debt-map-edge" data-edge="${escapeHtml(tx.from)}→${escapeHtml(tx.to)}" data-color="${escapeHtml(color)}" ${edge.pill ? '' : 'data-offgraph="true"'}>
-          <title>${escapeHtml(payer.displayName || '')} ${th('จ่ายให้', 'pays')} ${escapeHtml(receiver.displayName || '')}: ${escapeHtml(edge.amountLabel)}</title>
+        <g class="debt-map-edge" data-edge="${escapeHtml(tx.from)}→${escapeHtml(tx.to)}" data-color="${escapeHtml(color)}" ${placement.kind === 'label' ? '' : 'data-offgraph="true"'}>
+          <title>${escapeHtml(payer.displayName || '')} ${th('จ่ายให้', 'pays')} ${escapeHtml(receiver.displayName || '')}: ${escapeHtml(edge.label)}</title>
           <path d="${d}" fill="none" stroke="${escapeHtml(color)}" stroke-width="2.6" stroke-opacity=".85" stroke-linecap="round" marker-end="url(#${markerId})"/>
-          ${onLine}
         </g>`;
     });
 
@@ -10546,8 +10484,12 @@ async function renderSettlement(params) {
     });
 
     /* ---- the authoritative list: number, payer → receiver, amount, action --- */
-    const rowsHtml = edgeRows.map(({ tx, payer, receiver, color, index, amountLabel, pill }) => `
-      <div class="debt-tx-row${pill ? '' : ' debt-tx-row--offgraph'}" style="--debt-edge-color:${escapeHtml(color)};" data-debt-step="${index + 1}">
+    const rowsHtml = edgeRows.map(({ tx, payer, receiver, color, index, label, placement }) => {
+      const note = placement.kind === 'label'
+        ? ''
+        : `<i class="debt-offgraph-note">${th(`ยอดนี้อยู่ในรายการ — เลข ${index + 1} คือจุดบนเส้นของรายการนี้`, `This amount is in the list — line marker #${index + 1} matches this row`)}</i>`;
+      return `
+      <div class="debt-tx-row${placement.kind === 'label' ? '' : ' debt-tx-row--offgraph'}" style="--debt-edge-color:${escapeHtml(color)};" data-debt-step="${index + 1}">
         <span class="debt-step" aria-hidden="true">${index + 1}</span>
         <div class="debt-route">
           <button type="button" class="debt-person-link is-from" data-settle-person="${escapeHtml(tx.from)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${payer.displayName || 'ผู้จ่าย'}`, `View expenses for ${payer.displayName || 'payer'}`))}">
@@ -10555,18 +10497,19 @@ async function renderSettlement(params) {
             <span class="debt-person-copy"><span class="debt-person-role">${th('ผู้โอน', 'From')}</span><span class="debt-person-name">${escapeHtml(payer.displayName || '')}</span></span>
           </button>
           <span class="debt-row-pays" aria-hidden="true">${icon('arrow-right', 'w-4 h-4')}</span>
-          <button type="button" class="debt-person-link is-to" data-settle-person="${escapeHtml(tx.to)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${receiver.displayName || 'ผู้รับ'}`, `View expenses for ${receiver.displayName || 'receiver'}`))}">
+          <button type="button" class="debt-person-link is-to" data-settle-person="${escapeHtml(tx.to)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${receiver.displayName || 'ผู้รับ'}`, `View expenses of ${receiver.displayName || 'receiver'}`))}">
             <span class="avatar" style="width:36px;height:36px;font-size:14px;${avatarStyle(receiver.color)};">${receiver.photoURL ? `<img decoding="async" src="${escapeHtml(receiver.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(receiver.displayName || '?'))}</span>
             <span class="debt-person-copy"><span class="debt-person-role">${th('ผู้รับ', 'To')}</span><span class="debt-person-name">${escapeHtml(receiver.displayName || '')}</span></span>
           </button>
         </div>
         <div class="debt-amount-block">
           <span>${th('ยอดที่ต้องโอน', 'Amount to transfer')}</span>
-          <b class="debt-row-amount">${amountLabel}</b>
-          ${pill ? '' : `<i class="debt-offgraph-note">${th('ยอดนี้ไม่ได้เขียนบนเส้น (พื้นที่ไม่พอ) — ดูเลข ${index + 1} ในรายการ', `Not drawn on the line — see #${index + 1} in this list`)}</i>`}
+          <b class="debt-row-amount">${label}</b>
+          ${note}
         </div>
         ${canPay ? `<button type="button" class="btn btn-secondary btn-sm debt-pay-btn no-export" data-settle-pay data-settle-from="${escapeHtml(tx.from)}" data-settle-to="${escapeHtml(tx.to)}" data-settle-amount="${tx.amountMinor}" aria-label="${escapeHtml(th(`บันทึกว่า ${payer.displayName || 'ผู้โอน'} จ่ายให้ ${receiver.displayName || 'ผู้รับ'} แล้ว`, `Record payment from ${payer.displayName || 'payer'} to ${receiver.displayName || 'receiver'}`))}">${th('จ่ายแล้ว', 'Mark paid')}</button>` : ''}
-      </div>`).join('');
+      </div>`;
+    }).join('');
     const totalMove = txns.reduce((sum, tx) => sum + (tx.amountMinor || 0), 0);
 
     return `
@@ -10574,29 +10517,25 @@ async function renderSettlement(params) {
         <div class="debt-map-heading">
           <div><p class="debt-map-eyebrow">${th('สรุปการเคลียร์บิล', 'SETTLEMENT')}</p>
             <h3>${th('ใครโอนให้ใคร', 'Who pays whom')}</h3>
-            <p>${th('เลขในวงกลมบนเส้นตรงกับเลขในรายการด้านล่าง กดชื่อเพื่อดูค่าใช้จ่ายของคนนั้น', 'The number on each line matches the list below. Select a name to see that person’s expenses.')}</p>
+            <p>${th('ยอดเงินเขียนอยู่บนเส้นของตัวเอง — ลูกศรชี้จากผู้โอนไปยังผู้รับ เลขบนเส้นตรงกับเลขในรายการด้านล่าง', 'Each amount sits on its own line — arrows point from payer to receiver, and the number on a line matches the list below.')}</p>
           </div>
           <div class="debt-map-total"><span>${th('ยอดที่ต้องโอนทั้งหมด', 'Total to transfer')}</span><strong>${money(totalMove)}</strong><small>${txns.length} ${th('รายการโอน', 'transfers')}</small></div>
         </div>
         <p class="debt-total-explanation">${th('ผลรวมของทุกรายการโอน อาจต่างจากยอดสุทธิรวม หากสมาชิกคนเดียวกันทั้งโอนและรับเงิน', 'Sum of all transfers; this may differ from the net total when someone both pays and receives.')}</p>
+        <div class="debt-map-legend">
+          <span class="debt-legend-item is-out">${th('จ่ายเงิน', 'Pays')}</span>
+          <span class="debt-legend-item is-in">${th('รับเงิน', 'Receives')}</span>
+          <span class="debt-legend-item debt-legend-item--unique"><i class="debt-legend-swatch" aria-hidden="true">${order.filter(id => (recv.get(id) || 0) > 0).slice(0, 4).map(id => `<span style="background:${escapeHtml(nodeColors.get(id) || 'var(--primary)')}"></span>`).join('')}</i>${th('สีเส้น = สีของผู้รับเงินรายการนั้น', 'Line colour = the receiver’s colour')}</span>
+        </div>
+        <div class="debt-map-container">
+          <svg class="debt-map-svg${compact ? ' debt-map-svg--compact' : ''}" viewBox="0 0 ${W} ${GRAPH_H}" role="group" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected by money-transfer lines'))}">
+            <defs>${markerDefs.join('')}</defs>${edgesHtml}${labelsHtml}${nodesHtml}
+          </svg>
+        </div>
+        ${edgeRows.some(edge => edge.placement.kind !== 'label') ? `<p class="debt-map-note">${th('วงกลมเล็กที่มีเลข = พื้นที่บนภาพไม่พอ จึงพิมพ์ยอดของรายการนั้นไว้ในรายการด้านล่าง (เลขตรงกัน)', 'A small numbered circle means the amount did not fit on the drawing — it is printed in the list below under the same number.')}</p>` : ''}
         <div class="debt-list-heading"><h4>${th('รายการโอนที่เหลือ', 'Remaining transfers')}</h4><span>${txns.length} ${th('รายการ', 'transfers')}</span></div>
         <div class="debt-payer-list">${rowsHtml}</div>
         <p class="debt-map-action-hint">${th('หลังโอนเงินจริงแล้ว กด “จ่ายแล้ว” เพื่อบันทึกยอดเต็มหรือบางส่วน', 'After sending money, select “Mark paid” to record a full or partial payment.')}</p>
-        <details class="debt-graph-details">
-          <summary><span>${icon('network', 'w-4 h-4')} ${th('ดูแผนภาพความสัมพันธ์', 'View transfer diagram')}</span>${icon('chevron-down', 'w-4 h-4')}</summary>
-          <p class="debt-graph-help">${th('ลูกศรชี้จากผู้โอนไปยังผู้รับ ยอดเงินอยู่ในป้ายบนเส้นของตัวเอง พร้อมเลขกำกับตรงกับรายการด้านบน', 'Arrows point from payer to receiver. Each amount sits on its own line, with a number that matches the list above.')}</p>
-          ${offGraph.length ? `<p class="debt-graph-help">${th(`มี ${offGraph.length} รายการที่พื้นที่บนภาพไม่พอ — ยอดของรายการนั้นอยู่ในรายการด้านบน (ทำเครื่องหมายไว้)`, `${offGraph.length} transfer(s) had no room on the drawing — their amounts are in the list above (marked).`)}</p>` : ''}
-          <div class="debt-map-legend">
-            <span class="debt-legend-item is-out">${th('จ่ายเงิน', 'Pays')}</span>
-            <span class="debt-legend-item is-in">${th('รับเงิน', 'Receives')}</span>
-            <span class="debt-legend-item debt-legend-item--unique"><i class="debt-legend-swatch" aria-hidden="true">${order.filter(id => (recv.get(id) || 0) > 0).slice(0, 4).map(id => `<span style="background:${escapeHtml(nodeColors.get(id) || 'var(--primary)')}"></span>`).join('')}</i>${th('สีเส้น = สีของผู้รับเงินรายการนั้น', 'Line colour = the receiver’s colour')}</span>
-          </div>
-          <div class="debt-map-container">
-            <svg class="debt-map-svg${compact ? ' debt-map-svg--compact' : ''}" viewBox="0 0 ${W} ${GRAPH_H}" role="group" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected by money-transfer lines'))}">
-              <defs>${markerDefs.join('')}</defs>${edgesHtml}${nodesHtml}
-            </svg>
-          </div>
-        </details>
       </div>
       ${netSummaryHtml()}`;
   }
@@ -11345,6 +11284,26 @@ async function renderMembers(params) {
       </div>
 
       <div id="members-list" class="people-list"></div>
+
+      <!-- v42.3 — สถิติการเข้าชม: last visit, visit count and accumulated time
+           per member, sortable by recency / frequency / time. Numbers come from
+           one tiny document per member (src/js/visits/index.js). -->
+      <div class="card visit-card" id="visit-stats-card">
+        <div class="visit-head">
+          <div class="min-w-0">
+            <h3 class="font-semibold flex items-center gap-2">${icon('activity', 'w-4 h-4')} ${th('สถิติการเข้าชม', 'Visit statistics')}</h3>
+            <p class="text-xs text-[var(--text-secondary)]">${th('เข้าล่าสุด · จำนวนครั้ง · เวลารวมในเว็บนี้ (นับเฉพาะตอนเปิดหน้านี้อยู่)', 'Last visit · visits · total time in this app (counted only while the tab is open).')}</p>
+          </div>
+          <div class="visit-sort" role="group" aria-label="${th('เรียงลำดับสถิติ', 'Sort statistics')}">
+            <button type="button" class="visit-sort-btn is-active" data-visit-sort="recent">${th('เข้าล่าสุด', 'Recent')}</button>
+            <button type="button" class="visit-sort-btn" data-visit-sort="frequent">${th('เข้าบ่อยสุด', 'Most visits')}</button>
+            <button type="button" class="visit-sort-btn" data-visit-sort="duration">${th('เวลามากสุด', 'Longest')}</button>
+          </div>
+        </div>
+        <div id="visit-summary" class="visit-summary"></div>
+        <div id="visit-list" class="visit-list" aria-live="polite"><div class="skeleton h-12"></div></div>
+        <p class="visit-foot">${icon('shield-check', 'w-3 h-3')} ${th('เก็บเป็นเอกสารเล็ก ๆ 1 ใบต่อคน — เขียนตอนเข้า 1 ครั้ง แล้ว 1 ครั้ง/นาทีที่เปิดหน้าจอ (ไม่กระทบโควตาฟรีของ Firebase)', 'One tiny document per member — one write on entry, then one per visible minute (well inside the free Firebase quota).')}</p>
+      </div>
     </div>
   `;
   queueIcons();
@@ -11482,34 +11441,43 @@ async function renderMembers(params) {
         });
         bind('empty-add-member', 'click', () => openMemberForm(tripId, null, { onSaved: loadMembersList, canSetRoles: perms.isAdmin }));
         queueIcons();
+        paintVisitStats();
         return;
       }
-      list.innerHTML = members.map(m => `
+      // v42.3 — compact rows (owner: “แต่ละรายชื่อมีกรอบและมีความสูงมากเกินไป”):
+      // one line of identity + one quiet meta line, no per-row cards inside the list.
+      const permNotes = (m) => [
+        m.permissions?.canEditExpense ? th('แก้ค่าใช้จ่ายได้','can edit expenses') : '',
+        m.permissions?.canManageMembers ? th('จัดการสมาชิกได้','can manage members') : ''
+      ].filter(Boolean);
+      list.innerHTML = members.map(m => {
+        const badges = memberGroupBadges(groups, m.id);
+        const perms = permNotes(m);
+        return `
         <div class="card people-row" data-member="${m.id}">
-          <div class="flex items-center gap-3 min-w-0">
+          <div class="people-main">
             <div class="people-avatar" style="${avatarStyle(m.color)}">
               ${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}
             </div>
-            <div class="min-w-0">
+            <div class="people-body">
               <div class="people-name">
                 <span class="truncate">${escapeHtml(m.displayName || 'Member')}</span>
                 ${m.id === currentUser.uid ? `<span class="you-badge">${th('คุณ','You')}</span>` : ''}
+                <span class="people-role" title="${escapeHtml(roleLabel(m.role, lang))}">${escapeHtml(roleLabel(m.role, lang))}</span>
+                ${perms.length ? `<span class="people-perm" title="${escapeHtml(perms.join(' · '))}" aria-label="${escapeHtml(perms.join(', '))}">${icon('key-round', 'w-3 h-3')}</span>` : ''}
               </div>
-              <div class="people-sub">${[
-                escapeHtml(memberStateLabel(m.status, lang)),
-                m.username ? `@${escapeHtml(m.username)}` : '',
-                m.authType === 'account' ? th('บัญชี Google/อีเมล','Google/email account') : '',
-                m.email ? escapeHtml(m.email) : '',
-                m.authType === 'local' ? th('ไม่มีล็อกอิน','no login') : ''
-              ].filter(Boolean).join(' · ')}</div>
-              ${memberGroupBadges(groups, m.id).length ? `<div class="people-groups" data-member-groups>
-                ${memberGroupBadges(groups, m.id).map(b => `<span class="group-tag"><span class="group-tag-dot" style="background:${escapeHtml(b.color)}"></span>${escapeHtml(b.name)}</span>`).join('')}
-              </div>` : ''}
-              <div class="people-tags">${[
-                escapeHtml(roleLabel(m.role, lang)),
-                m.permissions?.canEditExpense ? th('แก้ค่าใช้จ่ายได้','can edit expenses') : '',
-                m.permissions?.canManageMembers ? th('จัดการสมาชิกได้','can manage members') : ''
-              ].filter(Boolean).join(' · ')}</div>
+              <div class="people-sub">
+                <span class="people-sub-text">${[
+                  escapeHtml(memberStateLabel(m.status, lang)),
+                  m.username ? `@${escapeHtml(m.username)}` : '',
+                  m.authType === 'account' ? th('บัญชี Google/อีเมล','Google/email account') : '',
+                  m.email ? escapeHtml(m.email) : '',
+                  m.authType === 'local' ? th('ไม่มีล็อกอิน','no login') : ''
+                ].filter(Boolean).join(' · ')}</span>
+                ${badges.length ? `<span class="people-groups" data-member-groups title="${escapeHtml(badges.map(b => b.name).join(', '))}">
+                  ${badges.map(b => `<span class="people-group-dot" style="background:${escapeHtml(b.color)}"></span>`).join('')}
+                </span>` : ''}
+              </div>
             </div>
           </div>
           <div class="people-actions">
@@ -11517,7 +11485,8 @@ async function renderMembers(params) {
             <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${m.id}" title="${t('delete')}" aria-label="${t('delete')} ${escapeHtml(m.displayName || '')}">${icon('trash-2', 'w-4 h-4')}</button>
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
       list.querySelectorAll('[data-act]').forEach(btn => btn.addEventListener('click', async () => {
         const member = members.find(x => x.id === btn.dataset.id);
         if (!member) return;
@@ -11526,6 +11495,7 @@ async function renderMembers(params) {
       }));
       queueIcons();
       initReveal(list);
+      loadVisitStatsCard();
     } catch (e) {
       if (isStale(token)) return;
       console.error(e);
@@ -11534,6 +11504,104 @@ async function renderMembers(params) {
       queueIcons();
     }
   }
+
+  /**
+   * v42.3 — สถิติการเข้าชม (visit statistics).
+   *
+   * Owner request: “เก็บระยะเวลา และวันเวลาที่เข้าล่าสุดของสมาชิก … พร้อมเวลา
+   * สะสม … เรียงลำดับผู้เข้าชมบ่อยสุด และผู้ใช้เวลาชมมากที่สุดได้”.
+   *
+   * Data: one `visitStats/{uid}` document per member (see src/js/visits/index.js)
+   * — read once per page view, then sorted locally so switching the sort never
+   * costs another Firestore read.
+   */
+  let visitSort = 'recent';
+  let visitStatsCache = null;
+  let visitRows = [];
+
+  async function loadVisitStatsCard() {
+    const box = document.getElementById('visit-list');
+    if (!box) return;
+    if (!visitStatsCache) {
+      box.innerHTML = `<div class="skeleton h-12"></div><div class="skeleton h-12 mt-2"></div>`;
+      try { visitStatsCache = await loadVisitStats(memberRows.map(m => m.uid || m.id), tripId); } catch { visitStatsCache = new Map(); }
+      if (isStale(token)) return;
+    }
+    paintVisitStats();
+  }
+
+  function paintVisitStats() {
+    const listEl = document.getElementById('visit-list');
+    if (!listEl) return;
+    visitRows = memberRows.map(m => {
+      const entry = visitStatsCache?.get(m.uid || m.id) || null;
+      return visitRow(m, entry?.stats || null, entry?.trip || null);
+    });
+    const sum = summarizeVisits(visitRows);
+
+    const summaryEl = document.getElementById('visit-summary');
+    if (summaryEl) {
+      const bits = [
+        `<span class="visit-pill"><b>${sum.tracked}</b>/${sum.total} ${th('คนมีข้อมูล', 'tracked')}</span>`,
+        sum.online ? `<span class="visit-pill visit-pill--live"><span class="visit-live-dot"></span>${th(`กำลังใช้งาน ${sum.online}`, `${sum.online} online`)}</span>` : '',
+        `<span class="visit-pill">${th('เข้าทั้งหมด', 'Visits')} <b>${sum.sessions}</b></span>`,
+        `<span class="visit-pill">${th('เวลารวม', 'Total time')} <b>${formatVisitDuration(sum.tripMs, lang)}</b></span>`
+      ].filter(Boolean);
+      summaryEl.innerHTML = bits.join('');
+    }
+
+    const sorted = sortVisitRows(visitRows, visitSort);
+    if (!sorted.length) {
+      listEl.innerHTML = `<p class="visit-empty">${th('ยังไม่มีสมาชิกให้บันทึก', 'No members to track yet')}</p>`;
+      return;
+    }
+    if (!sorted.some(r => r.tracked)) {
+      listEl.innerHTML = `<p class="visit-empty">${icon('clock', 'w-4 h-4')} ${th('ยังไม่มีข้อมูลการเข้าชม — ระบบจะเริ่มบันทึกเมื่อสมาชิกเปิดแอปครั้งถัดไป', 'No visits recorded yet — tracking starts the next time a member opens the app.')}</p>`;
+      queueIcons();
+      return;
+    }
+
+    const now = Date.now();
+    const maxMs = Math.max(1, ...sorted.map(r => r.tripMs));
+    listEl.innerHTML = sorted.map(row => {
+      const seen = row.tripLastSeen ?? row.appLastSeen ?? null;
+      const live = isVisitingNow(row.tripLastSeen, now);
+      const rel = visitRelative(row.tripLastSeen, now, lang);
+      return `
+        <div class="visit-row" data-visit="${escapeHtml(row.id)}">
+          <div class="visit-person">
+            <div class="people-avatar" style="${avatarStyle(row.color)}">
+              ${row.photoURL ? `<img decoding="async" src="${escapeHtml(row.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(row.name || 'M'))}
+            </div>
+            <div class="visit-body">
+              <div class="visit-name">
+                <span class="truncate">${escapeHtml(row.name || 'Member')}</span>
+                ${live ? `<span class="visit-live">${th('กำลังใช้งาน', 'online')}</span>` : ''}
+              </div>
+              <div class="visit-sub">${visitStamp(seen, now, lang)}${rel ? ` · ${rel}` : ''}${row.appMs > row.tripMs ? ` · ${th('ทั้งแอป', 'app')} ${formatVisitDuration(row.appMs, lang)}` : ''}</div>
+              <div class="visit-bar" aria-hidden="true"><span style="width:${row.tripMs > 0 ? Math.max(4, Math.round((row.tripMs / maxMs) * 100)) : 0}%"></span></div>
+            </div>
+          </div>
+          <div class="visit-metrics">
+            <span class="visit-metric"><b>${formatVisitDuration(row.tripMs, lang)}</b><small>${th('เวลารวม', 'time')}</small></span>
+            <span class="visit-metric"><b>${row.tripSessions}</b><small>${th('ครั้ง', 'visits')}</small></span>
+          </div>
+        </div>`;
+    }).join('');
+    queueIcons();
+  }
+
+  document.querySelectorAll('[data-visit-sort]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      visitSort = btn.dataset.visitSort || 'recent';
+      document.querySelectorAll('[data-visit-sort]').forEach(b => {
+        const on = b === btn;
+        b.classList.toggle('is-active', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      paintVisitStats();
+    });
+  });
 
   bind('add-member-btn', 'click', () => openMemberForm(tripId, null, { onSaved: loadMembersList, canSetRoles: perms.isAdmin }));
   if (canManageGroups) bind('add-group-btn', 'click', () => openGroupForm(null));

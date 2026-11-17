@@ -370,6 +370,32 @@ transaction. Two devices paying at the same time therefore cannot both record th
 debt; the second call fails with “กรุณาคำนวณใหม่”. A stale client that still writes a
 transfer without the matching guard bump is rejected by `firestore.rules`.
 
+### visitStats/{uid}  และ visitStats/{uid}/trips/{tripId}  (v42.3 — สถิติการเข้าชม)
+สถานะการใช้งานของแต่ละบัญชีสำหรับการ์ด “สถิติการเข้าชม” ในหน้า **สมาชิก**:
+
+```
+visitStats/{uid}                  { uid, lastSeenAt, sessions, totalMs, tripIds[] }
+visitStats/{uid}/trips/{tripId}   { tripId, sessions, ms, lastSeenAt }
+```
+
+- **หนึ่งบัญชี = หนึ่งเอกสาร** (บวกหนึ่งแถวเล็กต่อทริปที่เคยเข้า) ไม่ใช่หนึ่งเอกสารต่อการเข้าชม
+- เอกสารมีแต่ตัวเลขกับเวลา — ไม่มีชื่อ อีเมล หรือเนื้อหาทริป — ดั้งเดิมจึงให้สมาชิกที่ล็อกอินอ่านได้
+  (กฎ: `get/list` ต้องล็อกอิน, `create/update` ต้องเป็นเจ้าของ `uid` เท่านั้น, `totalMs`/`ms` เพิ่มได้อย่างเดียว)
+- แยกเอกสารต่อทริปแทนแผนที่ซ้อนในเอกสารเดียว เพราะ Firestore ตีความ dotted path (`trips.t1.ms`)
+  เฉพาะใน `update()` — ไม่ใช่ใน `set(…, { merge: true })` และ merge บน map จะแทนที่ทั้ง map
+
+**ผลต่อโควตาฟรี (Spark)**
+
+| รายการ | จำนวน |
+|---|---|
+| เขียน | 2 ครั้งตอนเริ่ม session + 2 ครั้ง/นาทีที่แท็บเปิดอยู่ (มองเห็น) + 2 ครั้งตอนปิด/ซ่อนแท็บ |
+| ตัวอย่าง: 1 คนเปิดแอป 20 นาที | ~44 writes (2 + 2×20 + 2) |
+| ทั้งทริป 10 คน × 3 ครั้ง/วัน × 20 นาที | ~1,320 writes/วัน (โควตาฟรี 20,000/วัน = 6.6%) |
+| อ่าน | 2 ต่อสมาชิก ต่อการเปิดหน้า Members หนึ่งครั้ง (10 คน = 20 reads/ครั้ง; โควตา 50,000/วัน) |
+| พื้นที่ | ~200–300 ไบต์/คน (1 GiB ฟรี) |
+
+ไม่มี heartbeat ตอนแท็บซ่อน ไม่มีการเขียนต่อวินาที และไม่มีการอ่านระหว่างใช้งานหน้าอื่น
+
 ### trips/{tripId}/settlements/_transferGuard
 A single reserved document `{ version, transferId, operation }` (never a settlement
 record). It serializes transfers and is only writable as part of a valid transfer

@@ -253,6 +253,40 @@ service cloud.firestore {
       ]);
     }
 
+    // Visit statistics (หน้า สมาชิก) — “เก็บระยะเวลา และวันเวลาที่เข้าล่าสุด”.
+    // ONE document per account (`visitStats/{uid}`), never one per visit: it
+    // carries only counters and timestamps, so the free Spark quota sees a
+    // handful of writes per session (1 on entry + 1 per visible minute).
+    //   { uid, lastSeenAt, sessions, totalMs, tripIds[],
+    //     trips: { [tripId]: { sessions, ms, lastSeenAt } } }
+    // Numbers only — no names, e-mails or content — therefore any signed-in
+    // member may read them to fill the Members page. Only the owner may write;
+    // the totals may only grow, so a document cannot be rewound by a client.
+    match /visitStats/{uid} {
+      allow get, list: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == uid
+        && request.resource.data.uid == uid
+        && (request.resource.data.totalMs is int || request.resource.data.totalMs is float)
+        && (request.resource.data.sessions is int || request.resource.data.sessions is float);
+      allow update: if isAuthenticated() && request.auth.uid == uid
+        && request.resource.data.uid == resource.data.uid
+        && (request.resource.data.totalMs is int || request.resource.data.totalMs is float)
+        && request.resource.data.totalMs >= resource.data.totalMs;
+      allow delete: if isSuperAdmin();
+
+      // Per-trip slice of the same statistics: { tripId, sessions, ms, lastSeenAt }.
+      // A separate document (not a nested map) because Firestore only resolves
+      // dotted field paths in update(), and a merge on a map replaces it whole.
+      match /trips/{tripId} {
+        allow get, list: if isAuthenticated();
+        allow create, update: if isAuthenticated() && request.auth.uid == uid
+          && request.resource.data.tripId == tripId
+          && (request.resource.data.ms is int || request.resource.data.ms is float)
+          && (request.resource.data.sessions is int || request.resource.data.sessions is float);
+        allow delete: if isSuperAdmin();
+      }
+    }
+
     // Users collection - only self or super admin. Self-writes are a fixed profile
     // schema; authentication/step-up fields are server-managed by Admin SDK.
     match /users/{uid} {

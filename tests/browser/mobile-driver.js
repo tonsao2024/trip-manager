@@ -63,6 +63,20 @@ fsdb.__seed('trips/t1/members/u4', {
 });
 TRIP.memberUids.push('u4');
 
+// v42.3 — visit statistics (one document per account, see src/js/visits/index.js).
+// Varied on purpose: a live session, a long-time member, a quiet one, and one
+// account with no document at all (“ยังไม่เคยเข้า”).
+const min = (n) => ({ seconds: Math.floor(Date.now() / 1000) - n * 60, nanoseconds: 0 });
+const visitSeeds = [
+  ['u1', 24, 1224 * 60000, 220 * 60000, 2],
+  ['u2', 9, 65 * 60000, 65 * 60000, 60 * 26],
+  ['u3', 3, 22 * 60000, 22 * 60000, 60 * 24 * 5]
+];
+for (const [uid, sessions, totalMs, tripMs, ago] of visitSeeds) {
+  fsdb.__seed(`visitStats/${uid}`, { uid, sessions, totalMs, lastSeenAt: min(ago), tripIds: ['t1'] });
+  fsdb.__seed(`visitStats/${uid}/trips/t1`, { tripId: 't1', sessions, ms: tripMs, lastSeenAt: min(ago) });
+}
+
 fsdb.__seed('trips/t1/itineraryItems/i1', {
   title: 'ทะเลสาบคาวากุจิ', date: start, startAt: new Date(`${start}T09:00:00+09:00`),
   durationMinutes: 120, order: 0, category: 'sightseeing', status: 'planned',

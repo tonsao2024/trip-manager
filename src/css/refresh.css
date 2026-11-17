@@ -46,7 +46,9 @@ select.input { border-radius: var(--radius); }
   box-shadow: none;
   padding: 8px 16px;
 }
-[data-theme="dark"] .desktop-nav .menu-item.chip-active { color: var(--primary); }
+/* The active tab is a filled accent pill in both modes; its ink is --on-primary
+   (dark ink on the light-blue dark accent), never the accent colour itself. */
+[data-theme="dark"] .desktop-nav .menu-item.chip-active { color: var(--on-primary); }
 
 /* Mobile bottom nav = floating rounded bar with an active pill */
 [data-theme="dark"] .bottom-nav { box-shadow: 0 18px 44px rgba(0,0,0,0.6); }
