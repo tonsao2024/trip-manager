@@ -1424,7 +1424,12 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 
 /* Export-flat keeps the receipt colours (see .export-flat above) */
 .export-flat .receipt .rcpt-block { background: #ffffff !important; }
-.export-flat .receipt .rcpt-block--recv .rcpt-block-head { background: #ecfdf5 !important; color: #065f46 !important; }
+.export-flat .receipt .rcpt-block--recv .rcpt-block-head { background: #e6f4ea !important; color: #0d652d !important; }
+.export-flat .receipt .rcpt-block--deduct .rcpt-block-head { background: #fce8e6 !important; color: #b3261e !important; }
+.export-flat .receipt .rcpt-block--balance .rcpt-block-head { background: #e8f0fe !important; color: #1967d2 !important; }
+.export-flat .receipt .rcpt-card--in .rcpt-card-head { color: #0d652d !important; }
+.export-flat .receipt .rcpt-card--out .rcpt-card-head { color: #b3261e !important; }
+.export-flat .receipt .rcpt-card--net .rcpt-card-head { color: #1967d2 !important; }
 .export-flat .receipt .receipt-negative { color: #b91c1c !important; }
 
 /* Receipt photo on expense rows + the upload field in the editor */

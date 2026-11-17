@@ -16,7 +16,7 @@ export const UI_STYLE_KEY = 'fuji_ui_style';
 export const UI_STYLE_DEFAULTS = Object.freeze({
   radius: 'soft',
   density: 'regular',
-  depth: 'flat'
+  depth: 'soft'
 });
 
 /** Corner radius presets. `id` is what lands in data-radius. */
@@ -33,10 +33,10 @@ export const DENSITY_OPTIONS = Object.freeze([
   { id: 'roomy', th: 'โปร่ง', en: 'Roomy', hint: { th: 'ปุ่มใหญ่ขึ้น ระยะห่างมากขึ้น', en: 'Bigger targets, more air' } }
 ]);
 
-/** Shadow presets. */
+/** Shadow presets (v41: Material elevation is the default — Google's look). */
 export const DEPTH_OPTIONS = Object.freeze([
   { id: 'flat', th: 'แบนสนิท', en: 'Flat', hint: { th: 'ไม่มีเงา ใช้เส้นขอบแบ่งชั้น', en: 'No shadows, borders only' } },
-  { id: 'soft', th: 'เงานุ่ม', en: 'Soft', hint: { th: 'เพิ่มเงาบาง ๆ ใต้การ์ด', en: 'A light shadow under cards' } }
+  { id: 'soft', th: 'เงานุ่ม (Google)', en: 'Soft (Google)', hint: { th: 'ค่าเริ่มต้น — เงา Material ใต้การ์ด', en: 'Default — Material elevation under cards' } }
 ]);
 
 const ALLOWED = {

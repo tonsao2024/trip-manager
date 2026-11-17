@@ -3,10 +3,11 @@
 // docs/UNSLOP-AUDIT-2026-11-08.md sets the rules the UI follows. This script
 // renders every screen of the real app (43 routes) in a real Chromium, at
 // desktop 1440 and phone 390, in light and dark mode, with the real fonts
-// (IBM Plex Sans Thai + Mono), and measures every visible element:
+// (Google Sans + Google Sans Code, self-hosted in src/fonts/), and measures
+// every visible element:
 //
 //   contrast   text below WCAG AA (4.5:1, or 3:1 for large text)
-//   mono600    IBM Plex Mono at weight ≥600 (the rules cap Mono at 500)
+//   mono600    Google Sans Code at weight ≥600 (the rules cap mono at 500)
 //   thaiclip   a clipped Thai line with line-height <1.4 (cuts ที่ ปู่ ฎ)
 //   year       a Christian-era year on screen (Thai screens use พ.ศ.)
 //   latin      English-only copy on the Thai UI
@@ -114,21 +115,19 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
 if (!html.includes('/tests/browser/out/design/driver.js')) throw new Error('design-check: could not swap the app entry for the driver (index.html changed?)');
 fs.writeFileSync(path.join(workDir, 'page.html'), html);
 
-// The real fonts as data URLs: the devDependencies first, then a local copy.
+// The real fonts as data URLs. v41 ships them in src/fonts/ (self-hosted Google
+// Sans + Google Sans Code), so the check measures exactly what users download.
 function fontCss() {
+  const dir = path.join(root, 'src/fonts');
   const out = [];
-  const sources = [
-    ['IBM Plex Sans Thai', 'ibm-plex-sans-thai', ['thai', 'latin'], [400, 500, 600]],
-    ['IBM Plex Mono', 'ibm-plex-mono', ['latin'], [400, 500, 600]]
+  const families = [
+    ['Google Sans', 'google-sans', ['thai', 'latin'], [400, 500, 600, 700]],
+    ['Google Sans Code', 'google-sans-code', ['latin'], [400, 500, 600]]
   ];
-  for (const [family, pkg, subsets, weights] of sources) {
-    const dir = [
-      path.join(root, 'node_modules/@fontsource', pkg, 'files'),
-      `/tmp/fonts/fontsource-${pkg}-5.3.0/package/files`
-    ].find((d) => fs.existsSync(d));
-    if (!dir) { console.warn(`⚠️  ${family} not installed — run npm ci; text metrics will use a fallback face`); continue; }
+  if (!fs.existsSync(dir)) { console.warn('⚠️  src/fonts is missing — text metrics will use a fallback face'); return ''; }
+  for (const [family, prefix, subsets, weights] of families) {
     for (const s of subsets) for (const w of weights) {
-      const f = path.join(dir, `${pkg}-${s}-${w}-normal.woff2`);
+      const f = path.join(dir, `${prefix}-${s}-${w}-normal.woff2`);
       if (fs.existsSync(f)) out.push(`@font-face{font-family:'${family}';font-weight:${w};font-style:normal;src:url(data:font/woff2;base64,${fs.readFileSync(f).toString('base64')}) format('woff2');}`);
     }
   }
@@ -195,7 +194,7 @@ function audit() {
         const large = fs >= 24 || (fs >= 18.66 && fw >= 600);
         if (ratio < (large ? 3 : 4.5)) out.push(`contrast ${ratio.toFixed(2)} ${sel(el)} ${fs}px ${cs.color}${op < 1 ? ' op=' + op.toFixed(2) : ''} on rgb(${bg.slice(0, 3).map(Math.round).join(',')}) «${t.slice(0, 28)}»`);
       }
-      if (/Plex Mono|monospace/i.test(cs.fontFamily.split(',')[0]) && fw >= 600) out.push(`mono600 ${sel(el)} ${fw} «${t.slice(0, 24)}»`);
+      if (/Google Sans Code|Plex Mono|monospace/i.test(cs.fontFamily.split(',')[0]) && fw >= 600) out.push(`mono600 ${sel(el)} ${fw} «${t.slice(0, 24)}»`);
       if (THAI.test(t) && fs > 0) {
         const lh = cs.lineHeight === 'normal' ? 1.5 : parseFloat(cs.lineHeight) / fs;
         const clips = cs.overflow === 'hidden' || cs.overflowY === 'hidden' || cs.textOverflow === 'ellipsis' || cs.webkitLineClamp !== 'none';

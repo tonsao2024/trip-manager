@@ -1547,6 +1547,13 @@ console.log('\n▶ v10: per-person receipts are colour-coded and the overview is
   check(!!q('#receipt-u1 .rcpt-block--recv') && !!q('#receipt-u1 .rcpt-block--deduct') && !!q('#receipt-u1 .rcpt-block--balance'), 'receipt: each section has its own colour');
   check(!!q('#receipt-u1 .rcpt-chip--cash, #receipt-u1 .rcpt-chip--card, #receipt-u1 .rcpt-chip--transfer'), 'receipt: payment methods appear as coloured chips');
   check(!!q('#receipt-u1 .rcpt-sum-total'), 'receipt: the balance is boxed at the bottom');
+  // v41: the answer is four colour-coded cards — ต้องรับ · ต้องจ่าย · สุทธิ · โอนให้ใคร.
+  check(!!q('#receipt-u1 .rcpt-card--in') && !!q('#receipt-u1 .rcpt-card--out') && !!q('#receipt-u1 .rcpt-card--net'),
+    'receipt: receive / pay / net are separate colour-coded cards');
+  check(!!q('#receipt-u1 .rcpt-card--who .rcpt-who-row, #receipt-u1 .rcpt-card--who .rcpt-who-clear'),
+    'receipt: the net answer names exactly who to pay / who pays back');
+  check(/ต้องรับ/.test(q('#receipt-u1 .rcpt-card--in')?.textContent || '') && /ต้องจ่าย/.test(q('#receipt-u1 .rcpt-card--out')?.textContent || '') && /สุทธิ/.test(q('#receipt-u1 .rcpt-card--net')?.textContent || ''),
+    'receipt: each answer card is labelled in Thai');
   check(/รับ[\s\S]*หัก[\s\S]*คงเหลือ/.test(q('#receipt-u1')?.textContent || ''), 'receipt: รับ → หัก → คงเหลือ in order');
   const css = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8');
   check(/\.export-flat \.receipt \.rcpt-block--recv \.rcpt-block-head/.test(css), 'receipt: the colours survive the PNG export (export-flat overrides)');
@@ -2531,6 +2538,16 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   await sleep(220);
   check(window.localStorage.getItem('fuji_rcpt_density') === 'full', 'settlement: switching back to detailed persists too');
 
+  // v41: กระทัดรัด folds the item rows, never the answers. Both densities must
+  // keep ต้องรับ / ต้องจ่าย / สุทธิ / โอนให้ใคร on screen.
+  await click('#receipt-density [data-density="compact"]');
+  await sleep(200);
+  check(!!q('#receipt-u1 .rcpt-card--in') && !!q('#receipt-u1 .rcpt-card--out') && !!q('#receipt-u1 .rcpt-card--net') && !!q('#receipt-u1 .rcpt-card--who'),
+    'receipt: compact mode keeps all four answer cards (only the item rows fold)');
+  check(!!q('#receipt-u1 .rcpt-details'), 'receipt: compact mode keeps the item lists in the DOM for printing/export');
+  await click('#receipt-density [data-density="full"]');
+  await sleep(200);
+
   // ---- 8) the debt map is ONE map with a connecting line per transfer ----
   await click('#settle-views [data-view="debt-map"]');
   await waitFor(() => q('.debt-map-container') || q('.debt-map-node'), { timeout: 8000, label: 'debt map' }).catch(() => {});
@@ -2735,24 +2752,23 @@ console.log('\n▶ v17/v18 offline strip + colour themes');
 {
   check(!!window.document.getElementById('offline-strip-wrap'), 'offline: strip container exists in the shell');
   const css = fs.readFileSync(path.join(root, 'src/css/tokens.css'), 'utf8');
-  // v35 “Calm”: one brand-blue accent on neutral surfaces (docs/UNSLOP-AUDIT-2026-11-08.md).
-  check(/--primary-raw:\s*#0f5ef5/i.test(css) && !/#1e4bff/i.test(css), 'palette v35: the brand blue is the single accent in tokens.css');
+  // v41 “Google Material”: Google blue is the one accent on Google's grey canvas.
+  check(/--primary-raw:\s*#1a73e8/i.test(css) && !/#1e4bff/i.test(css), 'palette v41: Google blue is the single accent in tokens.css');
   check(!/#2f6fe4/.test(css) && !/#f0ae52/.test(css), 'palette: the muted v17 hexes are gone from the tokens');
   check(!/#1d4ed8/.test(css) && !/#ffc81e/.test(css), 'palette: old True-tone colours gone');
-  // v20 “Vivid & Deep”: jewel-saturated status colours + a deeper brand canvas
-  // that lifts white cards, and quieter greys pushed out of the tokens.
-  check(/--success:\s*#15803d/i.test(css) && /--danger:\s*#b91c1c/i.test(css),
-    'palette v35: green / red are AA-contrast money colours');
+  // v41: Google's Material green 700 / red 800 — both ≥5:1 on white.
+  check(/--success:\s*#188038/i.test(css) && /--danger:\s*#c5221f/i.test(css),
+    'palette v41: green / red are AA-contrast money colours');
   check(!/#059669/.test(css) && !/#ea7317/.test(css) && !/#e63232/.test(css) && !/#1a8dd6/.test(css),
     'palette v20: the older, softer status hexes are gone from the tokens');
   check(!/#00a86b/.test(css) && !/#ef7d00/.test(css) && !/#ef2b3d/.test(css) && !/#0d8ce0/.test(css),
     'palette v20: the v19 status hexes are replaced, not mixed in');
-  check(/--page-bg:\s*#fafafa/i.test(css) && /--bg:\s*#fafafa/i.test(css), 'palette v35: a neutral canvas — no brand tint behind the cards');
-  check(/--text:\s*#171717/i.test(css) && /--text-strong:\s*#0a0a0a/i.test(css), 'palette v35: neutral ink for typography');
+  check(/--page-bg:\s*#f8f9fa/i.test(css) && /--bg:\s*#f8f9fa/i.test(css), 'palette v41: Google grey 50 canvas — no brand tint behind the cards');
+  check(/--text:\s*#202124/i.test(css) && /--text-strong:\s*#17181a/i.test(css), 'palette v41: Google ink for typography');
   const refreshCss = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
   const flatCssV35 = fs.readFileSync(path.join(root, 'src/css/flat.css'), 'utf8');
-  check(/\.chip-active, \.chip-active:hover \{[^}]*var\(--surface-2\)/.test(flatCssV35),
-    'palette v35: a selected chip is a surface step + hairline, not a solid accent pill');
+  check(/\.chip-active, \.chip-active:hover \{[^}]*--primary-raw\) 10%/.test(flatCssV35),
+    "palette v41: a selected chip is Google's tinted filter chip, not a solid accent pill");
   // v35 round 4: status is not money — badges are a neutral surface step; a
   // cancelled item keeps red *ink* only (no tinted fill anywhere in the cascade).
   check(/\.badge-planned, \.badge-completed, \.badge-skipped, \.badge-pending \{[^}]*var\(--surface-2\)/.test(flatCssV35)
@@ -2924,6 +2940,17 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
   const v28spots = v28amounts.map(t => `${t.getAttribute('x')},${t.getAttribute('y')}`);
   check(v28amounts.length > 0 && new Set(v28spots).size === v28spots.length,
     'debt map: every money label sits in its own spot');
+  // v41: each on-map amount is a numbered pill that belongs to exactly one line,
+  // and the number matches the transfer list below the graph.
+  const pills = qa('.debt-pill[data-pill]');
+  check(pills.length === qa('.debt-map-edge:not([data-offgraph])').length && pills.length > 0,
+    `debt map: every drawn line carries its own numbered pill (${pills.length})`);
+  const pillNumbers = pills.map(p => p.dataset.pill).sort();
+  const rowNumbers = qa('.debt-tx-row').map(r => r.dataset.debtStep).sort();
+  check(pillNumbers.every(n => rowNumbers.includes(n)),
+    'debt map: the pill number on a line is the number of a row in the list');
+  check(qa('.debt-offgraph-note').length === qa('.debt-map-edge[data-offgraph]').length,
+    'debt map: a transfer that cannot fit on the drawing says so instead of moving its money elsewhere');
 
   // ---- 3) footer ขนาดเล็กลง ----
   const footCss = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
@@ -3013,7 +3040,7 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
     'header: every chip carries a full AND a short label (never icon-only)');
   check(!/min-width: 768px\) and \(max-width: 1439/.test(shellHtml29),
     'header: the old icon-only collapse rule is gone');
-  check(/--header-h: 101px/.test(shellHtml29), 'header: the two-row sticky height is declared');
+  check(/--header-h: 113px/.test(shellHtml29), 'header: the two-row sticky height is declared');
   const navEl = q('#desktop-nav');
   const chips = qa('#desktop-nav .menu-item').map(a => a.getBoundingClientRect());
   let chipsOverlap = false;

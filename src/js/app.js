@@ -39,7 +39,7 @@ import { listMembers, createMember, updateMember, deleteMember, countMemberRefer
 import { dayjs, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay, parseDurationInput, thaiDate, thaiDateRange } from './utils/date.js';
 import { expensesInThb, convertCurrency, formatCurrency, formatCurrencyHtml, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually, tripCurrencyList } from './utils/currency.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses, groupTransfersByPayer } from './utils/settlement.js';
-import { debtMapColor, layoutDebtMapAmountLabels } from './utils/debtMap.js';
+import { debtMapColor, placeDebtMapPill } from './utils/debtMap.js';
 import { splitCustom, splitEqual, participantsOf, averagePerPerson, scaleToTotal } from './utils/split.js';
 import { escapeHtml, sanitizeUrl } from './utils/sanitize.js';
 import { APP_VERSION, APP_VERSION_LABEL, APP_UPDATED_ISO, APP_NAME, APP_AUTHOR, APP_NAME_BY, appUpdatedLabel, appUpdatedShort, appBuildLabel, appFooterLabel, copyrightNote } from './utils/buildInfo.js';
@@ -3762,7 +3762,7 @@ async function renderDashboard(params) {
           ${dragHandle(th('การ์ดกิจกรรมตอนนี้','current activity card'))}
           <div class="card p-4">
             <div class="card-head">
-              <h3 class="card-title">${t('currentActivity')}</h3>
+              <h3 class="card-title"><span class="row-icon tile-blue" aria-hidden="true">${icon('clock', 'w-4 h-4')}</span>${t('currentActivity')}</h3>
               <button id="dash-today-link" type="button" class="btn btn-ghost btn-sm">${th('ดูวันนี้','Today')}</button>
             </div>
             <div id="current-activity"><div class="skeleton h-14"></div></div>
@@ -3780,7 +3780,7 @@ async function renderDashboard(params) {
           ${dragHandle(th('การ์ดแผนถัดไป','upcoming plans card'))}
           <div class="card p-4">
             <div class="card-head">
-              <h3 class="card-title">${t('upNext')}</h3>
+              <h3 class="card-title"><span class="row-icon tile-teal" aria-hidden="true">${icon('route', 'w-4 h-4')}</span>${t('upNext')}</h3>
               <button id="dash-itinerary-link" type="button" class="btn btn-ghost btn-sm">${th('ดูแผนทั้งหมด','All plans')}</button>
             </div>
             <div id="upnext-list"><div class="skeleton h-14"></div></div>
@@ -3791,7 +3791,7 @@ async function renderDashboard(params) {
           ${dragHandle(th('การ์ดการจองที่กำลังจะถึง','upcoming bookings card'))}
           <div class="card p-4">
             <div class="card-head">
-              <h3 class="card-title">${th('การจองที่กำลังจะถึง','Upcoming bookings')}</h3>
+              <h3 class="card-title"><span class="row-icon tile-violet" aria-hidden="true">${icon('ticket', 'w-4 h-4')}</span>${th('การจองที่กำลังจะถึง','Upcoming bookings')}</h3>
               <button id="dash-bookings-link" type="button" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</button>
             </div>
             <div id="dash-bookings" class="booking-list"><div class="skeleton h-12"></div></div>
@@ -3802,7 +3802,7 @@ async function renderDashboard(params) {
           ${dragHandle(th('การ์ดค่าใช้จ่ายล่าสุด','recent expenses card'))}
           <div class="card p-4">
             <div class="card-head">
-              <h3 class="card-title">${th('รายการล่าสุด','Recent expenses')}</h3>
+              <h3 class="card-title"><span class="row-icon tile-amber" aria-hidden="true">${icon('receipt', 'w-4 h-4')}</span>${th('รายการล่าสุด','Recent expenses')}</h3>
               <button id="dash-expenses-link" type="button" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</button>
             </div>
             <div id="recent-expenses" class="recent-list"><div class="skeleton h-12"></div></div>
@@ -3813,7 +3813,7 @@ async function renderDashboard(params) {
           ${dragHandle(th('การ์ดค่าใช้จ่ายตามหมวด','spend by category card'))}
           <div class="card p-4">
             <div class="card-head">
-              <h3 class="card-title">${th('ค่าใช้จ่ายตามหมวด','Spend by category')}</h3>
+              <h3 class="card-title"><span class="row-icon tile-orange" aria-hidden="true">${icon('pie-chart', 'w-4 h-4')}</span>${th('ค่าใช้จ่ายตามหมวด','Spend by category')}</h3>
               <button id="cat-expand-btn" type="button" class="btn btn-ghost btn-sm" style="display:none;"><span data-cat-label>${th('ดูทั้งหมด','Show all')}</span></button>
             </div>
             <div id="category-stats"><div class="skeleton h-24"></div></div>
@@ -3823,7 +3823,7 @@ async function renderDashboard(params) {
         <section class="dash-widget dash-widget--half" data-dashboard-widget="estimate">
           ${dragHandle(th('การ์ดประมาณการเทียบจ่ายจริง','estimated vs actual card'))}
           <div class="card p-4">
-            <div class="card-head"><h3 class="card-title">${th('ประมาณการเทียบจ่ายจริง','Estimated vs actual')}</h3></div>
+            <div class="card-head"><h3 class="card-title"><span class="row-icon tile-green" aria-hidden="true">${icon('bar-chart-3', 'w-4 h-4')}</span>${th('ประมาณการเทียบจ่ายจริง','Estimated vs actual')}</h3></div>
             <div id="estimate-compare"></div>
             <div id="summary-stats" class="card-foot"></div>
           </div>
@@ -3833,7 +3833,7 @@ async function renderDashboard(params) {
           ${dragHandle(th('การ์ดสถานที่ที่อยากไป','wishlist card'))}
           <div id="dash-ideas-board" class="card p-4">
             <div class="card-head">
-              <h3 class="card-title">${th('สถานที่ที่อยากไป','Wishlist')}</h3>
+              <h3 class="card-title"><span class="row-icon tile-red" aria-hidden="true">${icon('star', 'w-4 h-4')}</span>${th('สถานที่ที่อยากไป','Wishlist')}</h3>
               <a id="dash-ideas-link" href="#/trip/${tripId}/ideas" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</a>
             </div>
             <div id="dash-ideas-list" class="dash-scroll-body"><div class="skeleton h-16"></div></div>
@@ -3844,7 +3844,7 @@ async function renderDashboard(params) {
           ${dragHandle(th('การ์ดสมาชิก','members card'))}
           <div class="card p-4">
             <div class="card-head">
-              <h3 class="card-title">${th('สมาชิก · จ่ายไปและส่วนที่รับผิดชอบ','Members · paid and share')}</h3>
+              <h3 class="card-title"><span class="row-icon tile-sky" aria-hidden="true">${icon('users', 'w-4 h-4')}</span>${th('สมาชิก · จ่ายไปและส่วนที่รับผิดชอบ','Members · paid and share')}</h3>
               <button id="dash-members-link" type="button" class="btn btn-ghost btn-sm">${th('จัดการ','Manage')}</button>
             </div>
             <div id="member-board-content" class="member-board dash-scroll-body"><div class="skeleton h-16"></div></div>
@@ -3855,7 +3855,7 @@ async function renderDashboard(params) {
           ${dragHandle(th('การ์ดทีม','teams card'))}
           <div class="card p-4" id="dash-teams-card">
             <div class="card-head">
-              <h3 class="card-title">${th('ทีม · ค่าใช้จ่ายต่อคนและรวมทีม','Teams · cost per person and per team')}</h3>
+              <h3 class="card-title"><span class="row-icon tile-grey" aria-hidden="true">${icon('users-round', 'w-4 h-4')}</span>${th('ทีม · ค่าใช้จ่ายต่อคนและรวมทีม','Teams · cost per person and per team')}</h3>
               <button id="dash-teams-link" type="button" class="btn btn-ghost btn-sm">${th('จัดการทีม','Manage teams')}</button>
             </div>
             <div id="team-board" class="team-board"><div class="skeleton h-16"></div></div>
@@ -9511,6 +9511,46 @@ async function renderSettlement(params) {
     const chip = (k) => `<span class="rcpt-chip rcpt-chip--${k}">${icon(methodIcon(k), 'w-3 h-3')} ${methodLabel(k)}</span>`;
     const positive = m.netMinor >= 0;
     const COLLAPSE_AFTER = 5;
+    /* ---- the four answers, computed once ---- */
+    const netTone = Math.abs(m.netMinor) <= 1 ? 'is-clear' : positive ? 'is-pos' : 'is-neg';
+    const netHeadline = Math.abs(m.netMinor) <= 1
+      ? th('สุทธิ — เคลียร์แล้ว', 'Net — all settled')
+      : positive ? th('สุทธิ — ต้องได้รับคืน', 'Net — gets back') : th('สุทธิ — ต้องจ่ายคืน', 'Net — owes');
+    const netIcon = Math.abs(m.netMinor) <= 1 ? 'check-circle-2' : positive ? 'arrow-down-left' : 'arrow-up-right';
+    const netAmount = Math.abs(m.netMinor) <= 1 ? money(0) : `${positive ? '+' : '−'}${money(Math.abs(m.netMinor))}`;
+    /* Big figures read faster without satang; the exact satang stays in the
+       detail blocks and in the net answer (that is the amount that moves). */
+    const moneyWhole = (minor) => {
+      const amount = Math.abs(Number(minor) || 0);
+      const rounded = Math.round(amount / 100) * 100;
+      return formatCurrency(Math.round(amount) === rounded ? rounded : amount, 'THB');
+    };
+    const netNote = Math.abs(m.netMinor) <= 1
+      ? th('ไม่มีหนี้ค้างระหว่างกัน', 'Nothing outstanding')
+      : positive ? th('ได้รับคืนจากเพื่อนในทริป', 'Back from the group') : th('ต้องจ่ายให้เพื่อนในทริป', 'Owed to the group');
+    /* “จ่ายใครบ้าง / รับจากใคร” as tappable rows (the old settle-answers block) */
+    const whoHtml = (() => {
+      const { out, inc } = transfersFor(m.memberId);
+      if (!out.length && !inc.length) {
+        return `<div class="rcpt-who-clear">${icon('check-circle-2', 'w-4 h-4')} ${th('เคลียร์ครบแล้ว — ไม่ต้องโอนให้ใคร','All settled — nothing to transfer')}</div>`;
+      }
+      const row = (id, amountMinor, direction) => {
+        const person = state.membersMap[id] || {};
+        return `<button type="button" class="rcpt-who-row ${direction} no-export" data-settle-person="${escapeHtml(id)}">
+          <span class="rcpt-who-dir" aria-hidden="true">${icon(direction === 'out' ? 'arrow-up-right' : 'arrow-down-left', 'w-3.5 h-3.5')}</span>
+          <span class="avatar" style="width:26px;height:26px;font-size:12px;${avatarStyle(person.color)};">${person.photoURL ? `<img decoding="async" src="${escapeHtml(person.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(person.displayName || '?'))}</span>
+          <span class="rcpt-who-name">${escapeHtml(person.displayName || '')}
+            <span class="rcpt-who-role">${direction === 'out' ? th('โอนให้','Pay') : th('รับจาก','Receive from')}</span>
+          </span>
+          <b class="rcpt-who-amount">${direction === 'out' ? '−' : '+'}${money(amountMinor)}</b>
+          ${icon('chevron-right', 'w-3.5 h-3.5')}
+        </button>`;
+      };
+      return `<div class="rcpt-who-list">
+        ${out.map(t => row(t.to, t.amountMinor, 'is-out')).join('')}
+        ${inc.map(t => row(t.from, t.amountMinor, 'is-in')).join('')}
+      </div>`;
+    })();
 
     /** One compact item row; rows past COLLAPSE_AFTER fold until "show all". */
     const itemRow = (i, idx, side) => {
@@ -9569,17 +9609,36 @@ async function renderSettlement(params) {
             <div class="receipt-member-name receipt-member-name--lg${nameSizeClass(m.displayName)}">${escapeHtml(m.displayName)}${isMe ? ` <span class="you-badge">${th('คุณ','You')}</span>` : ''}</div>
             <div class="rcpt-member-sub">${th('จ่ายแล้ว','Paid')} ${m.paidCount} · ${th('ร่วมหาร','shared')} ${m.shareCount}${flaggedCount(m) ? ` · ${flaggedCount(m)} ${th('รายการที่ทักท้วง','flagged')}` : ''}</div>
           </div>
-          <div class="rcpt-hero ${positive ? 'is-positive' : 'is-negative'}">
-            <div class="min-w-0">
-              <div class="rcpt-hero-label">${settled ? th('เคลียร์ครบแล้ว','Fully settled') : positive ? th('จะได้รับคืน','Gets back') : th('ต้องจ่ายคืน','Owes')}</div>
-              <div class="rcpt-hero-amount">${positive ? '+' : '−'}${money(Math.abs(m.netMinor))}</div>
-              ${thbOf(m.netMinor) ? `<div class="rcpt-hero-sub">≈ ${thbOf(Math.abs(m.netMinor))}</div>` : ''}
-            </div>
-          </div>
         </div>
+
+        <!-- THE ANSWER, in four colour-coded cards: ต้องรับ · ต้องจ่าย · สุทธิ · โอนให้ใคร.
+             They stay visible in BOTH densities; compact only folds the item rows. -->
+        <div class="rcpt-cards">
+          <section class="rcpt-card rcpt-card--in" data-receipt-answer="in">
+            <div class="rcpt-card-head">${icon('arrow-down-left', 'w-4 h-4')} ${th('ต้องรับ — เงินที่จ่ายไปก่อน','To receive — money paid up front')}</div>
+            <div class="rcpt-card-amount">${moneyWhole(m.paidMinor)}</div>
+            <div class="rcpt-card-meta">${th('จ่ายไป','Paid')} ${m.paidCount} ${th('รายการ','items')}${methods.length ? ` · ${methods.map(k => `${methodLabel(k)} ${money(m.paidByMethod[k])}`).join(' · ')}` : ''}</div>
+          </section>
+          <section class="rcpt-card rcpt-card--out" data-receipt-answer="out">
+            <div class="rcpt-card-head">${icon('arrow-up-right', 'w-4 h-4')} ${th('ต้องจ่าย — ส่วนที่ต้องรับผิดชอบ','To pay — this person’s share')}</div>
+            <div class="rcpt-card-amount">${moneyWhole(m.owedMinor)}</div>
+            <div class="rcpt-card-meta">${th('ร่วมหาร','Shared')} ${m.shareCount} ${th('รายการ','items')}${flaggedCount(m) ? ` · ${flaggedCount(m)} ${th('รายการที่ทักท้วง','flagged')}` : ''}</div>
+          </section>
+          <section class="rcpt-card rcpt-card--net ${netTone}">
+            <div class="rcpt-card-head">${icon(netIcon, 'w-4 h-4')} ${netHeadline}</div>
+            <div class="rcpt-card-amount">${netAmount}</div>
+            <div class="rcpt-card-meta">${netNote}${thbOf(m.netMinor) ? ` · ≈ ${thbOf(Math.abs(m.netMinor))}` : ''}</div>
+          </section>
+          <section class="rcpt-card rcpt-card--who" data-receipt-answer="who">
+            <div class="rcpt-card-head">${icon('users', 'w-4 h-4')} ${positive ? th('ใครต้องจ่ายคุณ','Who pays you') : th('คุณต้องจ่ายใคร','Who you pay')}</div>
+            ${whoHtml}
+          </section>
+        </div>
+
         <p class="rcpt-hint no-export">${th('แตะไอคอนข้อความข้างรายการ เพื่อทักท้วงหรือสอบถาม','Tap the message icon beside an item to question it')}</p>
 
         <!-- 1) รับ — money this member actually paid (green block) -->
+        <div class="rcpt-details">
         <section class="rcpt-block rcpt-block--recv" data-receipt-section="received">
           <div class="rcpt-block-head">
             <span class="rcpt-block-title">${th('รับ — เงินที่จ่ายไป','Received — money this member paid')}</span>
@@ -9628,7 +9687,7 @@ async function renderSettlement(params) {
               <div class="rcpt-sum-note">${positive
                 ? th('จะได้รับคืนจากเพื่อนในทริป','Gets this back from the group')
                 : th('ต้องจ่ายคืนให้เพื่อนในทริป','Owes this to the group')}${currency !== 'THB' && thbOf(m.netMinor) ? ` • ${th('ประมาณในสกุลหลัก','approx. in base currency')} ${thbOf(Math.abs(m.netMinor))}` : ''}</div>
-              <div class="rcpt-sum-transfers">${transferLinesHtml(m.memberId)}</div>
+              <div class="rcpt-sum-transfers no-export">${transferLinesHtml(m.memberId)}</div>
             </div>
             ${flaggedCount(m) ? `<div class="rcpt-summary-comments">
               <div class="rcpt-summary-comments-title">${icon('message-square', 'w-3.5 h-3.5')} ${th('มีความเห็น/ข้อทักท้วง','Comments & questions')} • ${flaggedCount(m)} ${th('รายการ','items')}</div>
@@ -9640,6 +9699,7 @@ async function renderSettlement(params) {
             </div>` : ''}
           </div>
         </section>
+        </div><!-- /.rcpt-details -->
 
         <div class="receipt-foot">
           ${currency !== 'THB' && thbRate ? `1 ${escapeHtml(currency)} ≈ ${formatAmount(thbRate, 4)} THB · ` : ''}${th(`ออกโดย ${APP_NAME_BY}`, `Generated by ${APP_NAME_BY}`)} · ${escapeHtml(`${thaiDate(new Date())} ${dayjs().format('HH:mm')}`)}
@@ -10293,22 +10353,16 @@ async function renderSettlement(params) {
     if (!txns.length) {
       return `<div class="card p-4">${renderEmptyState({ icon: 'party-popper', title: t('noDebt'), desc: t('allCleared') })}</div>`;
     }
-    const tokenColor = (name, fallback) => {
-      try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback; }
-      catch { return fallback; }
-    };
-    const POS = tokenColor('--success', '#00a86b');
-    const NEG = tokenColor('--danger', '#ef2b3d');
-    const initial = (person) => escapeHtml((person?.displayName || '?').trim().charAt(0).toUpperCase() || '?');
-    const shortName = (person, max = 14) => {
+    const shortName = (person, max = 22) => {
       const name = person?.displayName || '?';
       return escapeHtml(name.length > max ? `${name.slice(0, max - 1)}…` : name);
     };
+    const initial = (person) => escapeHtml((person?.displayName || '?').trim().charAt(0).toUpperCase() || '?');
 
-    /* ---- who is on the map: everyone who sends or receives money ---- */
+    /* ---- who is on the map, how much each side moves ---------------------- */
     const send = new Map();   // id -> total sent
     const recv = new Map();   // id -> total received
-    const partners = new Map(); // id -> Set(partner ids) for the ordering pass
+    const partners = new Map();
     txns.forEach(tx => {
       send.set(tx.from, (send.get(tx.from) || 0) + (tx.amountMinor || 0));
       recv.set(tx.to, (recv.get(tx.to) || 0) + (tx.amountMinor || 0));
@@ -10318,13 +10372,9 @@ async function renderSettlement(params) {
       }
     });
     const ids = [...new Set([...send.keys(), ...recv.keys()])];
-    // Biggest movement first is a stable, readable default order.
     ids.sort((a, b) => (Math.abs((recv.get(b) || 0) - (send.get(b) || 0)) - Math.abs((recv.get(a) || 0) - (send.get(a) || 0))));
 
-    /* ---- layout: one ellipse, barycentre ordering to reduce crossings ---- */
-    // Below 1024px the map is drawn in (roughly) screen pixels instead of being
-    // scaled down from an 820-wide canvas, so names, roles and amounts stay
-    // ≥ 12px on a phone (v35). Desktop keeps the original 820×500 canvas.
+    /* ---- layout: one ellipse, barycentre ordering to shorten the lines ---- */
     const vw = (typeof window !== 'undefined' && window.innerWidth) || 1024;
     const compact = vw < 1024;
     const W = compact ? Math.round(Math.max(300, Math.min(820, vw - (vw < 768 ? 72 : 112)))) : 820;
@@ -10336,11 +10386,7 @@ async function renderSettlement(params) {
     const n = ids.length;
     const radiusX = compact ? Math.max(64, Math.min(W / 2 - 72, 190 + n * 14)) : Math.min(320, 190 + n * 14);
     const radiusY = compact ? Math.max(90, Math.min(GRAPH_H / 2 - 84, 118 + n * 10)) : Math.min(192, 118 + n * 10);
-    // On the narrow canvas, people in the upper part of the ring carry their
-    // name ABOVE the dot — their lines leave downwards, so the text stays clear.
     const labelAbove = (pt) => compact && Math.sin(pt.ang) < -0.4;
-    // one ordering pass: each person moves towards the average angle of the
-    // people they pay / get paid by, keeping connected people near each other.
     const angleOf = (i) => (2 * Math.PI * i) / Math.max(1, n) - Math.PI / 2;
     let order = ids.slice();
     if (n > 2) {
@@ -10348,97 +10394,128 @@ async function renderSettlement(params) {
       const bary = order.map((id) => {
         const ps = [...(partners.get(id) || [])].filter(p => idxOf.has(p));
         if (!ps.length) return idxOf.get(id);
-        // circular mean of partner positions (in index space)
         let sx = 0, sy = 0;
         ps.forEach(p => { sx += Math.cos(angleOf(idxOf.get(p))); sy += Math.sin(angleOf(idxOf.get(p))); });
-        let ang = Math.atan2(sy, sx) + Math.PI / 2; // back to index space (0 = top)
+        let ang = Math.atan2(sy, sx) + Math.PI / 2;
         if (ang < 0) ang += 2 * Math.PI;
         return (ang / (2 * Math.PI)) * n;
       });
-      order = order
-        .map((id, i) => ({ id, key: bary[i] }))
-        .sort((a, b) => a.key - b.key)
-        .map(o => o.id);
+      order = order.map((id, i) => ({ id, key: bary[i] })).sort((a, b) => a.key - b.key).map(o => o.id);
     }
     const posOf = new Map();
+    let prevPoint = null;
     order.forEach((id, i) => {
       const ang = angleOf(i);
-      posOf.set(id, {
-        x: cx + radiusX * Math.cos(ang),
-        y: cy + radiusY * Math.sin(ang),
-        ang
-      });
+      const raw = { x: cx + radiusX * Math.cos(ang), y: cy + radiusY * Math.sin(ang) };
+      // Keep neighbouring nodes at least ~68px apart even when the ellipse is
+      // squeezed by a narrow screen.
+      if (prevPoint) {
+        const dx = raw.x - prevPoint.x, dy = raw.y - prevPoint.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const minDist = compact ? 62 : 74;
+        if (dist < minDist) {
+          raw.x = prevPoint.x + (dx / dist) * minDist;
+          raw.y = prevPoint.y + (dy / dist) * minDist;
+        }
+      }
+      prevPoint = raw;
+      posOf.set(id, { ...raw, ang });
     });
 
-    /* ---- edges: colour = the RECEIVER's node colour (owner request,
-         11 Oct 2026 — “สีเส้นควรแสดงสีตามผู้รับเงิน”) + collision-free labels ---- */
-    const markerDefs = [];
-    let edgesHtml = '';
-    const sortedTx = txns.slice().sort((a, b) => (b.amountMinor || 0) - (a.amountMinor || 0));
+    /* ---- ONE colour per person; every line takes the RECEIVER's colour ----- */
     const nodeR = compact ? (n > 8 ? 17 : 20) : (n > 8 ? 21 : 25);
-    const nodeObstacles = order.map(id => {
-      const person = membersMap[id] || { displayName: id };
-      const p = posOf.get(id);
-      const label = (person.displayName || '?').slice(0, 16);
-      const halfWidth = Math.max(nodeR + 10, Math.max(56, label.length * FS.nameCharW) / 2) + 7;
-      const above = labelAbove(p);
-      return {
-        left: p.x - halfWidth,
-        right: p.x + halfWidth,
-        top: p.y - nodeR - (above ? 44 : 8),
-        bottom: p.y + nodeR + (above ? 8 : compact ? 42 : 38)
-      };
-    });
+    const sortedTx = txns.slice().sort((a, b) => (b.amountMinor || 0) - (a.amountMinor || 0));
     const nodeColors = new Map(order.map((id, i) => [id, debtMapColor(sortedTx.length + 24 + i)]));
+    const markerDefs = [];
+
+    /**
+     * Every transfer = one arc bent towards the middle of the circle. The amount
+     * is NEVER loose on the drawing: it sits on a small pill in the middle of
+     * its own arc, always rotated with the arc, and the arc is drawn *behind*
+     * the pills. Because each arc owns a private angle, two pills cannot land on
+     * the same spot; and each pill is numbered (#1, #2 …) to match the list.
+     */
     const edgeRows = sortedTx.map((tx, i) => {
       const p1 = posOf.get(tx.from), p2 = posOf.get(tx.to);
       if (!p1 || !p2) return null;
       const payer = membersMap[tx.from] || { displayName: th('ผู้จ่ายเงิน', 'Payer') };
       const receiver = membersMap[tx.to] || { displayName: th('ผู้รับเงิน', 'Receiver') };
-      // Every line pointing at the same receiver shares that person's colour,
-      // so “who gets the money” reads at a glance.
       const color = nodeColors.get(tx.to) || debtMapColor(i);
       const markerId = `debt-arrow-${i}`;
-      markerDefs.push(`<marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0L10 5L0 10z" fill="${escapeHtml(color)}"/></marker>`);
+      markerDefs.push(`<marker id="${markerId}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="${escapeHtml(color)}"/></marker>`);
+      // Pull the arc off the node edges so the arrowhead never sits on an avatar.
       const dx = p2.x - p1.x, dy = p2.y - p1.y;
       const len = Math.hypot(dx, dy) || 1;
       const ux = dx / len, uy = dy / len;
-      const sxp = p1.x + ux * 30, syp = p1.y + uy * 30;
-      const exp = p2.x - ux * 34, eyp = p2.y - uy * 34;
-      // Give every parallel connection a unique bend as well as a unique hue.
-      const side = i % 2 === 0 ? 1 : -1;
-      const bulge = side * (30 + Math.floor(i / 2) * 12);
-      const mx = (sxp + exp) / 2 - uy * bulge;
-      const my = (syp + eyp) / 2 + ux * bulge;
-      return {
-        tx, index: i, payer, receiver, color, markerId,
-        start: { x: sxp, y: syp }, control: { x: mx, y: my }, end: { x: exp, y: eyp },
-        amountLabel: money(tx.amountMinor)
+      const start = { x: p1.x + ux * (nodeR + 6), y: p1.y + uy * (nodeR + 6) };
+      const end = { x: p2.x - ux * (nodeR + 9), y: p2.y - uy * (nodeR + 9) };
+      // Bend towards the centre: the further the pair, the gentler the bend.
+      const bend = Math.min(64, Math.max(18, len * 0.18));
+      const control = {
+        x: (start.x + end.x) / 2 - uy * bend,
+        y: (start.y + end.y) / 2 + ux * bend
       };
+      // Midpoint of the quadratic + the direction the pill has to follow.
+      const mid = {
+        x: 0.25 * start.x + 0.5 * control.x + 0.25 * end.x,
+        y: 0.25 * start.y + 0.5 * control.y + 0.25 * end.y
+      };
+      const tangent = { x: (end.x - start.x) * 0.5 + (control.x - start.x), y: (end.y - start.y) * 0.5 + (control.y - start.y) };
+      let angle = Math.atan2(tangent.y, tangent.x) * 180 / Math.PI;
+      if (angle > 90 || angle < -90) angle += 180; // keep the text upright
+      return { tx, index: i, payer, receiver, color, markerId, start, control, end, mid, angle, amountLabel: money(tx.amountMinor) };
     }).filter(Boolean);
-    const amountLayout = layoutDebtMapAmountLabels(
-      edgeRows.map(edge => ({ start: edge.start, control: edge.control, end: edge.end, label: edge.amountLabel })),
-      nodeObstacles,
-      { width: W, height: GRAPH_H, charWidth: FS.charW, labelHeight: FS.labelH }
-    );
-    const H = amountLayout.height;
-    edgeRows.forEach((edge, i) => {
-      const { tx, payer, receiver, color, markerId, start, control, end, amountLabel } = edge;
-      const label = amountLayout.positions[i];
-      const labelMarkup = label ? `
-        <g class="debt-map-amount-label" data-overflow-label="${label.fallback ? 'true' : 'false'}" aria-hidden="true">
-          <rect x="${(label.x - label.width / 2).toFixed(1)}" y="${(label.y - label.height / 2).toFixed(1)}" width="${label.width.toFixed(1)}" height="${label.height.toFixed(1)}" rx="8" fill="var(--surface)" fill-opacity=".97" stroke="${escapeHtml(color)}" stroke-width="1.5"/>
-          <text class="debt-map-amount" x="${label.x.toFixed(1)}" y="${label.y.toFixed(1)}" text-anchor="middle" dominant-baseline="central">${escapeHtml(amountLabel)}</text>
-        </g>` : '';
+
+    // Arc positions (bend, mid, angle) are computed above; now spread the pills
+    // along their arcs so no two pills touch, and keep them inside the canvas.
+    const pillH = 22;
+    const pillW = (label) => Math.max(70, Math.ceil([...label].length * FS.charW + 40));
+    const placed = [];
+    const nodeBoxes = order.map(id => {
+      const p = posOf.get(id);
+      return { left: p.x - nodeR - 8, right: p.x + nodeR + 8, top: p.y - nodeR - 8, bottom: p.y + nodeR + 8 };
+    });
+    edgeRows.forEach((edge) => {
+      const width = pillW(edge.amountLabel);
+      edge.pillWidth = width;
+      edge.pillHeight = pillH;
+      // The pill never leaves its own arc (utils/debtMap.js). If the whole arc
+      // is blocked, the amount moves to the numbered list — it is never dropped
+      // somewhere else on the drawing.
+      const obstacles = [...nodeBoxes, ...placed];
+      const pill = placeDebtMapPill(
+        { start: edge.start, control: edge.control, end: edge.end, width, height: pillH },
+        obstacles,
+        { width: W, height: GRAPH_H, padding: 6, gap: 5 }
+      );
+      edge.pill = pill;
+      if (pill) placed.push({ left: pill.x - width / 2, right: pill.x + width / 2, top: pill.y - pillH / 2, bottom: pill.y + pillH / 2 });
+    });
+    const offGraph = edgeRows.filter(e => !e.pill);
+
+    let edgesHtml = '';
+    edgeRows.forEach((edge) => {
+      const { tx, payer, receiver, color, markerId } = edge;
+      const d = `M${edge.start.x.toFixed(1)},${edge.start.y.toFixed(1)} Q${edge.control.x.toFixed(1)},${edge.control.y.toFixed(1)} ${edge.end.x.toFixed(1)},${edge.end.y.toFixed(1)}`;
+      // The pill is drawn at absolute coordinates (never rotated) so the amount
+      // text has one unique anchor per transfer — easy to test, easy to read.
+      const onLine = edge.pill
+        ? `<g class="debt-pill debt-map-amount-label" data-pill="${edge.index + 1}" data-overflow-label="false">
+             <rect x="${(edge.pill.x - edge.pill.width / 2).toFixed(1)}" y="${(edge.pill.y - pillH / 2).toFixed(1)}" width="${edge.pill.width.toFixed(1)}" height="${pillH}" rx="${pillH / 2}" fill="var(--surface)" stroke="${escapeHtml(color)}" stroke-width="1.5"/>
+             <circle cx="${(edge.pill.x - edge.pill.width / 2 + 11).toFixed(1)}" cy="${edge.pill.y.toFixed(1)}" r="7" fill="${escapeHtml(color)}"/>
+             <text class="debt-pill-tag" x="${(edge.pill.x - edge.pill.width / 2 + 11).toFixed(1)}" y="${edge.pill.y.toFixed(1)}" text-anchor="middle" dominant-baseline="central" fill="${escapeHtml(avatarInk(color))}" font-size="9.5" font-weight="700">${edge.index + 1}</text>
+             <text class="debt-pill-amount debt-map-amount" x="${(((edge.pill.x + edge.pill.width / 2) + (edge.pill.x - edge.pill.width / 2 + 22)) / 2).toFixed(1)}" y="${edge.pill.y.toFixed(1)}" text-anchor="middle" dominant-baseline="central" fill="var(--text-strong)" font-size="${compact ? 12 : 11.5}" font-weight="600">${escapeHtml(edge.amountLabel)}</text>
+           </g>`
+        : '';
       edgesHtml += `
-        <g class="debt-map-edge" data-edge="${escapeHtml(tx.from)}→${escapeHtml(tx.to)}" data-color="${escapeHtml(color)}">
-          <title>${escapeHtml(payer.displayName || '')} ${th('จ่ายให้', 'pays')} ${escapeHtml(receiver.displayName || '')}: ${escapeHtml(amountLabel)}</title>
-          <path d="M${start.x.toFixed(1)},${start.y.toFixed(1)} Q${control.x.toFixed(1)},${control.y.toFixed(1)} ${end.x.toFixed(1)},${end.y.toFixed(1)}" fill="none" stroke="${escapeHtml(color)}" stroke-width="2.8" stroke-opacity=".9" stroke-linecap="round" marker-end="url(#${markerId})"/>
-          ${labelMarkup}
+        <g class="debt-map-edge" data-edge="${escapeHtml(tx.from)}→${escapeHtml(tx.to)}" data-color="${escapeHtml(color)}" ${edge.pill ? '' : 'data-offgraph="true"'}>
+          <title>${escapeHtml(payer.displayName || '')} ${th('จ่ายให้', 'pays')} ${escapeHtml(receiver.displayName || '')}: ${escapeHtml(edge.amountLabel)}</title>
+          <path d="${d}" fill="none" stroke="${escapeHtml(color)}" stroke-width="2.6" stroke-opacity=".85" stroke-linecap="round" marker-end="url(#${markerId})"/>
+          ${onLine}
         </g>`;
     });
 
-    /* ---- people: one node each, role spelled out ---- */
+    /* ---- people: avatar + name + role, no loose numbers around the ring ---- */
     let nodesHtml = '';
     order.forEach((id) => {
       const person = membersMap[id] || { displayName: id };
@@ -10449,14 +10526,14 @@ async function renderSettlement(params) {
       const roleLabel = role === 'mixed'
         ? th('จ่าย/รับ', 'PAYS / GETS')
         : role === 'receiver' ? th('รับเงิน', 'GETS BACK') : th('จ่ายเงิน', 'PAYS');
-      const tone = role === 'receiver' ? POS : role === 'payer' ? NEG : 'var(--primary-strong)';
+      const tone = role === 'receiver' ? 'var(--debt-in-ink, #137333)' : role === 'payer' ? 'var(--debt-out-ink, #c5221f)' : 'var(--primary-strong)';
       const personIndex = order.indexOf(id);
       const color = nodeColors.get(id) || debtMapColor(personIndex);
       const clipId = `debt-avatar-${personIndex}`;
       if (person.photoURL) markerDefs.push(`<clipPath id="${clipId}" clipPathUnits="userSpaceOnUse"><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${nodeR}"/></clipPath>`);
       const above = labelAbove(p);
-      const nameY = above ? p.y - nodeR - 29 : p.y + nodeR + (compact ? 20 : 18);
-      const roleY = above ? p.y - nodeR - 12 : p.y + nodeR + (compact ? 35 : 32);
+      const nameY = above ? p.y - nodeR - 24 : p.y + nodeR + (compact ? 20 : 18);
+      const roleY = above ? p.y - nodeR - 8 : p.y + nodeR + (compact ? 35 : 32);
       nodesHtml += `
         <g class="debt-map-node debt-map-node--${role}" data-member="${escapeHtml(id)}" data-debt-person="${escapeHtml(id)}" role="button" tabindex="0" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${person.displayName || id}`, `View expenses for ${person.displayName || id}`))}" style="cursor:pointer;">
           <title>${escapeHtml(person.displayName || '')}${out ? ` • ${th('จ่าย', 'pays')} ${money(out)}` : ''}${inc ? ` • ${th('รับ', 'gets')} ${money(inc)}` : ''}</title>
@@ -10464,27 +10541,30 @@ async function renderSettlement(params) {
           <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${nodeR}" fill="${escapeHtml(color)}"/>
           ${person.photoURL ? `<image href="${escapeHtml(person.photoURL)}" x="${(p.x - nodeR).toFixed(1)}" y="${(p.y - nodeR).toFixed(1)}" width="${nodeR * 2}" height="${nodeR * 2}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clipId})"/>` : `<text x="${p.x.toFixed(1)}" y="${(p.y + 1).toFixed(1)}" text-anchor="middle" dominant-baseline="central" fill="${escapeHtml(avatarInk(color))}" font-size="${FS.initial}" font-weight="600" font-family="var(--font-display)">${initial(person)}</text>`}
           <text x="${p.x.toFixed(1)}" y="${nameY.toFixed(1)}" text-anchor="middle" fill="var(--text-strong)" font-size="${FS.name}" font-weight="500" font-family="var(--font-sans)">${shortName(person, 16)}</text>
-          <text x="${p.x.toFixed(1)}" y="${roleY.toFixed(1)}" text-anchor="middle" fill="${escapeHtml(tone)}" font-size="${FS.role}" font-weight="500" font-family="var(--font-sans)">${roleLabel}</text>
+          <text x="${p.x.toFixed(1)}" y="${roleY.toFixed(1)}" text-anchor="middle" fill="${tone}" font-size="${FS.role}" font-weight="600" font-family="var(--font-sans)">${roleLabel}</text>
         </g>`;
     });
 
-    /* Start with the actual transfer instructions. The diagram is an optional
-       overview; it should never be necessary to interpret crossing lines. */
-    const rowsHtml = edgeRows.map(({ tx, payer, receiver, color }, index) => `
-      <div class="debt-tx-row" style="--debt-edge-color:${escapeHtml(color)};">
+    /* ---- the authoritative list: number, payer → receiver, amount, action --- */
+    const rowsHtml = edgeRows.map(({ tx, payer, receiver, color, index, amountLabel, pill }) => `
+      <div class="debt-tx-row${pill ? '' : ' debt-tx-row--offgraph'}" style="--debt-edge-color:${escapeHtml(color)};" data-debt-step="${index + 1}">
         <span class="debt-step" aria-hidden="true">${index + 1}</span>
         <div class="debt-route">
-          <button type="button" class="debt-person-link" data-settle-person="${escapeHtml(tx.from)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${payer.displayName || 'ผู้จ่าย'}`, `View expenses for ${payer.displayName || 'payer'}`))}">
+          <button type="button" class="debt-person-link is-from" data-settle-person="${escapeHtml(tx.from)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${payer.displayName || 'ผู้จ่าย'}`, `View expenses for ${payer.displayName || 'payer'}`))}">
             <span class="avatar" style="width:36px;height:36px;font-size:14px;${avatarStyle(payer.color)};">${payer.photoURL ? `<img decoding="async" src="${escapeHtml(payer.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(payer.displayName || '?'))}</span>
             <span class="debt-person-copy"><span class="debt-person-role">${th('ผู้โอน', 'From')}</span><span class="debt-person-name">${escapeHtml(payer.displayName || '')}</span></span>
           </button>
-          <span class="debt-row-pays" aria-label="${th('โอนให้', 'pays')}" >${icon('arrow-right', 'w-4 h-4')}</span>
-          <button type="button" class="debt-person-link" data-settle-person="${escapeHtml(tx.to)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${receiver.displayName || 'ผู้รับ'}`, `View expenses for ${receiver.displayName || 'receiver'}`))}">
+          <span class="debt-row-pays" aria-hidden="true">${icon('arrow-right', 'w-4 h-4')}</span>
+          <button type="button" class="debt-person-link is-to" data-settle-person="${escapeHtml(tx.to)}" aria-label="${escapeHtml(th(`ดูรายการค่าใช้จ่ายของ ${receiver.displayName || 'ผู้รับ'}`, `View expenses for ${receiver.displayName || 'receiver'}`))}">
             <span class="avatar" style="width:36px;height:36px;font-size:14px;${avatarStyle(receiver.color)};">${receiver.photoURL ? `<img decoding="async" src="${escapeHtml(receiver.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(receiver.displayName || '?'))}</span>
             <span class="debt-person-copy"><span class="debt-person-role">${th('ผู้รับ', 'To')}</span><span class="debt-person-name">${escapeHtml(receiver.displayName || '')}</span></span>
           </button>
         </div>
-        <div class="debt-amount-block"><span>${th('ยอดที่ต้องโอน', 'Amount to transfer')}</span><b class="debt-row-amount">${money(tx.amountMinor)}</b></div>
+        <div class="debt-amount-block">
+          <span>${th('ยอดที่ต้องโอน', 'Amount to transfer')}</span>
+          <b class="debt-row-amount">${amountLabel}</b>
+          ${pill ? '' : `<i class="debt-offgraph-note">${th('ยอดนี้ไม่ได้เขียนบนเส้น (พื้นที่ไม่พอ) — ดูเลข ${index + 1} ในรายการ', `Not drawn on the line — see #${index + 1} in this list`)}</i>`}
+        </div>
         ${canPay ? `<button type="button" class="btn btn-secondary btn-sm debt-pay-btn no-export" data-settle-pay data-settle-from="${escapeHtml(tx.from)}" data-settle-to="${escapeHtml(tx.to)}" data-settle-amount="${tx.amountMinor}" aria-label="${escapeHtml(th(`บันทึกว่า ${payer.displayName || 'ผู้โอน'} จ่ายให้ ${receiver.displayName || 'ผู้รับ'} แล้ว`, `Record payment from ${payer.displayName || 'payer'} to ${receiver.displayName || 'receiver'}`))}">${th('จ่ายแล้ว', 'Mark paid')}</button>` : ''}
       </div>`).join('');
     const totalMove = txns.reduce((sum, tx) => sum + (tx.amountMinor || 0), 0);
@@ -10494,7 +10574,7 @@ async function renderSettlement(params) {
         <div class="debt-map-heading">
           <div><p class="debt-map-eyebrow">${th('สรุปการเคลียร์บิล', 'SETTLEMENT')}</p>
             <h3>${th('ใครโอนให้ใคร', 'Who pays whom')}</h3>
-            <p>${th('โอนตามรายการด้านล่าง กดชื่อเพื่อดูรายละเอียดค่าใช้จ่าย', 'Follow the transfers below. Select a name to see their expenses.')}</p>
+            <p>${th('เลขในวงกลมบนเส้นตรงกับเลขในรายการด้านล่าง กดชื่อเพื่อดูค่าใช้จ่ายของคนนั้น', 'The number on each line matches the list below. Select a name to see that person’s expenses.')}</p>
           </div>
           <div class="debt-map-total"><span>${th('ยอดที่ต้องโอนทั้งหมด', 'Total to transfer')}</span><strong>${money(totalMove)}</strong><small>${txns.length} ${th('รายการโอน', 'transfers')}</small></div>
         </div>
@@ -10504,15 +10584,15 @@ async function renderSettlement(params) {
         <p class="debt-map-action-hint">${th('หลังโอนเงินจริงแล้ว กด “จ่ายแล้ว” เพื่อบันทึกยอดเต็มหรือบางส่วน', 'After sending money, select “Mark paid” to record a full or partial payment.')}</p>
         <details class="debt-graph-details">
           <summary><span>${icon('network', 'w-4 h-4')} ${th('ดูแผนภาพความสัมพันธ์', 'View transfer diagram')}</span>${icon('chevron-down', 'w-4 h-4')}</summary>
-          <p class="debt-graph-help">${th('ลูกศรชี้จากผู้โอนไปยังผู้รับ กดที่ชื่อหรือวงกลมเพื่อดูรายละเอียด', 'Arrows point from payer to receiver. Select a person for details.')}</p>
-          ${n > 8 ? `<p class="debt-graph-help">${th('เมื่อมีสมาชิกหลายคน เส้นอาจอ่านยาก ใช้รายการโอนด้านบนเพื่อดูชื่อและยอดเต็ม', 'With many people, lines may be hard to follow. Use the transfer list above for full names and amounts.')}</p>` : ''}
+          <p class="debt-graph-help">${th('ลูกศรชี้จากผู้โอนไปยังผู้รับ ยอดเงินอยู่ในป้ายบนเส้นของตัวเอง พร้อมเลขกำกับตรงกับรายการด้านบน', 'Arrows point from payer to receiver. Each amount sits on its own line, with a number that matches the list above.')}</p>
+          ${offGraph.length ? `<p class="debt-graph-help">${th(`มี ${offGraph.length} รายการที่พื้นที่บนภาพไม่พอ — ยอดของรายการนั้นอยู่ในรายการด้านบน (ทำเครื่องหมายไว้)`, `${offGraph.length} transfer(s) had no room on the drawing — their amounts are in the list above (marked).`)}</p>` : ''}
           <div class="debt-map-legend">
             <span class="debt-legend-item is-out">${th('จ่ายเงิน', 'Pays')}</span>
             <span class="debt-legend-item is-in">${th('รับเงิน', 'Receives')}</span>
-            <span class="debt-legend-item debt-legend-item--unique"><i class="debt-legend-swatch" aria-hidden="true">${order.filter(id => (recv.get(id) || 0) > 0).slice(0, 4).map(id => `<span style="background:${escapeHtml(nodeColors.get(id) || 'var(--primary)')}"></span>`).join('')}</i>${th('สีเส้น = สีของผู้รับเงินรายการนั้น','Line colour = the receiver’s colour')}</span>
+            <span class="debt-legend-item debt-legend-item--unique"><i class="debt-legend-swatch" aria-hidden="true">${order.filter(id => (recv.get(id) || 0) > 0).slice(0, 4).map(id => `<span style="background:${escapeHtml(nodeColors.get(id) || 'var(--primary)')}"></span>`).join('')}</i>${th('สีเส้น = สีของผู้รับเงินรายการนั้น', 'Line colour = the receiver’s colour')}</span>
           </div>
           <div class="debt-map-container">
-            <svg class="debt-map-svg${compact ? ' debt-map-svg--compact' : ''}" viewBox="0 0 ${W} ${H}" role="group" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected by money-transfer lines'))}">
+            <svg class="debt-map-svg${compact ? ' debt-map-svg--compact' : ''}" viewBox="0 0 ${W} ${GRAPH_H}" role="group" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected by money-transfer lines'))}">
               <defs>${markerDefs.join('')}</defs>${edgesHtml}${nodesHtml}
             </svg>
           </div>

@@ -11,7 +11,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
 export function testVersionFields() {
   assert(/^\d+$/.test(APP_VERSION), 'version is a plain number string');
   assert(APP_VERSION_LABEL === `v${APP_VERSION}`, 'label matches the version');
-  assert(APP_PALETTE === 'Sky light', 'palette name matches the v17 design system');
+  assert(APP_PALETTE === 'Google Material', 'palette name matches the v41 design system');
   assert(/^\d{4}-\d{2}-\d{2}$/.test(APP_UPDATED_ISO), 'ISO date format');
   const d = appUpdatedDate();
   assert(d instanceof Date && !isNaN(d.getTime()), 'date parses');

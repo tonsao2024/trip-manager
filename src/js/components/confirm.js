@@ -22,7 +22,7 @@ export function confirmAction({
     const sheet = showBottomSheet(`
       <div class="space-y-4">
         <div class="flex items-start gap-3">
-          <div class="row-icon">
+          <div class="row-icon ${danger ? 'tile-red' : 'tile-blue'}">
             <i data-lucide="${safeIcon}" class="w-5 h-5"></i>
           </div>
           <div class="min-w-0 flex-1">
@@ -69,7 +69,7 @@ export function promptAction({
     const sheet = showBottomSheet(`
       <div class="space-y-4">
         <div class="flex items-center gap-3">
-          <div class="row-icon"><i data-lucide="${safeIcon}" class="w-5 h-5"></i></div>
+          <div class="row-icon tile-amber"><i data-lucide="${safeIcon}" class="w-5 h-5"></i></div>
           <h3 class="font-semibold text-base" style="font-family: var(--font-display);">${safeTitle}</h3>
         </div>
         <div class="input-group">

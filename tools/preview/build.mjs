@@ -147,6 +147,12 @@ fsdb.__seed('trips/t1/ideas/idea2', { title: 'ป่าไผ่อาราช�
 fsdb.__seed('trips/t1/notes/n1', { title: 'รหัส WiFi เรียวกัง', body: 'fuji-2027 / 8888', color: 'amber', updatedAt: now });
 fsdb.__seed('trips/t1/documents/d1', { title: 'พาสปอร์ตสมชาย', category: 'passport', date: iso(20), description: '', fileUrl: '', imageUrl: '' });
 
+// English copy check: PREVIEW_LANG=en flips the stored language before boot, so
+// the screens can be proof-read in the second language too.
+if (process.env.PREVIEW_LANG === 'en') {
+  try { window.localStorage.setItem('fuji_lang', 'en'); } catch { /* ignore */ }
+}
+
 // ------------------------------------------------------------------ boot
 await import(pathToFileURL(path.join(buildDir, 'app.js')).href);
 const authStub = await import(stub('firebase-auth.mjs'));
@@ -197,6 +203,13 @@ for (const [name, hash, wait] of ROUTES) {
   if (only && only !== name) continue;
   await goto(hash);
   await sleep(wait);
+  // Settlement opens on a view switch; the preview needs the receipts + debt map.
+  if (process.env.PREVIEW_SETTLE_VIEW && name === 'settlement') {
+    const doc0 = window.document;
+    const want = process.env.PREVIEW_SETTLE_VIEW;
+    doc0.querySelector(`#settle-views [data-view="${want}"]`)?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await sleep(600);
+  }
   const doc = window.document;
   const header = doc.getElementById('app-header')?.outerHTML || '';
   const bottomNav = doc.getElementById('bottom-nav')?.outerHTML || '';
@@ -204,7 +217,8 @@ for (const [name, hash, wait] of ROUTES) {
   const desktopNav = doc.getElementById('desktop-nav')?.outerHTML || '';
   const main = appEl()?.outerHTML || '';
   const body = `<div id="page">\n${header}\n${desktopNav}\n${main}\n${fab}\n${bottomNav}\n</div>\n<div id="toast-container"></div>`;
-  fs.writeFileSync(path.join(outDir, `${name}.html`), body, 'utf8');
-  console.log(`saved tools/preview/out/${name}.html (${Math.round(body.length / 1024)} kB)`);
+  const suffix = (name === 'settlement' && process.env.PREVIEW_SETTLE_VIEW) ? `-${process.env.PREVIEW_SETTLE_VIEW}` : '';
+  fs.writeFileSync(path.join(outDir, `${name}${suffix}.html`), body, 'utf8');
+  console.log(`saved tools/preview/out/${name}${suffix}.html (${Math.round(body.length / 1024)} kB)`);
 }
 process.exit(0);
