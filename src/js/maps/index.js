@@ -87,6 +87,55 @@ export function getStoredLabelsVisible() {
   return true;
 }
 
+export const RAILWAY_STORAGE_KEY = 'fuji_map_railway';
+export const RAILWAY_TILE_URL = 'https://tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png';
+export const RAILWAY_ATTRIBUTION = '© OpenRailwayMap';
+
+export function getStoredRailwayVisible() {
+  try {
+    const v = localStorage.getItem(RAILWAY_STORAGE_KEY);
+    if (v === 'on') return true;
+    if (v === 'off') return false;
+  } catch {}
+  return false;
+}
+
+export function setStoredRailwayVisible(visible) {
+  try { localStorage.setItem(RAILWAY_STORAGE_KEY, visible ? 'on' : 'off'); } catch {}
+}
+
+export function setRailwayOverlay(containerId, visible) {
+  const el = document.getElementById(containerId) || CONTAINER_IDS.get(containerId);
+  const entry = el ? MAP_REGISTRY.get(el) : null;
+  if (!entry || !entry.map || !entry.L) return false;
+  const map = entry.map, L = entry.L;
+  if (visible) {
+    if (entry.railwayLayer && map.hasLayer(entry.railwayLayer)) return true;
+    const layer = L.tileLayer(RAILWAY_TILE_URL, {
+      attribution: RAILWAY_ATTRIBUTION,
+      maxZoom: 19,
+      maxNativeZoom: 19,
+      opacity: 0.85,
+      pane: 'overlayPane'
+    });
+    layer.addTo(map);
+    entry.railwayLayer = layer;
+  } else {
+    if (entry.railwayLayer) {
+      try { map.removeLayer(entry.railwayLayer); } catch {}
+      entry.railwayLayer = null;
+    }
+  }
+  setStoredRailwayVisible(visible);
+  return true;
+}
+
+export function refreshRailwayOverlay(containerId) {
+  const visible = getStoredRailwayVisible();
+  setRailwayOverlay(containerId, visible);
+  return visible;
+}
+
 export function setStoredLabelsVisible(visible) {
   try { localStorage.setItem(MAP_LABELS_STORAGE_KEY, visible ? 'on' : 'off'); } catch {}
 }
@@ -261,9 +310,11 @@ export function setMapLayer(containerId, layerId, L = null) {
   if (!lib) return false;
 
   const def = getLayerDef(layerId);
+  const keepRailway = entry.railwayLayer || null;
   try { if (entry.tile) entry.map.removeLayer(entry.tile); } catch {}
   try { if (entry.labels) { entry.map.removeLayer(entry.labels); entry.labels = null; } } catch {}
   entry.tile = buildTileLayer(entry.map, lib, def, entry, { withFallback: def.id === 'map' });
+  if (keepRailway) { try { keepRailway.addTo(entry.map); entry.railwayLayer = keepRailway; } catch {} }
   entry.layerId = def.id;
   setStoredLayerId(def.id);
   return true;
@@ -390,7 +441,7 @@ export async function initMap(containerId, options = {}) {
     worldCopyJump: true
   });
 
-  const entry = { map, L, tile: null, markers: L.layerGroup().addTo(map), ro: null };
+  const entry = { map, L, tile: null, markers: L.layerGroup().addTo(map), ro: null, railwayLayer: null };
   MAP_REGISTRY.set(el, entry);
   CONTAINER_IDS.set(containerId, el);
 
@@ -398,6 +449,10 @@ export async function initMap(containerId, options = {}) {
   const def = getLayerDef(layerId);
   entry.layerId = def.id;
   entry.tile = buildTileLayer(map, L, def, entry, { withFallback: def.id === 'map' });
+  // Restore railway overlay if previously enabled
+  if (getStoredRailwayVisible()) {
+    try { setRailwayOverlay(containerId, true); } catch {}
+  }
 
   // Attribution styling so it blends with the theme
   const attr = map.attributionControl?.getContainer?.();
@@ -503,16 +558,24 @@ export function attachMapExpand(wrapEl, containerId, { fitButtonId = null, lang 
 // Re-apply tiles matching the current light/dark theme (call after theme toggle)
 export function refreshMapTheme(map, L) {
   if (!map || !L) return;
-  try {
-    map.eachLayer(l => { if (l instanceof L.TileLayer) map.removeLayer(l); });
-  } catch {}
   const el = map.getContainer?.();
   const entry = el ? MAP_REGISTRY.get(el) : null;
+  const keepRailway = entry?.railwayLayer || null;
+  const keepLabels = entry?.labels || null;
+  try {
+    map.eachLayer(l => {
+      if (l instanceof L.TileLayer && l !== keepRailway && l !== keepLabels) map.removeLayer(l);
+    });
+  } catch {}
   const layerId = entry?.layerId || getStoredLayerId();
   const def = getLayerDef(layerId);
   if (entry) {
     entry.layerId = def.id;
     entry.tile = buildTileLayer(map, L, def, entry, { withFallback: def.id === 'map' });
+    // re-attach railway overlay if it was active
+    if (keepRailway) {
+      try { keepRailway.addTo(map); entry.railwayLayer = keepRailway; } catch {}
+    }
   } else {
     buildTileLayer(map, L, def, null, { withFallback: def.id === 'map' });
   }
