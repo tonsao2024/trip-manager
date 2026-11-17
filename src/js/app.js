@@ -3933,6 +3933,16 @@ async function renderDashboard(params) {
       height: el.getBoundingClientRect().height
     })), { gutter: parseFloat(boardStyle.columnGap) || 14 });
     const byKey = new Map(placed.map(p => [p.key, p]));
+    // Weather card matches countdown height on desktop when they share a row
+    if (masonry) {
+      const cd = byKey.get('countdown');
+      const wx = byKey.get('weather');
+      if (cd && wx && cd.column && wx.column && cd.column !== wx.column && cd.row === wx.row) {
+        const maxSpan = Math.max(cd.span, wx.span);
+        cd.span = maxSpan;
+        wx.span = maxSpan;
+      }
+    }
     for (const el of widgets) {
       const slot = byKey.get(el.dataset.dashboardWidget);
       if (!slot) continue;

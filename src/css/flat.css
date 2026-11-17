@@ -2665,16 +2665,28 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
   #dashboard-view .dash-widget--half > .card {
     display: flex;
     flex-direction: column;
-    min-height: 236px;
+    min-height: 0;
     padding: 14px 16px;
   }
   #dashboard-view .dash-widget--half > .card > .card-foot { margin-top: auto; }
   #dashboard-view :is(.dash-scroll-body, #upnext-list, #dash-bookings, #recent-expenses, #category-stats) {
-    max-height: 212px;
+    max-height: none;
+    overflow-y: visible;
+    overscroll-behavior: auto;
+    scrollbar-width: none;
+  }
+  #dashboard-view :is(.dash-scroll-body, #upnext-list, #dash-bookings, #recent-expenses, #category-stats)::-webkit-scrollbar { display: none; }
+  /* Weather card matches countdown height on desktop — both in first band share row */
+  #dashboard-view .dashboard-board.is-masonry .dash-widget[data-dashboard-widget="countdown"],
+  #dashboard-view .dashboard-board.is-masonry .dash-widget[data-dashboard-widget="weather"] {
+    display: flex;
+    flex-direction: column;
+  }
+  #dashboard-view .dashboard-board.is-masonry .dash-widget[data-dashboard-widget="countdown"] > #countdown-scene,
+  #dashboard-view .dashboard-board.is-masonry .dash-widget[data-dashboard-widget="weather"] > .card {
+    flex: 1 1 auto;
+    height: 100%;
     min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: thin;
   }
 }
 /* The KPI strip is already edge-aligned with its neighboring cards. */
