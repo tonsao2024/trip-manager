@@ -10,6 +10,26 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > continue to use Firestore + **FCM/GitHub Actions**, not Cloud Functions — see
 > [ตั้งค่า Push](docs/PUSH-ACTIONS.md). Push is best-effort (normally every 30 minutes).
 
+> **v40 — 17 Nov 2026, แผนการเดินทาง: เวลาต่อเนื่อง + เมนู “เพิ่มเติม” กดได้จริง.** Five fixes.
+> **(1) เวลาไม่ต่อเนื่อง:** saving a place used to update only that card, so the rest of the day kept
+> stale times (a 07:00 start followed by 10:00). Every day is now one chain — `start(next) = end(prev)
+> + travel` — and saving a stop re-chains the following stops while **keeping the visit order**
+> (`src/js/itinerary/scheduleRepair.js`, unit-tested). **(2) เวลาตีความผิดโซน:** the place form read
+> the typed clock in the device's timezone, so “07:00” typed in Bangkok became 09:00 in Tokyo. The form
+> now reads and writes in the trip's timezone, and hotel “ออกจากที่พัก” cards default to **07:00**
+> (were 08:00) in the trip's zone. **(3) ทริปญี่ปุ่น 15–22 ม.ค. 2026:** `migrateJan.js` was rewritten as
+> an idempotent repair (itinerary toolbar → “จัดเวลา”, also Settings → Advanced → “จัดเวลาให้ต่อเนื่อง”): flights pinned at **15 Jan
+> 20:50–22:40 BKK→SGN** and **16 Jan 00:25–07:45 SGN→Tokyo**, every day starts at 07:00, and the
+> **22 Jan 21:00** check-in at The OneFive Tokyo Kameido is pinned; flights carry `startTz`/`endTz` so
+> each end prints in its own zone. **(4) เมนูโดนกรอบบัง:** flat.css (loaded last) re-declared
+> `.card { overflow: hidden }`, which clipped the itinerary card's 3-dot menu and blocked its items.
+> `.itin-card.card { overflow: visible }` restores the menu at every breakpoint.
+> **(5) เติมระยะเวลาให้แผนใช้งานได้จริง:** the repair also fills the two fields that already exist —
+> `durationMinutes` (visit length: category default, 90 min sightseeing/activity, 60 food/shopping/general,
+> 30 check-in) and `travelToNextMinutes` (distance-based: walk ≤1.2 km, city transport ≤5 km, longer rides
+> beyond; 10 min when a stop has no pin) — **only where the field is empty**; anything typed by the owner is
+> kept. The day is then chained with those values, so every stop has a real start, an end and a leg to the next.
+>
 > **v39 — 16 Nov 2026, แดชบอร์ด: จัดวางให้แน่นและสมดุล (dashboard balance pass).** Three complaints,
 > three fixes, no new card and no new colour. **(1) ปกไม่สมดุล:** the trip cover was a full-width 16:5
 > banner stacked above the title — on a phone it took a whole screen before the first card and pushed

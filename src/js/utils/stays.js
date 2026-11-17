@@ -33,6 +33,19 @@ export function splitStayMinor(totalMinor, nights) {
 }
 
 /**
+ * A virtual stay card's time, read in the trip's timezone when one is given.
+ * Without a timezone it falls back to the device clock (legacy behaviour).
+ * This matters for a Tokyo trip opened from Bangkok: “07:00 at the hotel”
+ * must print 07:00 on every device, not 09:00.
+ */
+function stayLocalTime(dateStr, time, timezone) {
+  const t = String(time || '00:00').slice(0, 5);
+  return timezone
+    ? dayjs.tz(`${dateStr} ${t}`, 'YYYY-MM-DD HH:mm', timezone).toDate()
+    : dayjs(`${dateStr}T${t}:00`).toDate();
+}
+
+/**
  * Expand stay items into one entry per night for the plan view.
  *
  * - Night 1 keeps the real item (id unchanged) on the check-in date and is
@@ -48,7 +61,7 @@ export function splitStayMinor(totalMinor, nights) {
  *   night's share of the total — so per-day money totals distribute correctly.
  *   Departure cards carry no cost (0) — they are route links, not spending.
  */
-export function expandStayItems(items, { returnTime = '21:00', departureTime = '08:00' } = {}) {
+export function expandStayItems(items, { returnTime = '21:00', departureTime = '07:00', timezone = '' } = {}) {
   const out = [];
   for (const it of items || []) {
     const nights = stayNights(it);
@@ -72,7 +85,7 @@ export function expandStayItems(items, { returnTime = '21:00', departureTime = '
       if (k === 0) {
         out.push({ ...base, stayRole: 'checkin' });
       } else {
-        const startAt = dayjs(`${date}T${returnTime}:00`).toDate();
+        const startAt = stayLocalTime(date, returnTime, timezone);
         out.push({
           ...base,
           id: `${it.id}@stay-${date}`,
@@ -89,7 +102,7 @@ export function expandStayItems(items, { returnTime = '21:00', departureTime = '
       }
       // Morning departure after this night (always — even check-out morning).
       const leaveDate = checkIn.add(k + 1, 'day').format('YYYY-MM-DD');
-      const leaveAt = dayjs(`${leaveDate}T${departureTime}:00`).toDate();
+      const leaveAt = stayLocalTime(leaveDate, departureTime, timezone);
       out.push({
         ...base,
         id: `${it.id}@leave-${leaveDate}`,

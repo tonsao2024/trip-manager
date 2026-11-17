@@ -473,6 +473,12 @@ hr, .divider { border: 0; border-top: 1px solid var(--border-light); }
   overflow: hidden;
 }
 /* Static cards do not react to the pointer; only clickable ones do. */
+/* The itinerary card owns a dropdown that hangs over the cards below it.
+   `.card { overflow: hidden }` (needed for the rounded corners) is declared
+   here, i.e. AFTER `.itin-card { overflow: visible }` in components.css, so it
+   used to clip the “เพิ่มเติม” menu and make its items unclickable. The extra
+   class keeps this rule above `.card` no matter the file order. */
+.itin-card.card { overflow: visible; }
 .card:hover { border-color: var(--border); }
 .card-hover:hover {
   transform: none;

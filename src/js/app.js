@@ -28,7 +28,7 @@ import {
   isPermissionError, joinPermissionHelp, adminHelpMessage, fetchRulesText,
   consoleRulesUrl, consoleAuthUrl
 } from './utils/rulesHelper.js';
-import { fetchItinerary, saveItineraryItem, deleteItineraryItem, reorderItinerary, getItineraryItem, updateItineraryItem, syncItineraryExpense, findLinkedExpense } from './itinerary/index.js';
+import { fetchItinerary, saveItineraryItem, deleteItineraryItem, reorderItinerary, getItineraryItem, updateItineraryItem, syncItineraryExpense, findLinkedExpense, rescheduleDay } from './itinerary/index.js';
 import {
   fetchExpenses, fetchAllExpenses, addExpense, updateExpense, deleteExpense,
   voidExpense, getExpense, exportExpensesToJson, sumExpenses
@@ -186,9 +186,11 @@ function avatarStyle(color) {
   return `background:${escapeHtml(raw)};color:${avatarInk(raw)}`;
 }
 // v35: a missing end time used to print “07:00 – -”; show just the start instead.
-const timeRange = (start, end, tz) => {
-  const a = start ? formatTime(start, tz) : '';
-  const b = end ? formatTime(end, tz) : '';
+const timeRange = (start, end, tz, startTz, endTz) => {
+  // A flight crosses timezones: each end is printed in the zone it happens in
+  // (20:50 Bangkok — 22:40 Bangkok, then 00:25 Ho Chi Minh — 07:45 Tokyo).
+  const a = start ? formatTime(start, startTz || tz) : '';
+  const b = end ? formatTime(end, endTz || tz) : '';
   return a && b ? `${a}–${b}` : (a || b);
 };
 
@@ -5082,6 +5084,8 @@ async function renderItinerary(params) {
   if (isStale(token)) return;
   const isAdmin = perms.isAdmin;
   const tripGroups = itineraryGroups || [];
+  // One-tap schedule repair for the 15–22 Jan 2026 Japan plan.
+  const canRepairSchedule = perms.canEditItinerary && isJan2026Trip(trip);
 
   const urlParams = new URLSearchParams(location.hash.split('?')[1] || '');
   const action = urlParams.get('action');
@@ -5110,6 +5114,7 @@ async function renderItinerary(params) {
           ${isAdmin ? `
           <!-- v18.2: the Excel *import* tool only exists while edit mode is on -->
           <span id="itin-import-slot" class="contents"></span>` : ''}
+          ${canRepairSchedule ? `<button id="itin-repair-times" type="button" class="btn btn-secondary btn-sm" title="${th('จัดเวลาแต่ละวันให้ต่อเนื่อง (07:00 / เที่ยวบิน / เช็คอิน 21:00)','Re-chain each day (07:00 / flights / 21:00 check-in)')}">${icon('clock', 'w-4 h-4')} ${th('จัดเวลา','Fix times')}</button>` : ''}
           ${perms.canEditItinerary ? `
           <button id="edit-mode-btn" class="btn btn-secondary btn-sm" aria-pressed="false">${icon('list-ordered', 'w-4 h-4')} ${t('editMode')}</button>
           <button id="add-itinerary-btn" class="btn btn-primary btn-sm">${icon('plus', 'w-4 h-4')} ${t('addPlace')}</button>`
@@ -6017,7 +6022,7 @@ async function renderItinerary(params) {
       const rows = dayItems.map((it, idx) => {
         const est = estTripMinor(it);
         const meta = [
-          timeRange(it.startAt, it.endAt, trip?.timezone),
+          timeRange(it.startAt, it.endAt, trip?.timezone, it.startTz, it.endTz),
           (it.virtualStay || it.virtualDeparture) ? '' : formatDuration(it.durationMinutes),
           it.isStay ? (it.virtualDeparture ? th(`เดินทางออกจากที่พัก • หลังคืนที่ ${it.stayNight}/${it.stayNights}`, `leave the hotel • after night ${it.stayNight}/${it.stayNights}`) : (it.virtualStay ? th(`กลับเข้าพัก • คืนที่ ${it.stayNight}/${it.stayNights}`, `back to hotel • night ${it.stayNight}/${it.stayNights}`) : th(`พัก ${it.stayNights} คืน`, `${it.stayNights} nights`))) : '',
           categoryLabel(it.category || 'general', lang),
@@ -6101,7 +6106,7 @@ async function renderItinerary(params) {
     exportThbRate = resolveTripThbRate(trip, expenseList, currency);
     const all = await fetchItinerary(tripId, null).catch(() => visibleItems) || [];
     // Exported sheets show the same expanded plan (hotel on every stay night).
-    const ordered = expandStayItems(all).sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.order || 0) - (b.order || 0));
+    const ordered = expandStayItems(all, { timezone: trip?.timezone }).sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.order || 0) - (b.order || 0));
     return ordered;
   }
 
@@ -6281,7 +6286,7 @@ async function renderItinerary(params) {
               </div>
               <div class="flex items-center gap-2 flex-wrap mt-2">
                 ${it.isStay ? `<span class="badge badge-stay text-xs itin-quiet">${icon(isDeparture ? 'sunrise' : (isVirtual ? 'moon' : 'bed-double'), 'w-2.5 h-2.5')} ${isDeparture ? th(`ออกจากที่พัก • หลังคืนที่ ${it.stayNight}/${nights}`, `check-out • after night ${it.stayNight}/${nights}`) : (isVirtual ? th(`คืนที่ ${it.stayNight}/${nights}`, `night ${it.stayNight}/${nights}`) : th(`พัก ${nights} คืน`, `${nights} nights`))}</span>` : ''}
-                ${it.startAt || it.endAt ? `<span class="meta-line">${icon('clock', 'w-3 h-3')} ${timeRange(it.startAt, it.endAt, trip?.timezone)}</span>` : ''}
+                ${it.startAt || it.endAt ? `<span class="meta-line">${icon('clock', 'w-3 h-3')} ${timeRange(it.startAt, it.endAt, trip?.timezone, it.startTz, it.endTz)}</span>` : ''}
                 ${isVirtual ? '' : `<span class="meta-line itin-quiet">${icon('timer', 'w-3 h-3')} ${formatDuration(it.durationMinutes)}</span>`}
                 ${(!isVirtual && it.travelToNextMinutes > 0) ? `<span class="meta-line itin-detail">${icon('footprints', 'w-3 h-3')} ${formatDuration(it.travelToNextMinutes)}</span>` : ''}
                 <span class="badge badge-planned text-xs itin-cat-badge" title="${escapeHtml(categoryLabel(it.category || 'general', lang))}">${icon(categoryIcon(it.category), 'w-2.5 h-2.5')} <span class="itin-cat-label">${escapeHtml(categoryLabel(it.category || 'general', lang))}</span></span>
@@ -6349,7 +6354,7 @@ async function renderItinerary(params) {
     try {
       // Stays expand to one entry per night, so the hotel shows up in the plan
       // on EVERY day of the stay (and each day only counts that night's share).
-      let items = expandStayItems(await fetchItinerary(tripId, null));
+      let items = expandStayItems(await fetchItinerary(tripId, null), { timezone: trip?.timezone });
       if (isStale(token)) return;
       if (!showAll) items = items.filter(i => i.date === selectedDate);
       if (showAll) {
@@ -6612,7 +6617,7 @@ async function renderItinerary(params) {
 
           <div class="grid grid-cols-2 gap-3">
             <div class="input-group"><label class="input-label">${th('วันที่','Date')} *</label><input id="it-date" class="input" type="date" value="${escapeHtml(it.date || presetDate || selectedDate)}" required></div>
-            <div class="input-group"><label class="input-label">${th('เวลาเริ่ม','Start time')} *</label><input id="it-time" class="input" type="time" value="${it.startAt ? dayjs(it.startAt).format('HH:mm') : '09:00'}" required></div>
+            <div class="input-group"><label class="input-label">${th('เวลาเริ่ม','Start time')} *</label><input id="it-time" class="input" type="time" value="${it.startAt ? dayjs(it.startAt).tz(trip?.timezone || 'Asia/Bangkok').format('HH:mm') : '09:00'}" required></div>
           </div>
 
           <div class="grid grid-cols-3 gap-3">
@@ -6943,7 +6948,9 @@ async function renderItinerary(params) {
         // A stay anchors the item on its check-in day.
         const date = wantStay ? stayCheckIn : document.getElementById('it-date').value;
         const time = document.getElementById('it-time').value;
-        const startAt = new Date(`${date}T${time || '09:00'}`);
+        // The typed clock time belongs to the trip's timezone — a 07:00 start
+        // in Tokyo must stay 07:00 regardless of the device's own zone.
+        const startAt = dayjs.tz(`${date} ${time || '09:00'}`, 'YYYY-MM-DD HH:mm', trip?.timezone || 'Asia/Bangkok').toDate();
         const coords = document.getElementById('it-coords').value.trim();
         if (coords && !parseCoordinates(coords)) throw new Error(th('พิกัดไม่ถูกต้อง (ใช้รูปแบบ lat,lng)','Invalid coordinates (use lat,lng)'));
         const wantEstimate = estimateToggle.checked;
@@ -6978,7 +6985,13 @@ async function renderItinerary(params) {
         };
         if (!payload.title) throw new Error(th('กรุณากรอกชื่อสถานที่','Place name is required'));
 
-        await saveItineraryItem(tripId, payload, currentUser.uid, isEdit ? it.id : null, { trip, members });
+        const saved = await saveItineraryItem(tripId, payload, currentUser.uid, isEdit ? it.id : null, { trip, members });
+        // Saving a stop re-chains the rest of that day, so times stay continuous
+        // instead of jumping around (the visit order itself is untouched).
+        if (saved?.id) {
+          try { await rescheduleDay(tripId, date, saved.id, currentUser.uid); }
+          catch (err) { console.warn('[Itinerary] reschedule failed', err?.message); }
+        }
         tLoad.close();
         toast.success(isEdit ? th('บันทึกการแก้ไขแล้ว','Saved') : th('เพิ่มสถานที่แล้ว','Place added'));
         if (!isEdit) confetti({ y: 160 });
@@ -7111,6 +7124,17 @@ async function renderItinerary(params) {
     if (editMode) bind('import-excel-btn', 'click', openImportExcelDialog);
     queueIcons();
   }
+
+  bind('itin-repair-times', 'click', async () => {
+    const btn = document.getElementById('itin-repair-times');
+    if (btn) btn.disabled = true;
+    try {
+      const report = await runScheduleRepair(tripId, trip?.timezone);
+      if (report) await loadItems();
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
 
   bind('edit-mode-btn', 'click', () => {
     editMode = !editMode;
@@ -12189,6 +12213,51 @@ async function renderImportExport(params) {
   }
 }
 
+/** True for the 15–22 Jan 2026 Japan plan (the only trip this repair owns). */
+function isJan2026Trip(trip) {
+  const start = String(trip?.startDate || '');
+  const end = String(trip?.endDate || '');
+  if (start && end) return start <= '2026-01-22' && end >= '2026-01-15';
+  // A trip without dates still gets the button when it is clearly the Japan one;
+  // the repair itself refuses any trip without 15–22 Jan items.
+  return /japan|tokyo|ญี่ปุ่น|โตเกียว/i.test(`${trip?.name || ''} ${trip?.city || ''} ${trip?.country || ''}`);
+}
+
+/**
+ * “จัดเวลาให้ต่อเนื่อง” — the Jan 2026 Japan data repair.
+ * One shared confirmation + toast path, used from the itinerary toolbar and
+ * Settings → Advanced. Resolves to the repair report, or null when cancelled.
+ */
+async function runScheduleRepair(tripId, timezone) {
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const ok = await confirmAction({
+    title: th('จัดเวลาแผนเดินทางใหม่?','Repair the schedule?'),
+    message: th('ระบบจะปรับเวลาเริ่ม/สิ้นสุดของแต่ละสถานที่ให้ต่อเนื่องกัน ลำดับสถานที่ไม่เปลี่ยน',
+      'Start and end times will be re-chained. The visit order does not change.'),
+    detail: th('วันที่ 15 ม.ค. เริ่ม 20:50 • 16 ม.ค. ถึง 07:45 • ทุกวันออกจากที่พัก 07:00 • 22 ม.ค. เช็คอิน 21:00 • เติมระยะเวลาเที่ยวและเวลาเดินทางให้ช่องที่ว่าง',
+      '15 Jan 20:50 • 16 Jan arrives 07:45 • every day starts 07:00 • 22 Jan check-in 21:00 • empty visit/travel durations filled'),
+    confirmText: th('จัดเวลาเลย','Repair now'),
+    icon: 'clock'
+  });
+  if (!ok) return null;
+  const tLoad = toast.loading(th('กำลังจัดเวลา...','Repairing the schedule...'));
+  try {
+    const { repairJanItinerary } = await import('./itinerary/migrateJan.js');
+    const report = await repairJanItinerary(tripId, {
+      userId: auth?.currentUser?.uid || currentUser?.uid,
+      timezone: timezone || 'Asia/Tokyo'
+    });
+    toast.success(th('จัดเวลาแผนเดินทางแล้ว','Schedule repaired'));
+    return report;
+  } catch (err) {
+    toast.error(err.message || String(err));
+    return null;
+  } finally {
+    tLoad.close();
+  }
+}
+
 async function renderSettings(params) {
   const tripId = params.tripId;
   const token = beginRender();
@@ -12210,6 +12279,9 @@ async function renderSettings(params) {
     listMembers(tripId).then(m => { settingMembers = m || []; }).catch(() => {})
   ]);
   if (isStale(token)) return;
+  // The one-tap schedule repair belongs to the 15–22 Jan 2026 Japan plan only;
+  // other trips must never receive those flights or that hotel.
+  const isJan2026Plan = isJan2026Trip(trip);
   const budgetDecimals = 2; // Budget is always in THB (satang)
   const memberBudgets = (trip?.memberBudgets && typeof trip.memberBudgets === 'object') ? trip.memberBudgets : {};
   const fmtBudgetInput = (minor) => {
@@ -12448,6 +12520,18 @@ async function renderSettings(params) {
       </div>
 
       ${notificationSettingsCardsHtml({ lang, perms, tripSettings: notifyState.tripSettings, prefs: readNotifyPrefs() })}
+
+      ${isJan2026Plan ? `<div class="card p-4 space-y-3" id="schedule-repair-card" data-settings-section="advanced">
+        <h3 class="font-semibold flex items-center gap-2">${th('จัดเวลาแผนเดินทาง','Repair the schedule')}</h3>
+        <p class="text-xs text-[var(--text-secondary)]">
+          ${th('ตั้งเวลาเริ่มเที่ยวแต่ละวันเป็น 07:00 ไล่เวลาสถานที่ถัดไปให้ต่อเนื่องกัน (ระยะเวลา + เวลาเดินทาง) โดยไม่สลับลำดับสถานที่ • เติมระยะเวลาเที่ยว/เดินทางในช่องเดิมให้สถานที่ที่ยังว่างอยู่ (ไม่ทับค่าที่ตั้งไว้) • ตรึงเที่ยวบิน 15 ม.ค. 20:50–22:40 / 16 ม.ค. 00:25–07:45 และเช็คอิน 22 ม.ค. 21:00',
+               'Starts every sightseeing day at 07:00 and chains the following stops (duration + travel) without reordering anything. Fills empty visit/travel durations in the existing fields (typed values are kept). Pins the 15 Jan 20:50–22:40 and 16 Jan 00:25–07:45 flights and the 22 Jan 21:00 check-in.')}
+        </p>
+        <button id="run-schedule-repair" type="button" class="btn btn-secondary w-full" ${perms.canEditItinerary ? '' : 'disabled'}>
+          ${icon('clock', 'w-4 h-4')} ${th('จัดเวลาให้ต่อเนื่อง','Make the times continuous')}
+        </button>
+        <div id="schedule-repair-result" class="text-xs text-[var(--text-tertiary)]"></div>
+      </div>` : ''}
 
       <div class="card p-5 space-y-3 danger-zone" data-settings-section="advanced">
         <h3 class="font-semibold flex items-center gap-2">${th('เขตอันตราย','Danger zone')}</h3>
@@ -13023,6 +13107,24 @@ async function renderSettings(params) {
     } catch (e) {
       tLoad.close();
       toast.error(e.message);
+    }
+  });
+
+  bind('run-schedule-repair', 'click', async () => {
+    const btn = document.getElementById('run-schedule-repair');
+    const out = document.getElementById('schedule-repair-result');
+    if (!btn) return;
+    btn.disabled = true;
+    try {
+      const report = await runScheduleRepair(tripId, trip?.timezone);
+      if (report && out) {
+        out.innerHTML = `${icon('circle-check', 'w-3.5 h-3.5')} ${th(
+          `อัปเดต ${report.updated} รายการ • เพิ่มใหม่ ${report.created} • เติมเวลาเที่ยว ${report.filledDurations || 0} • เติมเวลาเดินทาง ${report.filledTravel || 0} • ครอบคลุม ${report.days} วัน`,
+          `Updated ${report.updated} items • created ${report.created} • visit times filled ${report.filledDurations || 0} • travel times filled ${report.filledTravel || 0} • ${report.days} days`) }`;
+        queueIcons();
+      }
+    } finally {
+      btn.disabled = false;
     }
   });
 
@@ -14341,7 +14443,7 @@ async function renderIdeas(params) {
             title: idea.title,
             description: idea.note || '',
             date,
-            startAt: new Date(`${date}T${startAt || '09:00'}`),
+            startAt: dayjs.tz(`${date} ${startAt || '09:00'}`, 'YYYY-MM-DD HH:mm', trip?.timezone || 'Asia/Bangkok').toDate(),
             durationMinutes: 60,
             travelToNextMinutes: 0,
             category,
@@ -14779,7 +14881,7 @@ async function renderBookings(params) {
         const tLoad = toast.loading(th('กำลังเพิ่มเข้าแผน...', 'Adding to the plan...'));
         try {
           const payload = reservationToItineraryPayload(r, { date, startAt, order: 999 });
-          payload.startAt = new Date(`${date}T${startAt || r.startTime || '09:00'}`);
+          payload.startAt = dayjs.tz(`${date} ${startAt || r.startTime || '09:00'}`, 'YYYY-MM-DD HH:mm', trip?.timezone || 'Asia/Bangkok').toDate();
           payload.durationMinutes = durationBetween(startAt || r.startTime, r.endTime) || payload.durationMinutes || 60;
           payload.category = category || payload.category;
           payload.estimateAmount = Number(r.costMinor) > 0 ? fromMinor(Number(r.costMinor), getCurrencyDecimals(r.currency || 'THB')) : 0;

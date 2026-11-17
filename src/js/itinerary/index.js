@@ -436,6 +436,28 @@ async function batchUpdateScheduleInner(tripId, items, userId) {
   await batch.commit();
 }
 
+/**
+ * Re-chain the stops that follow an edited place, so a day never “jumps”:
+ * the edited stop keeps the time the user typed, and every later stop starts
+ * when the previous one ends (+ travel time). Visit order is untouched.
+ */
+async function rescheduleDayInner(tripId, dateStr, changedItemId, userId) {
+  const items = await fetchItinerary(tripId, dateStr, { fresh: true });
+  if (!items.length) return [];
+  const ordered = [...items].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const anchorId = ordered.some(i => i.id === changedItemId) ? changedItemId : ordered[0].id;
+  const recalculated = recalculateSchedule(ordered, anchorId, {});
+  const before = new Map(ordered.map(i => [i.id, i]));
+  const changed = recalculated.filter((it) => {
+    const was = before.get(it.id);
+    if (!was) return true;
+    const at = (v) => (v ? new Date(v).getTime() : null);
+    return at(was.startAt) !== at(it.startAt) || at(was.endAt) !== at(it.endAt);
+  });
+  if (changed.length) await batchUpdateScheduleInner(tripId, changed, userId);
+  return recalculated;
+}
+
 async function reorderItineraryInner(tripId, dateStr, newOrderIds, userId) {
   const items = await fetchItinerary(tripId, dateStr);
   const map = new Map(items.map(i => [i.id, i]));
@@ -519,6 +541,10 @@ export function saveItineraryItem(tripId, data, userId, itemId = null, options =
 
 export function batchUpdateSchedule(tripId, items, userId) {
   return withItineraryInvalidation(tripId, () => batchUpdateScheduleInner(tripId, items, userId));
+}
+
+export function rescheduleDay(tripId, dateStr, changedItemId, userId) {
+  return withItineraryInvalidation(tripId, () => rescheduleDayInner(tripId, dateStr, changedItemId, userId));
 }
 
 export function reorderItinerary(tripId, dateStr, newOrderIds, userId) {

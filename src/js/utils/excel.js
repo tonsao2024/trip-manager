@@ -5,6 +5,7 @@ import { toThbMinor, expensesInThb, getCurrencyDecimals, toMinor, fromMinor } fr
 import { splitEqual } from './split.js';
 import { EXPENSE_CATEGORIES as EXPENSE_CATEGORY_DEFS, ITINERARY_CATEGORIES as ITINERARY_CATEGORY_DEFS, normalizeCategory, categoryLabel } from './categories.js';
 import { sanitizeFormulaCell } from './sanitize.js';
+import { dayjs } from './date.js';
 
 export { EXPENSE_CATEGORY_DEFS, ITINERARY_CATEGORY_DEFS, normalizeCategory, categoryLabel };
 
@@ -535,7 +536,8 @@ export function importItineraryRows(rows, { trip, members = [], lang = 'th' } = 
     items.push({
       title,
       date,
-      startAt: new Date(`${date}T${startTime}:00`),
+      // The sheet's “Start Time” is a wall-clock time at the destination.
+      startAt: dayjs.tz(`${date} ${startTime}`, 'YYYY-MM-DD HH:mm', trip?.timezone || 'Asia/Bangkok').toDate(),
       durationMinutes: duration || 60,
       travelToNextMinutes: Math.max(0, Math.round(parseNumberCell(row.travelToNextMinutes, 0))),
       category,
