@@ -250,6 +250,14 @@ every one of them is exported as a calendar event by the `.ics` writer in `src/j
 - `stayCheckIn` / `stayCheckOut` (v13): the item is a hotel stay spanning several nights.
   The plan view repeats it on every night ("กลับเข้าพัก" virtual cards, id `<itemId>@stay-<date>`,
   never persisted) and the ONE entered price is split per night (`splitStayMinor`).
+- `startTz` / `endTz` (v40, optional): IANA zones for an item whose two ends happen in
+  different zones (a flight). The card prints each end in its own zone
+  (`20:50–22:40` in Bangkok, then `00:25–07:45` for the Tokyo leg); when absent both
+  ends use the trip timezone.
+- Scheduling (v40): a day is one chain — `endAt = startAt + durationMinutes`,
+  `startAt(next) = endAt(prev) + travelToNextMinutes`. Saving a place re-chains the
+  following stops in the same order (`rescheduleDay`); the 07:00 day start and the
+  flight/check-in anchors are applied by `itinerary/scheduleRepair.js`.
 - `estimateAmount` is in **major units** (converted with the trip currency's decimals).
 - `estimatePayerPending` (v13): `true` → nobody fronts this estimate yet; the synced expense
   gets `payerId: null`, `payerPending: true` and stays out of every balance until a payer is
