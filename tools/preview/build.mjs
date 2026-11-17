@@ -147,6 +147,12 @@ fsdb.__seed('trips/t1/ideas/idea2', { title: 'ป่าไผ่อาราช�
 fsdb.__seed('trips/t1/notes/n1', { title: 'รหัส WiFi เรียวกัง', body: 'fuji-2027 / 8888', color: 'amber', updatedAt: now });
 fsdb.__seed('trips/t1/documents/d1', { title: 'พาสปอร์ตสมชาย', category: 'passport', date: iso(20), description: '', fileUrl: '', imageUrl: '' });
 
+// English copy check: PREVIEW_LANG=en flips the stored language before boot, so
+// the screens can be proof-read in the second language too.
+if (process.env.PREVIEW_LANG === 'en') {
+  try { window.localStorage.setItem('fuji_lang', 'en'); } catch { /* ignore */ }
+}
+
 // ------------------------------------------------------------------ boot
 await import(pathToFileURL(path.join(buildDir, 'app.js')).href);
 const authStub = await import(stub('firebase-auth.mjs'));

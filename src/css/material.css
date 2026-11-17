@@ -152,7 +152,7 @@
 .debt-person-role { letter-spacing: 0; }
 .debt-row-pays { background: color-mix(in srgb, var(--debt-edge-color, var(--primary)) 12%, var(--surface)); color: var(--text-strong); }
 .debt-amount-block { min-width: 148px; }
-.debt-row-amount { font-family: var(--font-mono); font-size: 17px; font-weight: 600; color: var(--text-strong); }
+.debt-row-amount { font-family: var(--font-mono) !important; font-size: 17px; font-weight: 600; color: var(--text-strong); font-variant-numeric: tabular-nums; }
 .debt-offgraph-note { display: block; margin-top: 2px; font-size: 11px; line-height: 1.4; font-style: normal; color: var(--text-tertiary); text-align: right; }
 .debt-tx-row--offgraph { border-left-style: dashed; }
 .debt-map-svg { background: var(--surface-2); border-radius: var(--radius-md); }
