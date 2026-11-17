@@ -13,7 +13,11 @@
     "test:browser:mobile": "node tests/browser/mobile-check.mjs",
     "test:browser:desktop": "node tests/browser/desktop-check.mjs",
     "test:browser:dashboard": "node tests/browser/dashboard-responsive-check.mjs",
-    "test:browser:design": "node tests/browser/design-check.mjs"
+    "test:browser:design": "node tests/browser/design-check.mjs",
+    "test:browser:toast-theme": "node tests/browser/toast-theme-check.mjs",
+    "test:browser:expense-selection": "node tests/browser/expense-selection-check.mjs",
+    "test:browser:floating-actions": "node tests/browser/floating-actions-check.mjs",
+    "test:browser:mobile-expenses-navigation": "node tests/browser/mobile-expenses-navigation-check.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "3.0.4",

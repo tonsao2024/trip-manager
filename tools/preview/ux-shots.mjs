@@ -50,7 +50,7 @@ function buildPage() {
     .replace(/<link[^>]*href="https:\/\/fonts\.googleapis\.com[^>]*>/g, '')
     .replace(/<script src="https:\/\/cdn\.jsdelivr\.net[^>]*><\/script>/, '')
     .replace(/<script type="importmap">[\s\S]*?<\/script>/, '')
-    .replace(/<script type="module" src="\.\/src\/js\/app\.js\?v=\d+"><\/script>/,
+    .replace(/<script type="module" src="\.\/src\/js\/app\.js\?v=\d+[^\"]*"><\/script>/,
       '<script type="module" src="/tests/browser/mobile-driver.js"></script>')
     .replace(/\.\/src\/css\//g, '/src/css/')
     .replace('</head>', '<link rel="stylesheet" href="/tests/browser/out/tailwind.css"></head>');

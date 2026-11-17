@@ -305,7 +305,7 @@ select.input { border-radius: var(--radius); }
 
 /* Print: the itinerary / calendar should come out clean (Web version export) */
 @media print {
-  #app-header, .bottom-nav, .fab, .toast-container, .no-print, .app-footer { display: none !important; }
+  #app-header, .bottom-nav, .fab, .toast-container, .no-print, .back-to-top { display: none !important; }
   body { background: #fff; padding: 0 !important; }
   .card { border-color: #d8e0e8 !important; break-inside: avoid; }
   
@@ -347,46 +347,6 @@ select.input { border-radius: var(--radius); }
 
 /* --- การ์ดบัญชีผู้ใช้ในหน้าตั้งค่า --- */
 #settings-account-card .card-row { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; }
-
-/* ==================================================================
-   Footer (v35) — one quiet text line (wordmark · by-line · version ·
-   updated · build stamp) plus one legal line. No chips, no mark, 12px.
-   ================================================================== */
-.app-footer {
-  position: relative;
-  margin-top: 16px;
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
-  background: transparent;
-  border-top: 1px solid var(--border-light);
-  color: var(--text-tertiary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-/* v35: one quiet line — product · version · last update · build — and the
-   legal line under it. No chips, no badge, no brand stripe. */
-.app-footer-line,
-.app-footer-legal {
-  max-width: var(--content-max);
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 2px 8px;
-  text-align: center;
-}
-.app-footer-legal { margin-top: 2px; }
-.app-footer-wordmark { font-weight: 500; color: var(--text-secondary); }
-.app-footer-by { color: var(--text-tertiary); }
-.app-footer-dot { color: var(--text-tertiary); opacity: .7; }
-.app-footer-build { font-family: var(--font-mono); font-size: 12px; }
-.app-footer-build:empty,
-.app-footer-build:empty + .app-footer-build-dot { display: none; }
-[data-footer-version] { font-variant-numeric: tabular-nums; }
-@media (max-width: 640px) {
-  .app-footer { margin-top: 8px; padding: 8px 16px calc(8px + env(safe-area-inset-bottom)); }
-  .app-footer-line, .app-footer-legal { justify-content: flex-start; text-align: left; }
-}
 
 /* --- บัตรรวมของทั้งทริป (โหมดแยกตามวัน) --- */
 .expense-day-total-bar {

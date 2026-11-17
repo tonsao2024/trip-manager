@@ -1025,14 +1025,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary-raw); 
 .timeline-item.is-current .timeline-dot, .timeline-dot.is-current { border-color: var(--primary); background: var(--primary); }
 .timeline-item:hover .timeline-dot { transform: none; box-shadow: none; }
 
-/* --- Footer (v35: one quiet line + a legal line) ----------------------- */
-.app-footer {
-  background: transparent;
-  border-top: 1px solid var(--border-light);
-  box-shadow: none;
-}
-.app-footer::before { display: none; }
-
 /* ------------------------------------------------------------------ *
  * 10. Accessibility & motion
  * ------------------------------------------------------------------ */
@@ -1299,9 +1291,10 @@ body.is-signed-out #fab,
 body.is-signed-out #header-more { display: none !important; }
 /* Desktop menu row: labels only — icons in a text row are noise. */
 .desktop-nav .menu-item svg { display: none; }
-/* B2: no floating button on wide screens — every page has its own add action. */
+/* Documents keep the original desktop layout. The itinerary and expense FABs
+   remain available at every scroll position on desktop as well as mobile. */
 @media (min-width: 1024px) {
-  .fab { display: none !important; }
+  .fab:not(.fab--persistent) { display: none !important; }
 }
 /* Below 1024px the FAB is the screen's one primary action, so the same "add"
    action in the page header steps down to a secondary button. */
@@ -1316,6 +1309,71 @@ body.is-signed-out #header-more { display: none !important; }
     color: var(--text-strong);
   }
 }
+
+/* Give persistent actions a safe area and keep the bottom of long pages
+   reachable above them. Toasts sit above the FAB rather than covering it. */
+.fab--persistent {
+  right: max(20px, env(safe-area-inset-right, 0px));
+  bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+}
+body:has(#fab.fab--persistent:not(.hidden)) {
+  padding-bottom: calc(152px + env(safe-area-inset-bottom, 0px));
+}
+body:has(#fab.fab--persistent:not(.hidden)) .toast-container {
+  bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+}
+@media (min-width: 768px) {
+  .fab--persistent { bottom: calc(28px + env(safe-area-inset-bottom, 0px)); }
+  body:has(#fab.fab--persistent:not(.hidden)) { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
+  body:has(#fab.fab--persistent:not(.hidden)) .toast-container { bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
+  body:has(#fab.fab--persistent:not(.hidden)) :is(#add-itinerary-btn, #add-expense-btn) {
+    background: var(--surface);
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+  body:has(#fab.fab--persistent:not(.hidden)) :is(#add-itinerary-btn, #add-expense-btn):hover:not(:disabled) {
+    background: var(--surface-2);
+    color: var(--text-strong);
+  }
+}
+
+/* Return to the top of the document, kept separate from the add FAB. */
+.back-to-top {
+  position: fixed;
+  left: max(16px, env(safe-area-inset-left, 0px));
+  bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  z-index: 35;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-strong);
+  box-shadow: var(--overlay-shadow);
+  cursor: pointer;
+}
+.back-to-top[hidden] { display: none; }
+/* Let the last content scroll above the control, and keep transient toasts
+   clear of it on phones instead of covering the button. */
+body:has(#back-to-top:not([hidden])) { padding-bottom: calc(136px + env(safe-area-inset-bottom, 0px)); }
+@media (max-width: 767px) {
+  body:has(#back-to-top:not([hidden])) .toast-container { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+  body:has(#expense-form):has(#back-to-top:not([hidden])) .toast-container { bottom: calc(205px + env(safe-area-inset-bottom, 0px)); }
+}
+.back-to-top:hover { background: var(--surface-2); }
+.back-to-top:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
+/* On the full-page expense editor, stay above its floating save bar. */
+body:has(#expense-form .form-submit-row) .back-to-top {
+  bottom: calc(145px + env(safe-area-inset-bottom, 0px));
+}
+@media (min-width: 768px) {
+  .back-to-top { bottom: calc(28px + env(safe-area-inset-bottom, 0px)); }
+  body:has(#back-to-top:not([hidden])) { padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
+  body:has(#expense-form .form-submit-row) .back-to-top { bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
+}
+@media print { .back-to-top { display: none !important; } }
 
 /* --- Page header (scenes.js renderPageScene) --------------------------- */
 .page-head {
@@ -1764,7 +1822,7 @@ body.is-signed-out #header-more { display: none !important; }
 @media (min-width: 768px) {
   .header-nav-row .desktop-nav { flex: 0 1 auto; }
 }
-/* Phones: the product name alone (the by-line lives in the footer). */
+/* Phones: show the product name alone. */
 @media (max-width: 480px) {
   .app-by { display: none; }
 }
@@ -3022,31 +3080,25 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
      • navigation as rounded tabs — the active one is a filled blue pill on
        desktop and a tinted pill on the phone dock;
      • Google filter chips, outlined text fields (4px), outlined secondary
-       buttons with a blue label, a black snackbar toast;
+       buttons with a blue label, mode-aware notification toasts;
      • Google Sans (self-hosted, fonts.css) and Google Sans Code for figures.
 
    The rules above stay: one accent, green/red for money, 8/12/16/24px radii and
    the 150/200/300ms motion. Only the surface treatment changed.
    ========================================================================== */
-/* Snackbar: Material's dark toast, white ink, no coloured stripe. */
+/* Notifications use the same mode-aware surface and ink as other overlays.
+   Keep all children on those tokens too: an inverted snackbar surface combined
+   with theme-dependent child colours makes text unreadable in light mode. */
 .toast {
-  background: #202124;
-  border: 0;
-  color: #f1f3f4;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: var(--elev-3);
 }
-.toast-close { color: #bdc1c6; border-radius: var(--radius-full); }
-.toast-close:hover { background: rgba(255, 255, 255, .12); color: #fff; }
-.toast-success, .toast-error, .toast-warning, .toast-info, .toast-loading { border: 0; }
-[data-theme="dark"] .toast { background: #e8eaed; color: #202124; }
-/* …and the children must follow the paper, not the dark theme's light ink
-   (measured 1.14:1 white-on-grey before this). */
-[data-theme="dark"] .toast-title { color: #202124; }
-[data-theme="dark"] .toast-msg { color: #3c4043; }
-[data-theme="dark"] .toast-icon { color: #5f6368; }
-[data-theme="dark"] .toast-error .toast-icon { color: #b3261e; }
-[data-theme="dark"] .toast-close { color: #5f6368; }
+.toast-success, .toast-error, .toast-warning, .toast-info, .toast-loading { border-color: var(--border); }
+.toast-close { color: var(--text-secondary); border-radius: var(--radius-full); }
+.toast-close:hover { background: var(--surface-2); color: var(--text-strong); }
 
 /* Notification badge on the bell: Google's red dot, white ring. */
 #bell-badge, .bell-badge { box-shadow: 0 0 0 2px var(--surface); }

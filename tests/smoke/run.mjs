@@ -2778,18 +2778,9 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   check(!q('.group-card[data-group]'), 'groups: deleting removes the group (members stay)');
   check(qa('#members-list [data-member]').length >= 2, 'groups: the members themselves are untouched');
 
-  // ---- 6) the footer: v35 calm pass — one quiet line + the legal line ----
-  const footer = window.document.getElementById('app-footer');
-  check(!!footer?.classList.contains('app-footer'), 'footer: shell present');
-  check(!!footer.querySelector('.app-footer-line .app-footer-wordmark'), 'footer: product name on the one-line footer');
-  check(!!footer.querySelector('.app-footer-line [data-footer-version]'), 'footer: version on the footer line');
-  check(!!footer.querySelector('.app-footer-line [data-footer-updated]'), 'footer: last-update date on the footer line');
-  check(!footer.querySelector('.app-footer-chips, .app-footer-chip'), 'footer: no chip lock-up (v35)');
-  check(!!footer.querySelector('[data-build-stamp]'), 'footer: build stamp rendered');
-  check((footer.querySelector('[data-build-stamp]')?.textContent || '').startsWith('build '), 'footer: the build stamp is filled in by the app');
-  check(!!footer.querySelector('.app-footer-legal [data-footer-copyright]'), 'footer: the legal line carries the copyright');
-  const footerCss = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
-  check(/\.app-footer-line/.test(footerCss) && /\.app-footer-legal/.test(footerCss), 'footer: the new classes are actually styled');
+  // The global page footer was removed; About and export stamps remain separate.
+  check(!window.document.getElementById('app-footer'), 'footer: global page footer removed');
+  check(!!window.document.getElementById('back-to-top'), 'navigation: back-to-top control in the shared shell');
 }
 
 console.log('\n▶ v17/v18 offline strip + colour themes');
@@ -2849,13 +2840,13 @@ console.log('\n▶ v17/v18 offline strip + colour themes');
   check(!fs.existsSync(path.join(root, 'src/js/utils/deck.js')) && !/rcpt-deck-card/.test(appSrc),
     'deck: the swipe-card receipts are removed from the system');
   check(fs.existsSync(path.join(root, 'src/js/utils/placeDetails.js')), 'details: the optional place lookup module exists');
-  check(/data-footer-version/.test(shell) && /data-footer-updated/.test(shell) && /TonSkywalker/.test(shell),
-    'shell: version, update date and copyright live in the footer');
+  check(!/id="app-footer"/.test(shell) && /name="app-version"/.test(shell) && /name="app-updated"/.test(shell),
+    'shell: footer removed; version and update metadata remain');
   check(/Trip&nbsp;Manager|Trip Manager/.test(shell) && !/<title>Fuji Planner/.test(shell), 'shell: renamed to Trip Manager by TonSkywalker');
 
   const refresh = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
   check(/\.explore-hero/.test(refresh) && /\.cal-cell/.test(refresh) && /\.offline-strip/.test(refresh), 'styles: v17 component sheet covers the new pages');
-  check(/\.theme-grid/.test(refresh) && /\.debt-map-svg/.test(refresh) && /\.app-footer/.test(refresh), 'styles: theme / debt-map / footer styles shipped');
+  check(/\.theme-grid/.test(refresh) && /\.debt-map-svg/.test(refresh), 'styles: theme / debt-map styles shipped');
 }
 
 console.log('\n▶ v19 requests: drag only in edit mode, teams every, per-group averages');
@@ -2996,15 +2987,10 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
   check(qa('.debt-offgraph-note').length === qa('.debt-map-edge[data-offgraph]').length,
     'debt map: a transfer that cannot fit on the drawing says so instead of moving its money elsewhere');
 
-  // ---- 3) footer ขนาดเล็กลง ----
-  const footCss = fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8');
-  // v35: 12px is the smallest type anywhere; the footer is one quiet line.
-  check(/\.app-footer \{[^}]*font-size: 12px/.test(footCss) && !/\.app-footer-chip \{/.test(footCss)
-    && /\.app-footer \{[^}]*margin-top: 16px/.test(footCss) && /\.app-footer \{[^}]*padding: 12px 16px/.test(footCss),
-    'footer: one compact line at the 12px minimum type size');
+  // ---- 3) no global footer ----
+  check(!window.document.getElementById('app-footer'), 'footer: no footer on the app shell');
   const flatCss = fs.readFileSync(path.join(root, 'src/css/flat.css'), 'utf8');
-  check(/#app \{ padding-bottom: 32px; \}/.test(flatCss) && /body \{ padding-bottom: calc\(var\(--bottom-nav-h\) \+ 8px\); \}/.test(flatCss),
-    'footer: excess desktop app padding and duplicate mobile safe-area gap are reduced');
+  check(/\.back-to-top/.test(flatCss), 'navigation: back-to-top control styled');
 
   // ---- 4) แถบบน: เมนูย้ายขึ้นมาอยู่ใน header + นาฬิกาเลือกเมืองได้ ----
   const shellHtml = window.document.getElementById('app-header')?.innerHTML || '';
