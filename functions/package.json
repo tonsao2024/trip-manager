@@ -1,18 +1,26 @@
 {
   "name": "fuji-trip-functions",
   "description": "Cloud Functions for Trip Manager by TonSkywalker",
-  "engines": { "node": "20" },
+  "engines": {
+    "node": "20"
+  },
   "main": "src/index.js",
   "type": "module",
   "scripts": {
     "serve": "firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions",
-    "lint": "eslint src"
+    "migrate:trip-invites": "node scripts/backfill-trip-invites.mjs",
+    "migrate:legacy-pins": "node scripts/migrate-legacy-pin-records.mjs",
+    "test": "node --test tests/*.test.js",
+    "lint": "eslint --ext .js,.mjs src scripts tests"
   },
   "dependencies": {
-    "firebase-admin": "^12.2.0",
-    "firebase-functions": "^5.0.1",
     "bcryptjs": "^2.4.3",
-    "dayjs": "^1.11.13"
+    "dayjs": "^1.11.13",
+    "firebase-admin": "^12.2.0",
+    "firebase-functions": "^5.0.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.1"
   }
 }

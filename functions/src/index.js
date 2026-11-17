@@ -8,6 +8,7 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import bcrypt from 'bcryptjs';
 import dayjs from 'dayjs';
+import { verifyStoredMemberPin } from './memberPin.js';
 
 initializeApp();
 setGlobalOptions({ region: 'asia-southeast1', maxInstances: 10 });
@@ -18,24 +19,22 @@ const auth = getAuth();
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
 
-// Helper: rate limit check
+// Atomic rate-limit check so concurrent PIN attempts cannot all pass the same count.
 async function checkRateLimit(key) {
   const ref = db.doc(`rateLimits/${key}`);
-  const snap = await ref.get();
   const now = Date.now();
-  if (!snap.exists) {
-    await ref.set({ count: 1, firstAttempt: now, lastAttempt: now });
-    return;
-  }
-  const data = snap.data();
-  if (now - data.firstAttempt > RATE_LIMIT_WINDOW_MS) {
-    await ref.set({ count: 1, firstAttempt: now, lastAttempt: now });
-    return;
-  }
-  if (data.count >= MAX_ATTEMPTS) {
-    throw new HttpsError('resource-exhausted', 'Too many attempts, try later');
-  }
-  await ref.update({ count: FieldValue.increment(1), lastAttempt: now });
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.exists ? snap.data() : null;
+    if (!data || now - Number(data.firstAttempt || 0) > RATE_LIMIT_WINDOW_MS) {
+      tx.set(ref, { count: 1, firstAttempt: now, lastAttempt: now });
+      return;
+    }
+    if (Number(data.count || 0) >= MAX_ATTEMPTS) {
+      throw new HttpsError('resource-exhausted', 'Too many attempts, try later');
+    }
+    tx.update(ref, { count: FieldValue.increment(1), lastAttempt: now });
+  });
 }
 
 async function isSuperAdmin(uid) {
@@ -51,33 +50,97 @@ async function isTripAdmin(tripId, uid) {
   if (tripSnap.exists && tripSnap.data().createdBy === uid) return true;
   const snap = await db.doc(`trips/${tripId}/members/${uid}`).get();
   if (!snap.exists) return false;
-  const role = snap.data().role;
-  return ['trip_admin', 'super_admin'].includes(role);
+  const member = snap.data();
+  return member.status !== 'inactive' && ['trip_admin', 'super_admin'].includes(member.role);
 }
 
 async function isTripMember(tripId, uid) {
   if (!tripId || !uid) return false;
   if (await isTripAdmin(tripId, uid)) return true;
-  const snap = await db.doc(`trips/${tripId}/members/${uid}`).get();
-  if (snap.exists && snap.data().status !== 'inactive') return true;
+  const memberSnap = await db.doc(`trips/${tripId}/members/${uid}`).get();
+  if (memberSnap.exists) return memberSnap.data().status !== 'inactive';
   const tripSnap = await db.doc(`trips/${tripId}`).get();
   if (!tripSnap.exists) return false;
   const data = tripSnap.data();
   return data.createdBy === uid || (Array.isArray(data.memberUids) && data.memberUids.includes(uid));
 }
 
+async function canManageMembers(tripId, uid) {
+  if (!tripId || !uid) return false;
+  if (await isTripAdmin(tripId, uid)) return true;
+  const memberSnap = await db.doc(`trips/${tripId}/members/${uid}`).get();
+  if (!memberSnap.exists) return false;
+  const member = memberSnap.data();
+  return member.status !== 'inactive'
+    && member.role !== 'viewer'
+    && member.permissions?.canManageMembers === true;
+}
+
+async function canEditItinerary(tripId, uid) {
+  if (await isTripAdmin(tripId, uid)) return true;
+  if (!await isTripMember(tripId, uid)) return false;
+  const memberSnap = await db.doc(`trips/${tripId}/members/${uid}`).get();
+  if (!memberSnap.exists) return true; // legacy memberUids-only membership
+  const member = memberSnap.data();
+  return member.status !== 'inactive'
+    && member.role !== 'viewer'
+    && member.permissions?.canEditItinerary !== false;
+}
+
+async function memberManagementAccessInTransaction(tx, tripId, uid) {
+  const [userSnap, tripSnap, memberSnap] = await Promise.all([
+    tx.get(db.doc(`users/${uid}`)),
+    tx.get(db.doc(`trips/${tripId}`)),
+    tx.get(db.doc(`trips/${tripId}/members/${uid}`))
+  ]);
+  const member = memberSnap.exists ? memberSnap.data() : null;
+  const isTripAdmin = (userSnap.exists && userSnap.data().role === 'super_admin')
+    || (tripSnap.exists && tripSnap.data().createdBy === uid)
+    || Boolean(member && member.status !== 'inactive'
+      && ['trip_admin', 'super_admin'].includes(member.role));
+  const canManageMembers = isTripAdmin || Boolean(member && member.status !== 'inactive'
+    && member.role !== 'viewer' && member.permissions?.canManageMembers === true);
+  return { canManageMembers, isTripAdmin };
+}
+
 const ALLOWED_MEMBER_ROLES = ['member', 'trip_admin', 'viewer'];
 
 function normalizeUsername(u) {
-  return String(u).trim().toLowerCase();
+  return String(u || '').trim().toLowerCase().replace(/\s+/g, '');
 }
 
-/**
- * Keep the public username → trip/member registry in sync. The app writes it
- * itself when it creates a member locally (no Cloud Functions); the functions
- * mirror it so a member created on one device can sign in from another even if
- * the functions are later unavailable.
- */
+function normalizeInviteCode(code) {
+  return String(code || '').toUpperCase().replace(/[\s-]/g, '').replace(/[^A-Z0-9]/g, '').slice(0, 6);
+}
+
+function isValidUsername(username) {
+  return /^[a-z0-9_.@-]{3,32}$/.test(username);
+}
+
+function isValidLoginUsername(username) {
+  // Legacy member records were not always subject to the current 3-character rule.
+  return /^[a-z0-9_.@-]{1,32}$/.test(username);
+}
+
+function isSafeDocumentId(value) {
+  return typeof value === 'string'
+    && value.length > 0
+    && !value.includes('/')
+    && value !== '.'
+    && value !== '..'
+    && Buffer.byteLength(value, 'utf8') <= 1500;
+}
+
+function invitePreview(tripId, data) {
+  return {
+    tripId,
+    name: String(data.name || ''),
+    startDate: String(data.startDate || ''),
+    endDate: String(data.endDate || '')
+  };
+}
+
+/** Legacy server-only helper used by older account-management callables. */
 function publicLoginRef(username) {
   return db.doc(`publicMemberLogins/${normalizeUsername(username)}`);
 }
@@ -124,21 +187,93 @@ export const healthCheck = onCall(async (request) => {
   };
 });
 
-// Create member account with username + PIN
+/** Search a single profile only for an authenticated trip member manager. */
+export const findMemberProfileByEmail = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  const tripId = String(request.data?.tripId || '').trim();
+  const email = String(request.data?.email || '').trim().toLowerCase();
+  if (!callerUid) throw new HttpsError('unauthenticated', 'Auth required');
+  if (!isSafeDocumentId(tripId) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new HttpsError('invalid-argument', 'Trip and valid email required');
+  }
+  if (!await canManageMembers(tripId, callerUid)) {
+    throw new HttpsError('permission-denied', 'Member-management permission required');
+  }
+
+  const snap = await db.collection('publicProfiles').where('email', '==', email).limit(1).get();
+  if (snap.empty) return { profile: null };
+  const profileDoc = snap.docs[0];
+  const profile = profileDoc.data();
+  return {
+    profile: {
+      id: profileDoc.id,
+      uid: profileDoc.id,
+      displayName: String(profile.displayName || 'Member').slice(0, 120),
+      email: String(profile.email || '').slice(0, 254),
+      photoURL: typeof profile.photoURL === 'string' && /^https:\/\//i.test(profile.photoURL)
+        ? profile.photoURL.slice(0, 2048) : null
+    }
+  };
+});
+
+/**
+ * Resolve one known invite code and return only name/date preview data. The public
+ * document is also repaired for legacy trips that have not yet been backfilled.
+ */
+export const lookupTripByInviteCode = onCall(async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Auth required');
+  const code = normalizeInviteCode(request.data?.code);
+  if (!/^[A-Z0-9]{6}$/.test(code)) throw new HttpsError('invalid-argument', 'Invalid invite code');
+  await checkRateLimit(`invite_lookup_${uid}`);
+
+  const matches = await db.collection('trips').where('inviteCode', '==', code).limit(2).get();
+  if (matches.size !== 1) return { trip: null };
+  const tripDoc = matches.docs[0];
+  const data = tripDoc.data();
+  if (data.inviteEnabled === false) return { trip: null };
+
+  const preview = invitePreview(tripDoc.id, data);
+  const repair = db.batch();
+  if (data.inviteEnabled !== true || data.inviteCode !== code) {
+    repair.update(tripDoc.ref, {
+      inviteCode: code,
+      inviteEnabled: true,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+  }
+  repair.set(db.doc(`publicTripInvites/${code}`), preview);
+  await repair.commit();
+  return { trip: preview };
+});
+
+// Legacy server-managed account endpoint retained for older clients.
 export const createMemberAccount = onCall(async (request) => {
-  const { tripId, username, pin, displayName, role = 'member', permissions = {} } = request.data;
+  const {
+    tripId: rawTripId,
+    username: rawUsername,
+    pin: rawPin,
+    displayName: rawDisplayName,
+    role = 'member',
+    permissions = {}
+  } = request.data || {};
+  const tripId = String(rawTripId || '').trim();
+  const username = normalizeUsername(rawUsername);
+  const pin = String(rawPin ?? '');
+  const displayName = String(rawDisplayName || username).trim().slice(0, 120);
   const callerUid = request.auth?.uid;
   if (!callerUid) throw new HttpsError('unauthenticated', 'Auth required');
-  if (!tripId || !username || !pin) throw new HttpsError('invalid-argument', 'Missing fields');
+  if (!isSafeDocumentId(tripId) || !isValidUsername(username)
+      || pin.length < 4 || pin.length > 12) {
+    throw new HttpsError('invalid-argument', 'Trip, username, and a 4-12 character PIN are required');
+  }
 
   const isAdmin = await isTripAdmin(tripId, callerUid);
   if (!isAdmin) throw new HttpsError('permission-denied', 'Admin only');
 
   const safeRole = ALLOWED_MEMBER_ROLES.includes(role) ? role : 'member';
 
-  if (pin.length < 4 || pin.length > 12) throw new HttpsError('invalid-argument', 'PIN must be 4-12 chars');
-
-  const norm = normalizeUsername(username);
+  const norm = username;
   const loginRef = db.doc(`loginAccounts/${norm}`);
   const existing = await loginRef.get();
   if (existing.exists) throw new HttpsError('already-exists', 'Username taken');
@@ -205,34 +340,415 @@ export const createMemberAccount = onCall(async (request) => {
   return { memberUid };
 });
 
-export const loginWithUsernamePin = onCall(async (request) => {
-  const { username, pin, tripId } = request.data;
-  if (!username || !pin) throw new HttpsError('invalid-argument', 'Missing username/pin');
-  const norm = normalizeUsername(username);
-  await checkRateLimit(`login_${norm}`);
+const invalidMemberPin = () => new HttpsError('unauthenticated', 'Invalid username or PIN');
 
-  const loginRef = db.doc(`loginAccounts/${norm}`);
-  const snap = await loginRef.get();
-  if (!snap.exists) throw new HttpsError('not-found', 'User not found');
-  const data = snap.data();
-  if (tripId && data.tripId !== tripId) throw new HttpsError('permission-denied', 'Trip mismatch');
-  if (data.disabled) throw new HttpsError('permission-denied', 'Account disabled');
+function sameMemberIndex(data, tripId, memberId) {
+  return data?.tripId === tripId && (data?.memberId || data?.memberUid) === memberId;
+}
 
-  const match = await bcrypt.compare(pin, data.pinHash);
-  if (!match) {
-    await loginRef.update({ failedAttempts: FieldValue.increment(1), lastFailed: FieldValue.serverTimestamp() });
-    throw new HttpsError('unauthenticated', 'Invalid PIN');
+/** Admin-only server write for a member's PIN and private login index. */
+export const setMemberPin = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError('unauthenticated', 'Auth required');
+  const tripId = String(request.data?.tripId || '').trim();
+  const memberId = String(request.data?.memberId || '').trim();
+  const username = normalizeUsername(request.data?.username);
+  const previousUsername = normalizeUsername(request.data?.previousUsername);
+  const pin = String(request.data?.pin ?? '');
+  if (!isSafeDocumentId(tripId) || !isSafeDocumentId(memberId)
+      || memberId.length > 128 || !isValidUsername(username)
+      || (previousUsername && !isSafeDocumentId(previousUsername))
+      || pin.length < 4 || pin.length > 12) {
+    throw new HttpsError('invalid-argument', 'Trip, member, username and a 4-12 character PIN are required');
   }
 
-  // Reset failed attempts
-  await loginRef.update({ failedAttempts: 0 });
+  const memberRef = db.doc(`trips/${tripId}/members/${memberId}`);
+  const secretRef = db.doc(`memberSecrets/${tripId}_${memberId}`);
+  const newLookupRef = db.doc(`publicMemberLogins/${username}`);
+  const oldLookupRef = previousUsername && previousUsername !== username
+    ? db.doc(`publicMemberLogins/${previousUsername}`) : null;
+  const newLegacyRef = db.doc(`loginAccounts/${username}`);
+  const oldLegacyRef = previousUsername && previousUsername !== username
+    ? db.doc(`loginAccounts/${previousUsername}`) : null;
+  const hash = await bcrypt.hash(pin, 10);
 
-  // Check member active
-  const memberSnap = await db.doc(`trips/${data.tripId}/members/${data.memberUid}`).get();
-  if (!memberSnap.exists || memberSnap.data().status !== 'active') throw new HttpsError('permission-denied', 'Member inactive');
+  await db.runTransaction(async (tx) => {
+    const readRefs = [memberRef, newLookupRef, newLegacyRef];
+    if (oldLookupRef) readRefs.push(oldLookupRef);
+    if (oldLegacyRef) readRefs.push(oldLegacyRef);
+    const snapshots = await Promise.all(readRefs.map((ref) => tx.get(ref)));
+    const byPath = new Map(readRefs.map((ref, index) => [ref.path, snapshots[index]]));
+    const access = await memberManagementAccessInTransaction(tx, tripId, callerUid);
+    if (!access.canManageMembers) {
+      throw new HttpsError('permission-denied', 'Member-management permission required');
+    }
 
-  const token = await auth.createCustomToken(data.memberUid, { tripId: data.tripId, role: memberSnap.data().role });
-  return { token, tripId: data.tripId, memberId: data.memberUid };
+    const memberSnap = byPath.get(memberRef.path);
+    if (!memberSnap?.exists) throw new HttpsError('not-found', 'Member not found');
+    const member = memberSnap.data();
+    if (['trip_admin', 'super_admin'].includes(member.role) && !access.isTripAdmin) {
+      throw new HttpsError('permission-denied', 'Only a trip admin may change another admin account');
+    }
+    if (normalizeUsername(member.username) !== username) {
+      throw new HttpsError('failed-precondition', 'Member username changed; refresh and retry');
+    }
+    const lookupSnap = byPath.get(newLookupRef.path);
+    if (lookupSnap?.exists && !lookupSnap.data().disabled
+        && !sameMemberIndex(lookupSnap.data(), tripId, memberId)) {
+      throw new HttpsError('already-exists', 'Username taken');
+    }
+    const legacySnap = byPath.get(newLegacyRef.path);
+    if (legacySnap?.exists && !legacySnap.data().disabled
+        && (legacySnap.data().tripId !== tripId || legacySnap.data().memberUid !== memberId)) {
+      throw new HttpsError('already-exists', 'Username taken');
+    }
+
+    tx.set(secretRef, {
+      tripId,
+      memberId,
+      username,
+      pinHash: hash,
+      pinAlgo: 'bcrypt',
+      disabled: false,
+      updatedBy: callerUid,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    tx.set(newLookupRef, {
+      username,
+      tripId,
+      memberId,
+      disabled: false,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    tx.update(memberRef, {
+      username,
+      loginReady: true,
+      authType: 'pin',
+      pinHash: FieldValue.delete(),
+      pinSalt: FieldValue.delete(),
+      pinIterations: FieldValue.delete(),
+      failedAttempts: 0,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    if (oldLookupRef) {
+      const old = byPath.get(oldLookupRef.path);
+      if (old?.exists && sameMemberIndex(old.data(), tripId, memberId)) tx.delete(oldLookupRef);
+    }
+    for (const legacyRef of [newLegacyRef, oldLegacyRef].filter(Boolean)) {
+      const legacy = byPath.get(legacyRef.path);
+      if (legacy?.exists && legacy.data().tripId === tripId && legacy.data().memberUid === memberId) {
+        tx.update(legacyRef, { disabled: true, updatedAt: FieldValue.serverTimestamp() });
+      } else if (legacyRef.path === newLegacyRef.path && legacy?.exists && legacy.data().disabled) {
+        tx.delete(legacyRef);
+      }
+    }
+  });
+  return { success: true };
+});
+
+/** Move the server-only username index after the member document was updated. */
+export const publishMemberLoginLookup = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError('unauthenticated', 'Auth required');
+  const tripId = String(request.data?.tripId || '').trim();
+  const memberId = String(request.data?.memberId || '').trim();
+  const username = normalizeUsername(request.data?.username);
+  const previousUsername = normalizeUsername(request.data?.previousUsername);
+  if (!isSafeDocumentId(tripId) || !isSafeDocumentId(memberId)
+      || memberId.length > 128 || !isValidUsername(username)
+      || (previousUsername && !isSafeDocumentId(previousUsername))) {
+    throw new HttpsError('invalid-argument', 'Invalid member login');
+  }
+
+  const memberRef = db.doc(`trips/${tripId}/members/${memberId}`);
+  const secretRef = db.doc(`memberSecrets/${tripId}_${memberId}`);
+  const newLookupRef = db.doc(`publicMemberLogins/${username}`);
+  const oldLookupRef = previousUsername && previousUsername !== username
+    ? db.doc(`publicMemberLogins/${previousUsername}`) : null;
+  const newLegacyRef = db.doc(`loginAccounts/${username}`);
+  const oldLegacyRef = previousUsername && previousUsername !== username
+    ? db.doc(`loginAccounts/${previousUsername}`) : null;
+
+  await db.runTransaction(async (tx) => {
+    const readRefs = [memberRef, secretRef, newLookupRef, newLegacyRef];
+    if (oldLookupRef) readRefs.push(oldLookupRef);
+    if (oldLegacyRef) readRefs.push(oldLegacyRef);
+    const snapshots = await Promise.all(readRefs.map((ref) => tx.get(ref)));
+    const byPath = new Map(readRefs.map((ref, index) => [ref.path, snapshots[index]]));
+    const access = await memberManagementAccessInTransaction(tx, tripId, callerUid);
+    if (!access.canManageMembers) {
+      throw new HttpsError('permission-denied', 'Member-management permission required');
+    }
+
+    const memberSnap = byPath.get(memberRef.path);
+    if (!memberSnap?.exists) throw new HttpsError('not-found', 'Member not found');
+    const member = memberSnap.data();
+    if (['trip_admin', 'super_admin'].includes(member.role) && !access.isTripAdmin) {
+      throw new HttpsError('permission-denied', 'Only a trip admin may change another admin account');
+    }
+    if (normalizeUsername(member.username) !== username) {
+      throw new HttpsError('failed-precondition', 'Member username changed; refresh and retry');
+    }
+    const lookupSnap = byPath.get(newLookupRef.path);
+    if (lookupSnap?.exists && !lookupSnap.data().disabled
+        && !sameMemberIndex(lookupSnap.data(), tripId, memberId)) {
+      throw new HttpsError('already-exists', 'Username taken');
+    }
+    const legacySnap = byPath.get(newLegacyRef.path);
+    if (legacySnap?.exists && !legacySnap.data().disabled
+        && (legacySnap.data().tripId !== tripId || legacySnap.data().memberUid !== memberId)) {
+      throw new HttpsError('already-exists', 'Username taken');
+    }
+
+    const oldLegacySnap = oldLegacyRef ? byPath.get(oldLegacyRef.path) : null;
+    const oldLegacyOwned = oldLegacySnap?.exists
+      && oldLegacySnap.data().tripId === tripId
+      && oldLegacySnap.data().memberUid === memberId;
+    const secretSnap = byPath.get(secretRef.path);
+    const hasHash = Boolean(secretSnap?.exists && secretSnap.data().pinHash)
+      || Boolean(member.pinHash && member.pinSalt)
+      || Boolean(oldLegacyOwned)
+      || Boolean(legacySnap?.exists && legacySnap.data().tripId === tripId && legacySnap.data().memberUid === memberId);
+    const loginReady = member.loginReady !== false && hasHash;
+
+    if (loginReady) {
+      tx.set(newLookupRef, {
+        username,
+        tripId,
+        memberId,
+        disabled: false,
+        updatedAt: FieldValue.serverTimestamp()
+      });
+      if (oldLegacyOwned && oldLegacyRef && oldLegacyRef.path !== newLegacyRef.path) {
+        tx.set(newLegacyRef, { ...oldLegacySnap.data(), username, updatedAt: FieldValue.serverTimestamp() });
+        tx.delete(oldLegacyRef);
+      }
+    }
+    if (oldLookupRef) {
+      const old = byPath.get(oldLookupRef.path);
+      if (old?.exists && sameMemberIndex(old.data(), tripId, memberId)) tx.delete(oldLookupRef);
+    }
+  });
+  return { success: true };
+});
+
+/** Delete PIN material and all username mappings before a member is removed. */
+export const clearMemberPin = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError('unauthenticated', 'Auth required');
+  const tripId = String(request.data?.tripId || '').trim();
+  const memberId = String(request.data?.memberId || '').trim();
+  const suppliedUsername = normalizeUsername(request.data?.username);
+  if (!isSafeDocumentId(tripId) || !isSafeDocumentId(memberId) || memberId.length > 128
+      || (suppliedUsername && !isSafeDocumentId(suppliedUsername))) {
+    throw new HttpsError('invalid-argument', 'Trip and member required');
+  }
+
+  const memberRef = db.doc(`trips/${tripId}/members/${memberId}`);
+  const secretRef = db.doc(`memberSecrets/${tripId}_${memberId}`);
+  await db.runTransaction(async (tx) => {
+    const memberSnap = await tx.get(memberRef);
+    const usernames = [...new Set([suppliedUsername, normalizeUsername(memberSnap.exists ? memberSnap.data().username : '')].filter(Boolean))];
+    const lookupRefs = usernames.map((name) => db.doc(`publicMemberLogins/${name}`));
+    const legacyRefs = usernames.map((name) => db.doc(`loginAccounts/${name}`));
+    const refs = [secretRef, ...lookupRefs, ...legacyRefs];
+    const snapshots = await Promise.all(refs.map((ref) => tx.get(ref)));
+    const byPath = new Map(refs.map((ref, index) => [ref.path, snapshots[index]]));
+    const access = await memberManagementAccessInTransaction(tx, tripId, callerUid);
+    if (!access.canManageMembers) {
+      throw new HttpsError('permission-denied', 'Member-management permission required');
+    }
+
+    if (memberSnap.exists && ['trip_admin', 'super_admin'].includes(memberSnap.data().role)
+        && !access.isTripAdmin) {
+      throw new HttpsError('permission-denied', 'Only a trip admin may change another admin account');
+    }
+    const secretSnap = byPath.get(secretRef.path);
+    if (secretSnap?.exists) tx.delete(secretRef);
+    for (const ref of lookupRefs) {
+      const snap = byPath.get(ref.path);
+      if (snap?.exists && sameMemberIndex(snap.data(), tripId, memberId)) tx.delete(ref);
+    }
+    for (const ref of legacyRefs) {
+      const snap = byPath.get(ref.path);
+      if (snap?.exists && snap.data().tripId === tripId && snap.data().memberUid === memberId) {
+        tx.update(ref, { disabled: true, updatedAt: FieldValue.serverTimestamp() });
+      }
+    }
+    if (memberSnap.exists) {
+      tx.update(memberRef, {
+        loginReady: false,
+        pinHash: FieldValue.delete(),
+        pinSalt: FieldValue.delete(),
+        pinIterations: FieldValue.delete(),
+        failedAttempts: 0,
+        updatedAt: FieldValue.serverTimestamp()
+      });
+    }
+  });
+  return { success: true };
+});
+
+async function findMemberForPinLogin(username, tripIdHint, lookupSnap, legacySnap) {
+  if (lookupSnap?.exists && lookupSnap.data().disabled) return null;
+  if (!lookupSnap?.exists && legacySnap?.exists && legacySnap.data().disabled) return null;
+
+  if (tripIdHint && isSafeDocumentId(tripIdHint)) {
+    const direct = await db.collection(`trips/${tripIdHint}/members`)
+      .where('username', '==', username).limit(2).get();
+    if (direct.size === 1) {
+      return { tripId: tripIdHint, memberId: direct.docs[0].id, member: direct.docs[0].data() };
+    }
+  }
+
+  if (lookupSnap?.exists) {
+    const lookup = lookupSnap.data();
+    const tripId = String(lookup.tripId || '');
+    const memberId = String(lookup.memberId || lookup.memberUid || '');
+    if (isSafeDocumentId(tripId) && isSafeDocumentId(memberId)
+        && (!tripIdHint || tripIdHint === tripId)) {
+      const memberSnap = await db.doc(`trips/${tripId}/members/${memberId}`).get();
+      if (memberSnap.exists) return { tripId, memberId, member: memberSnap.data() };
+    }
+  }
+
+  if (legacySnap?.exists && !legacySnap.data().disabled) {
+    const account = legacySnap.data();
+    const tripId = String(account.tripId || '');
+    const memberId = String(account.memberUid || '');
+    if (isSafeDocumentId(tripId) && isSafeDocumentId(memberId)
+        && (!tripIdHint || tripIdHint === tripId)) {
+      const memberSnap = await db.doc(`trips/${tripId}/members/${memberId}`).get();
+      if (memberSnap.exists) return { tripId, memberId, member: memberSnap.data() };
+    }
+  }
+
+  if (!tripIdHint && !lookupSnap?.exists && !legacySnap?.exists) {
+    const matches = await db.collectionGroup('members').where('username', '==', username).limit(2).get();
+    const tripMembers = matches.docs.filter((d) => {
+      const parts = d.ref.path.split('/');
+      return parts.length === 4 && parts[0] === 'trips' && parts[2] === 'members';
+    });
+    if (tripMembers.length === 1) {
+      const parts = tripMembers[0].ref.path.split('/');
+      return { tripId: parts[1], memberId: parts[3], member: tripMembers[0].data() };
+    }
+  }
+  return null;
+}
+
+async function ensurePinAuthUser(uid, displayName) {
+  if (!uid || uid.length > 128 || uid.includes('/')) throw invalidMemberPin();
+  try {
+    const existing = await auth.getUser(uid);
+    if (existing.disabled) throw invalidMemberPin();
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    if (e?.code !== 'auth/user-not-found') throw e;
+    try {
+      await auth.createUser({ uid, displayName: String(displayName || 'Member').slice(0, 120), disabled: false });
+    } catch (createError) {
+      if (createError?.code !== 'auth/uid-already-exists') throw createError;
+      const existing = await auth.getUser(uid);
+      if (existing.disabled) throw invalidMemberPin();
+    }
+  }
+}
+
+export const loginWithUsernamePin = onCall(async (request) => {
+  const username = normalizeUsername(request.data?.username);
+  const pin = String(request.data?.pin ?? '');
+  const tripIdHint = String(request.data?.tripId || '').trim() || null;
+  if (!isValidLoginUsername(username) || pin.length < 4 || pin.length > 12
+      || (tripIdHint && !isSafeDocumentId(tripIdHint))) {
+    throw new HttpsError('invalid-argument', 'Username and 4-12 character PIN required');
+  }
+  await checkRateLimit(`login_${username}`);
+
+  const lookupRef = db.doc(`publicMemberLogins/${username}`);
+  const legacyRef = db.doc(`loginAccounts/${username}`);
+  const [lookupSnap, legacySnap] = await Promise.all([lookupRef.get(), legacyRef.get()]);
+  const found = await findMemberForPinLogin(username, tripIdHint, lookupSnap, legacySnap);
+  if (!found || (tripIdHint && found.tripId !== tripIdHint)) throw invalidMemberPin();
+
+  const { tripId, memberId, member } = found;
+  if (!isSafeDocumentId(tripId) || !isSafeDocumentId(memberId) || memberId.length > 128
+      || member.status !== 'active'
+      || member.loginReady === false
+      || (member.username && normalizeUsername(member.username) !== username)) throw invalidMemberPin();
+
+  const memberRef = db.doc(`trips/${tripId}/members/${memberId}`);
+  const tripRef = db.doc(`trips/${tripId}`);
+  const secretRef = db.doc(`memberSecrets/${tripId}_${memberId}`);
+  const secretSnap = await secretRef.get();
+  let credential = null;
+  let credentialRef = null;
+  if (secretSnap.exists) {
+    credential = secretSnap.data();
+    credentialRef = secretRef;
+    if (credential.disabled || !credential.pinHash) throw invalidMemberPin();
+  } else if (member.pinHash && member.pinSalt) {
+    credential = member;
+    credentialRef = memberRef;
+  } else if (legacySnap.exists
+      && !legacySnap.data().disabled
+      && legacySnap.data().tripId === tripId
+      && legacySnap.data().memberUid === memberId) {
+    credential = legacySnap.data();
+    credentialRef = legacyRef;
+  }
+  if (!credential || !await verifyStoredMemberPin(pin, credential)) {
+    await memberRef.update({
+      failedAttempts: FieldValue.increment(1),
+      lastFailedAt: FieldValue.serverTimestamp()
+    }).catch(() => {});
+    throw invalidMemberPin();
+  }
+
+  await db.runTransaction(async (tx) => {
+    const refs = [memberRef, tripRef];
+    if (credentialRef.path !== memberRef.path) refs.push(credentialRef);
+    const snapshots = await Promise.all(refs.map((ref) => tx.get(ref)));
+    const byPath = new Map(refs.map((ref, index) => [ref.path, snapshots[index]]));
+    const currentMemberSnap = byPath.get(memberRef.path);
+    const tripSnap = byPath.get(tripRef.path);
+    if (!currentMemberSnap?.exists || !tripSnap?.exists) throw invalidMemberPin();
+    const currentMember = currentMemberSnap.data();
+    if (currentMember.status !== 'active'
+        || currentMember.loginReady === false
+        || (currentMember.username && normalizeUsername(currentMember.username) !== username)) {
+      throw invalidMemberPin();
+    }
+    const currentCredentialSnap = credentialRef.path === memberRef.path
+      ? currentMemberSnap : byPath.get(credentialRef.path);
+    if (!currentCredentialSnap?.exists) throw invalidMemberPin();
+    const currentCredential = currentCredentialSnap.data();
+    for (const field of ['pinHash', 'pinSalt', 'pinIterations', 'pinAlgo', 'disabled']) {
+      if ((currentCredential[field] ?? null) !== (credential[field] ?? null)) throw invalidMemberPin();
+    }
+    if (currentCredential.disabled) throw invalidMemberPin();
+
+    tx.update(memberRef, { failedAttempts: 0, lastLoginAt: FieldValue.serverTimestamp() });
+    tx.update(tripRef, { memberUids: FieldValue.arrayUnion(memberId) });
+  });
+
+  await ensurePinAuthUser(memberId, member.displayName);
+  const token = await auth.createCustomToken(memberId, { tripId, role: member.role || 'member' });
+  await db.doc(`rateLimits/login_${username}`).delete().catch(() => {});
+  return {
+    token,
+    tripId,
+    memberId,
+    member: {
+      uid: memberId,
+      username,
+      displayName: String(member.displayName || username).slice(0, 120),
+      email: typeof member.email === 'string' ? member.email.slice(0, 254) : null,
+      photoURL: typeof member.photoURL === 'string' ? member.photoURL.slice(0, 2048) : null,
+      color: typeof member.color === 'string' ? member.color.slice(0, 32) : null,
+      role: member.role || 'member'
+    }
+  };
 });
 
 export const resetMemberPin = onCall(async (request) => {
@@ -261,27 +777,59 @@ export const resetMemberPin = onCall(async (request) => {
 });
 
 export const disableMemberAccount = onCall(async (request) => {
-  const { username } = request.data;
   const callerUid = request.auth?.uid;
   if (!callerUid) throw new HttpsError('unauthenticated', 'Auth required');
-  const norm = normalizeUsername(username);
+  const norm = normalizeUsername(request.data?.username);
+  if (!isValidLoginUsername(norm)) throw new HttpsError('invalid-argument', 'Invalid username');
   const loginRef = db.doc(`loginAccounts/${norm}`);
   const snap = await loginRef.get();
   if (!snap.exists) throw new HttpsError('not-found', 'User not found');
   const data = snap.data();
-  if (!await isTripAdmin(data.tripId, callerUid)) throw new HttpsError('permission-denied', 'Admin only');
-  await loginRef.update({ disabled: true });
+  const tripId = String(data.tripId || '');
+  const memberUid = String(data.memberUid || '');
+  if (!isSafeDocumentId(tripId) || !isSafeDocumentId(memberUid) || memberUid.length > 128) {
+    throw new HttpsError('failed-precondition', 'Legacy member account is malformed');
+  }
+  if (!await isTripAdmin(tripId, callerUid)) throw new HttpsError('permission-denied', 'Admin only');
+
+  const memberRef = db.doc(`trips/${tripId}/members/${memberUid}`);
+  const tripRef = db.doc(`trips/${tripId}`);
+  await db.runTransaction(async (tx) => {
+    const [memberSnap, tripSnap] = await Promise.all([tx.get(memberRef), tx.get(tripRef)]);
+    if (!memberSnap.exists || !tripSnap.exists) throw new HttpsError('not-found', 'Member not found');
+    const member = memberSnap.data();
+    if (tripSnap.data().createdBy === memberUid || ['trip_admin', 'super_admin'].includes(member.role)) {
+      throw new HttpsError('failed-precondition', 'Use an explicit administrator-offboarding process for trip admins');
+    }
+    tx.update(memberRef, {
+      status: 'inactive',
+      loginReady: false,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    // Remove the UID from trip-list queries as well as marking its member record inactive.
+    tx.update(tripRef, {
+      memberUids: FieldValue.arrayRemove(memberUid),
+      updatedAt: FieldValue.serverTimestamp()
+    });
+  });
+  await loginRef.update({ disabled: true, updatedAt: FieldValue.serverTimestamp() });
   await publicLoginRef(norm).set({ disabled: true, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-  await db.doc(`trips/${data.tripId}/members/${data.memberUid}`).update({ status: 'inactive', loginReady: false });
-  await auth.updateUser(data.memberUid, { disabled: true });
+  await auth.updateUser(memberUid, { disabled: true });
   return { success: true };
 });
 
 export const revokeMemberSessions = onCall(async (request) => {
-  const { memberUid, tripId } = request.data;
+  const { memberUid: rawMemberUid, tripId: rawTripId } = request.data || {};
   const callerUid = request.auth?.uid;
   if (!callerUid) throw new HttpsError('unauthenticated', 'Auth required');
+  const memberUid = String(rawMemberUid || '').trim();
+  const tripId = String(rawTripId || '').trim();
+  if (!isSafeDocumentId(tripId) || !isSafeDocumentId(memberUid) || memberUid.length > 128) {
+    throw new HttpsError('invalid-argument', 'Invalid trip or member');
+  }
   if (!await isTripAdmin(tripId, callerUid)) throw new HttpsError('permission-denied', 'Admin only');
+  const memberSnap = await db.doc(`trips/${tripId}/members/${memberUid}`).get();
+  if (!memberSnap.exists) throw new HttpsError('not-found', 'Member is not part of this trip');
   await auth.revokeRefreshTokens(memberUid);
   await db.collection(`trips/${tripId}/activityLogs`).add({
     action: 'revoke_session',
@@ -293,47 +841,126 @@ export const revokeMemberSessions = onCall(async (request) => {
 });
 
 export const verifySensitiveActionPin = onCall(async (request) => {
-  const { pin, action } = request.data;
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Auth required');
-  if (!pin) throw new HttpsError('invalid-argument', 'PIN required');
+  const pin = String(request.data?.pin ?? '');
+  const action = String(request.data?.action || 'unspecified').trim().slice(0, 100) || 'unspecified';
+  if (pin.length < 4 || pin.length > 12) throw new HttpsError('invalid-argument', 'PIN must be 4-12 characters');
   await checkRateLimit(`stepup_${uid}`);
 
-  // Find login account by memberUid
+  // Older bcrypt accounts first, then private member/user credentials. The final
+  // users/{uid} fallback is migration compatibility only; successful verification
+  // moves it into userSecrets and removes it from the readable profile document.
   const q = await db.collection('loginAccounts').where('memberUid', '==', uid).limit(1).get();
-  let pinHash;
-  if (!q.empty) {
-    pinHash = q.docs[0].data().pinHash;
-  } else {
-    // For admin email users, check custom field or require re-auth via other means
-    // For simplicity, we check users collection has pinHash (admin may have set)
-    const userSnap = await db.doc(`users/${uid}`).get();
-    if (!userSnap.exists || !userSnap.data().pinHash) throw new HttpsError('failed-precondition', 'No PIN set');
-    pinHash = userSnap.data().pinHash;
+  let credential = !q.empty && !q.docs[0].data().disabled ? q.docs[0].data() : null;
+  const tripId = request.auth.token?.tripId;
+  if (!credential && tripId) {
+    const memberSecret = await db.doc(`memberSecrets/${tripId}_${uid}`).get();
+    if (memberSecret.exists && !memberSecret.data().disabled && memberSecret.data().pinHash) {
+      credential = memberSecret.data();
+    }
   }
-  const match = await bcrypt.compare(pin, pinHash);
-  if (!match) throw new HttpsError('unauthenticated', 'Invalid PIN');
+
+  const userSecretRef = db.doc(`userSecrets/${uid}`);
+  if (!credential) {
+    const userSecret = await userSecretRef.get();
+    if (userSecret.exists && !userSecret.data().disabled && userSecret.data().pinHash) {
+      credential = userSecret.data();
+    }
+  }
+
+  let legacyUserSnapshot = null;
+  if (!credential) {
+    const userRef = db.doc(`users/${uid}`);
+    const userSnap = await userRef.get();
+    if (userSnap.exists && userSnap.data().pinHash) {
+      credential = userSnap.data();
+      legacyUserSnapshot = userSnap;
+    }
+  }
+  if (!credential || !await verifyStoredMemberPin(pin, credential)) {
+    throw new HttpsError('unauthenticated', 'Invalid PIN');
+  }
+
+  if (legacyUserSnapshot) {
+    const userRef = legacyUserSnapshot.ref;
+    const legacy = legacyUserSnapshot.data();
+    await db.runTransaction(async (tx) => {
+      const [currentUserSnap, privateSnap] = await Promise.all([
+        tx.get(userRef),
+        tx.get(userSecretRef)
+      ]);
+      if (!currentUserSnap.exists) throw new HttpsError('failed-precondition', 'User PIN changed; retry');
+      const currentUser = currentUserSnap.data();
+      for (const field of ['pinHash', 'pinSalt', 'pinIterations', 'pinAlgo']) {
+        if ((currentUser[field] ?? null) !== (legacy[field] ?? null)) {
+          throw new HttpsError('failed-precondition', 'User PIN changed; retry');
+        }
+      }
+      const privateData = privateSnap.exists ? privateSnap.data() : {};
+      const credentialFields = ['pinHash', 'pinSalt', 'pinIterations', 'pinAlgo'];
+      if (privateData.pinHash) {
+        for (const field of credentialFields) {
+          if (Object.prototype.hasOwnProperty.call(privateData, field)
+              && Object.prototype.hasOwnProperty.call(currentUser, field)
+              && privateData[field] !== currentUser[field]) {
+            throw new HttpsError('failed-precondition', 'A conflicting private PIN already exists');
+          }
+        }
+      }
+      const moved = {};
+      for (const field of credentialFields) {
+        if (!Object.prototype.hasOwnProperty.call(privateData, field)
+            && Object.prototype.hasOwnProperty.call(currentUser, field)) moved[field] = currentUser[field];
+      }
+      for (const field of ['lastStepUp', 'lastStepUpAction', 'stepUpExpiry']) {
+        if (!Object.prototype.hasOwnProperty.call(privateData, field)
+            && Object.prototype.hasOwnProperty.call(currentUser, field)) moved[field] = currentUser[field];
+      }
+      moved.updatedAt = FieldValue.serverTimestamp();
+      tx.set(userSecretRef, moved, { merge: true });
+      tx.update(userRef, {
+        pinHash: FieldValue.delete(),
+        pinSalt: FieldValue.delete(),
+        pinIterations: FieldValue.delete(),
+        pinAlgo: FieldValue.delete(),
+        lastStepUp: FieldValue.delete(),
+        lastStepUpAction: FieldValue.delete(),
+        stepUpExpiry: FieldValue.delete()
+      });
+    });
+  }
 
   const expiry = dayjs().add(10, 'minute').toISOString();
-  // Store step-up session
-  await db.doc(`users/${uid}`).set({
+  await userSecretRef.set({
     lastStepUp: FieldValue.serverTimestamp(),
     lastStepUpAction: action,
-    stepUpExpiry: expiry
+    stepUpExpiry: expiry,
+    updatedAt: FieldValue.serverTimestamp()
   }, { merge: true });
-
+  await db.doc(`rateLimits/stepup_${uid}`).delete().catch(() => {});
   return { success: true, sessionExpiry: expiry };
 });
 
 export const recalculateItinerarySchedule = onCall(async (request) => {
-  const { tripId, items, changedItemId } = request.data;
+  const { tripId: rawTripId, items, changedItemId } = request.data || {};
+  const tripId = String(rawTripId || '').trim();
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Auth required');
-  if (!tripId || !items) throw new HttpsError('invalid-argument', 'Missing data');
-  if (!await isTripAdmin(tripId, uid)) {
-    const mem = await db.doc(`trips/${tripId}/members/${uid}`).get();
-    if (!mem.exists || !mem.data().permissions?.canEditItinerary) throw new HttpsError('permission-denied', 'No permission');
+  if (!isSafeDocumentId(tripId) || !Array.isArray(items) || items.length > 400) {
+    throw new HttpsError('invalid-argument', 'A trip and at most 400 itinerary items are required');
   }
+  const itemIds = new Set();
+  for (const item of items) {
+    if (!item || typeof item.id !== 'string' || !isSafeDocumentId(item.id) || item.id.length > 128 || itemIds.has(item.id)) {
+      throw new HttpsError('invalid-argument', 'Each itinerary item needs a unique, valid document ID');
+    }
+    itemIds.add(item.id);
+  }
+  if (changedItemId != null && (typeof changedItemId !== 'string' || !isSafeDocumentId(changedItemId))) {
+    throw new HttpsError('invalid-argument', 'Invalid changed itinerary item ID');
+  }
+  if (!await canEditItinerary(tripId, uid)) throw new HttpsError('permission-denied', 'No itinerary edit permission');
 
   // Server-side recalculation to ensure integrity
   // items: array sorted by order with startAt as ISO string

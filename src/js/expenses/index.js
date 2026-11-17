@@ -1,6 +1,6 @@
 import { expensePayments, validateExpensePayerState } from '../utils/payments.js';
 import { db, serverTimestamp } from '../firebase.js';
-import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { toThbMinor, calculateNetTotal, getCurrencyDecimals, toMinor } from '../utils/currency.js';
 import { validateAllocations } from '../utils/split.js';
 import { normalizeCategory } from '../utils/categories.js';
@@ -291,8 +291,12 @@ export async function exportExpensesToJson(tripId) {
 }
 
 export async function importExpensesFromJson(tripId, expenses, userId) {
+  if (!Array.isArray(expenses)) throw new TypeError('expenses must be an array');
+  if (expenses.length === 0) return 0;
+
   const { writeBatch } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-  const batch = writeBatch(db);
+  let batch = writeBatch(db);
+  let writesInBatch = 0;
   let count = 0;
   for (const exp of expenses) {
     const { id, _row, ...data } = exp;
@@ -320,11 +324,16 @@ export async function importExpensesFromJson(tripId, expenses, userId) {
       source: data.source || 'import'
     });
     count++;
-    if (count % 400 === 0) await batch.commit();
+    writesInBatch++;
+    if (writesInBatch === 400) {
+      await batch.commit();
+      batch = writeBatch(db);
+      writesInBatch = 0;
+    }
   }
-  await batch.commit();
+  if (writesInBatch > 0) await batch.commit();
   invalidateExpenses(tripId);
-  return expenses.length;
+  return count;
 }
 
 export function sumExpenses(expenses = [], { estimatedOnly = null } = {}) {

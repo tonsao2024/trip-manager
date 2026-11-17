@@ -2,13 +2,13 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
-> **Spark / แผนฟรีเท่านั้น (ปัจจุบัน):** Firebase deploy เฉพาะ Firestore rules และ indexes;
-> เว็บใช้ GitHub Pages หรือ static Hosting ไม่ deploy Cloud Functions / Cloud Storage
-> ไม่ต้องอัปเกรด Blaze หรือเปิด Artifact Registry กระดิ่งในแอปยังใช้ Firestore ได้
-> Push ใช้ **FCM + GitHub Actions** แทน Functions — ดู [ตั้งค่า Push](docs/PUSH-ACTIONS.md)
-> Push ส่งคิวปกติทุก 30 นาทีและอาจล่าช้า; สรุปรายวันยังสร้างเมื่อมีคนเปิดแอป
-> คำแนะนำ Functions/Push ในบันทึกเวอร์ชันเก่าด้านล่างไม่ใช่ขั้นตอน deploy ปัจจุบัน
-> ดูขั้นตอนล่าสุดที่ [Deploy Guide](docs/DEPLOY.md)
+> **Firebase deployment:** Spark supports the current Google sign-in, Firestore joins, and the static site;
+> legacy username/PIN account flows, member-email lookup, and the invite fallback use secure Cloud Functions
+> and require Blaze. On Spark, use Google sign-in + invite code + admin approval; do not expose PIN or
+> directory records to the browser. See [Deploy Guide](docs/DEPLOY.md) for the feature matrix and rollout.
+> Firestore rules/indexes deploy separately from GitHub Pages. The in-app bell and delayed Push sender
+> continue to use Firestore + **FCM/GitHub Actions**, not Cloud Functions — see
+> [ตั้งค่า Push](docs/PUSH-ACTIONS.md). Push is best-effort (normally every 30 minutes).
 
 > **v39 — 16 Nov 2026, แดชบอร์ด: จัดวางให้แน่นและสมดุล (dashboard balance pass).** Three complaints,
 > three fixes, no new card and no new colour. **(1) ปกไม่สมดุล:** the trip cover was a full-width 16:5
@@ -128,10 +128,10 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > fails into `console.warn`: every denied read/write is turned into a named layer (Firestore rules /
 > auth / Cloud Functions / VAPID / network) with the exact command that fixes it — a toast, a banner
 > in the bell sheet (“วิธีแก้” + “ลองใหม่”), a warning dot on the bell and two new rows in
-> Settings → ตรวจสอบระบบ (a write→read→delete probe). Behind it, `.github/workflows/deploy-firebase.yml`
-> now publishes `firestore.rules`, the indexes and the Cloud Functions on every push to `main`, so the
-> half of the notification system that used to be missing (the `trips/{tripId}/notifications` rules +
-> `pushTripNotification`) can never drift out of the deployed project again. See `docs/DEPLOY.md`.
+> Settings → ตรวจสอบระบบ (a write→read→delete probe). At that release, `.github/workflows/deploy-firebase.yml`
+> published `firestore.rules`, indexes and the notification trigger on pushes to `main`. **Current
+> deployment differs:** the workflow is Spark-safe and publishes only rules/indexes; secure member
+> callables are deployed separately on Blaze. See the current [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 > **v31 — 14 Oct 2026, แถบบนมือถือกลมกลืนและกะทัดรัด.** The mobile header now absorbs the iPhone safe area into its theme-matched surface, and the browser/status-bar color follows that surface instead of showing a separate bright brand strip. The toolbar row is 56px, its trip subtitle stays available in a compact style, and the content starts closer to the header; the two-row desktop navigation is unchanged.
 
@@ -306,21 +306,27 @@ offline cache/app-shell; Firestore offline persistence remains the resilience la
 ## Architecture Summary
 
 - **Frontend:** Static SPA with hash routing (`#/login`, `#/trips`, `#/trip/:id/dashboard` etc). No build step required; deploy `index.html` + `src/` directly to GitHub Pages.
-- **Backend:** Firebase Firestore (data), Auth (admin email/pass + member username/PIN via custom token), Storage (receipts, avatars), Functions (auth verification, settlement, scheduling).
-- **Security:** Rules enforce trip isolation via `tripId`, role checks, no PIN hash readable client-side, audit logs for sensitive actions, step-up PIN verification with short session (10 min). Since v30 the member document's `permissions{}` map is enforced by the rules too (`canEditItinerary`, `canEditExpense`, `canManageMembers`, `viewer`) — see [`docs/PERMISSIONS.md`](docs/PERMISSIONS.md).
+- **Backend:** Firebase Auth (Google sign-in in the visible UI; Email/Password APIs remain available to deployments that expose them), Firestore (trip data guarded by Rules), Storage (receipts/avatars), and selected Cloud Functions for legacy member-PIN compatibility, guarded profile lookup, diagnostics, scheduling, and notifications.
+- **Security:** Rules enforce trip isolation and role/permission checks. PIN and username indexes are server-only; email-profile lookup is manager-scoped; invite codes return minimal previews, not trip documents. Legacy profile PIN/step-up fields are migrated into private records before the new Rules are published. Since v30 the member document's `permissions{}` map is enforced by the Rules too — see [`docs/PERMISSIONS.md`](docs/PERMISSIONS.md).
 - **Notifications:** `trips/{tripId}/notifications` (bell + Web Push feed) with per-account `readBy`; FCM tokens in `users/{uid}/pushTokens`; `firebase-messaging-sw.js` + `manifest.webmanifest` for Web Push only.
 - **Design:** Modern minimal + soft depth, bento-grid dashboard, CSS variables for light/dark, Fuji gradient accent, Inter + Noto Sans Thai, transform/opacity animations only.
 
 ## Database Schema
 
 ```
-users/{uid} { role: super_admin|trip_admin|member, displayName, email, pinHash? (for step-up) }
+users/{uid} { role: super_admin|member, displayName, email, photoURL, createdAt, updatedAt }
+userSecrets/{uid} { legacy PIN credential and step-up metadata } // server-only; migrated from user profile
 
-loginAccounts/{normalizedUsername} { pinHash (bcrypt), memberUid, tripId, failedAttempts }
+publicProfiles/{uid} { uid, displayName, email, photoURL, updatedAt } // owner get only; email search uses a callable
+
+memberSecrets/{tripId}_{memberId} { tripId, memberId, username, pinHash, pinAlgo, updatedAt } // server-only
+publicMemberLogins/{username} { tripId, memberId, disabled, updatedAt } // server-only index
+loginAccounts/{normalizedUsername} { legacy bcrypt credential fields } // server-only compatibility
+publicTripInvites/{code} { tripId, name, startDate, endDate } // authenticated get, never list
 
 trips/{tripId} { name, description, country, city, startDate, endDate, timezone, baseCurrency, coverImage, status, memberUids[], createdAt, updatedBy, themeColor? (legacy — the brand colour is fixed now) }
 
-trips/{tripId}/members/{memberId} { uid, displayName, username, role, color, avatar, status, permissions: { canEditItinerary, canEditExpense, canManageMembers }, order }
+trips/{tripId}/members/{memberId} { uid, displayName, username, role, color, avatar, status, loginReady, permissions: { canEditItinerary, canEditExpense, canManageMembers }, order }
 
 trips/{tripId}/itineraryItems/{itemId} { title, description, date (YYYY-MM-DD), startAt (Timestamp), endAt, durationMinutes, travelToNextMinutes, order, category, address, coordinates (lat,lng), googleMapsUrl, imageUrl, notes, status, expenseId, createdBy, updatedBy, version }
 
@@ -358,107 +364,52 @@ See `firestore.indexes.json` — composite for itinerary by date+order, expenses
 - `firestore.rules`: Auth required, trip membership check via `memberUids` array + subcollection, role escalation prevented, version increment required for itinerary, amount validation, no PIN hash readable.
 - `storage.rules`: Auth required, trip member check via Firestore, size limits (2-5MB), content-type checks.
 
-## Legacy Cloud Functions (reference only — not deployed on Spark)
+## Cloud Functions for member security
 
-- `createMemberAccount`: Admin only, bcrypt hash PIN, create auth user + loginAccounts + member doc, audit log.
-- `loginWithUsernamePin`: Rate limited, bcrypt compare, check active, return custom token.
-- `resetMemberPin`, `disableMemberAccount`, `revokeMemberSessions`: Admin only.
-- `verifySensitiveActionPin`: Rate limited, verify PIN, create 10-min step-up session.
-- `recalculateItinerarySchedule`: Server-side recalc, batch update, overlap detection.
-- `validateExpenseAllocations`: Ensure sum == total, no negative.
-- `recalculateSettlement` was removed in v25: settlement is computed in the browser (`src/js/utils/settlement.js`).
-- `writeAuditLog`: Log sensitive actions.
+The browser no longer reads or writes PIN hashes or username-index documents. Callable Functions
+support the legacy username/PIN account flows, email-profile search, and the invite lookup fallback;
+the visible sign-in screen is currently Google-only. Deploy the required callables on **Blaze** and
+migrate old profile fields before publishing the stricter Rules; see [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
-- `healthCheck`: Diagnostics endpoint for Settings > **ตรวจสอบระบบ** (returns region, project, Firestore write test).
+- `loginWithUsernamePin`: rate-limited PIN verification and Firebase custom-token sign-in. It accepts
+  the historical PBKDF2-SHA256 member-secret format and older bcrypt account records; new PINs use
+  server-side bcrypt.
+- `setMemberPin`, `clearMemberPin`, `publishMemberLoginLookup`: manager-authorized writes to private
+  credential/index collections.
+- `findMemberProfileByEmail`: trip-scoped manager check, exact email lookup, and allowlisted profile
+  response (the client cannot list `publicProfiles`).
+- `lookupTripByInviteCode`: returns only the minimal name/date preview for an enabled invite; never a
+  full trip document.
+- `verifySensitiveActionPin` and `healthCheck`: step-up verification and system diagnostics.
 
-All functions validate auth, trip membership, input, rate limit, never return hash.
+The Functions source also contains older callables and notification/scheduled triggers. The deploy
+guide lists the current client callables explicitly; deploy other exports only when their triggers and
+billing impact are intended. No PIN hash is returned to the client.
 
-## วิธีที่แนะนำ: สมาชิกใช้บัญชี Google/อีเมล + รหัสเชิญ (ใช้ได้บนแผนฟรี)
+## Membership options by Firebase plan
 
-Cloud Functions ต้องใช้แผน **Blaze** (เสียเงิน) — แต่การล็อกอินด้วย **Google** หรือ
-**อีเมล/รหัสผ่าน** เป็นฟีเจอร์ของ Firebase Authentication ที่ใช้ฟรี และให้ `uid` จริงมาใช้กับ
-Firestore Rules ได้ทันที จึงเป็นวิธีที่แนะนำบนแผนฟรี:
+**Spark:** the visible sign-in screen uses Google; signed-in users can submit a six-character invite
+code and a trip admin approves the request. The code's minimal `publicTripInvites/{code}` preview
+must exist; run the one-time backfill for existing trips. Spark cannot run the legacy username/PIN
+callable paths, add-by-email lookup, or the missing-preview server fallback.
 
-1. สมาชิกกด **“เข้าสู่ระบบด้วยบัญชี Google”** (หรือสมัครด้วยอีเมล/รหัสผ่าน) — ระบบสร้าง
-   `users/{uid}` (role = member, กันการตั้งสิทธิ์ตัวเอง) และ `publicProfiles/{uid}` (ชื่อ/อีเมล/รูป เท่านั้น)
-2. แอดมินแชร์ **รหัสเชิญ 6 ตัว** ของทริป (หน้าตั้งค่า > รหัสเชิญเข้าร่วมทริป)
-3. สมาชิกกรอกรหัสที่หน้า “ทริปของฉัน” → ระบบสร้างคำขอที่
-   `trips/{tripId}/joinRequests/{uid}` (+ สำเนาที่ `users/{uid}/joinRequests/{tripId}` ให้สมาชิกดูสถานะ)
-4. แอดมินเปิด **หน้าสมาชิก > สมาชิกที่ล็อกอินด้วยบัญชี** กด **อนุมัติ** → ระบบสร้าง
-   `trips/{tripId}/members/{uid}` และเพิ่ม uid ใน `memberUids` → กฎ Firestore เปิดให้สมาชิกเข้าถึงทริปนั้น
-5. แอดมินยัง **เพิ่มด้วยอีเมล** ได้โดยตรง (ค้นหาจาก `publicProfiles`) หรือกำหนดบทบาท/สิทธิ์รายคนได้เหมือนเดิม
+**Blaze:** deploy the secure callables to support the legacy username/PIN account APIs, add-by-email
+profile search, and server repair of a missing invite preview. Cloud Functions may incur charges.
 
-สิ่งที่ต้องตั้งค่าครั้งเดียวใน Firebase Console (ฟรีทั้งหมด):
+For either plan, enable the Auth provider(s) actually used by the site, authorize the site domain, and
+publish `firestore.rules` plus `firestore.indexes.json`. Do not restore client access to
+`memberSecrets`, `userSecrets`, `publicMemberLogins`, or `loginAccounts` as a workaround.
 
-| ตั้งค่า | ที่ไหน |
-|---------|--------|
-| เปิด Google + Email/Password | Authentication > Sign-in method |
-| เพิ่มโดเมนเว็บ (เช่น `tonsao2024.github.io`) | Authentication > Settings > Authorized domains |
-| Publish กฎใหม่ (`publicProfiles`, `joinRequests`, `trips/{tripId}/categories`) | Firestore > Rules (หรือ `firebase deploy --only firestore:rules`) |
+### Troubleshooting
 
-> ไม่ต้องใช้ Cloud Functions เลย — ตรวจสอบได้ที่ **ตั้งค่า > ตรวจสอบระบบ**
+**`Missing or insufficient permissions` on invite/join:** publish the current `firestore.rules` and
+indexes, confirm the signed-in user is submitting their own join request, and check that the invite
+preview exists. Existing trips need the Admin SDK backfill described in `docs/DEPLOY.md`.
 
-## ทางเลือกเดิม (เลิกใช้แล้วใน v9): username + PIN
-
-> **v9 ลบหน้าล็อกอิน username + PIN ออกแล้ว** — เหลือหน้าเดียวคือ Google หรืออีเมล/รหัสผ่าน
-> เซสชันเก่าที่ค้างอยู่ในเครื่อง (`fuji_member_session`) ยังกู้คืนได้ ใครที่ยังไม่เคยตั้งบัญชี
-> ให้กด **“เข้าสู่ระบบด้วยบัญชี Google”** แล้วเข้าร่วมทริปด้วยรหัสเชิญ (ดูหัวข้อด้านบน)
-> ส่วนด้านล่างนี้เก็บไว้เป็นข้อมูลอ้างอิงของระบบเดิม/ฟังก์ชันที่ต้องใช้แผน Blaze เท่านั้น
-
-การล็อกอินสมาชิกเคยมี 2 โหมด:
-
-| โหมด | ต้องมี | ผลลัพธ์ |
-|------|--------|---------|
-| ในเครื่อง (ค่าเริ่มต้น) | ไม่มี | สมาชิกตั้งชื่อผู้ใช้ + PIN ได้ตอนเพิ่มสมาชิก (แฮช PBKDF2-SHA256 100k เก็บใน `members/{id}`) แล้วล็อกอินได้เลยบนอุปกรณ์นั้น |
-| เต็มรูปแบบ | Blaze plan + deploy functions + rules | สมาชิกได้ Firebase Auth จริง (custom token) ซิงก์ข้อมูลข้ามเครื่อง/ทุกที่ |
-
-### ขั้นตอนเปิดโหมดเต็มรูปแบบ
-
-1. อัปเกรดโปรเจกต์ `trip-manager-93b22` เป็นแผน **Blaze** (Cloud Functions ใช้ Spark ไม่ได้)
-2. ติดตั้ง CLI แล้วชี้โปรเจกต์
-   ```bash
-   npm i -g firebase-tools
-   firebase login
-   firebase use trip-manager-93b22
-   ```
-3. Deploy ฟังก์ชัน + กฎ + index
-   ```bash
-   firebase deploy --only functions,firestore:rules,firestore:indexes
-   ```
-4. ถ้าเรียกแล้วได้ 403 จาก Cloud Run ให้เปิดสิทธิ์ผู้เรียก (ทำกับ `loginwithusernamepin`, `creatememberaccount`, `healthcheck`)
-   ```bash
-   gcloud run services add-iam-policy-binding loginwithusernamepin \
-     --region=asia-southeast1 --member=allUsers --role=roles/run.invoker
-   ```
-5. เปิด provider: Firebase Console > Authentication > Sign-in method (Email/Password)
-6. ตรวจในแอป: **ตั้งค่า > ตรวจสอบระบบ** หรือสั่ง `await fujiDiagnose()` ใน console — ต้องขึ้น ✅ ทุกบรรทัด
-
-### เจอ `Missing or insufficient permissions` ตอนกรอกรหัสเชิญ
-
-แปลว่า **ยังไม่ได้ Publish กฎใหม่** (คอลเลกชัน `joinRequests` / `publicProfiles` / `users/{uid}/joinRequests`
-/ `trips/{tripId}/categories` ยังไม่มีในกฎที่ใช้งานอยู่) — ไม่ใช่บั๊กของแอป (อาการเดียวกันนี้จะเกิดตอน
-บันทึก **กลุ่มค่าใช้จ่าย** ของทริปด้วย):
-
-1. ในแอปจะขึ้นกล่อง **"ยังไม่ได้ Publish Firestore Rules"** พร้อมปุ่ม
-   **คัดลอกกฎทั้งหมด** (ดึงไฟล์ `firestore.rules` จากเว็บ/raw GitHub ให้) และ
-   **เปิด Firebase Console** (ลิงก์ตรงไปหน้า Rules ของโปรเจกต์)
-2. วางกฎทั้งหมดแทนของเดิม แล้วกด **Publish**
-3. กลับมากด "ขอเข้าร่วม" อีกครั้ง (ถ้ายังไม่ได้ให้รีเฟรชหน้าเว็บ) — หรือเช็กที่ **ตั้งค่า > ตรวจสอบระบบ**
-   บรรทัด *Rules สำหรับคำขอเข้าร่วมทริป* ต้องขึ้น ✅
-
-ถ้าสมาชิกเป็นคนเจอ error นี้ ให้กดปุ่ม **"คัดลอกข้อความส่งให้แอดมินทริป"** แล้วส่งในแชทได้ทันที
-
-### ทำไมขึ้น `functions/internal: internal`
-
-| สาเหตุ | วิธีแก้ |
-|--------|--------|
-| ยังไม่ได้ deploy functions | `firebase deploy --only functions` |
-| Deploy คนละ region (แอปเรียก `asia-southeast1` เท่านั้น) | deploy ใหม่ตาม `firebase.json` |
-| โปรเจกต์อยู่แผน Spark | อัปเกรดเป็น Blaze |
-| Cloud Run ไม่ได้เปิด `allUsers` (403 → SDK รายงานเป็น internal) | คำสั่ง `gcloud run services add-iam-policy-binding` ด้านบน |
-| ฟังก์ชัน throw เอง | ดู Console > Functions > Logs (ตั้งแต่ v5 ฟังก์ชันส่งข้อความจริงกลับมาแทนคำว่า internal เฉย ๆ) |
-
-ถ้าสมาชิกยังไม่ได้รับสิทธิ์เต็มรูปแบบ แอปจะแสดงแถบ “โหมดสมาชิก (ไม่ใช้ Cloud Functions)” และอ่านข้อมูลจากแคชในเครื่องแทนการขึ้น error
+**`functions/internal`, `functions/not-found`, or a callable error:** on Blaze, confirm the named
+callable is deployed in `asia-southeast1`, the client Firebase project matches the deployed project,
+and the latest Rules are published. Inspect the function logs for the server-side error. Do not apply
+broad Cloud Run IAM changes without confirming the callable's intended invoker policy.
 
 ## Folder Structure
 
@@ -497,9 +448,9 @@ Firestore Rules ได้ทันที จึงเป็นวิธีที
 
 1. Create project at https://console.firebase.google.com
 2. Enable:
-   - Auth: Email/Password
+   - Auth: Google (the current visible sign-in); enable Email/Password only if your deployment exposes that provider
    - Firestore: Start in production mode, deploy `firestore.rules` + `firestore.indexes.json`
-   - Do not enable/deploy Storage or Functions for this free-plan setup
+   - Optional: Blaze + Cloud Functions for username/PIN, add-by-email lookup, and invite fallback (see [`docs/DEPLOY.md`](docs/DEPLOY.md)); Functions are not part of the Spark-only setup
    - For Push: configure the [Actions sender](docs/PUSH-ACTIONS.md)
 3. Get Web config: Project Settings > Your apps > Web > Config
 4. For local dev: create `src/js/firebase.local.js` or set `localStorage.setItem('fuji_firebase_config', JSON.stringify(config))` then reload
@@ -528,30 +479,38 @@ npm ci
 npm test
 ```
 
+This is the Spark rules/index deployment only; it does not deploy Functions. On Blaze, follow
+[`docs/DEPLOY.md`](docs/DEPLOY.md) for the selected member-security callables and invite backfill.
 Set the dedicated Actions secret and enable the sender workflow — see [PUSH-ACTIONS.md](docs/PUSH-ACTIONS.md).
 The website is deployed separately through GitHub Pages.
 
 ## Emulator Guide
 
 ```bash
-firebase emulators:start --only firestore,auth,functions,storage
-# In another terminal, run tests that need emulator
+npx firebase-tools@13 emulators:exec \
+  --project demo-trip-manager-rules --only firestore "npm run test:rules"
 ```
+
+The Rules tests require Java and the Firestore emulator. Other validation commands include `npm test`,
+`npm run test:smoke`, `npm --prefix functions test`, and `npm --prefix functions run lint` (see
+[`docs/DEPLOY.md`](docs/DEPLOY.md)).
 
 ## Admin Setup
 
-1. Create first super_admin manually:
-   - Sign up via Firebase Console Auth with email/pass
-   - In Firestore, create `users/{uid}` doc with `{ role: 'super_admin', displayName: 'Admin', email: '...' }`
-2. Login as admin, create trips, create member accounts via UI (username+PIN)
-3. Members login via Member tab with username+PIN
+1. Create the first super admin manually:
+   - Sign in on the current site with the Google account that should administer the project
+   - In Firestore, update that account's `users/{uid}` doc to `role: 'super_admin'` (keep its existing profile fields)
+2. Create trips and approve join requests. For username/PIN or add-by-email, first deploy the
+   required Blaze callables from [`docs/DEPLOY.md`](docs/DEPLOY.md).
+3. Members can join with Google sign-in + invite code; legacy username/PIN sign-in requires the callable APIs and is not shown on the current sign-in screen.
 
 ## Security Checklist
 
-- [ ] No PIN/password in client source
-- [ ] Firestore rules deny reading `loginAccounts`
+- [ ] PINs are submitted only to callable Functions; no PIN/hash is logged or returned
+- [ ] Firestore Rules deny browser access to `loginAccounts`, `memberSecrets`, `userSecrets`, and `publicMemberLogins`
+- [ ] Legacy profile PIN/step-up fields are migrated before publishing the stricter Rules
 - [ ] Storage rules check trip membership
-- [ ] Functions use bcrypt, rate limit, don't log secrets
+- [ ] Functions use bcrypt for new PINs, rate-limit verification, and do not log secrets
 - [ ] `serverTimestamp()` for critical times
 - [ ] Allocation sum validation both client+server
 - [ ] Audit logs for sensitive actions
@@ -561,7 +520,7 @@ firebase emulators:start --only firestore,auth,functions,storage
 
 ## Acceptance Checklist
 
-- Admin/Member login with persistence, no raw PIN stored
+- Google account login with persistence; legacy member-PIN verification is callable-backed and never stores a raw PIN
 - Multi-trip isolation via tripId; trips can be **edited (dates/details) and deleted** by admins
 - Every record is editable + deletable: itinerary places, expenses, members, documents, trips
 - Itinerary add/edit form with coordinates, photo, notes and an optional **estimated cost**
@@ -608,9 +567,9 @@ firebase emulators:start --only firestore,auth,functions,storage
 - GitHub Pages deployable
 - Animated, mobile-first UI: bottom nav, FAB, scroll reveal, confetti, count-up KPIs
 - **One login screen only** (v9): Google sign-in or email/password — the old username + PIN screen is gone.
-  Legacy local sessions (`fuji_member_session`) still restore so nobody is locked out.
-- Member login works with **and** without Cloud Functions: Google/email account + invite code + admin approval (free plan)
-- Trip admins can approve join requests, add members by email, and rotate the invite code
+  A legacy `fuji_member_session` may restore cached, read-only device state; it is not Firebase authentication.
+- The visible Google sign-in + invite-code join flow works on Spark; legacy username/PIN account APIs and add-by-email lookup require Blaze callables
+- Trip admins can approve join requests and rotate invite codes; email-profile search is available when its callable is deployed
 - If the Firestore rules are not published yet, the app explains it step by step (copy-rules button,
   console deep link, ready-made message for the admin) instead of a raw `Missing or insufficient permissions`
 - Settings > **ตรวจสอบระบบ** runs 9 probes and prints exactly which deploy step is missing
@@ -625,13 +584,12 @@ firebase emulators:start --only firestore,auth,functions,storage
 - **Reliable PNG/PDF export** (v9): the receipt is captured in a flat monochrome palette
   (`.export-flat`) with a canvas colour resolver, so `color-mix()` can never break the capture again
 
-### v5 fixes
+### v5 fixes (historical; member authentication has since changed)
 
-- **Member accounts work without Cloud Functions**: PINs are hashed in the browser
-  (PBKDF2-SHA256, 100k iterations) and published to `publicMemberLogins/{username}`; adding a
-  member no longer shows “Cloud Functions ไม่พร้อม”, and members sign in with username + PIN
-  using `src/js/auth/memberAuth.js` (30-day local session). The Cloud Function is tried first and
-  only mirrored silently, so deploying it later upgrades members to real Firebase Auth sessions.
+- **Historical PIN implementation — superseded:** PINs were once hashed in the browser and written to
+  `publicMemberLogins/{username}` for a device-local session. The current code instead keeps PIN and
+  lookup records server-only; username/PIN now requires the Blaze callables described above and in
+  `docs/DEPLOY.md`.
 - **PNG/PDF export**: `src/js/utils/colors.js` rewrites `color-mix()`/`oklch()` into `rgb()/rgba()`
   around the html2canvas capture (`sanitizeColorsForExport`) and restores the DOM afterwards —
   fixes *“Attempting to parse an unsupported color function 'color'”*.
@@ -849,7 +807,13 @@ Housekeeping:
 
 ```
 # Pure logic suites (no browser, no network):
-node tests/node-runner.mjs          # settlement, split, currency, THB, groups, statements, countdown,
+npm test                            # same as node tests/node-runner.mjs
+npm --prefix functions test         # PBKDF2/bcrypt member-PIN verification
+
+# Firestore Rules (real emulator; requires Java + Firebase CLI):
+npx firebase-tools@13 emulators:exec --project demo-trip-manager-rules --only firestore "npm run test:rules"
+
+# Covers settlement, split, currency, THB, groups, statements, countdown,
                                     # scheduling, Excel, colors, invite codes, diagnostics,
                                     # + v16: prep checklists, ideas, reservations, weather, route, .ics
                                     # + v17: explore guides, booking import, calendar grid, share, build info

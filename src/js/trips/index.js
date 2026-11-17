@@ -1,10 +1,10 @@
-import { db, storage, serverTimestamp, isStorageAvailable } from '../firebase.js';
+import { db, storage, functions, httpsCallable, serverTimestamp, isStorageAvailable } from '../firebase.js';
 import { brandPrimary } from '../utils/brand.js';
 import { deleteTransfer } from '../settlement/transfers.js';
 import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, query, where, limit, startAfter, arrayUnion, arrayRemove, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { compressImage } from '../utils/helpers.js';
-import { generateInviteCode } from '../utils/invite.js';
+import { generateInviteCode, normalizeInviteCode, isValidInviteCode } from '../utils/invite.js';
 import { cachedRead, cacheInvalidate, cacheForget, cacheClear, cacheSet, seedFromPersist, persistSet, persistDelete } from '../utils/datacache.js';
 
 const TRIPS_CACHE_KEY = 'fuji_trips_cache';
@@ -74,6 +74,36 @@ function invalidateTrip(tripId) {
   clearTripsCacheInternal();
 }
 
+function invitePreviewData(tripId, trip) {
+  return {
+    tripId,
+    name: String(trip?.name || ''),
+    startDate: String(trip?.startDate || ''),
+    endDate: String(trip?.endDate || '')
+  };
+}
+
+function permissionDenied(error) {
+  return String(error?.code || '').includes('permission-denied')
+    || /missing or insufficient permissions/i.test(String(error?.message || ''));
+}
+
+async function uniqueInviteCode(except = null) {
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const candidate = generateInviteCode();
+    if (candidate === except) continue;
+    try {
+      const existing = await getDoc(doc(db, 'publicTripInvites', candidate));
+      if (!existing.exists()) return candidate;
+    } catch (e) {
+      // Before the new rules are published, this collection is not yet readable.
+      if (permissionDenied(e)) return candidate;
+      throw e;
+    }
+  }
+  throw new Error('รหัสเชิญซ้ำหลายครั้ง — ลองใหม่อีกครั้ง');
+}
+
 function blobToDataURL(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -108,7 +138,9 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false) {
   const cached = getCachedTrips(userId);
   // Every write below is page-by-page, so someone in more than 30 trips still
   // sees the oldest one. A trip list silently cut at 30 looked like lost data.
-  const PAGE = 30;
+  // Rules check a per-trip member document when a trip-list result includes a
+  // member UID. Keep the page under Firestore's 10-document rule-access limit.
+  const PAGE = 8;
   const readAllPages = async (baseQuery, label, timeoutMs) => {
     const out = [];
     let cursor = null;
@@ -165,24 +197,93 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false) {
 /** New code for a trip that was created before invite codes existed, or to revoke one. */
 export async function regenerateInviteCode(tripId) {
   if (!db) throw new Error('DB not ready');
-  const code = generateInviteCode();
-  await updateDoc(doc(db, 'trips', tripId), { inviteCode: code, inviteEnabled: true, updatedAt: serverTimestamp() });
+  const tripRef = doc(db, 'trips', tripId);
+  const snap = await getDoc(tripRef);
+  if (!snap.exists()) throw new Error('Trip not found');
+  const previous = snap.data();
+  const oldCode = normalizeInviteCode(previous.inviteCode);
+  const code = await uniqueInviteCode(oldCode);
+  const next = { ...previous, inviteCode: code, inviteEnabled: true };
+  const batch = writeBatch(db);
+  batch.update(tripRef, { inviteCode: code, inviteEnabled: true, updatedAt: serverTimestamp() });
+  if (oldCode && oldCode !== code) {
+    try {
+      const oldPreview = await getDoc(doc(db, 'publicTripInvites', oldCode));
+      if (oldPreview.exists()) batch.delete(doc(db, 'publicTripInvites', oldCode));
+    } catch (e) {
+      if (!permissionDenied(e)) throw e;
+    }
+  }
+  batch.set(doc(db, 'publicTripInvites', code), invitePreviewData(tripId, next));
+  try {
+    await batch.commit();
+  } catch (e) {
+    // Compatibility while an older ruleset is still live. The server lookup
+    // lazily backfills the minimal preview after the rules are upgraded.
+    if (!permissionDenied(e)) throw e;
+    await updateDoc(tripRef, { inviteCode: code, inviteEnabled: true, updatedAt: serverTimestamp() });
+  }
   invalidateTrip(tripId);
   return code;
 }
 
 export async function setInviteEnabled(tripId, enabled) {
   if (!db) throw new Error('DB not ready');
-  await updateDoc(doc(db, 'trips', tripId), { inviteEnabled: Boolean(enabled), updatedAt: serverTimestamp() });
+  const tripRef = doc(db, 'trips', tripId);
+  const snap = await getDoc(tripRef);
+  if (!snap.exists()) throw new Error('Trip not found');
+  const current = snap.data();
+  const oldCode = normalizeInviteCode(current.inviteCode);
+  const code = oldCode || (enabled ? await uniqueInviteCode() : '');
+  const next = { ...current, inviteCode: code || current.inviteCode, inviteEnabled: Boolean(enabled) };
+  const batch = writeBatch(db);
+  batch.update(tripRef, {
+    ...(code && code !== current.inviteCode ? { inviteCode: code } : {}),
+    inviteEnabled: Boolean(enabled),
+    updatedAt: serverTimestamp()
+  });
+  if (enabled && code) batch.set(doc(db, 'publicTripInvites', code), invitePreviewData(tripId, next));
+  else if (oldCode) {
+    try {
+      const oldPreview = await getDoc(doc(db, 'publicTripInvites', oldCode));
+      if (oldPreview.exists()) batch.delete(doc(db, 'publicTripInvites', oldCode));
+    } catch (e) {
+      if (!permissionDenied(e)) throw e;
+    }
+  }
+  try {
+    await batch.commit();
+  } catch (e) {
+    if (!permissionDenied(e)) throw e;
+    await updateDoc(tripRef, {
+      ...(code && code !== current.inviteCode ? { inviteCode: code } : {}),
+      inviteEnabled: Boolean(enabled),
+      updatedAt: serverTimestamp()
+    });
+  }
+  invalidateTrip(tripId);
 }
 
-/** Trip lookup by invite code (used by the join page). */
+/** Trip lookup returns only the safe preview document, never a trip list. */
 export async function findTripByInviteCode(code) {
   if (!db) throw new Error('DB not ready');
-  const snap = await getDocs(query(collection(db, 'trips'), where('inviteCode', '==', code), limit(1)));
-  if (snap.empty) return null;
-  const d = snap.docs[0];
-  return { id: d.id, ...d.data() };
+  if (!isValidInviteCode(code)) throw new Error('รหัสเชิญต้องมี 6 ตัวอักษร');
+  const norm = normalizeInviteCode(code);
+  try {
+    const snap = await getDoc(doc(db, 'publicTripInvites', norm));
+    if (snap.exists()) {
+      const data = snap.data();
+      return { id: data.tripId, name: data.name || '', startDate: data.startDate || '', endDate: data.endDate || '' };
+    }
+  } catch (e) {
+    if (!permissionDenied(e)) throw e;
+  }
+  if (!functions) return null;
+  const result = await httpsCallable(functions, 'lookupTripByInviteCode')({ code: norm });
+  const trip = result?.data?.trip;
+  return trip?.tripId
+    ? { id: trip.tripId, name: trip.name || '', startDate: trip.startDate || '', endDate: trip.endDate || '' }
+    : null;
 }
 
 async function fetchTrip(tripId) {
@@ -193,8 +294,8 @@ async function fetchTrip(tripId) {
     if (!snap.exists()) throw new Error('Trip not found');
     return { id: snap.id, ...snap.data() };
   } catch (e) {
-    // Members who signed in with a username + PIN but without a Firebase Auth
-    // token (Cloud Functions missing) fall back to the locally cached trip.
+    // A legacy device-only session has no Firebase Auth token, so it can only
+    // show a trip already cached on this device; Firestore reads/writes still require Auth.
     const cached = getCachedTrips()?.find(t => t.id === tripId);
     if (cached && (e.code === 'permission-denied' || /permission/i.test(e.message || ''))) {
       console.warn('getTrip permission-denied → using cached trip', tripId);
@@ -330,7 +431,19 @@ export async function createTrip(data, userId) {
   };
   
   try {
-    const ref = await addDoc(collection(db, 'trips'), payload);
+    let ref = doc(collection(db, 'trips'));
+    const createBatch = writeBatch(db);
+    createBatch.set(ref, payload);
+    createBatch.set(doc(db, 'publicTripInvites', payload.inviteCode), invitePreviewData(ref.id, payload));
+    try {
+      await createBatch.commit();
+    } catch (e) {
+      if (!permissionDenied(e)) throw e;
+      // The older published rules do not yet define publicTripInvites. Keep trip
+      // creation working during the deploy window; the server fallback/backfill
+      // adds the preview once the new rules are live.
+      ref = await addDoc(collection(db, 'trips'), payload);
+    }
     try {
       const memberRef = doc(db, `trips/${ref.id}/members`, userId);
       await setDoc(memberRef, {
@@ -375,7 +488,52 @@ export async function createTrip(data, userId) {
 export async function updateTrip(tripId, updates) {
   if (!db) throw new Error('DB not ready');
   const ref = doc(db, 'trips', tripId);
-  await updateDoc(ref, { ...updates, updatedAt: serverTimestamp() });
+  const affectsInvitePreview = ['name', 'startDate', 'endDate', 'inviteCode', 'inviteEnabled']
+    .some(key => Object.prototype.hasOwnProperty.call(updates || {}, key));
+  if (!affectsInvitePreview) {
+    await updateDoc(ref, { ...updates, updatedAt: serverTimestamp() });
+    invalidateTrip(tripId);
+    return;
+  }
+
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('Trip not found');
+  const previous = snap.data();
+  const oldCode = normalizeInviteCode(previous.inviteCode);
+  const next = { ...previous, ...(updates || {}) };
+  let newCode = normalizeInviteCode(next.inviteCode);
+  if (newCode && newCode !== next.inviteCode) next.inviteCode = newCode;
+  if (!newCode && next.inviteEnabled !== false) {
+    newCode = await uniqueInviteCode();
+    next.inviteCode = newCode;
+  }
+  const oldOpen = Boolean(oldCode && previous.inviteEnabled !== false);
+  const newOpen = Boolean(newCode && next.inviteEnabled !== false);
+  const tripUpdates = {
+    ...updates,
+    ...(newCode && newCode !== previous.inviteCode ? { inviteCode: newCode } : {}),
+    ...(newOpen ? { inviteEnabled: true } : {}),
+    updatedAt: serverTimestamp()
+  };
+  let removeOldPreview = false;
+  if (oldOpen && (!newOpen || oldCode !== newCode)) {
+    try { removeOldPreview = (await getDoc(doc(db, 'publicTripInvites', oldCode))).exists(); }
+    catch (e) { if (!permissionDenied(e)) throw e; }
+  }
+  const batch = writeBatch(db);
+  batch.update(ref, tripUpdates);
+  if (removeOldPreview) batch.delete(doc(db, 'publicTripInvites', oldCode));
+  if (newOpen) {
+    batch.set(doc(db, 'publicTripInvites', newCode), invitePreviewData(tripId, next));
+  }
+  try {
+    await batch.commit();
+  } catch (e) {
+    // During rollout an older published ruleset will reject publicTripInvites.
+    // Preserve the ordinary trip edit; a later invite lookup lazily backfills it.
+    if (!permissionDenied(e)) throw e;
+    await updateDoc(ref, tripUpdates);
+  }
   invalidateTrip(tripId);
 }
 
@@ -406,6 +564,13 @@ export async function deleteTrip(tripId, { onProgress } = {}) {
   if (!db) throw new Error('DB not ready');
   if (!tripId) throw new Error('Missing trip id');
   const warnings = [];
+  let publicInviteCode = '';
+  try {
+    const tripSnap = await getDoc(doc(db, 'trips', tripId));
+    if (tripSnap.exists()) publicInviteCode = normalizeInviteCode(tripSnap.data().inviteCode);
+  } catch (e) {
+    console.warn('[Trips] invite-code lookup before delete failed:', e?.code || e?.message);
+  }
 
   // Guarded transfer records must be removed before membership is cleaned up.
   // Best-effort like the other sub-collections: a failed cleanup must not block
@@ -450,6 +615,14 @@ export async function deleteTrip(tripId, { onProgress } = {}) {
   try {
     const finalBatch = writeBatch(db);
     finalBatch.delete(doc(db, `trips/${tripId}/settlements/_transferGuard`));
+    if (publicInviteCode) {
+      try {
+        const preview = await getDoc(doc(db, 'publicTripInvites', publicInviteCode));
+        if (preview.exists()) finalBatch.delete(doc(db, 'publicTripInvites', publicInviteCode));
+      } catch (e) {
+        if (!permissionDenied(e)) throw e;
+      }
+    }
     finalBatch.delete(doc(db, 'trips', tripId));
     await finalBatch.commit();
   } catch (e) {

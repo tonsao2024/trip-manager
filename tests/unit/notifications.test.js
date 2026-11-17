@@ -225,8 +225,16 @@ export function testRulesProtectNotificationsAndPermissions() {
     'permissions can only be changed by an admin');
   has(/canManageMembers\(tripId\)/, 'co-admins (จัดการสมาชิก) are honoured');
   has(/function protectsAdminDoc/, 'only a trip admin may touch another admin');
-  has(/request\.resource\.data\.get\('inviteCode', ''\) == resource\.data\.get\('inviteCode', ''\)/,
-    'rotating the invite code stays admin-only');
+  has(/function memberMayUpdateDashboard\(tripId\)[\s\S]*?hasOnly\(\['dashboardLayout', 'dashboardHidden', 'updatedAt'\]\)/,
+    'shared dashboard writes are field-scoped');
+  has(/function memberMayUpdateMapDefault\(tripId\)[\s\S]*?canEditItinerary\(tripId\)[\s\S]*?hasOnly\(\['defaultMapLayer', 'updatedAt'\]\)/,
+    'the map default follows itinerary permission');
+  has(/function memberMayUpdateCards\(tripId\)[\s\S]*?canEditExpense\(tripId\)[\s\S]*?hasOnly\(\['cards', 'updatedAt'\]\)/,
+    'trip cards follow expense permission');
+  has(/allow update: if isAuthenticated\(\) && request\.resource\.data\.get\('createdBy', null\) == resource\.data\.get\('createdBy', null\)/,
+    'trip ownership cannot be changed by client updates');
+  has(/managerOnlyChangesMemberUids\(tripId\)[\s\S]*?memberMayUpdateDashboard\(tripId\)[\s\S]*?memberMayUpdateMapDefault\(tripId\)[\s\S]*?memberMayUpdateCards\(tripId\)/,
+    'non-admin trip writes use narrowly scoped permission helpers');
   assert(!/match \/loginAccounts\/[\s\S]{0,80}allow read, write: if isAuthenticated/.test(compact),
     'loginAccounts is still unreadable by clients');
 }

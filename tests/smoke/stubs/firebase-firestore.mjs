@@ -4,9 +4,19 @@
 // serverTimestamp, Timestamp, arrayUnion/arrayRemove, increment, getCountFromServer.
 
 const store = new Map(); // "trips/t1/expenses/e1" -> plain data object
+let batchCreated = 0;
+const batchCommitSizes = [];
 
 export const __store = store;
-export function __reset() { store.clear(); denyPaths = []; }
+export function __reset() {
+  store.clear();
+  denyPaths = [];
+  batchCreated = 0;
+  batchCommitSizes.length = 0;
+}
+export function __batchStats() {
+  return { created: batchCreated, commits: batchCommitSizes.slice() };
+}
 
 // --- simulated security rules: __deny('trips/t1/joinRequests') blocks a path ---
 let denyPaths = [];
@@ -259,11 +269,21 @@ export async function deleteDoc(ref) { denyCheck(ref.path); store.delete(ref.pat
 
 export function writeBatch() {
   const ops = [];
+  let committed = false;
+  batchCreated++;
+  const verifyOpen = () => {
+    if (committed) throw new Error('[stub] a write batch can no longer be used after commit()');
+  };
   return {
-    set: (ref, data, opts) => ops.push(() => setDoc(ref, data, opts || {})),
-    update: (ref, data) => ops.push(() => updateDoc(ref, data)),
-    delete: (ref) => ops.push(() => deleteDoc(ref)),
-    commit: async () => { for (const op of ops) await op(); ops.length = 0; }
+    set: (ref, data, opts) => { verifyOpen(); ops.push(() => setDoc(ref, data, opts || {})); },
+    update: (ref, data) => { verifyOpen(); ops.push(() => updateDoc(ref, data)); },
+    delete: (ref) => { verifyOpen(); ops.push(() => deleteDoc(ref)); },
+    commit: async () => {
+      verifyOpen();
+      committed = true;
+      batchCommitSizes.push(ops.length);
+      for (const op of ops) await op();
+    }
   };
 }
 

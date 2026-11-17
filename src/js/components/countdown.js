@@ -273,7 +273,7 @@ export function renderCountdownScene({ startDate, endDate, createdAt, timezone, 
         <h3 class="cdc-title">${header.title}</h3>
         <p id="live-since" class="cdc-sub"><span data-live-label>${header.liveLabel || ''}</span></p>
       </div>
-      <a class="cdc-edit" href="${header.editHref}" aria-label="${header.editAria}">${header.editLabel}</a>
+      ${header.editHref ? `<a class="cdc-edit" href="${header.editHref}" aria-label="${header.editAria}">${header.editLabel}</a>` : ''}
     </div>` : ''}
     <div class="cdc-top">
       <div class="cdc-main">

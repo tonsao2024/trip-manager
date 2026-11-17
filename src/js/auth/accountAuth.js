@@ -10,7 +10,7 @@
  * without a Google account / created before this change.
  */
 import {
-  auth, db, isFirebaseConfigured,
+  auth, db, functions, httpsCallable, isFirebaseConfigured,
   signInWithEmailAndPassword, signInWithCustomToken, setPersistence,
   browserLocalPersistence, browserSessionPersistence, getAuthErrorMessage
 } from '../firebase.js';
@@ -61,17 +61,20 @@ export function getAccountErrorMessage(error) {
 export async function ensureUserProfile(user, { displayName, role = USER_ROLES.member } = {}) {
   if (!user?.uid || !db) return null;
   const name = displayName || user.displayName || (user.email ? user.email.split('@')[0] : 'Member');
+  const email = user.email ? String(user.email).trim().toLowerCase() : null;
   const profile = {
     uid: user.uid,
     displayName: name,
-    email: user.email || null,
+    email,
     photoURL: user.photoURL || null,
     updatedAt: serverTimestamp()
   };
+  // Exactly the public, allowlisted directory schema. Email-based search itself
+  // is performed by a callable that verifies the caller manages this trip.
   const publicProfile = {
     uid: user.uid,
     displayName: name,
-    email: user.email || null,
+    email,
     photoURL: user.photoURL || null,
     updatedAt: serverTimestamp()
   };
@@ -98,7 +101,7 @@ export async function ensureUserProfile(user, { displayName, role = USER_ROLES.m
     flagDenied(e);
   }
 
-  // publicProfiles/{uid} — readable by any signed-in user so admins can search.
+  // publicProfiles/{uid} — owner-readable only; admins search through the guarded callable.
   try {
     await setDoc(doc(db, 'publicProfiles', user.uid), publicProfile, { merge: true });
   } catch (e) {
@@ -192,19 +195,22 @@ export async function signOutAccount() {
   try { await signOut(auth); } catch (e) { console.warn('signOut failed', e?.message); }
 }
 
-/** Exact email lookup used by "Add member by email" (admin side). */
-export async function findProfileByEmail(email) {
+/** Exact email lookup used by "Add member by email" (trip admins only). */
+export async function findProfileByEmail(email, tripId) {
   if (!db || !email) return null;
+  if (!tripId) throw new Error('ต้องระบุทริปก่อนค้นหาสมาชิก');
+  if (!functions) throw new Error('ค้นหาด้วยอีเมลต้อง deploy Cloud Functions ก่อน');
   const target = String(email).trim().toLowerCase();
   try {
-    const { collection, query, where, limit, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-    const snap = await getDocs(query(collection(db, 'publicProfiles'), where('email', '==', target), limit(1)));
-    if (snap.empty) return null;
-    const d = snap.docs[0];
-    return { id: d.id, ...d.data() };
+    const call = httpsCallable(functions, 'findMemberProfileByEmail');
+    const res = await call({ email: target, tripId });
+    return res?.data?.profile || null;
   } catch (e) {
     console.warn('findProfileByEmail failed', e?.code, e?.message);
-    throw new Error('ค้นหาอีเมลไม่ได้ — ตรวจว่าได้ deploy firestore.rules แล้ว');
+    if (String(e?.code || '').includes('permission-denied')) {
+      throw new Error('ค้นหาอีเมลได้เฉพาะผู้ดูแลสมาชิกของทริปนี้');
+    }
+    throw new Error('ค้นหาอีเมลไม่ได้ — ตรวจว่าได้ deploy Cloud Functions และ Firestore Rules ล่าสุดแล้ว');
   }
 }
 

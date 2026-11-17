@@ -10,10 +10,10 @@
  * with the member's real uid, `memberUids` gets the uid and Firestore rules give
  * the member access from then on.
  */
-import { db, serverTimestamp } from '../firebase.js';
+import { db, functions, httpsCallable, serverTimestamp } from '../firebase.js';
 import { brandPrimary } from '../utils/brand.js';
 import {
-  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, limit
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, limit, writeBatch, arrayUnion
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { normalizeInviteCode, isValidInviteCode } from '../utils/invite.js';
 import { isPermissionError } from '../utils/rulesHelper.js';
@@ -34,20 +34,58 @@ function rethrow(e, fallbackTh, fallbackEn = null) {
 
 const DEFAULT_PERMISSIONS = { canEditItinerary: true, canEditExpense: true, canManageMembers: false };
 
-/** Find a trip by the code the admin shared. */
+/** Only the minimal invite preview is public; trip documents are never searched/listed here. */
+function invitePreview(data) {
+  if (!data?.tripId) return null;
+  return {
+    id: data.tripId,
+    name: data.name || '',
+    startDate: data.startDate || '',
+    endDate: data.endDate || ''
+  };
+}
+
+async function lookupInviteOnServer(code) {
+  if (!functions) throw new Error('รหัสเชิญนี้ยังไม่ถูกจัดทำดัชนี — ให้ผู้ดูแล deploy Cloud Functions หรือรันสคริปต์ backfill รหัสเชิญ');
+  const res = await httpsCallable(functions, 'lookupTripByInviteCode')({ code });
+  return invitePreview(res?.data?.trip);
+}
+
+/** Find only the name/date preview for a known invite code. */
 export async function findTripByInviteCode(code) {
   if (!db) throw new Error('DB not ready');
   if (!isValidInviteCode(code)) throw new Error('รหัสเชิญต้องมี 6 ตัวอักษร');
   const norm = normalizeInviteCode(code);
   try {
-    const snap = await getDocs(query(collection(db, 'trips'), where('inviteCode', '==', norm), limit(1)));
-    if (snap.empty) return null;
-    const d = snap.docs[0];
-    return { id: d.id, ...d.data() };
+    const snap = await getDoc(doc(db, 'publicTripInvites', norm));
+    if (snap.exists()) return invitePreview(snap.data());
+    // During migration, old trips may not have a safe preview document yet. The
+    // callable checks the code server-side and returns only the same preview shape.
+    return await lookupInviteOnServer(norm);
   } catch (e) {
+    if (isPermissionError(e)) {
+      try { return await lookupInviteOnServer(norm); }
+      catch (fallbackError) {
+        console.warn('findTripByInviteCode server fallback failed', fallbackError?.code, fallbackError?.message);
+        rethrow(fallbackError, 'ค้นหาทริปไม่ได้ — ตรวจว่าได้ deploy Cloud Functions และ Firestore Rules ล่าสุดแล้ว');
+      }
+    }
     console.warn('findTripByInviteCode failed', e?.code, e?.message);
-    // A permission error here means the rules do not allow listing trips yet.
     rethrow(e, 'ค้นหาทริปไม่ได้ — ตรวจสอบรหัสเชิญและอินเทอร์เน็ตอีกครั้ง');
+  }
+}
+
+/** The full trip is read only when the caller is already an authorized member. */
+export async function isUserAlreadyTripMember(tripId, uid) {
+  if (!db || !tripId || !uid) return false;
+  try {
+    const snap = await getDoc(doc(db, 'trips', tripId));
+    if (!snap.exists()) return false;
+    const trip = snap.data();
+    return trip.createdBy === uid || (Array.isArray(trip.memberUids) && trip.memberUids.includes(uid));
+  } catch (e) {
+    if (isPermissionError(e)) return false;
+    throw e;
   }
 }
 
@@ -154,7 +192,9 @@ export async function cancelJoinRequest(tripId, uid) {
 export async function approveJoinRequest(tripId, request, { role = 'member', permissions = DEFAULT_PERMISSIONS } = {}) {
   if (!db) throw new Error('DB not ready');
   const uid = request.uid || request.id;
-  if (!uid) throw new Error('คำขอไม่ถูกต้อง (ไม่มี uid)');
+  if (!uid || typeof uid !== 'string' || uid.includes('/') || uid.length > 128) {
+    throw new Error('คำขอไม่ถูกต้อง (uid ไม่ถูกต้อง)');
+  }
   try {
     const out = await approveJoinRequestInner(tripId, uid, request, role, permissions);
     invalidateJoins(tripId);
@@ -165,8 +205,15 @@ export async function approveJoinRequest(tripId, request, { role = 'member', per
 }
 
 async function approveJoinRequestInner(tripId, uid, request, role, permissions) {
-  // 1) member document — the id MUST be the member's uid (rules check it)
-  await setDoc(doc(db, 'trips', tripId, 'members', uid), {
+  const tripRef = doc(db, 'trips', tripId);
+  const tripSnap = await getDoc(tripRef);
+  if (!tripSnap.exists()) throw new Error('Trip not found');
+  const memberUids = Array.isArray(tripSnap.data().memberUids) ? tripSnap.data().memberUids : [];
+
+  // Create membership and update the trip index atomically. Co-admin Rules permit
+  // this paired change but reject an unpaired memberUids write.
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'trips', tripId, 'members', uid), {
     uid,
     displayName: request.displayName || 'Member',
     email: request.email || null,
@@ -181,13 +228,10 @@ async function approveJoinRequestInner(tripId, uid, request, role, permissions) 
     updatedAt: serverTimestamp(),
     addedFrom: 'join-request'
   }, { merge: true });
-
-  // 2) trip.memberUids drives the rules on /trips/{tripId}
-  const tripRef = doc(db, 'trips', tripId);
-  const tripSnap = await getDoc(tripRef);
-  const uids = new Set(tripSnap.exists() ? (tripSnap.data().memberUids || []) : []);
-  uids.add(uid);
-  await updateDoc(tripRef, { memberUids: [...uids], updatedAt: serverTimestamp() });
+  if (!memberUids.includes(uid)) {
+    batch.update(tripRef, { memberUids: arrayUnion(uid), updatedAt: serverTimestamp() });
+  }
+  await batch.commit();
 
   // 3) clean up the request + mirror (the mirror belongs to the member, so a
   //    denial there is harmless — the member's list filters approved trips).

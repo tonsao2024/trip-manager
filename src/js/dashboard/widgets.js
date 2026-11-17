@@ -29,14 +29,12 @@ export const DASHBOARD_WIDGETS = Object.freeze([
   { key: 'recent-expenses', size: 'half', icon: 'receipt', th: 'รายการล่าสุด', en: 'Recent expenses', hintTh: 'ค่าใช้จ่ายที่บันทึกล่าสุด', hintEn: 'Latest recorded expenses' },
   { key: 'category', size: 'half', icon: 'pie-chart', th: 'ค่าใช้จ่ายตามหมวด', en: 'Spend by category', hintTh: 'สัดส่วนค่าใช้จ่ายแต่ละหมวด', hintEn: 'Spending split by category' },
   { key: 'estimate', size: 'half', icon: 'bar-chart-3', th: 'ประมาณการ vs จ่ายจริง', en: 'Estimated vs actual', hintTh: 'งบที่ประมาณไว้เทียบกับที่จ่ายจริง', hintEn: 'Planned budget vs actual' },
-  { key: 'ideas', size: 'full', icon: 'lightbulb', th: 'สถานที่ที่อยากไป', en: 'Wishlist', hintTh: 'ไอเดียสถานที่ที่รวบรวมไว้', hintEn: 'Places the group wants to visit' },
-  // Members promoted to full-width (v38): a list of people with per-person
-  // paid/share reads better across the full width and removes the orphan
-  // half-card that previously dangled before Teams.
-  { key: 'members', size: 'full', icon: 'users', th: 'สมาชิก', en: 'Members', hintTh: 'จ่ายไปและรับผิดชอบของแต่ละคน', hintEn: 'Paid and share per person' },
-  // Teams promoted to full-width (v38, user request): “ทั้งทริป” summary spans
-  // the whole row so it visually matches the full-width cards above, and sub-teams
-  // flow as a proper grid.
+  // Wishlist and Members pair as standard half-width cards so every list/detail
+  // card shares the same column width and bounded height.
+  { key: 'ideas', size: 'half', icon: 'lightbulb', th: 'สถานที่ที่อยากไป', en: 'Wishlist', hintTh: 'ไอเดียสถานที่ที่รวบรวมไว้', hintEn: 'Places the group wants to visit' },
+  { key: 'members', size: 'half', icon: 'users', th: 'สมาชิก', en: 'Members', hintTh: 'จ่ายไปและรับผิดชอบของแต่ละคน', hintEn: 'Paid and share per person' },
+  // Teams spans the full row at the bottom so multiple compact team sub-cards
+  // and the whole-trip benchmark sit side-by-side in one balanced row.
   { key: 'teams', size: 'full', icon: 'users-round', th: 'ทีม', en: 'Teams', hintTh: 'ค่าใช้จ่ายต่อคนและรวมของแต่ละทีม', hintEn: 'Cost per person and per team' }
 ]);
 

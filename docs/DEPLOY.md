@@ -1,34 +1,37 @@
 # Deploy Guide
 
+## Firebase feature and plan requirements
+
+The static app's visible sign-in screen uses Firebase Google Authentication, Firestore, and GitHub
+Pages on Spark. The codebase also has callable-backed compatibility paths for member security:
+
+- username + PIN login, PIN setup/cleanup, and the server-only username index;
+- exact email-profile lookup for adding an existing account;
+- the legacy invite-code lookup fallback (new/updated trips maintain a minimal preview document).
+
+These callables require Cloud Functions on **Blaze** and may incur charges. If the project stays on
+Spark, use the visible Google sign-in and Firestore join-request flow; legacy PIN login, add-by-email
+search, and the callable invite fallback are unavailable. Do not restore client reads/writes of
+`memberSecrets`, `userSecrets`, `publicMemberLogins`, or `loginAccounts` as a workaround.
+
 ## GitHub Pages
 
-1. Push repo to GitHub.
-2. **Settings → Pages → Build and deployment → Source: *GitHub Actions***
-   (not “Deploy from a branch” — see the warning below).
-3. Add the repository secret `FCM_VAPID_KEY` — Settings → Secrets and variables → Actions →
-   New repository secret (value from Firebase Console → Project settings → Cloud Messaging →
-   Web Push certificates → *Key pair*). Optional for the rest of the app, required for Web Push.
-4. Push to `main` (or run **Actions → Deploy GitHub Pages → Run workflow**).
-   URL: `https://<user>.github.io/<repo>/`
-5. First visit shows the Firebase config screen if no config is in localStorage.
-6. Open the browser console: `localStorage.setItem('fuji_firebase_config', JSON.stringify({apiKey:"...",authDomain:"...",projectId:"...",storageBucket:"...",messagingSenderId:"...",appId:"..."}))` then reload.
+1. Push the repository to GitHub.
+2. In **Settings → Pages → Build and deployment**, select **GitHub Actions** (not “Deploy from a branch”).
+3. Add the Actions secret `FCM_VAPID_KEY` if Web Push is needed (Firebase Console → Project settings →
+   Cloud Messaging → Web Push certificates → *Key pair*).
+4. Push to `main` or run **Actions → Deploy GitHub Pages → Run workflow**. The site URL is
+   `https://<user>.github.io/<repo>/`.
+5. On first visit, enter the public Firebase web config if the configuration screen appears.
 
-No application build step. `.github/workflows/deploy-pages.yml` injects the public VAPID key, then stages only browser assets (not server tooling).
-`index.html` + `src/` are served directly. For background Push, deploy the
-[GitHub Actions sender](PUSH-ACTIONS.md) with its dedicated secret and enable flag.
+There is no application build step. The Pages workflow stages browser assets only; it does **not**
+deploy Firestore rules or Cloud Functions. For background Web Push, configure the separate
+[GitHub Actions sender](PUSH-ACTIONS.md). The VAPID key is public client configuration; never put a
+service-account key in the browser.
 
-> **Source must be “GitHub Actions”.** With *Deploy from a branch* GitHub runs its own Jekyll build
-> on `main` and serves that, so the artifact this workflow produces — including the injected
-> `fcm-vapid.js` — never reaches the browser. The symptom is a live site that still shows
-> **“Web Push ยังไม่พร้อม — ผู้ดูแลเว็บไซต์ต้องตั้งค่า FCM_VAPID_KEY…”** even though the secret is set
-> and every workflow run is green. The workflow now checks `build_type` up front and fails with the
-> exact setting to change instead of deploying silently (see [Actions Push troubleshooting](PUSH-ACTIONS.md#troubleshooting)).
+## Firestore rules and indexes
 
-## Firebase — Spark (free plan only)
-
-โปรเจกต์นี้ใช้ **Spark เสมอ** ไม่ต้องผูก billing หรืออัปเกรดเป็น Blaze
-`artifactregistry.googleapis.com` ถูกเรียกโดยการ deploy Cloud Functions ไม่ใช่ Firestore rules
-จึงแก้ด้วยการไม่ deploy Functions ไม่ใช่เปิด API หรือเพิ่มสิทธิ์ billing
+Install/use Firebase CLI, then deploy rules and indexes to the intended project:
 
 ```bash
 npm install -g firebase-tools@13
@@ -36,117 +39,134 @@ firebase login
 firebase deploy --project trip-manager-93b22 --only firestore:rules,firestore:indexes
 ```
 
-`firebase.json` มีเฉพาะ Firestore และ static Hosting ไม่มี Functions หรือ Storage
-เพื่อไม่ให้คำสั่ง deploy ปกติพยายามเปิดบริการที่ต้องใช้ Blaze
+`firebase.json` points to `firestore.rules`, `firestore.indexes.json`, and the `functions/` source.
+The GitHub Actions workflow **Deploy Firestore rules & indexes (Spark)** still deploys only rules and
+indexes; it never deploys Functions or Storage. Web and rules deployment are separate operations.
 
-> **v36 — ต้อง deploy rules หลังอัปเดตนี้** การบันทึก “จ่ายแล้ว” เปลี่ยนเป็น
-> transaction + guard document (`trips/{id}/settlements/_transferGuard`) และ rules
-> บังคับว่าทุก transfer create/delete ต้องมี guard bump ใน atomic write เดียวกัน
-> ถ้า client ใหม่ทำงานกับ rules เก่า การบันทึกจะถูกปฏิเสธ; ถ้า client เก่า (หน้าที่โหลดค้าง
-> ไว้ก่อน deploy) ทำงานกับ rules ใหม่ การบันทึกก็จะถูกปฏิเสธเช่นกัน — ให้ผู้ใช้รีเฟรชหน้า
-> หนึ่งครั้งหลัง deploy (client เก่ายัง **อ่าน** ยอดได้ตามปกติ)
+The current rules keep `publicProfiles` owner-readable/non-listable, make `memberSecrets`,
+`userSecrets`, `publicMemberLogins`, and `loginAccounts` server-only, and replace invite-code trip
+listing with a non-listable `publicTripInvites/{code}` preview containing only `tripId`, name, and dates. Publish the
+matching rules before relying on the new browser code.
 
-> **v37 — เฉพาะเว็บ ไม่ต้อง deploy rules** ตัวเลขเคลียร์บิลนับเฉพาะ “จ่ายจริง” แล้ว
-> (บิลประมาณการไม่เข้าไปอยู่ใน ledger เว้นแต่เรียกผ่าน `includeEstimated: true`)
-> จึงไม่ต้องเปลี่ยน Firestore rules — ดู `docs/expense-money-model.md`
-> แหล่งพยากรณ์อากาศ: Open-Meteo (พิกัดญี่ปุ่นใช้โมเดล 気象庁 อัตโนมัติ) + การ์ดทางการ
-> 気象庁 (出典：気象庁) บนหน้า Weather สำหรับปลายทางญี่ปุ่น 5 แห่ง + Visual Crossing เป็น
-> ข้อมูลสำรองเงียบ ๆ เมื่อ Open-Meteo ล่ม — ทั้งหมดไม่มี API key และทำงานฝั่ง client ล้วน
-ใช้ GitHub Pages สำหรับเว็บตามขั้นตอนข้างบน หรือ Firebase static Hosting:
+## Cloud Functions (Blaze only)
+
+Enable Blaze and set up billing before deploying Functions. The functions use Node 20 in
+`asia-southeast1`. Install the locked server dependencies and deploy the callable endpoints used by
+the current client:
 
 ```bash
-firebase deploy --project trip-manager-93b22 --only hosting
+npm --prefix functions ci
+firebase deploy --project trip-manager-93b22 --only \
+  functions:healthCheck,functions:findMemberProfileByEmail,functions:lookupTripByInviteCode,\
+functions:setMemberPin,functions:publishMemberLoginLookup,functions:clearMemberPin,\
+functions:loginWithUsernamePin,functions:verifySensitiveActionPin
 ```
 
-เปิด Firestore Database และ Authentication (Google / Email+Password) ใน Firebase Console
-และเพิ่มโดเมนเว็บใน Authentication → Settings → Authorized domains
-ไม่ต้องเปิด Artifact Registry, Cloud Build, Cloud Functions, Secret Manager หรือ Cloud Storage
-Firestore/Hosting/Auth ยังมีโควตาและข้อจำกัดของแผนฟรี ไม่ใช่ใช้งานไม่จำกัด
+The explicit list avoids deploying unrelated scheduled/trigger functions in `functions/src/index.js`.
+If those other functions are intentionally needed, review their triggers and billing impact before
+using `--only functions` to deploy every export.
 
-### Publishing rules matters for the app (v18.2)
-`firebase deploy --only firestore:rules` is **not** optional bookkeeping: when the
-published rules are older than the app, Firestore answers every write with
-“Missing or insufficient permissions”. The app detects that (Settings → System
-check, and inline banners such as the ideas board) and keeps the data on the
-device until the rules are published, but the write only reaches the cloud once
-the rules below are live:
+The PIN callable accepts the existing PBKDF2-SHA256 member-secret format (100,000 iterations,
+16-byte hex salt) and bcrypt records from older server-managed accounts. New PINs are hashed on the
+server. No client-side PIN hash or public username index is required.
 
-- `trips/{tripId}/ideas/{id}` — the ideas board (any signed-in user may add/edit;
-  delete stays with the author or a trip admin)
-- `trips/{tripId}/memberGroups/{id}` — trip sub-groups (“กลุ่ม A”, “กลับก่อน”)
+### Migrate legacy PIN fields before publishing Rules
 
-### Notifications on Spark
+Older releases could leave PIN hashes or step-up metadata on readable `users/{uid}` or
+`trips/{tripId}/members/{memberId}` documents. The current Rules deny reads of profiles that still
+contain those fields, and deny client writes of PIN material. Run this Admin SDK migration **before
+publishing the new Rules**, whether the project uses Spark or Blaze. It moves those fields into the
+server-only `userSecrets/{uid}` / `memberSecrets/{tripId}_{memberId}` records and removes them from the
+profile documents. Existing PBKDF2-SHA256 hashes are preserved; hashes already in a private record
+remain authoritative. On Blaze, deploy the compatibility callables before the browser release; the
+migration itself does not require Cloud Functions.
 
-- กระดิ่ง 🔔 และรายการแจ้งเตือนในแอปใช้ Firestore; ต้อง publish กฎล่าสุดและเข้าสู่ระบบ
-  ด้วย Google/Email ที่เป็นสมาชิกทริป ไม่ต้องมี Cloud Functions
-- สรุปค่าใช้จ่ายรายวันสร้างโดยอุปกรณ์แรกที่เปิดทริปหลังเวลาสรุป ไม่ใช่ scheduled job
-  หากไม่มีใครเปิดแอป ก็ไม่มีงานทำงานเบื้องหลัง
-- **Push ตอนปิดเว็บใช้ FCM + GitHub Actions** แอปเพิ่มคิว `pushDelivery.state=pending`
-  ใน Firestore แล้ว workflow ส่งปกติทุก 30 นาที (GitHub อาจเริ่มช้าหรือข้ามรอบ)
-  ทำตาม [PUSH-ACTIONS.md](PUSH-ACTIONS.md) ไม่ต้องใช้ Cloudflare หรือ Blaze
-  ต้องมี VAPID key, Secret สำหรับ sender, enable flag และการอนุญาตของอุปกรณ์
-  หากยังไม่เปิด workflow จะมีเฉพาะกระดิ่งในแอป; VAPID key อย่างเดียวไม่ได้สร้างตัวส่ง
-- โค้ดเก่าใน `functions/` เก็บไว้เป็นอ้างอิงเท่านั้น ไม่อยู่ใน config หรือ workflow deploy
-- Cloud Storage ไม่อยู่ในเส้นทาง deploy ฟรี ใช้ fallback รูปแบบ inline ของฟีเจอร์ที่รองรับ
-  แทนการรับประกันว่าการอัปโหลดไฟล์ทุกชนิดจะใช้ได้
-
-### Deploy rules & indexes from GitHub Actions
-
-Workflow: **Deploy Firestore rules & indexes (Spark)** (`.github/workflows/deploy-firebase.yml`)
-
-ตั้งค่าครั้งเดียวใน Settings → Secrets and variables → Actions (เลือกอย่างใดอย่างหนึ่ง):
-
-- `FIREBASE_SERVICE_ACCOUNT`: JSON ของ service account ที่มี Firebase Rules Admin,
-  Cloud Datastore Index Admin และ Service Usage Viewer; หรือ
-- `FIREBASE_TOKEN`: ค่าจาก `firebase login:ci` (เป็นวิธีเก่า แนะนำ service account)
-
-ห้ามใส่ credentials เหล่านี้ใน client code หรือ commit ลง repository
-ตัวแปร `FIREBASE_PROJECT_ID` ใช้เปลี่ยน project ได้; ค่าเริ่มต้นคือ `trip-manager-93b22`
-
-เมื่อ push เข้า `main` ที่แก้ rules/indexes/config/workflow จะ deploy **เฉพาะ rules และ indexes**
-ไม่ติดตั้ง dependencies ใน `functions/` และไม่ deploy Functions หรือ Storage
-สำหรับโค้ดชุดนี้ ให้ใช้ **Run workflow หลังการเปลี่ยนแปลงเข้า main แล้ว** หรือ push เข้า main
-การกด Re-run ของ run เก่าอาจยังใช้ workflow เก่าที่ deploy Functions
-หากไม่มี credential จะข้าม deploy พร้อมคำเตือน; summary แสดงผล deploy จริง ไม่อ้างว่าสำเร็จเมื่อ step ล้มเหลว
-ในโหมด service account จะพยายามอ่านกฎที่ publish แล้วกลับมาตรวจบล็อก notifications ด้วย
-
-เว็บยังเผยแพร่แยกด้วย **Deploy GitHub Pages** การสำเร็จของ Pages ไม่ได้แปลว่า rules ถูก publish แล้ว
-
-### Verify
+Authenticate with Application Default Credentials that can read/write Firestore:
+`gcloud auth application-default login`, or set `GOOGLE_APPLICATION_CREDENTIALS` to a service-account
+file kept outside the repository.
 
 ```bash
-node --test tests/deploy-spark.test.mjs
-node tests/node-runner.mjs
+npm --prefix functions ci
+GOOGLE_CLOUD_PROJECT=trip-manager-93b22 npm --prefix functions run migrate:legacy-pins
 ```
 
-บนเว็บจริง: เข้าสู่ระบบ Google/Email → เปิดทริป → ทดสอบกระดิ่งใน Settings → การแจ้งเตือน
-ถ้าขึ้น `permission-denied` ให้ตรวจ membership และกฎ Firestore ไม่ใช่อัปเกรดเป็น Blaze
+The script prints counts only, never PIN material. Resolve any migration error before publishing the
+new Rules; do not commit credentials.
 
-### Create Super Admin
-1. Firebase Console > Auth > Add user email/pass
-2. Firestore > users/{uid} doc:
-```json
-{
-  "role": "super_admin",
-  "displayName": "Super Admin",
-  "email": "admin@example.com"
-}
-```
+### Backfill existing invite previews
 
-### Test Rules
+Run this Admin SDK backfill **before publishing the new Rules**, especially on Spark where there is
+no callable fallback. It normalizes existing invite codes, detects collisions before writing, enables
+legacy trips whose `inviteEnabled` field was missing, writes minimal previews before removing stale
+ones, and keeps each trip-code update paired atomically with its preview. The script uses the same
+Application Default Credentials described above.
+
 ```bash
-firebase emulators:start --only firestore,auth,storage
-# In another terminal
-firebase emulators:exec --only firestore "npm run test:rules"
+GOOGLE_CLOUD_PROJECT=trip-manager-93b22 npm --prefix functions run migrate:trip-invites
 ```
 
-## Checklist (Spark)
-- [ ] Firebase plan remains Spark; no billing account required
-- [ ] Firestore rules and indexes deployed to the correct project
-- [ ] Google / Email+Password enabled and the site domain authorized
-- [ ] Super admin created if needed
-- [ ] GitHub Pages enabled, Source = GitHub Actions
-- [ ] In-app notification tested with a Firebase-authenticated trip member
-- [ ] FIREBASE_PUSH_SERVICE_ACCOUNT and PUSH_ACTIONS_ENABLED configured; Actions quota reviewed
-- [ ] Queue rules/index deployed; Send FCM Push (Spark) manually tested with two devices
-- [ ] Users understand there is Push is delayed/best-effort and daily summaries still need an open client
+Review any reported invite-code collision and resolve it before rerunning. Never commit credentials.
+New and updated trips maintain their preview documents through the client; the callable repairs a
+missing legacy preview when a signed-in user submits its invite code.
+
+### Controlled rollout
+
+**Blaze:**
+1. Deploy the selected callable Functions.
+2. Run the legacy PIN-field migration and invite-preview backfill with the Admin SDK.
+3. Publish the current Firestore Rules and indexes.
+4. Publish the current browser bundle through GitHub Pages and ask members to refresh.
+
+**Spark:**
+1. Run the Admin SDK legacy PIN-field migration (if legacy fields exist) and invite-preview backfill.
+2. Publish the current Firestore Rules and indexes.
+3. Publish the current browser bundle through GitHub Pages and ask members to refresh.
+
+The PIN and directory Rules are intentionally incompatible with older clients that directly read or
+write credential/index documents. Keep the release window short and ask users to reload after the
+browser bundle is live. Do not deploy production changes from this guide as part of a code review.
+
+## Notifications and Spark
+
+The in-app notification feed and the delayed Web Push sender remain Firestore + GitHub Actions flows;
+they do not depend on Cloud Functions. Push is best-effort and normally runs every 30 minutes. See
+[PUSH-ACTIONS.md](PUSH-ACTIONS.md) for the VAPID key, sender secret, and enable flag.
+
+## Verify locally
+
+```bash
+npm test
+npm run test:smoke
+npm --prefix functions ci
+npm --prefix functions test
+npm --prefix functions run lint
+```
+
+Firestore Rules tests use the real Firestore emulator and do not need Firebase credentials:
+
+```bash
+# Requires Java and Firebase CLI; CLI launches the emulator and sets FIRESTORE_EMULATOR_HOST.
+npx firebase-tools@13 emulators:exec \
+  --project demo-trip-manager-rules --only firestore "npm run test:rules"
+```
+
+The Rules suite checks trip isolation, invite previews and trip-list denial, owner-only profiles, and
+denies client access to PIN/login records. A direct `npm run test:rules` without the emulator fails
+with a setup message instead of silently passing.
+
+## Create the first super admin
+
+1. Create/sign in the account in Firebase Authentication.
+2. In Firestore, create `users/{uid}` for that Auth UID with `role: "super_admin"` and the basic
+   profile fields. Do not add PIN hashes or step-up fields; server Functions own those credentials.
+
+## Checklist
+
+- [ ] Firestore rules and indexes are published to the correct project
+- [ ] Google provider is enabled for the current sign-in screen and the deployed web domain is authorized
+- [ ] For username/PIN, email lookup, or legacy invite fallback: Blaze is enabled and required
+      callables are deployed in `asia-southeast1`
+- [ ] Existing invite previews are backfilled; collisions were resolved
+- [ ] GitHub Pages uses **GitHub Actions** as its source
+- [ ] If Web Push is enabled, the VAPID key and GitHub Actions sender are configured separately
+- [ ] Users have refreshed the site after the Rules/client migration

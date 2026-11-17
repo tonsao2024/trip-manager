@@ -2488,11 +2488,11 @@ body {
   gap: 5px;
   min-width: 0;
   max-width: 100%;
-  padding: 3px 7px;
+  padding: 2px 6px;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--cat-color, var(--primary-raw)) 22%, var(--border-light));
   background: color-mix(in srgb, var(--cat-color, var(--primary-raw)) 7%, var(--surface));
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.4;
 }
 .team-cat-dot { width: 7px; height: 7px; border-radius: 999px; flex: 0 0 auto; background: var(--cat-color, var(--primary-raw)); }
@@ -2554,6 +2554,9 @@ body {
 
 /* --- 4. Expense filter bar -------------------------------------------- */
 .expense-filter-bar { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.expense-filter-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.expense-filter-group { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.expense-filter-label { flex: 0 0 auto; color: var(--text-tertiary); font-size: 11px; font-weight: 600; white-space: nowrap; }
 .expense-filter-bar .chip-row { margin: 0; }
 .expense-filter-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .expense-more-filters { color: var(--text-secondary); }
@@ -2562,6 +2565,78 @@ body {
 #expenses-view .kpi-strip { margin-bottom: 8px; }
 #expenses-view .group-avg-strip { margin-bottom: 8px; }
 #expenses-view .page-head { margin-bottom: 12px; }
+
+/* Desktop expense filters: one framed surface with two purposeful rows. The
+   hairline separators name the groups without creating nested mini-cards. */
+@media (min-width: 768px) {
+  .expense-filter-bar {
+    gap: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+  .expense-filter-row--primary {
+    align-items: center;
+    flex-wrap: wrap;
+    column-gap: 0;
+    row-gap: 6px;
+    padding-bottom: 8px;
+  }
+  .expense-filter-row--primary > .expense-filter-group {
+    gap: 6px;
+    padding: 0 8px;
+    border-left: 1px solid var(--border-light);
+  }
+  .expense-filter-row--primary > .expense-filter-group:first-child {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .expense-filter-row--primary .chip-row,
+  .expense-filter-row--secondary .chip-row {
+    flex-wrap: wrap;
+    gap: 4px;
+    overflow: visible;
+    padding: 0;
+  }
+  .expense-filter-row--primary .chip {
+    min-height: 30px;
+    padding: 4px 6px;
+    gap: 4px;
+    font-size: 11px;
+  }
+  .expense-filter-row--primary .chip svg { width: 13px; height: 13px; }
+  .expense-filter-group--view { margin-left: auto; }
+  .expense-filter-group--view .segmented { gap: 3px; padding: 3px; }
+  .expense-filter-group--view .segmented-item { min-height: 30px; padding: 4px 7px; gap: 4px; font-size: 11px; }
+  .expense-filter-group--view .segmented-item svg { width: 13px; height: 13px; }
+  .expense-filter-row--secondary {
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-light);
+  }
+  .expense-filter-row--secondary > .expense-filter-group { padding: 0; border: 0; }
+  .expense-filter-group--cats { flex: 1 1 400px; min-width: 240px; }
+  .expense-filter-row--secondary .chip { min-height: 28px; padding: 3px 7px; gap: 4px; font-size: 11px; }
+  .expense-filter-row--secondary .chip svg { width: 13px; height: 13px; }
+  .expense-filter-group--cats { gap: 6px; }
+  .expense-filter-foot { flex: 0 0 auto; margin-left: auto; }
+  .expense-filter-foot .expense-more-filters { display: none; }
+  #expense-extra-controls {
+    display: flex;
+    align-items: center;
+    flex: 0 1 auto;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+  }
+  .expense-extra-controls.is-open { display: flex; }
+  .expense-extra-actions { align-items: center; justify-content: flex-end; gap: 2px 6px; margin: 0; }
+  .expense-extra-actions :is(.btn, .link-btn) { min-height: 30px; padding: 3px 6px; font-size: 11px; white-space: nowrap; }
+}
 
 /* --- 5. Compact rhythm ------------------------------------------------ */
 /* Page shell: 24px top/bottom → 16px, and one step tighter inside pages. */
@@ -2585,8 +2660,25 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
 #dashboard-view .dashboard-board { gap: 14px; align-items: start; }
 #dashboard-view .dash-widget > .card { height: auto; }
 #dashboard-view .dash-widget[data-dashboard-widget="countdown"] .countdown-scene { height: 100%; }
-#dashboard-view .dash-widget > .card,
-#dashboard-view .dash-widget > .kpi-grid-compact { padding: 16px; }
+#dashboard-view .dash-widget > .card { padding: 16px; }
+@media (min-width: 761px) {
+  #dashboard-view .dash-widget--half > .card {
+    display: flex;
+    flex-direction: column;
+    min-height: 236px;
+    padding: 14px 16px;
+  }
+  #dashboard-view .dash-widget--half > .card > .card-foot { margin-top: auto; }
+  #dashboard-view :is(.dash-scroll-body, #upnext-list, #dash-bookings, #recent-expenses, #category-stats) {
+    max-height: 212px;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+}
+/* The KPI strip is already edge-aligned with its neighboring cards. */
+#dashboard-view .dash-widget > .kpi-grid-compact { padding: 0; }
 /* KPI hero tiles — stronger hierarchy for the top summary strip. */
 #dashboard-view .kpi-tile,
 #dashboard-view .kpi-tile.kpi-compact { padding: 14px 16px; border-radius: 14px; }
@@ -2598,13 +2690,47 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
 #dashboard-view :is(.member-row, .expense-row, .upnext-row, .booking-row, .dash-idea-row) { padding: 9px 12px; margin-bottom: 6px; border-radius: 10px; }
 #dashboard-view .member-row-avatar { width: 30px !important; height: 30px !important; }
 #dashboard-view .member-row-sub { font-size: 12px; }
-/* Team sub-cards: sit inside the full-width Teams widget with room to breathe. */
-#dashboard-view .team-card { padding: 14px; gap: 8px; border-radius: 14px; }
-#dashboard-view .team-card--trip { padding: 18px; }
-#dashboard-view .team-stat { padding: 10px 12px; border-radius: 12px; }
-#dashboard-view .team-card--trip .team-stat { padding: 12px 14px; }
-#dashboard-view .team-stat b { font-size: 16px; }
-#dashboard-view .team-card--trip .team-stat b { font-size: 22px; }
+/* Compact team cards: the comparison card occupies a normal grid cell too. */
+#dashboard-view .team-card {
+  padding: 10px 12px;
+  gap: 6px;
+  justify-content: space-between;
+  border-radius: 12px;
+}
+#dashboard-view .team-card--trip { padding: 10px 12px; grid-column: auto; margin-top: 0; }
+#dashboard-view .team-stat { padding: 8px 10px; border-radius: 10px; }
+#dashboard-view :is(.team-stat b, .team-card--trip .team-stat b) { font-size: 15px; }
+#team-board { grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: start; }
+@media (min-width: 768px) and (max-width: 1023px) {
+  #team-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1024px) {
+  #team-board { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #team-board[data-team-count="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #team-board[data-team-count="3"],
+  #team-board[data-team-count="5"],
+  #team-board[data-team-count="6"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #team-board[data-team-count="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 767px) {
+  #team-board { grid-template-columns: minmax(0, 1fr); }
+}
+.summary-stats-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.summary-stats-row > :first-child { margin: 0; }
+@media (min-width: 761px) {
+  #dashboard-view [data-dashboard-widget="estimate"] > .card > .card-head { margin-bottom: 6px; }
+  #dashboard-view #estimate-compare > .space-y-2 > :not([hidden]) ~ :not([hidden]) { margin-top: 6px; }
+  #dashboard-view #estimate-compare .mini-stats { gap: 6px; }
+  #dashboard-view #estimate-compare .mini-stats > div { padding: 5px 8px; }
+  #dashboard-view #estimate-compare .mini-stats dd { font-size: 14px; }
+  #dashboard-view #summary-stats.card-foot { padding-top: 8px; }
+}
 #dashboard-view .dash-cat-row { padding-top: 3px; padding-bottom: 3px; }
 #dashboard-view .dash-cat-row + .dash-cat-row { margin-top: 3px; }
 #dashboard-view .progress { height: 6px; border-radius: 999px; }
@@ -2614,7 +2740,7 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
 /* Phones: the KPI strip is one row of three (v39) — see the media block above;
    these later rules would otherwise push it back to 26px figures and 16px padding. */
 @media (max-width: 767px) {
-  #dashboard-view .dash-widget > .kpi-grid-compact { padding: 10px; }
+  #dashboard-view .dash-widget > .kpi-grid-compact { padding: 0; }
   #dashboard-view .kpi-tile,
   #dashboard-view .kpi-tile.kpi-compact { padding: 8px; border-radius: 12px; }
   /* The figure shrinks with the screen instead of wrapping: three tiles on one
@@ -2633,13 +2759,13 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
 }
 /* Compact density override: revert to the tighter spec when user chooses it. */
 #dashboard-view.dash-compact .dashboard-board { gap: 10px; }
-#dashboard-view.dash-compact .dash-widget > .card,
-#dashboard-view.dash-compact .dash-widget > .kpi-grid-compact { padding: 12px; }
+#dashboard-view.dash-compact .dash-widget > .card { padding: 12px; }
+#dashboard-view.dash-compact .dash-widget > .kpi-grid-compact { padding: 0; }
 #dashboard-view.dash-compact .kpi-tile,
 #dashboard-view.dash-compact .kpi-tile.kpi-compact { padding: 10px 12px; }
 #dashboard-view.dash-compact .kpi-tile .kpi-value { font-size: 22px; }
-#dashboard-view.dash-compact .team-card { padding: 10px; gap: 6px; }
-#dashboard-view.dash-compact .team-card--trip { padding: 12px; }
+#dashboard-view.dash-compact .team-card { padding: 10px 12px; gap: 6px; }
+#dashboard-view.dash-compact .team-card--trip { padding: 10px 12px; }
 
 /* Settlement: section cards and receipts stop leaving 20px of air. */
 #settlement-content > * + * { margin-top: 12px; }

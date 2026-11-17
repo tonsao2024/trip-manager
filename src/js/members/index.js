@@ -1,18 +1,13 @@
 import { expensePayments } from '../utils/payments.js';
 // Members — list / create / update / delete.
-// Member accounts are created entirely in the browser: the PIN is hashed with
-// PBKDF2-SHA256 and stored on the member document, plus a public username → trip
-// lookup so the login page can find the member without Cloud Functions.
-// (The old `createMemberAccount` function returned "internal" on projects where
-// functions were never deployed — login then broke completely.)
-import { db, functions, serverTimestamp } from '../firebase.js';
+// PIN hashes and username lookup records are managed by server callables only.
+import { db, serverTimestamp } from '../firebase.js';
 import { brandPrimary } from '../utils/brand.js';
 import {
-  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, limit, writeBatch, arrayUnion, arrayRemove
+  collection, doc, getDoc, getDocs, updateDoc, query, where, limit, writeBatch, arrayUnion, arrayRemove
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { addMemberUidToTrip, removeMemberUidFromTrip } from '../trips/index.js';
 import { cachedRead, cacheInvalidate, cacheForget, seedFromPersist, persistSet, persistDelete } from '../utils/datacache.js';
-import { setMemberPin, publishMemberLookup, unpublishMemberLookup, normalizeUsername } from '../auth/memberAuth.js';
+import { setMemberPin, publishMemberLookup, clearMemberPin, normalizeUsername } from '../auth/memberAuth.js';
 
 export const MEMBER_ROLES = [
   { id: 'trip_admin', th: 'ผู้ดูแลทริป', en: 'Trip admin', icon: 'shield-check' },
@@ -77,14 +72,6 @@ export function buildMemberDoc({ displayName, username = '', role = 'member', co
   };
 }
 
-/** Errors that mean "the backend function is unavailable / broken" → use local fallback. */
-function isFunctionUnavailable(err) {
-  const code = String(err?.code || '');
-  const msg = String(err?.message || '');
-  return /internal|unavailable|not-found|not found|failed-precondition|unimplemented|permission-denied|functions\//i.test(code + ' ' + msg)
-    || /internal/i.test(msg);
-}
-
 /**
  * Create a member.
  * @returns {{id:string, mode:'account'|'local', member:object}}
@@ -102,56 +89,42 @@ async function createMemberInner(tripId, data, { order = 999, onNotice } = {}) {
     if (existing) throw new Error('ชื่อผู้ใช้นี้ถูกใช้แล้วในทริปนี้ — ลองชื่ออื่น');
   }
 
-  /* 1) Local-first: create the member document and store the hashed PIN on it.
-   *    This always works (no Cloud Functions required) and enables member login. */
+  // Create the normal trip-member record first. A PIN does not become usable until
+  // the server callable has stored its hash and private username index.
   const id = autoId('mb');
-  const payload = buildMemberDoc({ ...data, order });
+  const payload = buildMemberDoc({ ...data, username, order });
   const canLogin = Boolean(username && data.pin);
-  await setDoc(doc(db, `trips/${tripId}/members`, id), {
+  const batch = writeBatch(db);
+  batch.set(doc(db, `trips/${tripId}/members`, id), {
     uid: id,
     ...payload,
-    authType: 'pin',
-    loginReady: canLogin,
+    authType: canLogin ? 'pin' : 'local',
+    loginReady: false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     createdBy: data.createdBy || null
   });
-  await addMemberUidToTrip(tripId, id);
+  batch.update(doc(db, 'trips', tripId), {
+    memberUids: arrayUnion(id),
+    updatedAt: serverTimestamp()
+  });
+  await batch.commit();
 
   if (canLogin) {
     try {
-      await setMemberPin(tripId, id, data.pin);
-      await publishMemberLookup(username, tripId, id);
+      await setMemberPin(tripId, id, data.pin, username);
     } catch (e) {
-      console.warn('[Members] PIN setup failed:', e?.message);
-      onNotice?.(e.message || 'ตั้ง PIN ไม่สำเร็จ — แก้ไขสมาชิกเพื่อตั้ง PIN อีกครั้ง');
+      console.warn('[Members] server PIN setup failed:', e?.code || e?.message);
+      onNotice?.(e.message || 'ตั้ง PIN ไม่สำเร็จ — ตรวจสอบการ deploy Cloud Functions แล้วลองอีกครั้ง');
       return { id, mode: 'local', member: { id, uid: id, ...payload, loginReady: false } };
     }
   }
 
-  /* 2) Optional: if Cloud Functions are deployed, also mirror a real Auth account
-   *    so the member can sign in with Firebase Auth (nice-to-have, never required). */
-  if (canLogin && functions) {
-    try {
-      const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
-      const fn = httpsCallable(functions, 'createMemberAccount');
-      const res = await fn({
-        tripId, username, pin: data.pin, displayName,
-        role: data.role || 'member',
-        photoURL: data.photoURL || null,
-        color: data.color || brandPrimary(),
-        permissions: data.permissions || undefined
-      });
-      if (res?.data?.memberUid) {
-        await updateDoc(doc(db, `trips/${tripId}/members`, id), { authUid: res.data.memberUid, authType: 'pin+auth' }).catch(() => {});
-      }
-    } catch (err) {
-      // Silent by design: the local account already works, so the user sees no error.
-      console.warn('[Members] optional Cloud Function mirror skipped:', err?.code || err?.message);
-    }
-  }
-
-  return { id, mode: canLogin ? 'pin' : 'local', member: { id, uid: id, ...payload } };
+  return {
+    id,
+    mode: canLogin ? 'pin' : 'local',
+    member: { id, uid: id, ...payload, loginReady: canLogin }
+  };
 }
 
 /** Is this username already used inside the trip? */
@@ -173,23 +146,36 @@ async function updateMemberInner(tripId, memberId, updates, { pin = null } = {})
   if (payload.username != null) payload.username = normalizeUsername(payload.username);
 
   const previous = await getMember(tripId, memberId).catch(() => null);
+  const oldUsername = normalizeUsername(previous?.username);
+  const newUsername = payload.username != null ? payload.username : oldUsername;
+  const usernameChanged = oldUsername !== newUsername;
+  const pinValue = pin == null ? '' : String(pin);
 
-  await updateDoc(doc(db, `trips/${tripId}/members`, memberId), { ...payload, updatedAt: serverTimestamp() });
-
-  // Username changed → move the login lookup to the new name
-  const newUsername = payload.username;
-  if (newUsername && previous?.username && previous.username !== newUsername) {
-    await unpublishMemberLookup(previous.username);
-    try { await publishMemberLookup(newUsername, tripId, memberId); } catch (e) { console.warn('[Members] lookup move failed', e?.message); }
+  if (pinValue && (pinValue.length < 4 || pinValue.length > 12)) throw new Error('PIN ต้อง 4-12 ตัวอักษร');
+  if (pinValue && !newUsername) throw new Error('ต้องมีชื่อผู้ใช้ก่อนจึงจะตั้ง PIN ได้');
+  if (usernameChanged && newUsername) {
+    const existing = await findMemberByUsername(tripId, newUsername);
+    if (existing && existing.id !== memberId) throw new Error('ชื่อผู้ใช้นี้ถูกใช้แล้วในทริปนี้ — ลองชื่ออื่น');
   }
 
-  // New PIN supplied → re-hash and (re)enable login
-  if (pin) {
-    if (pin.length < 4 || pin.length > 12) throw new Error('PIN ต้อง 4-12 ตัวอักษร');
-    const username = newUsername || previous?.username;
-    if (!username) throw new Error('ต้องมีชื่อผู้ใช้ก่อนจึงจะตั้ง PIN ได้');
-    await setMemberPin(tripId, memberId, pin);
-    await publishMemberLookup(username, tripId, memberId);
+  const memberRef = doc(db, `trips/${tripId}/members`, memberId);
+  await updateDoc(memberRef, { ...payload, updatedAt: serverTimestamp() });
+
+  try {
+    if (pinValue) {
+      // The callable replaces any old username mapping and stores the new hash.
+      await setMemberPin(tripId, memberId, pinValue, newUsername, usernameChanged ? oldUsername : null);
+    } else if (usernameChanged && newUsername) {
+      await publishMemberLookup(newUsername, tripId, memberId, oldUsername);
+    } else if (usernameChanged && !newUsername) {
+      await clearMemberPin(tripId, memberId, oldUsername);
+    }
+  } catch (e) {
+    // Keep the old lookup and member username in sync if a server operation fails.
+    if (usernameChanged) {
+      await updateDoc(memberRef, { username: oldUsername, updatedAt: serverTimestamp() }).catch(() => {});
+    }
+    throw e;
   }
   return true;
 }
@@ -201,9 +187,17 @@ async function updateMemberInner(tripId, memberId, updates, { pin = null } = {})
 async function deleteMemberInner(tripId, memberId, { uid = null } = {}) {
   const docId = memberId;
   const member = await getMember(tripId, docId).catch(() => null);
-  if (member?.username) await unpublishMemberLookup(member.username);
-  await deleteDoc(doc(db, `trips/${tripId}/members`, docId));
-  await removeMemberUidFromTrip(tripId, uid || docId);
+  if (member?.username || member?.loginReady) await clearMemberPin(tripId, docId, member?.username);
+
+  const memberUid = uid || member?.uid || docId;
+  const tripRef = doc(db, 'trips', tripId);
+  const tripSnap = await getDoc(tripRef);
+  const batch = writeBatch(db);
+  batch.delete(doc(db, `trips/${tripId}/members`, docId));
+  if (tripSnap.exists() && (tripSnap.data().memberUids || []).includes(memberUid)) {
+    batch.update(tripRef, { memberUids: arrayRemove(memberUid), updatedAt: serverTimestamp() });
+  }
+  await batch.commit();
   return true;
 }
 

@@ -14,11 +14,13 @@ export async function testDiagnosticsClassify() {
   console.log('Testing diagnostics classifiers...');
 
   // The failure the user reported: the SDK answers `internal` / "internal" when
-  // the endpoint is missing (404 HTML) or Cloud Run blocks the call.
+  // the endpoint is missing (404 HTML), in another region, or failing server-side.
   const notDeployed = classifyFunctionError(fnErr('functions/internal', 'internal'), 'th');
   eq(notDeployed.status, DIAG.fail, 'internal → fail');
   assert(/deploy/i.test(notDeployed.fixTh), 'fix explains firebase deploy');
   assert(/Blaze/.test(notDeployed.fixTh), 'mentions the Blaze plan requirement');
+  assert(/functions:loginWithUsernamePin/.test(notDeployed.fixTh), 'deploy fix names only the selected callable exports');
+  assert(/do not grant allUsers/i.test(notDeployed.extraEn || ''), 'warns against a broad allUsers invoker binding');
 
   const offline = classifyFunctionError(fnErr('functions/unavailable', 'network error'), 'th');
   eq(offline.status, 'fail', 'unavailable → fail');
@@ -45,32 +47,43 @@ export async function testDiagnosticsRun() {
   const brokenDeps = {
     isFirebaseConfigured: true,
     isStorageAvailable: false,
-    auth: { currentUser: null },
+    auth: { currentUser: { uid: 'u2', email: 'member@example.com' } },
     functions: { __functions: true },
     httpsCallable: () => async () => { throw fnErr('functions/internal', 'internal'); },
     getMemberSession: () => ({ memberId: 'u2', username: 'nun', tripId: 't1' }),
     db: { __db: true },
     doc: (_db, ...p) => ({ path: p.join('/') }),
     getDoc: async (ref) => {
-      if (ref.path.startsWith('publicMemberLogins')) throw fnErr('firestore/permission-denied', 'denied');
-      if (ref.path.startsWith('loginAccounts')) throw fnErr('firestore/permission-denied', 'denied');
+      if (ref.path.startsWith('publicMemberLogins')) return { exists: () => false, data: () => ({}) };
+      if (/^(loginAccounts|memberSecrets|userSecrets)\//.test(ref.path)) {
+        throw fnErr('firestore/permission-denied', 'denied');
+      }
       return { exists: () => true, data: () => ({ name: 'ทริปฟูจิ' }) };
     },
     collection: (_db, ...p) => ({ path: p.join('/') }),
     query: (ref) => ref,
     limit: (n) => ({ n }),
-    getDocs: async (ref) => ({ docs: ref.path.includes('members') ? [{ data: () => ({ username: 'nun', loginReady: true }) }] : [] })
+    getDocs: async (ref) => ({ docs: ref.path.includes('members') ? [{ data: () => ({ username: 'nun', loginReady: true, status: 'active' }) }] : [] })
   };
   const broken = await runSystemDiagnostics({ tripId: 't1', lang: 'th', deps: brokenDeps });
   eq(broken.ok, false, 'broken project → not ok');
   const byId = Object.fromEntries(broken.results.map(r => [r.id, r]));
-  eq(byId.functions.status, 'fail', 'functions flagged');
+  eq(byId.functions.status, 'warn', 'missing optional Blaze functions are warned, not treated as a Spark failure');
   assert(/deploy/i.test(byId.functions.fix || ''), 'functions row carries the deploy command');
-  eq(byId['rules-login'].status, 'fail', 'username-lookup rules flagged');
-  assert(/firestore:rules/.test(byId['rules-login'].fix || ''), 'rules row carries the deploy command');
-  eq(byId['security-pins'].status, 'ok', 'denied loginAccounts is good');
-  eq(byId.session.status, 'warn', 'local member session warned about');
-  eq(byId['member-pins'].status, 'ok', 'member with a username is detected');
+  eq(byId['security-pins'].status, 'fail', 'browser-readable username index is flagged');
+  assert(/firestore:rules/.test(byId['security-pins'].fix || ''), 'credential Rules row carries the deploy command');
+  eq(byId['rules-profiles'].status, 'ok', 'the owner profile read probe passes');
+  assert(/โปรไฟล์ของบัญชีตัวเอง/.test(byId['rules-profiles'].detail), 'profile diagnostics does not claim public email search');
+  eq(byId.session.status, 'ok', 'authenticated Firebase session is recognized');
+  eq(byId['member-pins'].status, 'ok', 'active member with a username is detected');
+
+  const legacyOnly = await runSystemDiagnostics({
+    tripId: 't1', lang: 'en', deps: { ...brokenDeps, auth: { currentUser: null } }
+  });
+  const legacyRows = Object.fromEntries(legacyOnly.results.map((r) => [r.id, r]));
+  eq(legacyRows.session.status, 'warn', 'legacy local-only session warns');
+  assert(/cached data only/i.test(legacyRows.session.detail), 'legacy session is accurately described as cached/read-only');
+  eq(legacyRows['security-pins'].status, 'warn', 'credential readability cannot be checked without Firebase auth');
   eq(byId.storage.status, 'warn', 'storage fallback warned');
   assert(broken.results.length >= 8, `all checks ran (${broken.results.length})`);
 
@@ -81,11 +94,12 @@ export async function testDiagnosticsRun() {
     auth: { currentUser: { uid: 'u1', email: 'admin@example.com' } },
     httpsCallable: () => async (data) => ({ data: { ok: true, echo: data } }),
     getDoc: async (ref) => {
-      if (ref.path.startsWith('loginAccounts')) throw fnErr('firestore/permission-denied', 'denied');
-      if (ref.path.startsWith('publicMemberLogins')) return { exists: () => false, data: () => ({}) };
+      if (/^(loginAccounts|memberSecrets|userSecrets|publicMemberLogins)\//.test(ref.path)) {
+        throw fnErr('firestore/permission-denied', 'denied');
+      }
       return { exists: () => true, data: () => ({ name: 'ทริปฟูจิ' }) };
     },
-    getDocs: async (ref) => ({ docs: ref.path.includes('members') ? [{ data: () => ({ loginReady: true }) }] : [] })
+    getDocs: async (ref) => ({ docs: ref.path.includes('members') ? [{ data: () => ({ loginReady: true, username: 'alice', status: 'active' }) }] : [] })
   };
   const healthy = await runSystemDiagnostics({ tripId: 't1', lang: 'th', deps: healthyDeps });
   eq(healthy.ok, true, 'healthy project → ok');
@@ -108,11 +122,12 @@ export async function testNotificationDiagnostics() {
     isStorageAvailable: true,
     auth: { currentUser: { uid: 'u1', email: 'admin@example.com' } },
     functions: { __functions: true },
+    pushActions: true,
     httpsCallable: () => async () => ({ data: { ok: true } }),
     getMemberSession: () => null,
     db: { __db: true },
     doc: (_db, ...p) => ({ path: p.join('/') }),
-    getDoc: async (ref) => (ref.path.startsWith('loginAccounts')
+    getDoc: async (ref) => (/^(loginAccounts|memberSecrets|userSecrets|publicMemberLogins)\//.test(ref.path)
       ? Promise.reject(fnErr('firestore/permission-denied', 'denied'))
       : { exists: () => true, data: () => ({ name: 'ทริปฟูจิ' }) }),
     collection: (_db, ...p) => ({ path: p.join('/') }),
@@ -138,6 +153,8 @@ export async function testNotificationDiagnostics() {
   assert(/firestore:rules/.test(rows['notify-read'].fix || ''), '…with the publish command');
   eq(rows['notify-write'].status, 'fail', 'a denied write probe fails too');
   eq(rows['notify-push'].status, 'ok', 'a usable VAPID key is reported as ok');
+  eq(rows['push-sender'].status, 'warn', 'the browser cannot verify the Actions sender configuration');
+  assert(/Actions/.test(rows['push-sender'].detail), 'the sender row explains how Push is delivered');
   eq(denied.ok, false, 'the overall verdict is “problems found”');
 
   // 2) Healthy project → both rows pass, no failures anywhere.

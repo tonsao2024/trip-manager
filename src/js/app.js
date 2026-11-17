@@ -20,7 +20,7 @@ import {
   ensureUserProfile, findProfileByEmail
 } from './auth/accountAuth.js';
 import {
-  findTripByInviteCode, requestToJoin, listJoinRequests, listMyJoinRequests,
+  findTripByInviteCode, isUserAlreadyTripMember, requestToJoin, listJoinRequests, listMyJoinRequests,
   approveJoinRequest, rejectJoinRequest, cancelJoinRequest, addMemberFromProfile
 } from './members/join.js';
 import { formatInviteCode, isValidInviteCode, normalizeInviteCode } from './utils/invite.js';
@@ -2232,9 +2232,8 @@ function openUserSheet(user) {
 
 
 /**
- * Members who signed in with a username + PIN (no Cloud Functions) are kept in
- * localStorage — restore the UI state from that session when there is no
- * Firebase Auth user.
+ * Restore a legacy device-only member session for cache access when there is no
+ * Firebase Auth user. This payload is not authentication and cannot access Firestore.
  */
 function applyMemberSession(session) {
   if (!session?.memberId) return false;
@@ -2264,8 +2263,8 @@ function renderMemberSessionNotice(on) {
   const textEl = document.getElementById('member-session-notice-text');
   if (textEl) {
     textEl.textContent = th(
-      'โหมดสมาชิก (ไม่ใช้ Cloud Functions): เข้าสู่ระบบสำเร็จ — ข้อมูลจะแสดงจากที่บันทึกไว้ในเครื่องนี้ ถ้าต้องการซิงก์ข้อมูลให้ deploy Cloud Functions',
-      'Member mode (no Cloud Functions): you are signed in — data is read from what is cached on this device. Deploy the Cloud Functions for full sync.'
+      'พบเซสชันสมาชิกแบบเก่าที่บันทึกในอุปกรณ์นี้ — แสดงได้เฉพาะข้อมูลแคช ไม่ได้เข้าสู่ระบบ Firebase และซิงก์ข้อมูลไม่ได้ โปรดเข้าสู่ระบบด้วย Google แล้วขอเข้าร่วมทริปอีกครั้ง',
+      'A legacy member session was found on this device. It can show cached data only; it is not a Firebase sign-in and cannot sync. Sign in with Google and request to join the trip again.'
     );
   }
   box.hidden = false;
@@ -2417,7 +2416,7 @@ if (!isFirebaseConfigured) {
         location.hash = '#/trips';
       }
     } else if (applyMemberSession(getMemberSession())) {
-      // Signed in as a member via username + PIN (works without Cloud Functions)
+      // Restoring a legacy device-only session; no Firebase Auth token is present.
       const session = getMemberSession();
       renderMemberSessionUi(session);
       renderMemberSessionNotice(true);
@@ -2453,7 +2452,7 @@ if (isFirebaseConfigured && auth) {
   }).catch(e => toast.error(e.message || 'Google sign-in failed'));
 }
 
-// No Firebase Auth session? Restore the local member session (username + PIN).
+// No Firebase Auth session? Restore a legacy local-only session as cached, read-only state.
 if (isFirebaseConfigured && !currentUser) {
   const session = getMemberSession();
   if (session) {
@@ -2925,9 +2924,16 @@ const TRIP_TIMEZONES = [
 
 const TRIP_CURRENCIES = ['THB', 'JPY', 'USD', 'EUR', 'KRW', 'SGD', 'GBP', 'CNY', 'HKD', 'AUD', 'TWD', 'VND'];
 
-function openTripForm(existingTrip = null, { onSaved = null } = {}) {
+async function openTripForm(existingTrip = null, { onSaved = null } = {}) {
   const lang = getLang();
   const isEdit = !!existingTrip;
+  if (isEdit) {
+    const perms = await resolvePermsCached(existingTrip.id, existingTrip).catch(() => null);
+    if (!perms?.isAdmin) {
+      toast.warning(lang === 'th' ? 'เฉพาะผู้ดูแลทริปที่แก้ไขข้อมูลทริปได้' : 'Only trip admins can edit trip details');
+      return null;
+    }
+  }
   const trip = existingTrip || {};
   let coverFile = null;
   let croppedBlob = null;
@@ -3247,8 +3253,10 @@ function openTripForm(existingTrip = null, { onSaved = null } = {}) {
   return sheet;
 }
 
-function openTripActions(trip, { onChanged } = {}) {
+async function openTripActions(trip, { onChanged } = {}) {
   const lang = getLang();
+  const perms = await resolvePermsCached(trip.id, trip).catch(() => null);
+  const canAdminister = Boolean(perms?.isAdmin);
   const sheet = showBottomSheet(`
     <div class="space-y-4">
       <div class="flex items-center gap-3">
@@ -3262,10 +3270,10 @@ function openTripActions(trip, { onChanged } = {}) {
       </div>
       <div class="grid gap-2">
         <button id="ta-open" class="btn btn-primary w-full">${icon('log-in', 'w-4 h-4')} ${lang==='th' ? 'เปิดทริป' : 'Open trip'}</button>
-        <button id="ta-edit" class="btn btn-secondary w-full">${icon('pencil', 'w-4 h-4')} ${lang==='th' ? 'แก้ไขข้อมูลทริป' : 'Edit trip'}</button>
+        ${canAdminister ? `<button id="ta-edit" class="btn btn-secondary w-full">${icon('pencil', 'w-4 h-4')} ${lang==='th' ? 'แก้ไขข้อมูลทริป' : 'Edit trip'}</button>` : ''}
         <button id="ta-dup" class="btn btn-secondary w-full">${icon('copy', 'w-4 h-4')} ${lang==='th' ? 'ทำสำเนาทริป' : 'Duplicate'}</button>
         <button id="ta-id" class="btn btn-ghost w-full text-xs">${icon('clipboard-copy', 'w-3.5 h-3.5')} ${lang==='th' ? 'คัดลอกรหัสทริป (Trip ID)' : 'Copy Trip ID'}</button>
-        <button id="ta-del" class="btn btn-danger-quiet w-full">${icon('trash-2', 'w-4 h-4')} ${lang==='th' ? 'ลบทริป' : 'Delete trip'}</button>
+        ${canAdminister ? `<button id="ta-del" class="btn btn-danger-quiet w-full">${icon('trash-2', 'w-4 h-4')} ${lang==='th' ? 'ลบทริป' : 'Delete trip'}</button>` : ''}
       </div>
     </div>
   `);
@@ -3422,7 +3430,7 @@ async function renderTripSelector() {
         btn.disabled = false;
         return;
       }
-      if ((trip.memberUids || []).includes(currentUser.uid)) {
+      if (await isUserAlreadyTripMember(trip.id, currentUser.uid)) {
         toast.success(lang === 'th' ? 'คุณเป็นสมาชิกทริปนี้อยู่แล้ว' : 'You are already a member of this trip');
         location.hash = `#/trip/${trip.id}/dashboard`;
         return;
@@ -3500,7 +3508,7 @@ async function renderTripSelector() {
         e.stopPropagation();
         const trips = await loadTripsForMenus();
         const trip = trips.find(x => x.id === menuBtn.dataset.tripMenu);
-        if (trip) openTripActions(trip, { onChanged: () => renderTripSelector() });
+        if (trip) await openTripActions(trip, { onChanged: () => renderTripSelector() });
       });
     });
   };
@@ -3662,13 +3670,16 @@ async function renderDashboard(params) {
   await loadTrip(tripId);
   if (isStale(token)) return;
   const trip = currentTrip;
+  const perms = await resolvePermsCached(tripId, trip).catch(() => ({ isAdmin: false, isViewer: true }));
+  if (isStale(token)) return;
+  const canEditDashboard = !perms.isViewer;
   const currency = trip?.baseCurrency || 'THB';
   const th = (a, b) => (lang === 'th' ? a : b);
 
   const coverUrl = trip?.coverImage || '';
   const placeLabel = [trip?.country, trip?.city].filter(Boolean).join(' · ');
   const rangeLabel = tripRangeLabel(trip);
-  const dragHandle = (what) => `<div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลาก','Drag')}${what}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>`;
+  const dragHandle = (what) => canEditDashboard ? `<div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลาก','Drag')}${what}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>` : '';
   appEl.innerHTML = `
     <div class="page-enter space-y-4" id="dashboard-view">
       <header class="dash-head${coverUrl ? ' has-cover' : ''}">
@@ -3690,10 +3701,10 @@ async function renderDashboard(params) {
                 aria-controls="dash-more-menu" aria-label="${th('ตัวเลือกเพิ่มเติม','More options')}" title="${th('ตัวเลือกเพิ่มเติม','More options')}">${icon('more-horizontal', 'w-4 h-4')}</button>
               <div class="menu-pop" id="dash-more-menu" role="menu" hidden>
                 <button id="add-place-quick" type="button" class="menu-pop-item" role="menuitem">${icon('map-pin', 'w-4 h-4')} ${t('addPlace')}</button>
-                <button id="dash-edit-trip" type="button" class="menu-pop-item" role="menuitem">${icon('pencil', 'w-4 h-4')} ${th('แก้ไขทริป','Edit trip')}</button>
+                ${perms.isAdmin ? `<button id="dash-edit-trip" type="button" class="menu-pop-item" role="menuitem">${icon('pencil', 'w-4 h-4')} ${th('แก้ไขทริป','Edit trip')}</button>` : ''}
                 <div class="menu-pop-sep" role="separator"></div>
-                <button id="dash-widgets-btn" type="button" class="menu-pop-item" role="menuitem" title="${th('เลือกการ์ดที่แสดงบนแดชบอร์ด','Choose which cards show on the dashboard')}">${icon('layout-grid', 'w-4 h-4')} ${th('เลือกการ์ด','Choose cards')}</button>
-                <button id="dash-layout-edit-btn" type="button" class="menu-pop-item" role="menuitem" aria-pressed="false">${icon('move', 'w-4 h-4')} <span data-layout-label>${th('จัดเรียงการ์ด','Arrange cards')}</span></button>
+                ${canEditDashboard ? `<button id="dash-widgets-btn" type="button" class="menu-pop-item" role="menuitem" title="${th('เลือกการ์ดที่แสดงบนแดชบอร์ด','Choose which cards show on the dashboard')}">${icon('layout-grid', 'w-4 h-4')} ${th('เลือกการ์ด','Choose cards')}</button>
+                <button id="dash-layout-edit-btn" type="button" class="menu-pop-item" role="menuitem" aria-pressed="false">${icon('move', 'w-4 h-4')} <span data-layout-label>${th('จัดเรียงการ์ด','Arrange cards')}</span></button>` : ''}
                 <button id="dash-density-btn" type="button" class="menu-pop-item" role="menuitem">${icon('rows-3', 'w-4 h-4')} <span data-density-label>มุมมองกะทัดรัด</span></button>
               </div>
             </div>
@@ -3816,25 +3827,25 @@ async function renderDashboard(params) {
           </div>
         </section>
 
-        <section class="dash-widget dash-widget--full" data-dashboard-widget="ideas">
+        <section class="dash-widget dash-widget--half" data-dashboard-widget="ideas">
           ${dragHandle(th('การ์ดสถานที่ที่อยากไป','wishlist card'))}
           <div id="dash-ideas-board" class="card p-4">
             <div class="card-head">
               <h3 class="card-title">${th('สถานที่ที่อยากไป','Wishlist')}</h3>
               <a id="dash-ideas-link" href="#/trip/${tripId}/ideas" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</a>
             </div>
-            <div id="dash-ideas-list"><div class="skeleton h-16"></div></div>
+            <div id="dash-ideas-list" class="dash-scroll-body"><div class="skeleton h-16"></div></div>
           </div>
         </section>
 
-        <section class="dash-widget dash-widget--full" data-dashboard-widget="members">
+        <section class="dash-widget dash-widget--half" data-dashboard-widget="members">
           ${dragHandle(th('การ์ดสมาชิก','members card'))}
           <div class="card p-4">
             <div class="card-head">
               <h3 class="card-title">${th('สมาชิก · จ่ายไปและส่วนที่รับผิดชอบ','Members · paid and share')}</h3>
               <button id="dash-members-link" type="button" class="btn btn-ghost btn-sm">${th('จัดการ','Manage')}</button>
             </div>
-            <div id="member-board-content" class="member-board member-board--grid"><div class="skeleton h-16"></div></div>
+            <div id="member-board-content" class="member-board dash-scroll-body"><div class="skeleton h-16"></div></div>
           </div>
         </section>
 
@@ -3848,7 +3859,7 @@ async function renderDashboard(params) {
             <div id="team-board" class="team-board"><div class="skeleton h-16"></div></div>
           </div>
         </section>
-        <button id="dash-add-tile" type="button" class="dash-add-tile hidden">${icon('plus', 'w-4 h-4')} <span>${th('เพิ่มการ์ด','Add a card')}</span> <b data-add-count>0</b></button>
+        ${canEditDashboard ? `<button id="dash-add-tile" type="button" class="dash-add-tile hidden">${icon('plus', 'w-4 h-4')} <span>${th('เพิ่มการ์ด','Add a card')}</span> <b data-add-count>0</b></button>` : ''}
       </div>
 
       <!-- legacy dash-tools hidden but kept for compatibility -->
@@ -4222,7 +4233,7 @@ async function renderDashboard(params) {
 
   // Countdown scene (independent of Firestore so it always renders) — the illustrated
   // scene IS the card, so the header (title, live line, edit link) moves inside it.
-  const cdEditHref = `#/trip/${escapeHtml(tripId)}/settings?tab=trip&amp;focus=dates`;
+  const cdEditHref = perms.isAdmin ? `#/trip/${escapeHtml(tripId)}/settings?tab=trip&amp;focus=dates` : '';
   const cd = mountCountdown('countdown-scene', {
     startDate: trip?.startDate, endDate: trip?.endDate, createdAt: trip?.createdAt, timezone: trip?.timezone, lang,
     header: {
@@ -4577,8 +4588,8 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
         ? th(`ยังเป็นประมาณการอยู่ ${estPct}%`, `${estPct}% is still estimated`)
         : th('ทุกรายการเป็นยอดจ่ายจริงแล้ว', 'Every item is actual spending');
   setHtml('estimate-compare', `
-    <div class="space-y-3">
-      <p class="text-sm text-[var(--text-secondary)]">${estNote}</p>
+    <div class="space-y-2">
+      <p class="text-xs text-[var(--text-secondary)] leading-relaxed">${estNote}</p>
       <div>
         <div class="flex justify-between gap-3 text-sm mb-1"><span>${th('จ่ายจริง','Paid')}</span><b class="font-medium tabular-nums">${thbPlusLabelHtml(actualMinor, secondary(actualMinor))}</b></div>
         <div class="progress"><div class="progress-bar" style="width:${actPct}%;"></div></div>
@@ -4596,8 +4607,10 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
   /* ---- Summary stats ---- */
   const settlement = (() => { try { return calculateSettlement(expenses, members.map(m => ({ id: m.id })), transfers); } catch { return { transactions: [] }; } })();
   setHtml('summary-stats', `
-    <p class="text-sm text-[var(--text-secondary)]">${members.length} ${th('คน','people')} · ${expenses.length} ${th('รายการ','items')} · ${th('ต้องเคลียร์','to settle')} ${settlement.transactions?.length || 0} ${th('รายการ','items')}</p>
-    ${(settlement.transactions || []).length ? `<button id="dash-go-settlement" type="button" class="btn btn-secondary btn-sm mt-2">${th('ไปเคลียร์บิล','Go to settlement')}</button>` : `<p class="text-sm mt-2 text-success">${t('allCleared')}</p>`}
+    <div class="summary-stats-row">
+      <p class="text-xs text-[var(--text-secondary)]">${members.length} ${th('คน','people')} · ${expenses.length} ${th('รายการ','items')} · ${th('ต้องเคลียร์','to settle')} ${settlement.transactions?.length || 0} ${th('รายการ','items')}</p>
+      ${(settlement.transactions || []).length ? `<button id="dash-go-settlement" type="button" class="btn btn-secondary btn-sm">${th('ไปเคลียร์บิล','Go to settlement')}</button>` : `<span class="text-xs font-medium text-success">${t('allCleared')}</span>`}
+    </div>
   `);
   bind('dash-go-settlement', 'click', () => { location.hash = `#/trip/${tripId}/settlement`; });
 
@@ -4639,29 +4652,32 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
     const teamBox = document.getElementById('team-board');
     if (teamBox) {
       if (!groups.length) {
+        delete teamBox.dataset.teamCount;
         teamBox.innerHTML = `
           <div class="team-empty">
-            <p class="font-medium text-sm">${th('ยังไม่มีทีมในทริปนี้','No teams in this trip yet')}</p>
-            <p class="text-xs text-[var(--text-secondary)]">${th('สร้างกลุ่มย่อย (ทีม) ที่หน้าสมาชิก แล้วแต่ละทีมจะถูกคำนวณค่าใช้จ่ายต่อคน / รวมทีมให้อัตโนมัติ','Create sub-groups (teams) on the Members page and each team’s cost per person / team total is calculated for you')}</p>
+            <div class="team-empty-copy">
+              <p class="font-medium text-sm">${th('ยังไม่มีทีมในทริปนี้','No teams in this trip yet')}</p>
+              <p class="text-xs text-[var(--text-secondary)]">${th('สร้างกลุ่มย่อย (ทีม) ที่หน้าสมาชิก แล้วแต่ละทีมจะถูกคำนวณค่าใช้จ่ายต่อคน / รวมทีมให้อัตโนมัติ','Create sub-groups (teams) on the Members page and each team’s cost per person / team total is calculated for you')}</p>
+            </div>
             <button id="team-empty-btn" type="button" class="btn btn-secondary btn-sm">${th('ไปสร้างทีม','Create a team')}</button>
           </div>`;
         bind('team-empty-btn', 'click', () => { location.hash = `#/trip/${tripId}/members`; });
       } else {
         const report = groupBudgetReport(groups, expenses, members);
         const perPersonTrip = report.trip.perPersonMinor;
+        teamBox.dataset.teamCount = String(report.groups.length + 1);
         /**
          * “ค่าใช้จ่ายแต่ละหมวดคืออะไร” — the categories behind a team's share.
-         * A compact coloured meter per category, not a second table: the card
-         * already answers who/how many, this answers “spent on what”.
+         * Compact colour-coded pills (top 3 + overflow) so sub-cards stay crisp.
          */
         const teamCatsHtml = (cats = [], total = 0) => {
           if (!cats.length) return `<p class="team-card-note">${th('ยังไม่มีรายจ่ายของกลุ่มนี้','No spending for this team yet')}</p>`;
-          const top = cats.slice(0, 4);
-          const rest = cats.slice(4);
+          const top = cats.slice(0, 3);
+          const rest = cats.slice(3);
           const restMinor = rest.reduce((n, c) => n + c.amountMinor, 0);
           const chip = (id, amountMinor, extra = '') => {
             const pct = total > 0 ? Math.round((amountMinor / total) * 100) : 0;
-            return `<span class="team-cat" style="--cat-color:${escapeHtml(categoryColor(id))};" title="${escapeHtml(categoryLabel(id, lang))} · ${pct}%">
+            return `<span class="team-cat" role="listitem" style="--cat-color:${escapeHtml(categoryColor(id))};" title="${escapeHtml(categoryLabel(id, lang))} · ${pct}%">
               <span class="team-cat-dot" aria-hidden="true"></span>
               <span class="team-cat-name">${escapeHtml(categoryLabel(id, lang))}</span>
               <b class="team-cat-amount">${fmt(amountMinor)}</b>${extra}
@@ -4669,64 +4685,81 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
           };
           return `<div class="team-cats" role="list" aria-label="${th('ค่าใช้จ่ายตามหมวด','Spending by category')}">
             ${top.map(c => chip(c.id, c.amountMinor)).join('')}
-            ${rest.length ? `<span class="team-cat team-cat--more" role="listitem" title="${rest.map(c => `${categoryLabel(c.id, lang)} ${fmt(c.amountMinor)}`).join(' · ')}">+${rest.length} ${th('หมวด','more')} <b class="team-cat-amount">${fmt(restMinor)}</b></span>` : ''}
+            ${rest.length ? `<span class="team-cat team-cat--more" role="listitem" title="${rest.map(c => `${categoryLabel(c.id, lang)} ${fmt(c.amountMinor)}`).join(' · ')}">+${rest.length} <b class="team-cat-amount">${fmt(restMinor)}</b></span>` : ''}
           </div>`;
+        };
+        const teamMembersHtml = (list = []) => {
+          if (!list.length) return `<span class="team-card-note">${th('ยังไม่ได้เลือกสมาชิก','No members picked yet')}</span>`;
+          const shown = list.slice(0, 4);
+          const extraCount = list.length - shown.length;
+          return shown.map(m => `
+            <span class="team-member-chip"><span class="avatar w-4 h-4 text-[10px]" style="${avatarStyle(m.color)};width:18px;height:18px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>${escapeHtml((m.displayName || '').split(' ')[0])}</span>`).join('')
+            + (extraCount > 0 ? `<span class="team-member-chip team-member-chip--more">+${extraCount}</span>` : '');
         };
         const teamCard = (g) => {
           const delta = g.perPersonMinor - perPersonTrip;
           const places = placesForGroup(g.id, items).length;
           return `
             <article class="team-card" data-gid="${escapeHtml(g.id)}" role="button" tabindex="0" style="--team-color:${escapeHtml(g.color)};">
-              <div class="team-card-head">
-                <span class="team-card-name" style="color:${escapeHtml(g.color)};">${icon(g.icon || 'users', 'w-4 h-4')} ${escapeHtml(g.name)}</span>
-                <span class="badge badge-planned text-xs ml-auto">${g.memberCount} ${th('คน','pax')}</span>
-              </div>
-              ${g.note ? `<p class="team-card-note">${escapeHtml(g.note)}</p>` : ''}
-              <div class="team-stats">
-                <div class="team-stat">
-                  <span class="team-stat-label">${th('เฉลี่ย / คน','Per person')}</span>
-                  <b>${fmt(g.perPersonMinor)}</b>
-                  ${delta ? `<span class="team-delta ${delta > 0 ? 'is-over' : 'is-under'}">${delta > 0 ? '▲' : '▼'} ${fmt(Math.abs(delta))} ${th('เทียบทริป','vs trip')}</span>` : `<span class="team-delta">${th('เท่าค่าเฉลี่ยทริป','on the trip average')}</span>`}
+              <div class="team-card-top">
+                <div class="team-card-head">
+                  <span class="team-card-name" style="color:${escapeHtml(g.color)};">${icon(g.icon || 'users', 'w-4 h-4')} ${escapeHtml(g.name)}</span>
+                  <span class="badge badge-planned text-xs ml-auto">${g.memberCount} ${th('คน','pax')}</span>
                 </div>
-                <div class="team-stat">
-                  <span class="team-stat-label">${th('รวมทีม','Team total')}</span>
-                  <b>${fmt(g.shareMinor)}</b>
-                  <span class="team-delta">${th('จ่ายไป','paid')} ${fmt(g.paidMinor)}</span>
+                ${g.note ? `<p class="team-card-note" title="${escapeHtml(g.note)}">${escapeHtml(g.note)}</p>` : ''}
+                <div class="team-stats">
+                  <div class="team-stat">
+                    <span class="team-stat-label">${th('เฉลี่ย / คน','Per person')}</span>
+                    <b>${fmt(g.perPersonMinor)}</b>
+                    ${delta ? `<span class="team-delta ${delta > 0 ? 'is-over' : 'is-under'}">${delta > 0 ? '▲' : '▼'} ${fmt(Math.abs(delta))} ${th('เทียบทริป','vs trip')}</span>` : `<span class="team-delta">${th('เท่าเฉลี่ยทริป','trip avg')}</span>`}
+                  </div>
+                  <div class="team-stat">
+                    <span class="team-stat-label">${th('รวมทีม','Team total')}</span>
+                    <b>${fmt(g.shareMinor)}</b>
+                    <span class="team-delta">${th('จ่ายไป','paid')} ${fmt(g.paidMinor)}</span>
+                  </div>
                 </div>
+                ${teamCatsHtml(g.categories, g.shareMinor)}
               </div>
-              ${teamCatsHtml(g.categories, g.shareMinor)}
-              <div class="team-facts">
-                <span>${places} ${th('สถานที่','places')}</span>
-                <span>${g.itemCount} ${th('รายการ','items')}</span>
-                <span>${g.netMinor >= 0 ? th('รอรับคืน','owed') : th('ต้องจ่ายเพิ่ม','owes')} ${fmt(Math.abs(g.netMinor))}</span>
-              </div>
-              <div class="team-members">
-                ${g.members.length ? g.members.map(m => `
-                  <span class="team-member-chip"><span class="avatar w-5 h-5 text-xs" style="${avatarStyle(m.color)};width:20px;height:20px;">${m.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m.displayName))}</span>${escapeHtml((m.displayName || '').split(' ')[0])}</span>`).join('')
-                  : `<span class="team-card-note">${th('ยังไม่ได้เลือกสมาชิก','No members picked yet')}</span>`}
+              <div class="team-card-foot">
+                <div class="team-facts">
+                  <span>${places} ${th('ที่','places')}</span>
+                  <span>· ${g.itemCount} ${th('รายการ','items')}</span>
+                  <span>· ${g.netMinor >= 0 ? th('รอรับคืน','owed') : th('ต้องจ่ายเพิ่ม','owes')} ${fmt(Math.abs(g.netMinor))}</span>
+                </div>
+                <div class="team-members">${teamMembersHtml(g.members)}</div>
               </div>
             </article>`;
         };
         teamBox.innerHTML = report.groups.map(teamCard).join('') + `
-          <article class="team-card team-card--trip team-card--full" data-gid="__trip" role="button" tabindex="0">
-            <div class="team-card-head">
-              <span class="team-card-name">${th('ทั้งทริป','Whole trip')}</span>
-              <span class="badge badge-planned text-xs ml-auto">${report.trip.memberCount} ${th('คน','pax')}</span>
-            </div>
-            <div class="team-stats">
-              <div class="team-stat">
-                <span class="team-stat-label">${th('เฉลี่ย / คน','Per person')}</span>
-                <b>${fmt(report.trip.perPersonMinor)}</b>
-                <span class="team-delta">${th('ฐานเปรียบเทียบ','comparison base')}</span>
+          <article class="team-card team-card--trip" data-gid="__trip" role="button" tabindex="0">
+            <div class="team-card-top">
+              <div class="team-card-head">
+                <span class="team-card-name">${icon('compass', 'w-4 h-4')} ${th('ทั้งทริป','Whole trip')}</span>
+                <span class="badge badge-planned text-xs ml-auto">${report.trip.memberCount} ${th('คน','pax')}</span>
               </div>
-              <div class="team-stat">
-                <span class="team-stat-label">${th('รวมทั้งทริป','Trip total')}</span>
-                <b>${fmt(report.trip.shareMinor)}</b>
-                <span class="team-delta">${th('จ่ายไป','paid')} ${fmt(report.trip.paidMinor)}</span>
+              <div class="team-stats">
+                <div class="team-stat">
+                  <span class="team-stat-label">${th('เฉลี่ย / คน','Per person')}</span>
+                  <b>${fmt(report.trip.perPersonMinor)}</b>
+                  <span class="team-delta">${th('ฐานเปรียบเทียบ','comparison base')}</span>
+                </div>
+                <div class="team-stat">
+                  <span class="team-stat-label">${th('รวมทั้งทริป','Trip total')}</span>
+                  <b>${fmt(report.trip.shareMinor)}</b>
+                  <span class="team-delta">${th('จ่ายไป','paid')} ${fmt(report.trip.paidMinor)}</span>
+                </div>
               </div>
+              ${teamCatsHtml(report.trip.categories, report.trip.shareMinor)}
             </div>
-            ${teamCatsHtml(report.trip.categories, report.trip.shareMinor)}
-            ${report.ungrouped.length ? `<div class="team-facts"><span>${th('ยังไม่อยู่ในทีม','Not in a team')}: ${report.ungrouped.map(m => escapeHtml(m.displayName || '')).join(', ')}</span></div>` : ''}
+            <div class="team-card-foot">
+              <div class="team-facts">
+                <span>${items.length} ${th('ที่','places')}</span>
+                <span>· ${expenses.length} ${th('รายการ','items')}</span>
+                ${report.ungrouped.length ? `<span>· ${th('ยังไม่เข้าทีม','ungrouped')} ${report.ungrouped.length} ${th('คน','pax')}</span>` : ''}
+              </div>
+              ${report.ungrouped.length ? `<div class="team-members">${teamMembersHtml(report.ungrouped)}</div>` : ''}
+            </div>
           </article>`;
       }
       queueIcons();
@@ -7114,39 +7147,58 @@ async function renderExpenses(params) {
       <!-- เฉลี่ยต่อกลุ่ม แล้วแยกเป็นต่อคนของแต่ละกลุ่ม (a request) -->
       <div id="exp-group-avg" class="group-avg-strip mb-4"></div>
 
-      <div class="expense-filter-bar">
-        <div class="chip-row" id="expense-filters">
-          <button class="chip chip-active" data-filter="all">${icon('layers', 'w-3.5 h-3.5')} ${t('all')}</button>
-          <button class="chip" data-filter="today">${icon('calendar-check', 'w-3.5 h-3.5')} ${t('today')}</button>
-          <button class="chip" data-filter="estimated">${icon('hourglass', 'w-3.5 h-3.5')} ${th('ประมาณการ','Estimated')}</button>
-          <button class="chip" data-filter="actual">${icon('check-circle', 'w-3.5 h-3.5')} ${th('จ่ายจริง','Actual')}</button>
-        </div>
-        <!-- วิธีจ่าย: กรองเงินสด / บัตรเครดิต (รายใบ) / โอน (a request) -->
-        <div class="chip-row chip-row-scroll" id="method-filters" aria-label="${th('กรองตามวิธีจ่าย','Filter by payment method')}">
-          <button class="chip chip-active" data-method="">${icon('wallet', 'w-3.5 h-3.5')} ${th('ทุกวิธีจ่าย','All methods')}</button>
-          <button class="chip" data-method="cash">${icon('banknote', 'w-3.5 h-3.5')} ${th('เงินสด','Cash')}</button>
-          <button class="chip" data-method="card">${icon('credit-card', 'w-3.5 h-3.5')} ${th('บัตรเครดิต','Card')}</button>
-          <button class="chip" data-method="transfer">${icon('arrow-left-right', 'w-3.5 h-3.5')} ${th('โอนเงิน','Transfer')}</button>
-        </div>
-        <!-- ใบไหนใช้บัตรใบไหน — the card chips appear when “บัตรเครดิต” is picked -->
-        <div class="chip-row chip-row-scroll hidden" id="card-filters" aria-label="${th('กรองตามบัตรเครดิต','Filter by credit card')}"></div>
-        <!-- กรองเป็นรายกลุ่ม (หมวดค่าใช้จ่าย) — always visible, one tap -->
-        <div class="chip-row chip-row-scroll" id="cat-filters" aria-label="${th('กรองตามกลุ่มค่าใช้จ่าย','Filter by expense group')}">
-          <button class="chip chip-active" data-cat="">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('ทุกกลุ่ม','All groups')}</button>
-          ${getAllExpenseCategories().map(c => `<button class="chip" data-cat="${escapeHtml(c.id)}" style="--chip-color:${escapeHtml(c.color || 'var(--primary)')}">${icon(escapeHtml(c.icon), 'w-3.5 h-3.5')} ${escapeHtml(lang==='th'?(c.th||c.en):(c.en||c.th))}</button>`).join('')}
-        </div>
-        <div class="expense-filter-foot">
-          <div class="segmented" id="expense-group-toggle">
-            <button type="button" class="segmented-item active" data-group="list">${icon('list', 'w-3.5 h-3.5')} ${th('เรียงรายการ','List')}</button>
-            <button type="button" class="segmented-item" data-group="day">${icon('calendar-days', 'w-3.5 h-3.5')} ${th('แยกตามวัน','By day')}</button>
+      <div class="expense-filter-bar" role="region" aria-label="${th('ตัวกรองค่าใช้จ่าย','Expense filters')}">
+        <div class="expense-filter-row expense-filter-row--primary">
+          <div class="expense-filter-group">
+            <span class="expense-filter-label">${th('สถานะ','Status')}</span>
+            <div class="chip-row" id="expense-filters">
+              <button class="chip chip-active" data-filter="all">${icon('layers', 'w-3.5 h-3.5')} ${t('all')}</button>
+              <button class="chip" data-filter="today">${icon('calendar-check', 'w-3.5 h-3.5')} ${t('today')}</button>
+              <button class="chip" data-filter="estimated">${icon('hourglass', 'w-3.5 h-3.5')} ${th('ประมาณการ','Estimated')}</button>
+              <button class="chip" data-filter="actual">${icon('check-circle', 'w-3.5 h-3.5')} ${th('จ่ายจริง','Actual')}</button>
+            </div>
           </div>
-          <button type="button" id="expense-more-filters" class="btn btn-ghost btn-sm expense-more-filters" aria-expanded="false" aria-controls="expense-extra-controls">${icon('sliders-horizontal', 'w-4 h-4')} ${th('ตัวเลือกเพิ่มเติม','More options')} <span data-expense-filter-summary></span> ${icon('chevron-down', 'w-4 h-4')}</button>
+          <!-- วิธีจ่าย: กรองเงินสด / บัตรเครดิต (รายใบ) / โอน (a request) -->
+          <div class="expense-filter-group">
+            <span class="expense-filter-label">${th('วิธีจ่าย','Payment')}</span>
+            <div class="chip-row chip-row-scroll" id="method-filters" aria-label="${th('กรองตามวิธีจ่าย','Filter by payment method')}">
+              <button class="chip chip-active" data-method="">${icon('wallet', 'w-3.5 h-3.5')} ${th('ทุกวิธีจ่าย','All methods')}</button>
+              <button class="chip" data-method="cash">${icon('banknote', 'w-3.5 h-3.5')} ${th('เงินสด','Cash')}</button>
+              <button class="chip" data-method="card">${icon('credit-card', 'w-3.5 h-3.5')} ${th('บัตรเครดิต','Card')}</button>
+              <button class="chip" data-method="transfer">${icon('arrow-left-right', 'w-3.5 h-3.5')} ${th('โอนเงิน','Transfer')}</button>
+            </div>
+          </div>
+          <!-- ใบไหนใช้บัตรใบไหน — the card chips appear when “บัตรเครดิต” is picked -->
+          <div class="expense-filter-group expense-filter-group--cards hidden" id="card-filters-group">
+            <span class="expense-filter-label">${th('บัตร','Card')}</span>
+            <div class="chip-row chip-row-scroll hidden" id="card-filters" aria-label="${th('กรองตามบัตรเครดิต','Filter by credit card')}"></div>
+          </div>
+          <div class="expense-filter-group expense-filter-group--view">
+            <span class="expense-filter-label">${th('มุมมอง','View')}</span>
+            <div class="segmented" id="expense-group-toggle">
+              <button type="button" class="segmented-item active" data-group="list">${icon('list', 'w-3.5 h-3.5')} ${th('เรียงรายการ','List')}</button>
+              <button type="button" class="segmented-item" data-group="day">${icon('calendar-days', 'w-3.5 h-3.5')} ${th('แยกตามวัน','By day')}</button>
+            </div>
+          </div>
         </div>
-        <div id="expense-extra-controls" class="expense-extra-controls">
-          <div class="btn-row expense-extra-actions">
-            <button id="exp-density-btn" class="btn btn-ghost btn-sm text-xs" type="button" aria-pressed="false">${icon('rows-3', 'w-3.5 h-3.5')} <span data-density-label>${th('มุมมองกระทัดรัด','Compact view')}</span></button>
-            <button id="activity-btn" class="link-btn text-xs">${icon('history', 'w-3.5 h-3.5')} ${th('ประวัติการแก้ไข','Activity log')}</button>
-            ${perms.canEditExpense ? `<button id="manage-cats-btn" class="link-btn text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage expense groups')}</button>` : ''}
+        <!-- กรองเป็นรายกลุ่ม (หมวดค่าใช้จ่าย) + เครื่องมือมุมมอง/ประวัติ/จัดการกลุ่มในแนวเดียวกันบนคอม -->
+        <div class="expense-filter-row expense-filter-row--secondary">
+          <div class="expense-filter-group expense-filter-group--cats">
+            <span class="expense-filter-label">${th('หมวด','Category')}</span>
+            <div class="chip-row chip-row-scroll" id="cat-filters" aria-label="${th('กรองตามกลุ่มค่าใช้จ่าย','Filter by expense group')}">
+              <button class="chip chip-active" data-cat="">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('ทุกกลุ่ม','All groups')}</button>
+              ${getAllExpenseCategories().map(c => `<button class="chip" data-cat="${escapeHtml(c.id)}" style="--chip-color:${escapeHtml(c.color || 'var(--primary)')}">${icon(escapeHtml(c.icon), 'w-3.5 h-3.5')} ${escapeHtml(lang==='th'?(c.th||c.en):(c.en||c.th))}</button>`).join('')}
+            </div>
+          </div>
+          <div class="expense-filter-foot">
+            <button type="button" id="expense-more-filters" class="btn btn-ghost btn-sm expense-more-filters" aria-expanded="false" aria-controls="expense-extra-controls">${icon('sliders-horizontal', 'w-4 h-4')} ${th('ตัวเลือกเพิ่มเติม','More options')} <span data-expense-filter-summary></span> ${icon('chevron-down', 'w-4 h-4')}</button>
+          </div>
+          <div id="expense-extra-controls" class="expense-extra-controls">
+            <div class="btn-row expense-extra-actions">
+              <button id="exp-density-btn" class="btn btn-ghost btn-sm text-xs" type="button" aria-pressed="false">${icon('rows-3', 'w-3.5 h-3.5')} <span data-density-label>${th('มุมมองกระทัดรัด','Compact view')}</span></button>
+              <button id="activity-btn" class="link-btn text-xs">${icon('history', 'w-3.5 h-3.5')} ${th('ประวัติการแก้ไข','Activity log')}</button>
+              ${perms.canEditExpense ? `<button id="manage-cats-btn" class="link-btn text-xs">${icon('settings-2', 'w-3.5 h-3.5')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage expense groups')}</button>` : ''}
+            </div>
           </div>
         </div>
       </div>
@@ -7249,9 +7301,11 @@ async function renderExpenses(params) {
    */
   function renderCardFilters() {
     const box = document.getElementById('card-filters');
+    const group = document.getElementById('card-filters-group');
     if (!box) return;
     const show = methodFilter === 'card';
     box.classList.toggle('hidden', !show);
+    group?.classList.toggle('hidden', !show);
     if (!show) { cardFilter = ''; return; }
     const names = new Set();
     allLoaded.forEach(e => paymentMethodsOf(e).forEach(m => { if (m.method === 'card' && m.cardName) names.add(m.cardName); }));
@@ -10584,6 +10638,11 @@ async function renderSettlement(params) {
 async function openCategoryManager(tripId, { onSaved } = {}) {
   const lang = getLang();
   const th = (a, b) => (lang === 'th' ? a : b);
+  const perms = await resolvePermsCached(tripId, currentTrip).catch(() => null);
+  if (!perms?.canEditExpense) {
+    toast.warning(th('ไม่มีสิทธิ์แก้ไขกลุ่มค่าใช้จ่าย','You cannot edit expense groups'));
+    return null;
+  }
 
   const sheet = showBottomSheet(`
     <div class="space-y-4">
@@ -10758,9 +10817,14 @@ async function openCategoryManager(tripId, { onSaved } = {}) {
  * Cards live on the trip document (`trip.cards`) and can be added, edited and
  * deleted here or from Settings.
  */
-function openCardManager(tripId, { members = [], onSaved = null } = {}) {
+async function openCardManager(tripId, { members = [], onSaved = null } = {}) {
   const lang = getLang();
   const th = (a, b) => (lang === 'th' ? a : b);
+  const perms = await resolvePermsCached(tripId, currentTrip).catch(() => null);
+  if (!perms?.canEditExpense) {
+    toast.warning(th('ไม่มีสิทธิ์แก้ไขบัตรของทริปนี้','You cannot edit this trip’s cards'));
+    return null;
+  }
   let cards = tripCards(currentTrip);
   let editingId = null;
 
@@ -11201,7 +11265,7 @@ async function renderMembers(params) {
     if (!email) return;
     const tLoad = toast.loading(th('กำลังค้นหา...', 'Searching...'));
     try {
-      const profile = await findProfileByEmail(email);
+      const profile = await findProfileByEmail(email, tripId);
       tLoad.close();
       if (!profile) {
         toast.error(th('ไม่พบบัญชีนี้ — ให้สมาชิกเข้าสู่ระบบด้วย Google/อีเมลอย่างน้อย 1 ครั้งก่อน', 'Account not found — the member must sign in once first.'));
@@ -12249,13 +12313,13 @@ async function renderSettings(params) {
         <h3 class="font-semibold flex items-center gap-2">${th('แผนที่เริ่มต้น','Default basemap')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เลือกประเภทแผนที่ที่จะเปิดเป็นค่าเริ่มต้นในหน้าแผนการเดินทางและหน้าไอเดีย การตั้งค่านี้ซิงก์ให้สมาชิกทุกอุปกรณ์','Choose which basemap opens by default on the itinerary and ideas maps. This setting syncs to every trip device.')}</p>
         <div class="map-default-options" id="map-default-options">
-          ${BASE_LAYERS.map(layer => `<button type="button" class="map-default-option ${defaultMapLayer === layer.id ? 'is-selected' : ''}" data-map-default="${layer.id}" aria-pressed="${defaultMapLayer === layer.id}">
+          ${BASE_LAYERS.map(layer => `<button type="button" class="map-default-option ${defaultMapLayer === layer.id ? 'is-selected' : ''}" data-map-default="${layer.id}" aria-pressed="${defaultMapLayer === layer.id}" ${perms.canEditItinerary ? '' : 'disabled'}>
             <span class="map-default-option-icon">${icon(layer.icon, 'w-4 h-4')}</span>
             <span class="min-w-0"><b>${escapeHtml(lang === 'th' ? layer.name : layer.en)}</b><small>${layer.id === 'map' ? th('ถนนและสถานที่','Roads and places') : layer.id === 'satellite' ? th('ภาพถ่ายดาวเทียม','Satellite imagery') : th('ระดับความสูงและภูมิประเทศ','Elevation and terrain')}</small></span>
             <span class="map-default-check-wrap">${icon(defaultMapLayer === layer.id ? 'circle-check' : 'circle', 'w-4 h-4 map-default-check')}</span>
           </button>`).join('')}
         </div>
-        <button id="save-map-default" type="button" class="btn btn-secondary btn-sm w-full">${icon('save', 'w-4 h-4')} ${th('บันทึกแผนที่เริ่มต้น','Save default map')}</button>
+        <button id="save-map-default" type="button" class="btn btn-secondary btn-sm w-full" ${perms.canEditItinerary ? '' : 'disabled'}>${icon('save', 'w-4 h-4')} ${th('บันทึกแผนที่เริ่มต้น','Save default map')}</button>
         <p class="text-xs text-[var(--text-tertiary)]">${th('การกดเปลี่ยนชั้นแผนที่บนแผนที่จริงจะมีผลเฉพาะการดูครั้งนั้น หากต้องการเปลี่ยนค่าเริ่มต้นให้บันทึกที่นี่','Switching layers on a live map is temporary; save your preferred default here.')}</p>
         <label class="settings-toggle-row" for="map-labels-toggle">
           <span class="min-w-0">
@@ -12291,14 +12355,14 @@ async function renderSettings(params) {
         <h3 class="font-semibold flex items-center gap-2">${th('กลุ่มค่าใช้จ่าย','Expense groups')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('เพิ่ม แก้ไขชื่อ/สี/ไอคอน หรือลบกลุ่มของทริปนี้ได้ ทุกหน้าจะใช้กลุ่มใหม่ทันที','Add, rename, recolour or delete groups for this trip — every screen picks them up.')}</p>
         <div id="settings-cat-list" class="flex flex-wrap gap-2"></div>
-        <button id="settings-manage-cats" class="btn btn-secondary btn-sm w-full">${icon('settings-2', 'w-4 h-4')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage groups')}</button>
+        <button id="settings-manage-cats" class="btn btn-secondary btn-sm w-full" ${perms.canEditExpense ? '' : 'disabled'}>${icon('settings-2', 'w-4 h-4')} ${th('จัดการกลุ่มค่าใช้จ่าย','Manage groups')}</button>
       </div>
 
       <div class="card p-4 space-y-3" id="trip-cards-card" data-settings-section="system">
         <h3 class="font-semibold flex items-center gap-2">${th('บัตรเครดิตของทริป','Trip credit cards')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('ฟอร์มค่าใช้จ่ายจะเลือกบัตรได้จากรายการนี้เท่านั้น — เพิ่ม/แก้ไข/ลบที่นี่ได้ เพื่อป้องกันการกรอกบัตรมั่ว','Expense forms can only pick cards from this list — add/edit/delete here to stop random card names.')}</p>
         <div id="settings-cards-list" class="flex flex-wrap gap-2"></div>
-        <button id="settings-manage-cards" class="btn btn-secondary btn-sm w-full">${icon('settings-2', 'w-4 h-4')} ${th('จัดการบัตรเครดิต','Manage cards')}</button>
+        <button id="settings-manage-cards" class="btn btn-secondary btn-sm w-full" ${perms.canEditExpense ? '' : 'disabled'}>${icon('settings-2', 'w-4 h-4')} ${th('จัดการบัตรเครดิต','Manage cards')}</button>
       </div>
 
       <div class="card p-4 space-y-3" id="invite-card" data-settings-section="system">
@@ -12307,7 +12371,7 @@ async function renderSettings(params) {
         <div class="flex items-center gap-2 flex-wrap">
           <span id="invite-code-value" class="font-mono text-xl font-medium tracking-[0.3em] px-4 py-2 rounded-xl" style="background:var(--bg-secondary); border:1px dashed var(--border);">${escapeHtml(formatInviteCode(trip?.inviteCode) || '—')}</span>
           <button id="invite-code-copy" class="btn btn-secondary btn-sm">${icon('copy', 'w-4 h-4')} ${th('คัดลอก','Copy')}</button>
-          <button id="invite-code-regen" class="btn btn-ghost btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${th('สร้างรหัสใหม่','New code')}</button>
+          ${perms.isAdmin ? `<button id="invite-code-regen" class="btn btn-ghost btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${th('สร้างรหัสใหม่','New code')}</button>` : ''}
         </div>
         <p class="text-xs text-[var(--text-tertiary)]">${th('รหัสจะสุ่มใหม่ได้ทุกเมื่อ — คนที่ยังไม่ได้อนุมัติจะใช้รหัสเดิมไม่ได้อีก','You can rotate the code anytime — old codes stop working immediately.')}</p>
       </div>
@@ -12326,7 +12390,7 @@ async function renderSettings(params) {
         <p class="text-xs text-[var(--text-secondary)]">${th('ลบทริปจะลบแผนการเดินทาง ค่าใช้จ่าย สมาชิก และเอกสารทั้งหมดอย่างถาวร','Deleting a trip removes its itinerary, expenses, members and documents permanently.')}</p>
         <div class="btn-row">
           <button id="dup-trip" class="btn btn-secondary btn-sm">${icon('copy', 'w-4 h-4')} ${th('ทำสำเนาทริป','Duplicate trip')}</button>
-          <button id="del-trip" class="btn btn-sm btn-danger-quiet">${icon('trash-2', 'w-4 h-4')} ${th('ลบทริปนี้','Delete this trip')}</button>
+          ${perms.isAdmin ? `<button id="del-trip" class="btn btn-sm btn-danger-quiet">${icon('trash-2', 'w-4 h-4')} ${th('ลบทริปนี้','Delete this trip')}</button>` : ''}
         </div>
         <p class="text-xs text-[var(--text-tertiary)]">${th('รหัสทริป (Trip ID)', 'Trip ID')}: <span class="font-mono">${escapeHtml(tripId)}</span></p>
       </div>
@@ -12358,6 +12422,14 @@ async function renderSettings(params) {
       </div>
     </div>
   `;
+  if (!perms.isAdmin) {
+    appEl.querySelectorAll('[data-settings-section="trip"] input, [data-settings-section="trip"] select, [data-settings-section="trip"] textarea, [data-settings-section="trip"] button')
+      .forEach((control) => { control.disabled = true; });
+    const note = document.createElement('p');
+    note.className = 'notice p-3 text-xs';
+    note.textContent = th('ข้อมูลทริปและงบประมาณแก้ไขได้เฉพาะผู้ดูแลทริป', 'Only trip admins can edit trip details and budgets.');
+    appEl.querySelector('[data-settings-section="trip"]')?.prepend(note);
+  }
   queueIcons();
   initReveal(appEl);
 
@@ -12458,6 +12530,10 @@ async function renderSettings(params) {
     paintDefaultMapOptions();
   }));
   bind('save-map-default', 'click', async (ev) => {
+    if (!perms.canEditItinerary) {
+      toast.warning(th('ไม่มีสิทธิ์แก้ไขแผนที่ของทริปนี้','You cannot change this trip’s map settings'));
+      return;
+    }
     const btn = ev.currentTarget;
     if (!BASE_LAYERS.some(layer => layer.id === selectedDefaultMapLayer)) return;
     btn.disabled = true;
@@ -12730,6 +12806,10 @@ async function renderSettings(params) {
   });
 
   const saveAll = async (btnId, extra = {}) => {
+    if (!perms.isAdmin) {
+      toast.warning(th('เฉพาะผู้ดูแลทริปที่บันทึกข้อมูลและงบประมาณได้','Only trip admins can save trip details and budgets'));
+      return;
+    }
     const btn = document.getElementById(btnId);
     if (btn) btn.disabled = true;
     const tLoad = toast.loading(th('กำลังบันทึก...', 'Saving...'));
@@ -12816,9 +12896,15 @@ async function renderSettings(params) {
       <span class="chip text-xs"><span class="cat-dot" style="--dot:${escapeHtml(c.color || 'var(--text-tertiary)')};" aria-hidden="true"></span> ${escapeHtml(lang === 'th' ? (c.th || c.en) : (c.en || c.th))}</span>`).join('');
     queueIcons();
   })();
-  bind('settings-manage-cats', 'click', () => openCategoryManager(tripId, {
-    onSaved: () => { loadTripCategories(tripId).then(() => renderSettings(params)); }
-  }));
+  bind('settings-manage-cats', 'click', () => {
+    if (!perms.canEditExpense) {
+      toast.warning(th('ไม่มีสิทธิ์แก้ไขกลุ่มค่าใช้จ่าย','You cannot edit expense groups'));
+      return;
+    }
+    openCategoryManager(tripId, {
+      onSaved: () => { loadTripCategories(tripId).then(() => renderSettings(params)); }
+    });
+  });
 
   // Trip credit cards — the managed dropdown source for every expense form.
   function paintCardChips() {
@@ -12831,10 +12917,16 @@ async function renderSettings(params) {
     queueIcons();
   }
   paintCardChips();
-  bind('settings-manage-cards', 'click', () => openCardManager(tripId, {
-    members: settingMembers,
-    onSaved: (cards) => { if (currentTrip) currentTrip.cards = cards; paintCardChips(); }
-  }));
+  bind('settings-manage-cards', 'click', () => {
+    if (!perms.canEditExpense) {
+      toast.warning(th('ไม่มีสิทธิ์แก้ไขบัตรของทริปนี้','You cannot edit this trip’s cards'));
+      return;
+    }
+    openCardManager(tripId, {
+      members: settingMembers,
+      onSaved: (cards) => { if (currentTrip) currentTrip.cards = cards; paintCardChips(); }
+    });
+  });
 
   bind('invite-code-copy', 'click', () => {
     const code = formatInviteCode(trip?.inviteCode || '');
@@ -12845,6 +12937,10 @@ async function renderSettings(params) {
   });
 
   bind('invite-code-regen', 'click', async () => {
+    if (!perms.isAdmin) {
+      toast.warning(th('เฉพาะผู้ดูแลทริปที่เปลี่ยนรหัสเชิญได้','Only trip admins can rotate the invite code'));
+      return;
+    }
     const ok = await confirmAction({
       title: th('สร้างรหัสเชิญใหม่?', 'Generate a new invite code?'),
       message: th('รหัสเดิมจะใช้ไม่ได้อีก (สมาชิกที่อนุมัติแล้วยังเข้าได้ตามปกติ)', 'The old code stops working (approved members keep access).'),
@@ -12925,6 +13021,10 @@ async function renderSettings(params) {
   });
 
   bind('del-trip', 'click', async () => {
+    if (!perms.isAdmin) {
+      toast.warning(th('เฉพาะผู้ดูแลทริปที่ลบทริปได้','Only trip admins can delete this trip'));
+      return;
+    }
     const ok = await confirmAction({
       title: th(`ลบทริป "${trip?.name}" ?`, `Delete "${trip?.name}"?`),
       message: th('ข้อมูลทั้งหมดของทริปนี้จะถูกลบถาวร รวมถึงแผนการเดินทาง ค่าใช้จ่าย สมาชิก และเอกสาร', 'Everything in this trip will be permanently deleted.'),

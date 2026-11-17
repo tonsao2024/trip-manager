@@ -14,8 +14,8 @@ the UI gate sites in `src/js/app.js`, and the Cloud Functions in `functions/src/
 
 | Role | Where it comes from | ไทย |
 | --- | --- | --- |
-| `super_admin` | `users/{uid}.role == 'super_admin'` (Firestore console only) | ผู้ดูแลระบบสูงสุด |
-| `trip_admin` | `trips/{tripId}.createdBy == uid` **or** `members/{uid}.role == 'trip_admin'` | ผู้ดูแลทริป (เจ้าของทริป หรือถูกตั้งเป็นแอดมิน) |
+| `super_admin` | `users/{uid}.role == 'super_admin'` (initial grant in Firebase Console; only an existing super admin may change it) | ผู้ดูแลระบบสูงสุด |
+| `trip_admin` | `trips/{tripId}.createdBy == uid` **or** an active `members/{uid}.role == 'trip_admin'` record | ผู้ดูแลทริป (เจ้าของทริป หรือถูกตั้งเป็นแอดมิน) |
 | `member` | everything else (default) | สมาชิกทั่วไป |
 | `viewer` | `members/{uid}.role == 'viewer'` | ผู้ชม — อ่านอย่างเดียวทุกที่ |
 
@@ -52,11 +52,14 @@ An explicit `false` — or the `viewer` role — blocks the write.
 
 | Area | trip admin | member (default) | member with the switch off | viewer |
 | --- | --- | --- | --- | --- |
-| Trip details, budget, theme (`trips/{id}` write) | ✅ | ⚠️ profile-ish fields only — cannot change `createdBy`, `memberUids`, `inviteCode`, `inviteEnabled` | same as member | same as member |
+| Trip details, dates, budget, currency, status, cover (`trips/{id}`) | ✅ | ❌ | ❌ | ❌ |
+| Shared dashboard layout (`dashboardLayout`, `dashboardHidden`) | ✅ | ✅ (not a viewer) | ✅ (not a viewer) | ❌ |
+| Default map layer (`defaultMapLayer`) | ✅ | ✅ if `canEditItinerary` | ❌ if `canEditItinerary = false` | ❌ |
+| Trip payment cards (`cards`) | ✅ | ✅ if `canEditExpense` | ❌ if `canEditExpense = false` | ❌ |
 | Invite code / open-closed invites | ✅ rotate & close | ❌ (v30 fix — was open to every member before) | ❌ | ❌ |
 | Settings (`settings/*`), Excel import/export (`imports/*`) | ✅ | ❌ (read only) | ❌ | ❌ |
 | Members: add / approve / edit roles & switches | ✅ | ❌ (may edit **own profile only**, never `role` / `permissions` / `status`) | ❌ | ❌ |
-| Members: with `canManageMembers` (co-admin) | ✅ | ✅ people only — add/edit profiles, approve join requests; **role + the three switches stay trip-admin-only** (`sameRoleAndPermissions`), another admin's doc is protected (`protectsAdminDoc`) | ✅ people only | ❌ |
+| Members: with `canManageMembers` (co-admin) | ✅ | ✅ people only — add/remove ordinary members or viewers, edit profiles, approve join requests; membership-list changes are paired with member-document writes. Cannot create/promote a trip admin, grant `canManageMembers`, change role/permissions/status, or edit another admin's doc | ✅ people only | ❌ |
 | Itinerary, days, sticky notes | ✅ | ✅ | ❌ if `canEditItinerary = false` | ❌ |
 | Expenses, groups, cards, FX rates, transfers, settlement | ✅ | ✅ | ❌ if `canEditExpense = false` | ❌ |
 | Documents, checklists, ideas, teams, reservations, comments | ✅ | ✅ | ✅ (content, not money/plan switches) | ❌ |
@@ -85,9 +88,9 @@ Before v30 the published rules let **every member** write `itineraryItems`, `exp
 | 2 | “แก้ไขค่าใช้จ่าย” = UI only | `expenses/lineItems/settlements/payments/categories/cards/exchangeRates/transfers` → `canEditExpense(tripId)` |
 | 3 | “แก้ไขแผนการเดินทาง” = UI only | `days/itineraryItems/notes` → `canEditItinerary(tripId)` |
 | 4 | any member could rotate the invite code / re-open invites | trip-admin only |
-| 5 | any member could change `memberUids` / `createdBy` | frozen for non-admins |
+| 5 | any member could change `memberUids` / `createdBy` | `createdBy` remains frozen; only trip admins or member managers can change `memberUids`, and co-admin changes are limited to that field and paired with membership operations |
 | 6 | a member could grant themselves `permissions` / a new `role` | self-update is **profile-only**; role/permissions/status frozen |
-| 7 | `canManageMembers` didn't exist (all-or-nothing admin) | co-admins (people only — `sameRoleAndPermissions()` stops them granting rights to themselves or others), plus `protectsAdminDoc()` so only a real admin touches an admin doc |
+| 7 | `canManageMembers` didn't exist (all-or-nothing admin) | co-admins can manage ordinary members/viewers; they cannot create/promote admins, grant `canManageMembers`, change role/permissions/status, or touch an admin doc (`sameRoleAndPermissions()` + `protectsAdminDoc()`) |
 | 8 | no trip-level notification feed existed | `trips/{id}/notifications` — member read/create, update only the caller's own `readBy` key, delete trip admin |
 | 9 | no Web-Push device registry existed | `users/{uid}/pushTokens|pushPrefs` — owner only; the Cloud Function reads them with the Admin SDK |
 
@@ -104,49 +107,57 @@ Before v30 the published rules let **every member** write `itineraryItems`, `exp
 * **Push counters** (`pushSent`, `pushCount`, `pushSentAt`) are written by the Admin SDK only —
   the update rule above makes that explicit.
 
-## 6) Known risks / remaining exposure
+## 6) Current privacy boundaries / remaining exposure
 
-These are deliberate, small, and each one has a note in `firestore.rules`:
+The old v30 notes below describe the rules as they stood at that release. The current rules and
+callables apply these tighter boundaries:
 
-1. **`publicProfiles/{uid}`** — any signed-in account may `list` name/email/photo (needed to
-   search the person you want to invite). No trip data, no permissions, no tokens there.
-2. **`publicMemberLogins/{username}`** — `get` is public (the login page resolves
-   username → trip before the PIN is checked). `list` is forbidden so usernames cannot be
-   enumerated; a *known* username reveals which trip/member it belongs to. Use the
-   `loginWithUsernamePin` Cloud Function (and delete the entry) if that matters.
-3. **`memberSecrets/{tripId}_{memberId}`** — `get` is open to signed-in accounts for the legacy
-   PIN login path; `list` is forbidden and writes require `canManageMembers`. Same mitigation as
-   above (the callable verifies the PIN server-side).
-4. **Notification spam** — any member can create feed items (with their own uid on them). Size
+1. **`publicProfiles/{uid}`** — owner `get` only; client `list` is denied. Exact email search goes
+   through `findMemberProfileByEmail`, which requires the caller to manage the specified trip and
+   returns only `id`, display name, email, and photo URL.
+2. **`publicMemberLogins/{username}`, `loginAccounts/{username}`, `memberSecrets/{tripId}_{memberId}`,
+   and `userSecrets/{uid}`** — all client reads/writes are denied. Legacy PIN/step-up fields are
+   migrated out of readable user/member profile docs before the new Rules are published. Callable
+   Functions retain existing PBKDF2-SHA256 secrets (100,000 iterations, 16-byte salt) and bcrypt
+   compatibility; PIN hashes never appear in callable responses.
+3. **`publicTripInvites/{code}`** — authenticated users may `get` a known, enabled code, but may not
+   list the collection or list trips by invite code. Only trip member managers maintain previews;
+   Rules require the preview to match the trip's current code, name, and dates. The minimal preview
+   contains only `tripId`, name, and start/end dates; the full trip is readable only after membership.
+4. **Inactive/removed members** — a member document with `status: 'inactive'` no longer grants trip reads, even if a stale `memberUids` entry exists. Trip-list queries also check the member status; client deactivation/deletion updates the member record and trip UID list atomically.
+5. **Shared trip fields** — non-admin writes to the trip document are limited to dashboard layout/visibility for non-viewers, the default map layer when `canEditItinerary` is on, and payment cards when `canEditExpense` is on. Trip details, budgets, currency, status, cover, and invite settings are admin-only; `createdBy` is immutable through client writes. Delegated member managers only change membership fields through member operations.
+6. **Notification spam** — any member can create feed items (with their own uid on them). Size
    caps + hourly pruning + admin delete keep it bounded; the author is visible to everybody.
-5. **Client clock** — the daily summary decides “today” from the trip timezone on the client and
+7. **Client clock** — the daily summary decides “today” from the trip timezone on the client and
    on the server (`dailyExpenseSummary`); the document id `daily-YYYY-MM-DD` makes the write
    idempotent even when several devices race.
+
+The callable-backed PIN, email-search, and legacy invite fallback features require Cloud Functions
+on Blaze; Spark can continue with the visible Google sign-in and Firestore join-request flow. See
+`docs/DEPLOY.md` before changing the deployed client or rules.
 
 ## 7) How to verify
 
 ```bash
-# pure logic + the rules text itself (no emulator needed)
-node tests/node-runner.mjs            # 167 unit tests, incl. tests/unit/permissions.test.js
+npm test
+npm run test:smoke
+npm --prefix functions test       # PBKDF2/bcrypt PIN verification
 
-# the whole app in jsdom, incl. the v30 block:
-#   🔔 + badge, expense → notification, filters, mark read/all, daily summary,
-#   settings tab, Web-Push enable/disable, member/viewer gates, rules text
-npm i --no-save jsdom dayjs xlsx && node tests/smoke/run.mjs
-
-# the real rules, against the Firestore emulator (needs Java + firebase-tools)
-firebase emulators:exec --only firestore "node tests/rules/firestore.test.js"
+# Real Firestore Rules (requires Java + Firebase CLI)
+npx firebase-tools@13 emulators:exec --project demo-trip-manager-rules --only firestore "npm run test:rules"
 ```
+
+The emulator suite exercises private member/user credential paths, legacy profile-field read denial,
+trip isolation, enabled invite previews, profile privacy, self-role protection, and join-request permissions.
 
 ## 8) Deploy
 
-```bash
-firebase deploy --only firestore:rules            # the enforcement — do this first
-firebase deploy --only functions                  # pushTripNotification + dailyExpenseSummary
-firebase deploy --only hosting                    # the client (bell, settings tab, SW)
-```
+Deployment is plan-dependent and must follow the rollout in [`docs/DEPLOY.md`](DEPLOY.md):
 
-Order matters: the client writes `trips/{id}/notifications` documents and device tokens, so
-publishing the rules first (they allow old member docs) keeps everything working while the
-Cloud Functions and the hosting bundle catch up. Web Push additionally needs the VAPID key —
-see `docs/DEPLOY.md`.
+- Run the Admin SDK legacy PIN-field migration before publishing Rules, then publish `firestore.rules`
+  and `firestore.indexes.json`; static Hosting/Pages is separate.
+- Blaze: deploy the selected member-security callables and run the invite-preview backfill.
+- Ask users to refresh after the new client/rules are live; old clients that directly handled PINs are
+  intentionally incompatible with the server-only credential rules.
+
+The in-app notification feed and GitHub Actions Web Push path do not require Cloud Functions.
