@@ -91,7 +91,7 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 }
 
 /* Debt map: read the transfer instructions first, explore the graph on demand. */
-.debt-map-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+.debt-map-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-bottom: 16px; }
 .debt-map-heading h3 { margin: 2px 0 5px; font-size: 22px; }
 .debt-map-heading p { margin: 0; color: var(--text-secondary); font-size: 13px; }
 .debt-map-heading .debt-map-eyebrow { color: var(--primary-strong); font-size: 12px; font-weight: 600; }
@@ -118,15 +118,18 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 .debt-amount-block { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 130px; }
 .debt-amount-block > span { color: var(--text-secondary); font-size: 12px; }
 .debt-row-amount { font-size: 16px; }
-.debt-map-action-hint, .debt-graph-help { color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
-.debt-map-action-hint { margin: 12px 0 20px; }
-.debt-graph-details { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-.debt-graph-details summary { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; font-weight: 600; list-style: none; }
-.debt-graph-details summary::-webkit-details-marker { display: none; }
-.debt-graph-details summary > span { display: flex; align-items: center; gap: 8px; }
-.debt-graph-details[open] summary > svg { transform: rotate(180deg); }
-.debt-graph-help, .debt-graph-details .debt-map-legend { margin: 0 16px 12px; }
-.debt-graph-details .debt-map-container { margin: 0 16px 16px; }
+.debt-map-action-hint { color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.debt-map-action-hint { margin: 12px 0 0; }
+/* v42: the diagram is the first thing on the page — amounts are printed on the
+   lines, so the drawing and its legend sit directly under the heading. */
+.debt-map-card .debt-map-legend { margin: 16px 0 10px; }
+.debt-map-card > .debt-map-container { margin: 0 0 4px; }
+.debt-map-note { margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-tertiary); }
+@media (min-width: 1024px) {
+  /* The drawing keeps a readable scale on a wide desktop card instead of
+     stretching to 1.5× its natural size. */
+  .debt-map-card > .debt-map-container .debt-map-svg { max-width: 960px; margin-inline: auto; }
+}
 @media (max-width: 600px) {
   .debt-map-heading { align-items: stretch; flex-direction: column; gap: 12px; }
   .debt-map-total { min-width: 0; }

@@ -18,6 +18,11 @@
    Google's canvas so the app always looks like the reference. */
 
 :root {
+  /* Native widgets (date/time pickers, <select> menus, checkboxes, file
+     buttons, scrollbars) must follow the app's mode — without this Chrome
+     paints them light-on-light inside dark mode. */
+  color-scheme: light;
+  accent-color: var(--primary-raw, #1a73e8);
   /* ---- Brand raws (the colour theme overwrites these on <html>) ---- */
   --primary-raw: #1a73e8;          /* Google blue — the ONLY accent */
   --grad-1: var(--primary-raw);    /* kept for compatibility — no gradients in v35 */
@@ -204,6 +209,7 @@
    Dark mode — Google's dark grey (#202124 / #303134), not navy
    ========================================================= */
 [data-theme="dark"] {
+  color-scheme: dark;
   --primary: color-mix(in srgb, var(--primary-raw) 68%, #fff);
   --primary-hover: color-mix(in srgb, var(--primary-raw) 58%, #fff);
   --primary-light: color-mix(in srgb, var(--primary-raw) 18%, #202124);

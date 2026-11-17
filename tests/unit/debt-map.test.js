@@ -1,25 +1,19 @@
-import { debtMapColor, layoutDebtMapAmountLabels, placeDebtMapPill } from '../../src/js/utils/debtMap.js';
+import { debtMapColor, debtMapLabelAngle, layoutDebtMapAmounts } from '../../src/js/utils/debtMap.js';
 
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
-const bounds = label => ({
-  left: label.x - label.width / 2,
-  right: label.x + label.width / 2,
-  top: label.y - label.height / 2,
-  bottom: label.y + label.height / 2
-});
+const bezier = (edge, t) => {
+  const inverse = 1 - t;
+  return {
+    x: inverse * inverse * edge.start.x + 2 * inverse * t * edge.control.x + t * t * edge.end.x,
+    y: inverse * inverse * edge.start.y + 2 * inverse * t * edge.control.y + t * t * edge.end.y
+  };
+};
 
-function assertNoLabelOverlap(positions, spacing = 5) {
-  for (let i = 0; i < positions.length; i++) {
-    const a = bounds(positions[i]);
-    for (let j = i + 1; j < positions.length; j++) {
-      const b = bounds(positions[j]);
-      const separated = a.right + spacing <= b.left || b.right + spacing <= a.left ||
-        a.bottom + spacing <= b.top || b.bottom + spacing <= a.top;
-      assert(separated, `amount tags ${i} and ${j} overlap`);
-    }
-  }
-}
+const shares = (a, b, spacing = 0) => !(
+  a.right + spacing <= b.left || b.right + spacing <= a.left ||
+  a.bottom + spacing <= b.top || b.bottom + spacing <= a.top
+);
 
 export function testDebtMapTransferColoursStayDistinct() {
   const colors = Array.from({ length: 24 }, (_, i) => debtMapColor(i));
@@ -27,74 +21,96 @@ export function testDebtMapTransferColoursStayDistinct() {
   assert(colors.every(color => /^hsl\(\d+ 76% 43%\)$/.test(color)), 'transfer colours use the high-contrast palette');
 }
 
-export function testDebtMapLabelsNeverOverlapAndAvoidMemberLabels() {
-  const edges = Array.from({ length: 18 }, (_, i) => ({
-    start: { x: 70, y: 245 },
-    control: { x: 410, y: 90 + (i % 3) * 8 },
-    end: { x: 750, y: 245 },
-    label: `฿${(i + 1) * 12345}`
-  }));
-  const obstacles = [{ left: 360, right: 460, top: 185, bottom: 260 }];
-  const result = layoutDebtMapAmountLabels(edges, obstacles, { width: 820, height: 500 });
-  assert(result.positions.length === edges.length, 'each transfer receives an amount tag');
-  assertNoLabelOverlap(result.positions);
-  for (const label of result.positions.filter(item => !item.fallback)) {
-    assert(!obstacles.some(obstacle => {
-      const box = bounds(label);
-      return !(box.right + 5 <= obstacle.left || obstacle.right + 5 <= box.left ||
-        box.bottom + 5 <= obstacle.top || obstacle.bottom + 5 <= box.top);
-    }), 'an on-map amount tag must avoid member labels');
-  }
+// v42 (owner report: “ตัวเลขบังรายชื่อคนจ่าย”): the amount is printed ALONG its
+// own line. The placer returns the curve parameter and the tangent angle, so the
+// SVG can rotate the plate with the arc — the label must sit exactly on that arc.
+export function testDebtMapAmountRidesItsOwnArc() {
+  const edge = { start: { x: 100, y: 250 }, control: { x: 410, y: 150 }, end: { x: 720, y: 250 }, label: '฿45,338.16' };
+  const [spot] = layoutDebtMapAmounts([edge], [], { width: 820, height: 500 });
+  assert(spot.kind === 'label', 'an empty canvas always accepts the plate');
+  const onCurve = bezier(edge, spot.t);
+  assert(Math.abs(onCurve.x - spot.x) < 0.001 && Math.abs(onCurve.y - spot.y) < 0.001, 'the plate is anchored on its own arc');
+
+  // The plate is rotated with the line, and never upside-down.
+  const angle = debtMapLabelAngle(edge, spot.t);
+  assert(Math.abs(angle - spot.angle) < 0.001, 'the returned angle is the tangent angle');
+  assert(angle > -90 && angle <= 90, 'the plate text stays upright');
+  // The tangent's own sign decides the tilt: a rising segment reads bottom-left →
+  // top-right (−°) and a falling one the other way, never upside-down.
+  const risingEdge = { start: { x: 100, y: 300 }, control: { x: 410, y: 150 }, end: { x: 720, y: 300 } };
+  const fallingEdge = { start: { x: 100, y: 150 }, control: { x: 410, y: 300 }, end: { x: 720, y: 150 } };
+  assert(debtMapLabelAngle(risingEdge, 0.3) < 0, 'a rising arc tilts the plate up to the right');
+  assert(debtMapLabelAngle(fallingEdge, 0.3) > 0, 'a falling arc tilts the plate down to the right');
+
+  // A label wide enough for the amount, but never absurdly wide.
+  assert(spot.width >= 60 && spot.width <= 220, 'the plate is sized to the amount text');
+  assert(spot.box && spot.box.left < spot.x && spot.box.right > spot.x, 'the collision box is centred on the plate');
 }
 
-export function testCrowdedDebtMapMovesTagsToDedicatedNonOverlappingRows() {
-  const edges = Array.from({ length: 10 }, (_, i) => ({
-    start: { x: 26, y: 24 }, control: { x: 70, y: 24 }, end: { x: 114, y: 24 }, label: `$${i + 1}`
+export function testDebtMapAmountsAvoidMemberLabelsAndEachOther() {
+  const edges = Array.from({ length: 14 }, (_, i) => ({
+    start: { x: 90 + (i % 4) * 30, y: 300 },
+    control: { x: 410, y: 120 + (i % 5) * 14 },
+    end: { x: 730 - (i % 3) * 25, y: 300 },
+    label: `฿${(i + 1) * 1234}.56`
   }));
-  const result = layoutDebtMapAmountLabels(edges, [], { width: 140, height: 48 });
-  assert(result.positions.some(item => item.fallback), 'dense maps use fallback rows when the drawing has no space');
-  assert(result.height > 48, 'the SVG canvas expands to fit every fallback row');
-  assertNoLabelOverlap(result.positions);
-}
+  // Member name/role labels are solid obstacles (two people at the top, one low).
+  const obstacles = [
+    { left: 340, right: 470, top: 40, bottom: 88 },
+    { left: 640, right: 780, top: 96, bottom: 150 },
+    { left: 60, right: 180, top: 318, bottom: 366 }
+  ];
+  const result = layoutDebtMapAmounts(edges, obstacles, { width: 820, height: 500 });
+  assert(result.length === edges.length, 'every transfer receives a placement');
+  assert(result.every(item => ['label', 'number', 'none'].includes(item.kind)), 'placements use one of the three kinds');
 
-// v41: the amount of a transfer must stay ON that transfer's own line. The pill
-// walks along its arc; when there is no room it comes back null (the UI then
-// prints the amount in the numbered list) instead of drifting onto another line.
-export function testDebtMapPillStaysOnItsOwnArc() {
-  const edge = { start: { x: 100, y: 250 }, control: { x: 410, y: 180 }, end: { x: 720, y: 250 }, width: 90, height: 22 };
-  const pill = placeDebtMapPill(edge, [], { width: 820, height: 500 });
-  assert(pill, 'an empty canvas always accepts the pill');
-  // The returned point must solve the same quadratic curve (it lies on the arc).
-  const t = pill.t;
-  const onCurve = {
-    x: (1 - t) * (1 - t) * edge.start.x + 2 * (1 - t) * t * edge.control.x + t * t * edge.end.x,
-    y: (1 - t) * (1 - t) * edge.start.y + 2 * (1 - t) * t * edge.control.y + t * t * edge.end.y
-  };
-  assert(Math.abs(onCurve.x - pill.x) < 0.001 && Math.abs(onCurve.y - pill.y) < 0.001, 'the pill is anchored on its own arc');
-}
-
-export function testDebtMapPillNeverOverlapsAnotherPillOrNode() {
-  const edges = Array.from({ length: 6 }, (_, i) => ({
-    start: { x: 80 + i * 10, y: 260 }, control: { x: 410, y: 170 + i * 6 }, end: { x: 740 - i * 10, y: 260 }, width: 100, height: 22
-  }));
-  const obstacles = [{ left: 380, right: 440, top: 240, bottom: 300 }];
-  const placed = [];
-  for (const edge of edges) {
-    const pill = placeDebtMapPill(edge, obstacles.concat(placed), { width: 820, height: 500, gap: 5 });
-    if (!pill) continue;
-    const box = { left: pill.x - pill.width / 2, right: pill.x + pill.width / 2, top: pill.y - pill.height / 2, bottom: pill.y + pill.height / 2 };
-    for (const other of obstacles.concat(placed)) {
-      assert(box.right + 5 <= other.left || other.right + 5 <= box.left || box.bottom + 5 <= other.top || other.bottom + 5 <= box.top,
-        'a placed pill never touches a node or another pill');
+  const plates = result.filter(item => item.kind === 'label');
+  assert(plates.length > 0, 'a map with room prints at least some amounts on the drawing');
+  for (const plate of plates) {
+    for (const obstacle of obstacles) {
+      assert(!shares(plate.box, obstacle, 3), 'an on-map amount must never touch a member name');
     }
-    placed.push(box);
+    assert(plate.box.left >= 7 && plate.box.right <= 813 && plate.box.top >= 7 && plate.box.bottom <= 493,
+      'a plate stays inside the drawing');
   }
-  assert(placed.length >= 2, 'a normal map places more than one pill');
+  for (let i = 0; i < plates.length; i++) {
+    for (let j = i + 1; j < plates.length; j++) {
+      assert(!shares(plates[i].box, plates[j].box, 3), 'two amount plates never overlap');
+    }
+  }
+
+  // Numbered dots also keep clear of the people; each still carries its amount
+  // so the numbered list below the drawing can print it.
+  for (const dot of result.filter(item => item.kind === 'number')) {
+    assert(!obstacles.some(obstacle => shares(dot.box, obstacle, 3)), 'a numbered dot must not sit on a name');
+    assert(dot.label.startsWith('฿'), 'a numbered dot still knows its amount');
+  }
 }
 
-export function testDebtMapPillGivesUpInsteadOfDriftingAway() {
-  // A 40×40 canvas cannot host a 100px pill: the helper must refuse (null) so the
-  // caller can list the amount instead of pinning it to a stranger's line.
-  const edge = { start: { x: 5, y: 20 }, control: { x: 20, y: 5 }, end: { x: 35, y: 20 }, width: 100, height: 22 };
-  assert(placeDebtMapPill(edge, [], { width: 40, height: 40 }) === null, 'no room → null, never a misplaced tag');
+// A dense drawing never invents room: it drops to numbered dots and, when even a
+// dot cannot fit, to nothing at all (the numbered list still shows the amount).
+export function testCrowdedDebtMapFallsBackToNumbers() {
+  const edges = Array.from({ length: 10 }, (_, i) => ({
+    start: { x: 5, y: 20 }, control: { x: 30, y: 20 }, end: { x: 55, y: 20 }, label: `฿${i + 1}.00`
+  }));
+  const result = layoutDebtMapAmounts(edges, [], { width: 60, height: 40 });
+  assert(result.every(item => item.kind !== 'label'), 'a tiny drawing has no room for amount plates');
+  assert(result.some(item => item.kind === 'number'), 'transfers keep a numbered dot when the plate does not fit');
+  assert(result.every(item => item.x >= 0 && item.x <= 60 && item.y >= 0 && item.y <= 40), 'every placement stays inside the drawing');
+
+  const boxed = result.filter(item => item.box);
+  for (let i = 0; i < boxed.length; i++) {
+    for (let j = i + 1; j < boxed.length; j++) {
+      assert(!shares(boxed[i].box, boxed[j].box, 2), 'number dots never overlap each other');
+    }
+  }
+
+  // Impossible canvas → the transfer reports “none” instead of drawing off-screen.
+  const hopeless = layoutDebtMapAmounts(
+    [{ start: { x: 0, y: 0 }, control: { x: 1, y: 1 }, end: { x: 2, y: 2 }, label: '฿1.00' }],
+    [],
+    { width: 20, height: 20 }
+  );
+  assert(hopeless[0].kind === 'none', 'a broken canvas degrades to the list instead of throwing');
+  assert(hopeless[0].box === null, 'a “none” placement has no collision box');
 }
