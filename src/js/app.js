@@ -3762,7 +3762,7 @@ async function renderDashboard(params) {
           ${dragHandle(th('การ์ดกิจกรรมตอนนี้','current activity card'))}
           <div class="card p-4">
             <div class="card-head">
-              <h3 class="card-title">${t('currentActivity')}</h3>
+              <h3 class="card-title"><span class="row-icon tile-blue" aria-hidden="true">${icon('clock', 'w-4 h-4')}</span>${t('currentActivity')}</h3>
               <button id="dash-today-link" type="button" class="btn btn-ghost btn-sm">${th('ดูวันนี้','Today')}</button>
             </div>
             <div id="current-activity"><div class="skeleton h-14"></div></div>
@@ -3780,7 +3780,7 @@ async function renderDashboard(params) {
           ${dragHandle(th('การ์ดแผนถัดไป','upcoming plans card'))}
           <div class="card p-4">
             <div class="card-head">
-              <h3 class="card-title">${t('upNext')}</h3>
+              <h3 class="card-title"><span class="row-icon tile-teal" aria-hidden="true">${icon('route', 'w-4 h-4')}</span>${t('upNext')}</h3>
               <button id="dash-itinerary-link" type="button" class="btn btn-ghost btn-sm">${th('ดูแผนทั้งหมด','All plans')}</button>
             </div>
             <div id="upnext-list"><div class="skeleton h-14"></div></div>
@@ -3791,7 +3791,7 @@ async function renderDashboard(params) {
           ${dragHandle(th('การ์ดการจองที่กำลังจะถึง','upcoming bookings card'))}
           <div class="card p-4">
             <div class="card-head">
-              <h3 class="card-title">${th('การจองที่กำลังจะถึง','Upcoming bookings')}</h3>
+              <h3 class="card-title"><span class="row-icon tile-violet" aria-hidden="true">${icon('ticket', 'w-4 h-4')}</span>${th('การจองที่กำลังจะถึง','Upcoming bookings')}</h3>
               <button id="dash-bookings-link" type="button" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</button>
             </div>
             <div id="dash-bookings" class="booking-list"><div class="skeleton h-12"></div></div>
@@ -3802,7 +3802,7 @@ async function renderDashboard(params) {
           ${dragHandle(th('การ์ดค่าใช้จ่ายล่าสุด','recent expenses card'))}
           <div class="card p-4">
             <div class="card-head">
-              <h3 class="card-title">${th('รายการล่าสุด','Recent expenses')}</h3>
+              <h3 class="card-title"><span class="row-icon tile-amber" aria-hidden="true">${icon('receipt', 'w-4 h-4')}</span>${th('รายการล่าสุด','Recent expenses')}</h3>
               <button id="dash-expenses-link" type="button" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</button>
             </div>
             <div id="recent-expenses" class="recent-list"><div class="skeleton h-12"></div></div>
@@ -3813,7 +3813,7 @@ async function renderDashboard(params) {
           ${dragHandle(th('การ์ดค่าใช้จ่ายตามหมวด','spend by category card'))}
           <div class="card p-4">
             <div class="card-head">
-              <h3 class="card-title">${th('ค่าใช้จ่ายตามหมวด','Spend by category')}</h3>
+              <h3 class="card-title"><span class="row-icon tile-orange" aria-hidden="true">${icon('pie-chart', 'w-4 h-4')}</span>${th('ค่าใช้จ่ายตามหมวด','Spend by category')}</h3>
               <button id="cat-expand-btn" type="button" class="btn btn-ghost btn-sm" style="display:none;"><span data-cat-label>${th('ดูทั้งหมด','Show all')}</span></button>
             </div>
             <div id="category-stats"><div class="skeleton h-24"></div></div>
@@ -3823,7 +3823,7 @@ async function renderDashboard(params) {
         <section class="dash-widget dash-widget--half" data-dashboard-widget="estimate">
           ${dragHandle(th('การ์ดประมาณการเทียบจ่ายจริง','estimated vs actual card'))}
           <div class="card p-4">
-            <div class="card-head"><h3 class="card-title">${th('ประมาณการเทียบจ่ายจริง','Estimated vs actual')}</h3></div>
+            <div class="card-head"><h3 class="card-title"><span class="row-icon tile-green" aria-hidden="true">${icon('bar-chart-3', 'w-4 h-4')}</span>${th('ประมาณการเทียบจ่ายจริง','Estimated vs actual')}</h3></div>
             <div id="estimate-compare"></div>
             <div id="summary-stats" class="card-foot"></div>
           </div>
@@ -3833,7 +3833,7 @@ async function renderDashboard(params) {
           ${dragHandle(th('การ์ดสถานที่ที่อยากไป','wishlist card'))}
           <div id="dash-ideas-board" class="card p-4">
             <div class="card-head">
-              <h3 class="card-title">${th('สถานที่ที่อยากไป','Wishlist')}</h3>
+              <h3 class="card-title"><span class="row-icon tile-red" aria-hidden="true">${icon('star', 'w-4 h-4')}</span>${th('สถานที่ที่อยากไป','Wishlist')}</h3>
               <a id="dash-ideas-link" href="#/trip/${tripId}/ideas" class="btn btn-ghost btn-sm">${th('ดูทั้งหมด','View all')}</a>
             </div>
             <div id="dash-ideas-list" class="dash-scroll-body"><div class="skeleton h-16"></div></div>
@@ -3844,7 +3844,7 @@ async function renderDashboard(params) {
           ${dragHandle(th('การ์ดสมาชิก','members card'))}
           <div class="card p-4">
             <div class="card-head">
-              <h3 class="card-title">${th('สมาชิก · จ่ายไปและส่วนที่รับผิดชอบ','Members · paid and share')}</h3>
+              <h3 class="card-title"><span class="row-icon tile-sky" aria-hidden="true">${icon('users', 'w-4 h-4')}</span>${th('สมาชิก · จ่ายไปและส่วนที่รับผิดชอบ','Members · paid and share')}</h3>
               <button id="dash-members-link" type="button" class="btn btn-ghost btn-sm">${th('จัดการ','Manage')}</button>
             </div>
             <div id="member-board-content" class="member-board dash-scroll-body"><div class="skeleton h-16"></div></div>
@@ -3855,7 +3855,7 @@ async function renderDashboard(params) {
           ${dragHandle(th('การ์ดทีม','teams card'))}
           <div class="card p-4" id="dash-teams-card">
             <div class="card-head">
-              <h3 class="card-title">${th('ทีม · ค่าใช้จ่ายต่อคนและรวมทีม','Teams · cost per person and per team')}</h3>
+              <h3 class="card-title"><span class="row-icon tile-grey" aria-hidden="true">${icon('users-round', 'w-4 h-4')}</span>${th('ทีม · ค่าใช้จ่ายต่อคนและรวมทีม','Teams · cost per person and per team')}</h3>
               <button id="dash-teams-link" type="button" class="btn btn-ghost btn-sm">${th('จัดการทีม','Manage teams')}</button>
             </div>
             <div id="team-board" class="team-board"><div class="skeleton h-16"></div></div>

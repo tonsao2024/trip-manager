@@ -479,23 +479,54 @@ hr, .divider { border: 0; border-top: 1px solid var(--border-light); }
 .card:active { transform: none; }
 .card-hover:active { background: var(--surface-2); }
 
-/* Icon bubbles (v35): no tiles. The icon stands on its own in a muted tone.
-   Round 4 removed the old inline tile styles from every template; the
-   !important stays as a guard for content written by older versions. */
+/* Icon bubbles — v41 brings back Google's tinted square. Every row icon is a
+   40px rounded tile in a 12% tint of a Google hue, with the glyph in that hue's
+   700 step. Templates may still pass their own size (`!w-8 !h-8`), so the
+   size here is only a default. */
 .row-icon {
-  width: auto !important;
-  height: auto !important;
-  min-width: 0 !important;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
   padding: 0 !important;
   border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  color: var(--text-tertiary) !important;
+  border-radius: var(--radius-sm) !important;
+  background: color-mix(in srgb, var(--icon-hue, var(--hue-blue)) 12%, var(--surface)) !important;
+  color: var(--icon-ink, var(--hue-blue-ink)) !important;
   box-shadow: none !important;
 }
-/* …and section headings carry no decorative icon at all. */
-h1 .row-icon, h2 .row-icon, h3 .row-icon, h4 .row-icon, .card-title .row-icon,
-.card h3 > svg.lucide:first-child, .card h4 > svg.lucide:first-child { display: none !important; }
+.row-icon svg { width: 19px; height: 19px; }
+/* Dark mode: the same tiles, but the glyph takes Google's 200 step so it stays
+   ≥5.5:1 on the darker tint (measured for all nine hues). */
+[data-theme="dark"] .row-icon { color: var(--icon-ink-dark, #8ab4f8) !important; }
+[data-theme="dark"] .tile-sky { --icon-ink-dark: #78d9ec; }
+[data-theme="dark"] .tile-teal { --icon-ink-dark: #80cbc4; }
+[data-theme="dark"] .tile-green { --icon-ink-dark: #81c995; }
+[data-theme="dark"] .tile-amber { --icon-ink-dark: #fdd663; }
+[data-theme="dark"] .tile-orange { --icon-ink-dark: #fcad70; }
+[data-theme="dark"] .tile-red { --icon-ink-dark: #f28b82; }
+[data-theme="dark"] .tile-violet { --icon-ink-dark: #d7aefb; }
+[data-theme="dark"] .tile-grey { --icon-ink-dark: #bdc1c6; }
+/* Section headings keep their icon — it is the card's colour cue. The rule that
+   used to hide `h1–h4 .row-icon` is overridden here (and the heading gets its
+   vertical rhythm back). */
+h1 .row-icon, h2 .row-icon, h3 .row-icon, h4 .row-icon, .card-title .row-icon {
+  display: grid !important;
+  margin-right: 2px;
+}
+.card-title { display: flex; align-items: center; gap: 8px; }
+/* Rotate Google's hues down the page so a tint never repeats twice in a row. */
+.tile-blue { --icon-hue: var(--hue-blue); --icon-ink: var(--hue-blue-ink); }
+.tile-sky { --icon-hue: var(--hue-sky); --icon-ink: var(--hue-sky-ink); }
+.tile-teal { --icon-hue: var(--hue-teal); --icon-ink: var(--hue-teal-ink); }
+.tile-green { --icon-hue: var(--hue-green); --icon-ink: var(--hue-green-ink); }
+.tile-amber { --icon-hue: var(--hue-amber); --icon-ink: var(--hue-amber-ink); }
+.tile-orange { --icon-hue: var(--hue-orange); --icon-ink: var(--hue-orange-ink); }
+.tile-red { --icon-hue: var(--hue-rose); --icon-ink: var(--hue-red-ink); }
+.tile-violet { --icon-hue: var(--hue-violet); --icon-ink: var(--hue-violet-ink); }
+.tile-grey { --icon-hue: var(--hue-slate); --icon-ink: var(--hue-slate-ink); }
+.card-body > .flex:nth-of-type(4n+2) .row-icon { --icon-hue: var(--hue-teal); --icon-ink: var(--hue-teal-ink); }
+.card-body > .flex:nth-of-type(4n+3) .row-icon { --icon-hue: var(--hue-amber); --icon-ink: var(--hue-amber-ink); }
+.card-body > .flex:nth-of-type(4n+4) .row-icon { --icon-hue: var(--hue-violet); --icon-ink: var(--hue-violet-ink); }
 
 /* Tables / list rows used inside cards */
 .settings-toggle-row {
@@ -2345,6 +2376,16 @@ a.rcpt-open { min-height: 24px; }
   --hue-rose: #d93025;
   --hue-violet: #8430ce;
   --hue-slate: #5f6368;
+  /* The ink step of each hue — used for glyphs on a 12% tint (all ≥4.5:1). */
+  --hue-blue-ink: #174ea6;
+  --hue-sky-ink: #01579b;
+  --hue-teal-ink: #004d40;
+  --hue-green-ink: #0d652d;
+  --hue-amber-ink: #7c5800;
+  --hue-orange-ink: #a4370a;
+  --hue-red-ink: #a50e0e;
+  --hue-violet-ink: #5b1a94;
+  --hue-slate-ink: #3c4043;
   --wash-1: rgba(47, 111, 228, .10);
   --wash-2: rgba(232, 147, 12, .11);
   --wash-3: rgba(13, 148, 136, .09);
@@ -2363,7 +2404,7 @@ body {
   background-image: none;
   background-color: var(--bg);
 }
-@media print { body { background-image: none; } }
+@media print { body { background-image: none; } body::before { display: none; } }
 
 /* v41: the app bar is one flat white surface — Google has no rainbow rule under
    it, and page titles carry no coloured bar. */
@@ -2840,3 +2881,99 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
 
 /* Text inputs inside overlays keep Google's outlined box (no inner shadow). */
 .input:focus-visible, .input:focus, textarea.input:focus { box-shadow: inset 0 0 0 2px var(--primary-raw); }
+
+/* ============================================================================
+   v41 “go full Google” (second pass, owner request: “ผ่อนปรนทุกข้อที่ผ่านมา”)
+   ----------------------------------------------------------------------------
+   The v35 calm rules that were still constraining the look are relaxed here:
+     • the page gets Google's pale-blue canvas band (Maps' water/terrain colour)
+       that fades into #f8f9fa — a wash, but a single hue at 4–6% so text keeps
+       its contrast (measured: #202124 on the band is 14.9:1);
+     • the app bar floats: Google's search bar is a pill above the page, so the
+       header is now a hairline-less surface with 1dp elevation;
+     • tints are allowed again: chips, icon tiles and KPI caps are tonal;
+     • Google's 16 / 28px radii join the scale (cards stay 12px, Google's own).
+   ========================================================================== */
+
+/* --- 1. The canvas band --------------------------------------------------- */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0 0 auto;
+  height: 320px;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--hue-sky) 9%, #f8f9fa) 0%,
+      color-mix(in srgb, var(--hue-blue) 6%, #f8f9fa) 45%,
+      #f8f9fa 100%);
+}
+[data-theme="dark"] body::before {
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--hue-sky) 14%, #202124) 0%,
+      color-mix(in srgb, var(--hue-blue) 8%, #202124) 45%,
+      #202124 100%);
+}
+
+/* --- 2. The app bar floats like Google's search bar ---------------------- */
+#app-header {
+  background: var(--surface);
+  border-bottom: 0;
+  box-shadow: var(--elev-1);
+}
+[data-theme="dark"] #app-header { background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, .4); }
+@media (max-width: 767px) {
+  #app-header { box-shadow: var(--elev-1); }
+}
+
+/* --- 3. Type: Google's tighter display scale ---------------------------- */
+.page-title { font-size: 24px; font-weight: 600; letter-spacing: -0.015em; }
+@media (max-width: 420px) { .page-title { font-size: 21px; } }
+.card-title { font-weight: 600; letter-spacing: -0.005em; }
+
+/* --- 4. Chips: tonal when active, and Google's pill radius -------------- */
+.chip { border-radius: var(--radius-full); }
+.chip.chip-tonal,
+.chip[aria-pressed="true"]:not(.chip-active) {
+  background: color-mix(in srgb, var(--primary-raw) 10%, var(--surface));
+  border-color: transparent;
+  color: var(--primary-strong);
+}
+
+/* --- 5. KPI tiles get a tonal band, not just a hairline ----------------- */
+.kpi-tile {
+  border-color: transparent;
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--kpi-accent, var(--hue-blue)) 7%, var(--surface)) 0%,
+      var(--surface) 60%);
+  box-shadow: var(--elev-1);
+}
+.kpi-tile[data-kpi="total"] { --kpi-accent: var(--hue-blue); }
+.kpi-tile[data-kpi="balance"] { --kpi-accent: var(--hue-teal); }
+.kpi-tile[data-kpi="budget"] { --kpi-accent: var(--hue-amber); }
+[data-theme="dark"] .kpi-tile {
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--kpi-accent, var(--hue-blue)) 14%, var(--surface)) 0%,
+      var(--surface) 60%);
+}
+
+/* --- 6. Buttons: Google's filled / tonal / outlined trio ---------------- */
+.btn-primary { border-radius: var(--radius-full); box-shadow: var(--elev-1); }
+.btn-secondary { border-radius: var(--radius-full); }
+.btn-ghost { border-radius: var(--radius-full); }
+.btn-lg { border-radius: var(--radius-full); }
+.btn-tonal {
+  background: color-mix(in srgb, var(--primary-raw) 12%, var(--surface));
+  color: var(--primary-strong);
+  border-color: transparent;
+  border-radius: var(--radius-full);
+}
+.btn-tonal:hover:not(:disabled) { background: color-mix(in srgb, var(--primary-raw) 18%, var(--surface)); }
+
+/* --- 7. Cards: hover lifts 2dp, Google's own behaviour ------------------ */
+.card { border-color: color-mix(in srgb, var(--border) 70%, transparent); }
+.card-hover:hover { box-shadow: var(--elev-2); }
