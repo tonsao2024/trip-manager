@@ -332,14 +332,37 @@ describe('Firestore security rules', () => {
     }));
   });
 
+  it('shares the dashboard with all trip members but only admins and managers can change it', async () => {
+    const tripRef = (uid) => doc(dbFor(uid), 'trips', tripId);
+    const layout = ['kpis', 'teams', 'estimate', 'category'];
+    await assertSucceeds(updateDoc(tripRef(adminUid), {
+      dashboardLayout: layout,
+      updatedAt: serverTimestamp()
+    }));
+    await assertSucceeds(updateDoc(tripRef(coadminUid), {
+      dashboardLayout: [...layout].reverse(),
+      dashboardHidden: ['weather'],
+      updatedAt: serverTimestamp()
+    }));
+    await assertFails(updateDoc(tripRef(coadminUid), {
+      dashboardLayout: [], name: 'Not a dashboard field', updatedAt: serverTimestamp()
+    }));
+
+    for (const uid of [memberUid, limitedUid, viewerUid]) {
+      const snapshot = await assertSucceeds(getDoc(tripRef(uid)));
+      assert.deepEqual(snapshot.data().dashboardLayout, [...layout].reverse());
+      assert.deepEqual(snapshot.data().dashboardHidden, ['weather']);
+    }
+    for (const uid of [memberUid, limitedUid, viewerUid, inactiveUid, visitorUid]) {
+      await assertFails(updateDoc(tripRef(uid), { dashboardLayout: [], updatedAt: serverTimestamp() }));
+      await assertFails(updateDoc(tripRef(uid), { dashboardHidden: [], updatedAt: serverTimestamp() }));
+    }
+  });
+
   it('limits non-admin trip-document writes to their specific capabilities', async () => {
     const memberDb = dbFor(memberUid);
     const tripRef = doc(memberDb, 'trips', tripId);
 
-    await assertSucceeds(updateDoc(tripRef, {
-      dashboardLayout: ['countdown', 'expenses'],
-      updatedAt: serverTimestamp()
-    }));
     await assertSucceeds(updateDoc(tripRef, {
       defaultMapLayer: 'terrain',
       updatedAt: serverTimestamp()
@@ -355,10 +378,6 @@ describe('Firestore security rules', () => {
     await assertFails(updateDoc(tripRef, { createdBy: memberUid, updatedAt: serverTimestamp() }));
 
     const limitedDb = dbFor(limitedUid);
-    await assertSucceeds(updateDoc(doc(limitedDb, 'trips', tripId), {
-      dashboardHidden: ['weather'],
-      updatedAt: serverTimestamp()
-    }));
     await assertFails(updateDoc(doc(limitedDb, 'trips', tripId), {
       defaultMapLayer: 'satellite', updatedAt: serverTimestamp()
     }));
@@ -367,9 +386,6 @@ describe('Firestore security rules', () => {
     }));
 
     const viewerDb = dbFor(viewerUid);
-    await assertFails(updateDoc(doc(viewerDb, 'trips', tripId), {
-      dashboardLayout: [], updatedAt: serverTimestamp()
-    }));
     await assertFails(updateDoc(doc(viewerDb, 'trips', tripId), {
       cards: [], updatedAt: serverTimestamp()
     }));

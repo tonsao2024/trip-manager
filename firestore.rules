@@ -115,31 +115,31 @@ service cloud.firestore {
 
     /** A delegated member manager may update membership lists, not other trip settings. */
     function managerOnlyChangesMemberUids(tripId) {
-      return canManageMembers(tripId)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids', 'updatedAt'])
-        && request.resource.data.memberUids is list
-        && request.resource.data.memberUids.size() <= 500;
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids', 'updatedAt'])
+        && request.resource.data.get('memberUids', null) is list
+        && request.resource.data.memberUids.size() <= 500
+        && canManageMembers(tripId);
     }
 
-    /** Shared dashboard preferences are not trip administration; viewers stay read-only. */
-    function memberMayUpdateDashboard(tripId) {
-      return canWriteContent(tripId)
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['dashboardLayout', 'dashboardHidden', 'updatedAt']);
+    /** A trip admin or delegated member manager sets the layout for everyone. */
+    function managerMayUpdateDashboard(tripId) {
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['dashboardLayout', 'dashboardHidden', 'updatedAt'])
+        && canManageMembers(tripId);
     }
 
     /** Shared map defaults follow the itinerary permission. */
     function memberMayUpdateMapDefault(tripId) {
-      return canEditItinerary(tripId)
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['defaultMapLayer', 'updatedAt']);
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['defaultMapLayer', 'updatedAt'])
+        && canEditItinerary(tripId);
     }
 
     /** Shared payment-card choices follow the expense permission. */
     function memberMayUpdateCards(tripId) {
-      return canEditExpense(tripId)
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['cards', 'updatedAt']);
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['cards', 'updatedAt'])
+        && canEditExpense(tripId);
     }
 
     /** Co-admins may add ordinary members/viewers, but cannot grant admin rights. */
@@ -391,13 +391,11 @@ service cloud.firestore {
       allow update: if isAuthenticated()
         && request.resource.data.get('createdBy', null) == resource.data.get('createdBy', null)
         && (
-          isSuperAdmin() ||
           isTripAdmin(tripId) ||
-          // A delegated member manager may change only memberUids. Member-document
-          // Rules require removals to be paired with the matching membership batch.
+          // Membership removals must be paired with the matching membership batch.
           managerOnlyChangesMemberUids(tripId) ||
           // Non-admin writes are limited to fields covered by their specific capability.
-          memberMayUpdateDashboard(tripId) ||
+          managerMayUpdateDashboard(tripId) ||
           memberMayUpdateMapDefault(tripId) ||
           memberMayUpdateCards(tripId)
         );

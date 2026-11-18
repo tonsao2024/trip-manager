@@ -225,15 +225,15 @@ export function testRulesProtectNotificationsAndPermissions() {
     'permissions can only be changed by an admin');
   has(/canManageMembers\(tripId\)/, 'co-admins (จัดการสมาชิก) are honoured');
   has(/function protectsAdminDoc/, 'only a trip admin may touch another admin');
-  has(/function memberMayUpdateDashboard\(tripId\)[\s\S]*?hasOnly\(\['dashboardLayout', 'dashboardHidden', 'updatedAt'\]\)/,
-    'shared dashboard writes are field-scoped');
-  has(/function memberMayUpdateMapDefault\(tripId\)[\s\S]*?canEditItinerary\(tripId\)[\s\S]*?hasOnly\(\['defaultMapLayer', 'updatedAt'\]\)/,
+  has(/function managerMayUpdateDashboard\(tripId\) \{[^}]*hasOnly\(\['dashboardLayout', 'dashboardHidden', 'updatedAt'\]\)\s*&& canManageMembers\(tripId\)/,
+    'shared dashboard writes require a manager and are field-scoped');
+  has(/function memberMayUpdateMapDefault\(tripId\) \{[^}]*hasOnly\(\['defaultMapLayer', 'updatedAt'\]\)\s*&& canEditItinerary\(tripId\)/,
     'the map default follows itinerary permission');
-  has(/function memberMayUpdateCards\(tripId\)[\s\S]*?canEditExpense\(tripId\)[\s\S]*?hasOnly\(\['cards', 'updatedAt'\]\)/,
+  has(/function memberMayUpdateCards\(tripId\) \{[^}]*hasOnly\(\['cards', 'updatedAt'\]\)\s*&& canEditExpense\(tripId\)/,
     'trip cards follow expense permission');
   has(/allow update: if isAuthenticated\(\) && request\.resource\.data\.get\('createdBy', null\) == resource\.data\.get\('createdBy', null\)/,
     'trip ownership cannot be changed by client updates');
-  has(/managerOnlyChangesMemberUids\(tripId\)[\s\S]*?memberMayUpdateDashboard\(tripId\)[\s\S]*?memberMayUpdateMapDefault\(tripId\)[\s\S]*?memberMayUpdateCards\(tripId\)/,
+  has(/managerOnlyChangesMemberUids\(tripId\)[\s\S]*?managerMayUpdateDashboard\(tripId\)[\s\S]*?memberMayUpdateMapDefault\(tripId\)[\s\S]*?memberMayUpdateCards\(tripId\)/,
     'non-admin trip writes use narrowly scoped permission helpers');
   assert(!/match \/loginAccounts\/[\s\S]{0,80}allow read, write: if isAuthenticated/.test(compact),
     'loginAccounts is still unreadable by clients');

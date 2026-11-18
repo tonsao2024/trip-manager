@@ -127,6 +127,9 @@ with the Admin SDK.
 
 - `budgetTotal` / `budgetPerPerson` / `memberBudgets` / `budgetCurrency` (v13): budgets in **THB minor units (satang)**;
   `memberBudgets` maps memberId → that person's own budget, shown on the dashboard wallet.
+- `dashboardLayout` / `dashboardHidden`: optional lists of dashboard card keys. An empty or absent layout uses the
+  current default; a saved custom order is kept as arranged. Trip admins and delegated member managers can write
+  these fields, and all members receive changes through the trip document listener.
 - `exchangeRateToTHB` / `tripCurrencies` / `currencyRates` (multi-currency): `exchangeRateToTHB` converts the base
   currency to THB; when the trip spends more than one currency, Settings → "สกุลเงินที่ใช้ในทริป" adds each extra
   currency to `tripCurrencies` with its own rate in `currencyRates` (1 unit → THB). Rate lookup order:

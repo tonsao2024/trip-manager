@@ -15,10 +15,10 @@ export function isAdminRole(role) {
  *   viewer            → read-only everywhere
  *   canEditItinerary  → plan, days, sticky notes
  *   canEditExpense    → expenses, cards, expense groups, transfers
- *   canManageMembers  → member list, join requests (co-admin for people — never a viewer)
+ *   canManageMembers  → member list, join requests and shared dashboard layout
  *
- * A switch that is *missing* keeps the historical behaviour (members may edit);
- * only an explicit `false` blocks, exactly like `permissionOn()` in the rules.
+ * Missing plan/money switches keep the historical edit access. Member management
+ * and the shared dashboard require an explicit grant for non-admins.
  */
 export function withCapabilities(perms) {
   const p = perms || {};
