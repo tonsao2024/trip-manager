@@ -14,7 +14,7 @@ import { renderLogoMark, renderEmptyState } from './components/fuji.js';
 import { logout, hasStepUpSession } from './auth/index.js';
 import { getMemberSession, clearMemberSession } from './auth/memberAuth.js';
 // utils/diagnostics.js is imported lazily at the system-check call sites.
-import { listTrips, getTrip, subscribeTrip, createTrip, updateTrip, deleteTrip, duplicateTrip, uploadCoverImage, clearTripsCache, clearAllDataCache, regenerateInviteCode } from './trips/index.js';
+import { listTrips, getTrip, subscribeTrip, createTrip, updateTrip, deleteTrip, duplicateTrip, uploadCoverImage, clearTripsCache, clearAllDataCache, regenerateInviteCode, reconcileTripMemberUids } from './trips/index.js';
 import {
   signInWithGoogle, completeRedirectSignIn,
   ensureUserProfile, findProfileByEmail
@@ -12084,6 +12084,22 @@ async function renderMembers(params) {
       const members = await listMembers(tripId);
       memberRows = members || [];
       if (isStale(token)) return;
+      // Repair drift between the member documents (what this page shows) and
+      // `trips.memberUids` (the only thing a member's own trip list can see).
+      // Members whose uid is missing from the array sign in to an empty list
+      // even though the admin sees them here — restore their entries so the
+      // trip appears for them on their next sign-in, no re-joining needed.
+      if (canApprove && members?.length) {
+        try {
+          const restored = await reconcileTripMemberUids(tripId, members, trip?.memberUids);
+          if (restored?.length) {
+            if (Array.isArray(trip.memberUids)) trip.memberUids = [...new Set([...trip.memberUids, ...restored])];
+            toast.info(th(
+              `ซ่อมรายชื่อสมาชิกให้ ${restored.length} บัญชีแล้ว — สมาชิกจะเห็นทริปนี้เมื่อเข้าสู่ระบบครั้งถัดไป`,
+              `Restored the trip listing for ${restored.length} account(s) — those members will see this trip at their next sign-in`));
+          }
+        } catch (e) { console.warn('memberUids reconcile failed', e?.code || e?.message); }
+      }
       if (!members.length) {
         list.innerHTML = renderEmptyState({
           icon: 'users',

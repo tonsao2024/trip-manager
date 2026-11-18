@@ -79,6 +79,11 @@ export function collection(db, ...segs) {
   return { __type: 'collection', path: segPath(segs) };
 }
 
+export function collectionGroup(db, name) {
+  if (!name) throw new Error('[stub] collectionGroup() needs a name');
+  return { __type: 'collectionGroup', path: String(name) };
+}
+
 export function doc(dbOrRef, ...segs) {
   if (dbOrRef && dbOrRef.__type === 'collection') {
     const id = segs.length ? segPath(segs) : Math.random().toString(36).slice(2, 12);
@@ -135,13 +140,23 @@ function childDocs(collectionPath) {
 }
 
 function snapshotDocs(entries) {
-  return entries.map(({ id, path, data }) => ({
-    id,
-    ref: { __type: 'doc', path, id },
-    exists: () => true,
-    data: () => ({ ...data }),
-    get: (field) => readField(data, field)
-  }));
+  return entries.map(({ id, path, data }) => {
+    const parentPath = path.split('/').slice(0, -1).join('/');
+    const grandparentPath = parentPath.split('/').slice(0, -1).join('/');
+    return {
+      id,
+      ref: {
+        __type: 'doc', path, id,
+        parent: {
+          __type: 'collection', path: parentPath,
+          parent: { __type: 'doc', path: grandparentPath, id: grandparentPath.split('/').pop() }
+        }
+      },
+      exists: () => true,
+      data: () => ({ ...data }),
+      get: (field) => readField(data, field)
+    };
+  });
 }
 
 function makeSnapshot(entries, collectionPath) {
@@ -162,12 +177,23 @@ function resolveCollectionPath(target) {
   return target.path;
 }
 
+/** Every document whose parent collection is named `name`, at any depth. */
+function collectionGroupDocs(name) {
+  return [...store.entries()]
+    .filter(([p]) => {
+      const segs = p.split('/');
+      return segs.length >= 2 && segs[segs.length - 2] === name;
+    })
+    .map(([p, data]) => ({ id: p.split('/').pop(), path: p, data }));
+}
+
 export async function getDocs(target) {
   const path = resolveCollectionPath(target);
   denyCheck(path);
   await countRead(path);
   const constraints = target.__type === 'query' ? target.constraints : [];
-  let entries = childDocs(path);
+  const baseRef = target.__type === 'query' ? target.ref : target;
+  let entries = baseRef?.__type === 'collectionGroup' ? collectionGroupDocs(path) : childDocs(path);
   for (const c of constraints) {
     if (c.__type === 'where') entries = entries.filter(e => matchWhere(e.data, c));
   }
@@ -344,7 +370,7 @@ export async function waitForPendingWrites() { return undefined; }
 export function clearIndexedDbPersistence() { return Promise.resolve(); }
 
 export default {
-  getFirestore, collection, doc, query, where, orderBy, limit, getDocs, getDoc,
+  getFirestore, collection, collectionGroup, doc, query, where, orderBy, limit, getDocs, getDoc,
   setDoc, addDoc, updateDoc, deleteDoc, writeBatch, onSnapshot, serverTimestamp, Timestamp
 };
 

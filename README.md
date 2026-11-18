@@ -2,6 +2,12 @@
 
 Modern, production-ready trip planner with group expense splitting, smart scheduling, and settlement — built for GitHub Pages + Firebase.
 
+> **แก้สมาชิกไม่เห็นทริป (memberUids drift):** แอดมินเห็นสมาชิกครบในหน้าสมาชิก แต่สมาชิกเข้าสู่ระบบแล้ว
+> ไม่เห็นทริป — เพราะรายการทริปค้นจาก `trips.memberUids` ส่วนหน้าสมาชิกอ่านเอกสาร `members/{uid}` ซึ่งเพี้ยนจากกันได้.
+> ตอนนี้รายการทริปค้นจากเอกสารสมาชิกโดยตรงด้วย, ซ่อม `memberUids` อัตโนมัติทั้งฝั่งสมาชิกและเมื่อแอดมินเปิดหน้าสมาชิก,
+> และทริปที่ทำสำเนาได้ `memberUids` ครบแล้ว. **ต้อง deploy กฎ+ดัชนีก่อนจึงจะมีผล:**
+> `firebase deploy --only firestore:rules,firestore:indexes` — รายละเอียด: [docs/MEMBER-TRIP-VISIBILITY.md](docs/MEMBER-TRIP-VISIBILITY.md).
+>
 > **Firebase deployment:** Spark supports the current Google sign-in, Firestore joins, and the static site;
 > legacy username/PIN account flows, member-email lookup, and the invite fallback use secure Cloud Functions
 > and require Blaze. On Spark, use Google sign-in + invite code + admin approval; do not expose PIN or

@@ -179,5 +179,22 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "members",
+      "fieldPath": "uid",
+      "indexes": [
+        { "order": "ASCENDING", "scope": "COLLECTION_GROUP" },
+        { "order": "DESCENDING", "scope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "members",
+      "fieldPath": "authUid",
+      "indexes": [
+        { "order": "ASCENDING", "scope": "COLLECTION_GROUP" },
+        { "order": "DESCENDING", "scope": "COLLECTION_GROUP" }
+      ]
+    }
+  ]
 }
