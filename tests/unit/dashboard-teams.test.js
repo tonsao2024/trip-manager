@@ -52,9 +52,11 @@ export function testWholeTripCardIsOneSelfContainedCard() {
 }
 
 export function testBenchmarkTakesTheWholeRowOnTablet() {
-  // the v43 rules (two tablet media queries exist — the column counts and this one)
-  const v43 = flatCss.slice(flatCss.indexOf('/* v43 —'));
-  const tablet = v43.slice(0, v43.indexOf('@media (min-width: 1024px)'));
+  // two tablet media queries exist (the column counts and the v43 row span), so
+  // read the block that actually contains the span rule.
+  const ruleIndex = flatCss.indexOf('#team-board > .team-card--trip:nth-child(odd)');
+  const mediaIndex = flatCss.slice(0, ruleIndex).lastIndexOf('@media (min-width: 768px) and (max-width: 1023px)');
+  const tablet = flatCss.slice(mediaIndex, ruleIndex + 120);
   ok(/#team-board > \.team-card--trip:nth-child\(odd\)/.test(tablet),
     'the tablet grid gives the benchmark card the full row when it would start one alone');
   ok(/grid-column:\s*1 \/ -1/.test(tablet), 'the benchmark card spans both tablet columns');
@@ -97,6 +99,19 @@ export function testWideBenchmarkSplitsIntoBalancedBands() {
   ok(/\.team-stats \{ display: contents; \}/.test(threeBand),
     'the figure pair joins the band grid instead of nesting a second grid');
   ok(/\.team-trip-side \{ grid-column: 3; \}/.test(threeBand), 'the categories stay in the last band');
+}
+
+export function testTeamCardsShareOneRowHeight() {
+  // Same rule as the dashboard board (v42): a row is as tall as its tallest card
+  // and the neighbour stretches to match, so “กลุ่ม A” and “กลุ่ม B” end on one
+  // line and their footers (facts / member chips) share a baseline.
+  ok(/#team-board \{[^}]*align-items:\s*stretch/.test(flatCss),
+    'every sub-card of the team board stretches to the height of its row');
+  ok(!/#team-board \{[^}]*align-items:\s*start/.test(flatCss),
+    'cards no longer keep their own content height inside a row');
+  ok(/\.team-card-foot \{ display: flex; flex-direction: column; gap: 6px; min-width: 0; margin-top: auto; \}/.test(componentsCss) ||
+    /\.team-card-foot \{[^}]*margin-top:\s*auto/.test(componentsCss),
+    'the footer is pinned to the bottom of the stretched card');
 }
 
 export function testNarrowBenchmarkStillStacks() {

@@ -2943,7 +2943,13 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
 #dashboard-view .team-card--trip { padding: 10px 12px; grid-column: auto; margin-top: 0; }
 #dashboard-view .team-stat { padding: 8px 10px; border-radius: 10px; }
 #dashboard-view :is(.team-stat b, .team-card--trip .team-stat b) { font-size: 15px; }
-#team-board { grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: start; }
+/* v43 — the same rule the dashboard board follows: cards that share a row share
+   one top AND one bottom. `align-items: start` let “กลุ่ม A” (four categories)
+   end 25px below “กลุ่ม B” (one), which read as a broken row; every sub-card now
+   stretches to its row and the card’s own footer (facts / members) is pinned to
+   the bottom by `.team-card-foot { margin-top: auto }`. A single-column phone
+   stack is unaffected (one card per row). */
+#team-board { grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: stretch; }
 @media (min-width: 768px) and (max-width: 1023px) {
   #team-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
