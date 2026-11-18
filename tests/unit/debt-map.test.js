@@ -200,9 +200,13 @@ export function testDesktopDebtMapFitsCardWithoutHorizontalScrolling() {
   assert(app.includes('style="--debt-map-natural-width:${W}px"'), 'natural size is a CSS variable, not a forced inline minimum');
   assert(!app.includes('style="min-width:${W}px"'), 'inline width must not force desktop overflow');
   const desktop = css.slice(css.indexOf('@media (min-width: 1024px)'));
-  assert(/\.debt-map-svg\s*\{[^}]*width: 100%;[^}]*min-width: 0;[^}]*max-width: 100%;/.test(desktop), 'desktop scales the whole SVG into the card');
   assert(desktop.includes('.debt-map-scroll-hint { display: none; }'), 'desktop does not ask users to scroll');
-  assert(responsive.includes('min-width: var(--debt-map-natural-width, 540px)'), 'mobile retains readable natural-size drawing');
+  // v46: no stylesheet may impose a minimum width on the drawing any more — that
+  // was the rule that made a phone scroll the map sideways instead of fitting it,
+  // and it silently overrode the zoom controller's own width.
+  assert(!/min-width: var\(--debt-map-natural-width/.test(responsive), 'no layer forces the natural width back onto the SVG');
+  assert(!/\.debt-map-svg[^{]*\{[^}]*min-width: 540px/.test(responsive), 'the old 540px SVG floor is gone, so “fit” really fits');
+  assert(/\.debt-map-viewport\s*\{[^}]*overflow: auto/.test(css), 'the drawing pans inside its own viewport, never the page');
 }
 
 // v45 (owner report 18 Nov 2026: “แผนที่หนี้ ตอนนี้มันกว้างใหญ่เกินไป ต้องสโครล
@@ -245,17 +249,23 @@ export async function testDebtMapExpandKeepsTheGenerousSheet() {
   assert(legacy.width === Math.round(Math.max(900, 8 * 100 + 180) * 1.35), 'the expanded sheet keeps the v44 width formula');
 }
 
-export function testDebtMapFitFrameAndExpandAreWired() {
+// v46 (owner: the fullscreen popup is no longer needed — zoom must work from the
+// map on the page, and fit-to-screen is the default everywhere).
+export function testDebtMapZoomLivesOnTheCard() {
   const app = readFileSync(path.join(here, '../../src/js/app.js'), 'utf8');
   const css = readFileSync(path.join(here, '../../src/css/dimension.css'), 'utf8');
-  const responsive = readFileSync(path.join(here, '../../src/css/refresh.css'), 'utf8');
-  assert(/class="debt-map-frame"/.test(app), 'the drawing sits in a fit frame');
-  assert(/--debt-map-ar:\$\{/.test(app), 'the frame is told the sheet’s aspect ratio');
-  assert(/id="debt-map-expand"/.test(app), 'one tap opens the drawing full screen');
-  assert(/debtMapHtml\(0, \{ detailed: true \}\)/.test(app), 'the expanded view re-lays out on the generous sheet');
-  assert(/data-zoom="fit"/.test(app) && /data-zoom="in"/.test(app) && /data-zoom="out"/.test(app), 'the expanded view can be zoomed and re-fitted');
-  assert(/\.debt-map-frame\s*\{[^}]*aspect-ratio: var\(--debt-map-ar/.test(css), 'desktop bounds the drawing height so the whole map is one glance');
+  assert(/class="debt-map-viewport"[^>]*data-debt-zoom-viewport/.test(app), 'the drawing sits in its own zoom viewport');
+  assert(!/id="debt-map-expand"/.test(app), 'there is no full-screen expand step any more');
+  assert(!/debt-zoom-modal/.test(app) && !/\.debt-zoom-(modal|controls)\s*\{/.test(css),
+    'the full-screen sheet and its styles are gone');
+  assert(/data-debt-zoom="in"/.test(app) && /data-debt-zoom="out"/.test(app) && /data-debt-zoom="fit"/.test(app),
+    'expand / shrink / fit are on the map card itself');
+  assert(/id="export-debt-map-png"/.test(app), 'the PNG export stays available without the sheet');
+  assert(/function bindDebtMapZoom/.test(app) && /bindDebtMapZoom\(content\)/.test(app), 'one controller owns zoom, pan and fit');
+  // Fit is the default state, not an action the reader has to find first.
+  assert(/const fit = \(\) => \{[^}]*fitted = true/.test(app) && /fit\(\);\n    buttons/.test(app), 'the map starts fitted to the screen');
+  assert(/aria-pressed="true"/.test(app), 'the fit button announces that it is the current state');
+  assert(/touch-action: pan-x pan-y/.test(css), 'pinch-zoom is ours, one-finger scroll still moves the page');
+  assert(/\.debt-zoom-btn[^{]*\{[^}]*min-height: 40px/.test(css), 'the zoom buttons are real touch targets');
   assert(/\.debt-map-edge\.is-dimmed/.test(css), 'hovering a transfer row dims the other lines');
-  assert(responsive.includes('--debt-map-fit-height'), 'the height budget is a token, not a magic number');
-  assert(responsive.includes('.debt-map-frame'), 'phones keep the natural-size sheet inside the frame');
 }

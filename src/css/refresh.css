@@ -788,24 +788,18 @@ select.input { border-radius: var(--radius); }
 /* v28+ debt map: distinct transfer hues and collision-checked amount tags. */
 .debt-map-card { overflow: hidden; }
 .debt-map-container { overflow-x: auto !important; overscroll-behavior-inline: contain; }
-/* v45: the frame carries the sheet's own numbers — its natural width (phones
-   keep it and scroll sideways) and the aspect ratio + height budget the desktop
-   fit uses so the whole map is one glance (dimension.css). */
-.debt-map-frame {
-  --debt-map-fit-height: min(72vh, 760px);
-  min-width: var(--debt-map-natural-width, 540px);
-}
+/* v46: the drawing is sized by the in-page zoom controller (app.js:
+   bindDebtMapZoom), which sets `width`/`height` on the <svg> itself — so no
+   `min-width: 540px` here any more. That rule was what forced every phone to
+   scroll the map sideways instead of seeing it whole, and it also made “fit”
+   impossible to honour. */
 .debt-map-svg {
   display: block;
-  width: 100%;
-  min-width: 540px;
+  max-width: none;
   margin: 0 auto;
   border-radius: 13px;
   background: color-mix(in srgb, var(--surface) 88%, var(--primary-light));
 }
-/* Small screens retain the natural drawing size for readable labels. Desktop
-   fits the complete viewBox into its card (see dimension.css). */
-.debt-map-svg--compact { min-width: var(--debt-map-natural-width, 540px); }
 .debt-map-svg--compact .debt-map-amount-label .debt-map-amount { font-size: 12.5px; }
 .debt-map-amount-label rect { vector-effect: non-scaling-stroke; }
 .debt-map-amount-label .debt-map-amount {
@@ -832,19 +826,22 @@ select.input { border-radius: var(--radius); }
   .debt-row-pays svg { width: 14px; height: 14px; }
 }
 
-/* Compact expenses density and legible grouped-date headings on narrow screens. */
-.expenses-compact .expense-card { gap: 8px; padding: 8px; border-radius: 13px; }
-.expenses-compact .expense-card > .row-icon { width: 36px !important; height: 36px !important; border-radius: 11px !important; }
-.expenses-compact .expense-card > .row-icon svg { width: 17px; height: 17px; }
-.expenses-compact .expense-card .badge,
-.expenses-compact .expense-card .rcpt-chip { padding: 2px 8px; font-size: 12px; }
-.expenses-compact .expense-card .meta-line { font-size: 12px; gap: 4px; }
-.expenses-compact .expense-card .meta-line svg { width: 11px; height: 11px; }
-.expenses-compact .expense-card .expense-actions { gap: 4px; }
-.expenses-compact .expense-card .expense-actions .icon-btn { width: 28px; height: 28px; border-radius: 8px; }
-.expenses-compact .expense-card .line-clamp-2,
-.expenses-compact .expense-card .expense-receipt-thumb,
-.expenses-compact .expense-card .expense-comment-preview { display: none; }
+/* Compact expenses density and legible grouped-date headings on narrow screens.
+   v46: “กระทัดรัด” now folds the CARD's own zones (facts line, extras, tight
+   padding) instead of the pre-v46 `meta-line`s that no longer exist — so the
+   density toggle actually makes the list denser than the comfortable view. */
+.expenses-compact .expense-card { gap: 2px; padding: 7px 10px; border-radius: 12px; }
+.expenses-compact .expense-card .exp-card-icon { width: 32px !important; height: 32px !important; border-radius: 10px !important; }
+.expenses-compact .expense-card .exp-card-icon svg { width: 16px; height: 16px; }
+.expenses-compact .expense-card .expense-title { font-size: 13px; -webkit-line-clamp: 1; }
+.expenses-compact .expense-card .expense-amount .money-primary { font-size: 14px; }
+/* Compact shrinks the card, it never hides a fact: the facts line (group, date,
+   payer, pax, method, card) always stays — only the long extras fold. */
+.expenses-compact .expense-card .expense-facts { font-size: 11px; gap: 3px 6px; }
+.expenses-compact .expense-card .expense-extras { display: none; }
+.expenses-compact .expense-card .exp-card-status .badge { padding: 0 6px; font-size: 10.5px; }
+.expenses-compact .expense-card .expense-actions { gap: 2px; }
+.expenses-compact .expense-card .expense-actions .icon-btn { width: 30px; height: 30px; border-radius: 8px; }
 .expenses-compact .expense-day { gap: 8px; margin-bottom: 8px; }
 .expenses-compact .expense-day-head { padding: 8px; gap: 8px; }
 .expenses-compact .expense-day-num { width: 30px; height: 30px; border-radius: 10px; font-size: 13px; }
@@ -852,37 +849,13 @@ select.input { border-radius: var(--radius); }
 .expenses-compact .expense-day-total .money-primary { font-size: 12px; }
 .expenses-compact .expense-day .expense-card { box-shadow: none; }
 #exp-density-btn.is-active { color: var(--text-strong); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--text-secondary); }
+/* v46: the day header is a flex block in flat.css (§ v46 · 5) — the date wraps
+   to two lines on a narrow phone instead of being clipped to an ellipsis, and
+   the day total sits on its own line under the date. The old grid override that
+   forced `white-space: nowrap` + `text-overflow: ellipsis` is gone. */
 @media (max-width: 540px) {
-  .expense-day-head {
-    display: grid;
-    grid-template-columns: 34px minmax(0, 1fr);
-    align-items: center;
-    gap: 4px 8px;
-    padding: 8px;
-  }
-  .expense-day-head > .min-w-0 { min-width: 0; }
-  .expense-day-title {
-    display: block;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 12px;
-    line-height: 1.35;
-  }
-  .expense-day-sub { font-size: 12px; }
-  .expense-day-total {
-    grid-column: 1 / -1;
-    display: flex;
-    align-items: baseline;
-    justify-content: flex-start;
-    flex-wrap: wrap;
-    gap: 4px 8px;
-    min-width: 0;
-    margin: 0 0 0 44px;
-    text-align: left;
-  }
-  .expense-day-total .money-primary { font-size: 12px; }
+  .expense-day-title { white-space: normal; overflow: visible; text-overflow: clip; font-size: 12.5px; line-height: 1.45; }
+  .expense-day-total .money-primary { font-size: 13px; }
   .expense-day-total .expense-avg-chip { max-width: 100%; white-space: normal; }
   .expenses-compact .expense-day-head { padding: 8px; }
 }

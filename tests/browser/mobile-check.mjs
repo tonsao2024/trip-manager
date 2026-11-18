@@ -336,7 +336,9 @@ async function main() {
       // strip must stay on ONE line at every width.
       const wrapped = await page.evaluate(() => {
         const out = [];
-        for (const el of document.querySelectorAll('.kpi-strip .money-primary, .kpi-value')) {
+        // v46: the expenses summary no longer uses .kpi-strip for its hero, so
+        // include the hero total and the expense card amounts in the same check.
+        for (const el of document.querySelectorAll('.kpi-strip .money-primary, .kpi-value, #exp-sum-total .money-primary, .expense-card .expense-amount .money-primary')) {
           const r = el.getBoundingClientRect();
           if (r.width === 0 || r.height === 0) continue;
           const lines = Math.round(r.height / parseFloat(getComputedStyle(el).lineHeight || 16));

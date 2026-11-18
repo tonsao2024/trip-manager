@@ -264,47 +264,15 @@
 
 /* Expenses on phones: no clipped KPI figures or off-screen filter buttons.
    Wrap into rows rather than relying on horizontal swipes to reveal data. */
+/* v46: the summary, the filter surface and the expense card were rebuilt in
+   flat.css (§ v46) as a grid with fixed zones, so the old “wrap everything and
+   hope” overrides are gone — they were the reason the same card looked different
+   on every screen. Only the generic money rule stays here: a dual-currency label
+   must never be clipped on a phone. */
 @media (max-width: 767px) {
   #expenses-view, #expenses-view > * { min-width: 0; }
-  #expenses-view .kpi-strip {
-    grid-auto-flow: row;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-columns: auto;
-    overflow: visible;
-  }
-  #expenses-view .kpi-strip .kpi-mini .money-primary {
-    display: inline;
-    white-space: normal;
-    overflow: visible;
-    overflow-wrap: anywhere;
-    text-overflow: clip;
-    font-size: 16px;
-  }
-  #expenses-view .kpi-strip .money-dec, #expenses-view .kpi-mini-sub .money-dec { display: inline; }
-  #expenses-view .kpi-strip .money-dual { justify-content: flex-start; min-width: 0; }
   #expenses-view .money-orig, #expenses-view .money-norate { white-space: normal; overflow-wrap: anywhere; }
-  #expenses-view .group-avg-strip { flex-wrap: wrap; overflow: visible; }
-  #expenses-view .group-avg-card { flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere; }
-  #expenses-view .group-avg-note { flex: 1 1 100%; max-width: none; font-size: 12px; }
-  #expenses-view .expense-filter-group .chip-row {
-    flex-wrap: wrap;
-    overflow: visible;
-    width: 100%;
-  }
-  #expenses-view .expense-filter-group .chip {
-    flex: 0 1 auto;
-    max-width: 100%;
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-  #expenses-view .expense-heading { flex-direction: column; align-items: stretch; }
-  #expenses-view .expense-title { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
-  #expenses-view .expense-amount { text-align: left; min-width: 0; max-width: 100%; }
-  #expenses-view .expense-amount .money-dual { justify-content: flex-start; }
-  #expenses-view .expense-card .rcpt-chip,
-  #expenses-view .expense-card .meta-line { max-width: 100%; overflow-wrap: anywhere; }
-  #expenses-view .expense-day-head { flex-wrap: wrap; }
-  #expenses-view .expense-day-total { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+  #expenses-view .group-avg-card { overflow-wrap: anywhere; }
 }
 
 /* ------------------------------------------------------------------ *
