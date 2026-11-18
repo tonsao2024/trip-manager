@@ -4656,10 +4656,10 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
             </article>`;
         };
         /* v43 — the “whole trip” card is the benchmark every team is compared
-           with, so it is written as one self-contained block (head → figures →
-           categories/facts) instead of the team-card top/foot pair. That lets
-           CSS stretch it across the full row on an iPad and lay the two halves
-           side by side, so no empty half is left under the teams. */
+           with, so it is written as one self-contained block instead of a team
+           card's top/foot pair: head → figures (left) + categories (right) →
+           facts / leftover members as the footer. That lets CSS stretch it
+           across the full row on an iPad and still keep three tidy bands. */
         teamBox.innerHTML = report.groups.map(teamCard).join('') + `
           <article class="team-card team-card--trip" data-gid="__trip" role="button" tabindex="0">
             <div class="team-card-head">
@@ -4680,14 +4680,17 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
                 </div>
               </div>
               <div class="team-trip-side">
+                <span class="team-trip-label">${th('หมวดที่ใช้จ่าย','Spend by category')}</span>
                 ${teamCatsHtml(report.trip.categories, report.trip.shareMinor)}
-                <div class="team-facts">
-                  <span>${items.length} ${th('ที่','places')}</span>
-                  <span>· ${expenses.length} ${th('รายการ','items')}</span>
-                  ${report.ungrouped.length ? `<span>· ${th('ยังไม่เข้าทีม','ungrouped')} ${report.ungrouped.length} ${th('คน','pax')}</span>` : ''}
-                </div>
-                ${report.ungrouped.length ? `<div class="team-members">${teamMembersHtml(report.ungrouped)}</div>` : ''}
               </div>
+            </div>
+            <div class="team-trip-foot">
+              <div class="team-facts">
+                <span>${items.length} ${th('ที่','places')}</span>
+                <span>· ${expenses.length} ${th('รายการ','items')}</span>
+                ${report.ungrouped.length ? `<span>· ${th('ยังไม่เข้าทีม','ungrouped')} ${report.ungrouped.length} ${th('คน','pax')}</span>` : ''}
+              </div>
+              ${report.ungrouped.length ? `<div class="team-members">${teamMembersHtml(report.ungrouped)}</div>` : ''}
             </div>
           </article>`;
       }
