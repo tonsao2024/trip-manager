@@ -7698,6 +7698,10 @@ async function renderExpenses(params) {
     try {
       listTotal = sumExpenses(expensesInThb(Array.isArray(filtered) ? filtered : allLoaded, trip));
     } catch { /* missing rate — fall back to the whole trip below */ }
+    /* The hero uses the SAME dual-currency layout every other amount in the app
+       uses (`.money-dual` > `.money-primary` + `.money-orig`), so the baht figure
+       is the big number and the original currency rides beside it as a chip — not
+       a child of the figure, which is what broke it mid-number on a phone. */
     setHtml('exp-sum-total', withThb(listTotal == null ? total : listTotal));
     setText('exp-sum-count', String(allLoaded.length));
     const scopeEl = document.getElementById('exp-sum-scope');
