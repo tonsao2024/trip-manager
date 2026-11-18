@@ -1174,7 +1174,7 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
   border: 1px solid #d1d5db !important;
 }
 .export-flat .badge { border: 1px solid #d1d5db !important; color: #374151 !important; }
-.export-flat svg, .export-flat svg * { color: #374151 !important; fill: none !important; stroke: #374151 !important; }
+.export-flat svg.lucide, .export-flat svg.lucide * { color: #374151 !important; fill: none !important; stroke: #374151 !important; }
 .export-flat .receipt-total { color: #111827 !important; }
 .export-flat img { filter: grayscale(100%) contrast(1.05); }
 

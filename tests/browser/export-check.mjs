@@ -85,25 +85,22 @@ async function main() {
       req.respond({ status: 200, contentType: 'text/javascript; charset=utf-8', body: html2canvasSource });
       return;
     }
+    if (req.url().startsWith('https://esm.sh/jspdf@2.5.2')) {
+      req.respond({ status: 200, contentType: 'text/javascript', body: `
+        export function jsPDF(options) {
+          const pdf = new window.jspdf.jsPDF(options);
+          pdf.save = () => { window.__pdfPages = pdf.getNumberOfPages(); window.__pdfBytes = pdf.output('arraybuffer').byteLength; };
+          return pdf;
+        }` });
+      return;
+    }
     req.continue();
   });
   page.on('pageerror', (e) => console.log('   [page error]', e.message));
 
   await page.goto(`http://127.0.0.1:${PORT}/tests/browser/harness.html`, { waitUntil: 'load' });
 
-  // Sandbox fonts are Latin-only; add a Thai face just for this check so the
-  // rendered PNG can be eyeballed. (Real devices already have Thai fonts.)
-  const thaiFontDir = path.join(root, 'node_modules', '@fontsource', 'noto-sans-thai', 'files');
-  if (fs.existsSync(thaiFontDir)) {
-    const face = (weight) => {
-      const file = path.join(thaiFontDir, `noto-sans-thai-thai-${weight}-normal.woff2`);
-      if (!fs.existsSync(file)) return '';
-      const b64 = fs.readFileSync(file).toString('base64');
-      return `@font-face{font-family:'Noto Sans Thai Check';font-style:normal;font-weight:${weight};src:url(data:font/woff2;base64,${b64}) format('woff2');}`;
-    };
-    const css = [400, 600, 700, 800].map(face).join('').replace(/font-weight:(\d+)/g, 'font-weight:$1');
-    await page.addStyleTag({ content: css + `*, *::before, *::after { font-family: 'Noto Sans Thai Check', system-ui, sans-serif !important; }` });
-  }
+  // Use the exact same self-hosted Google Sans Thai/Latin faces as production.
   await page.waitForFunction(() => window.__harnessResult, { timeout: 60000 });
   const result = await page.evaluate(() => window.__harnessResult);
 
@@ -121,6 +118,58 @@ async function main() {
     fs.writeFileSync(target, Buffer.from(String(data.url).split(',')[1], 'base64'));
     console.log(`  → ${path.relative(root, target)} (${data.width}×${data.height})`);
   }
+
+  await page.addScriptTag({ url: `http://127.0.0.1:${PORT}/node_modules/jspdf/dist/jspdf.umd.min.js` });
+  const matrix = await page.evaluate(async () => {
+    const { themeList, applyTheme, contrastRatio } = await import('/src/js/utils/themes.js');
+    const { exportToPngToCanvas, exportToPdf, exportSvgToPng } = await import('/src/js/exports/index.js');
+    const receipt = document.getElementById('receipt-u1');
+    const title = receipt.querySelector('td');
+    title.insertAdjacentHTML('afterbegin', '<div class="truncate">ค่าใช้จ่ายสำหรับการเดินทางและที่พักของสมาชิกชื่อยาวมากเป็นพิเศษ น้ำดื่ม มื้อเช้า ผู้ร่วมเดินทาง ABCDEFGHIJKLMNOPQRSTUVWXYZ</div>');
+    // Long content exercises pagination rather than only a one-page sample.
+    const tbody = receipt.querySelector('tbody');
+    const sample = tbody.firstElementChild.outerHTML;
+    tbody.insertAdjacentHTML('beforeend', sample.repeat(15));
+    const original = { cls: receipt.getAttribute('class'), style: receipt.getAttribute('style') };
+    const results = [];
+    for (const mode of ['light', 'dark']) {
+      document.documentElement.dataset.theme = mode;
+      for (const theme of themeList()) {
+        applyTheme(theme.id);
+        receipt.classList.add('export-flat', 'export-capture');
+        const rgbHex = value => {
+          const rgb = value.match(/[\d.]+/g);
+          return rgb && rgb.length >= 3 ? '#' + rgb.slice(0, 3).map(n => Math.round(Number(n)).toString(16).padStart(2, '0')).join('') : '#ffffff';
+        };
+        for (const el of receipt.querySelectorAll('b, .receipt-title, .rcpt-item-title, .rcpt-sum-note')) {
+          const cs = getComputedStyle(el);
+          if (contrastRatio(rgbHex(cs.color), '#ffffff') < 4.5) throw new Error(`low contrast ${theme.id}/${mode}: ${cs.color}`);
+        }
+        receipt.setAttribute('class', original.cls);
+        const canvas = await exportToPngToCanvas(receipt, { scale: 1 });
+        if (canvas.width < 600 || canvas.height < 1500) throw new Error(`clipped ${theme.id}/${mode}`);
+        if (receipt.getAttribute('class') !== original.cls || receipt.getAttribute('style') !== original.style) throw new Error('capture did not restore source');
+        if (document.querySelector('[data-export-clone]')) throw new Error('leaked export clone');
+        results.push(`${theme.id}/${mode}`);
+      }
+    }
+    await exportToPdf(receipt, 'matrix.pdf');
+    if (!(window.__pdfPages >= 2 && window.__pdfBytes >= 1000)) throw new Error('PDF did not paginate');
+    const holder = document.createElement('div');
+    holder.innerHTML = `<svg class="debt-map-svg" viewBox="0 0 600 240" xmlns="http://www.w3.org/2000/svg"><rect width="600" height="240" fill="white"/><path d="M40 120 H560" stroke="#1a73e8"/><rect x="220" y="100" width="160" height="40" fill="white" stroke="#1a73e8"/><text x="300" y="125" text-anchor="middle" style="font-family:'Google Sans';font-size:18px;fill:#111827">฿1,234.00</text><text x="40" y="170" style="font-family:'Google Sans';font-size:18px;fill:#111827">ผู้จ่าย น้ำ</text></svg>`;
+    document.body.append(holder);
+    const svg = holder.querySelector('svg');
+    const svgCanvas = await exportSvgToPng(svg, 'diagram.png', { background: '#fff' });
+    if (svgCanvas.width !== 1200 || svgCanvas.height !== 480) throw new Error('SVG export used responsive size rather than viewBox');
+    const htmlCanvas = await exportToPngToCanvas(holder, { scale: 1 });
+    if (!htmlCanvas.width) throw new Error('embedded SVG capture failed');
+    holder.remove();
+    return { themes: results.length, pages: window.__pdfPages, pdfBytes: window.__pdfBytes };
+  });
+  console.log('  ✓ theme matrix / long Thai text / source restoration:', matrix);
+  await page.emulateMediaType('print');
+  await page.pdf({ path: path.join(outDir, 'native-print.pdf'), preferCSSPageSize: true, printBackground: true });
+  console.log('  ✓ native print PDF generated');
 
   await browser.close();
   server.close();

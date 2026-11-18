@@ -1,3 +1,4 @@
+import { exportPageCuts } from './layout.js';
 import { expensePayments } from '../utils/payments.js';
 import { formatCurrency, toThbMinor } from '../utils/currency.js';
 // Export helpers — PNG / PDF / clipboard text.
@@ -41,8 +42,9 @@ function loadHtml2Canvas() {
 
 /** Swap the element into the monochrome "receipt" look for the capture. */
 function applyFlatMode(el) {
+  const alreadyFlat = el.classList.contains('export-flat');
   el.classList.add('export-flat');
-  return () => el.classList.remove('export-flat');
+  return () => { if (!alreadyFlat) el.classList.remove('export-flat'); };
 }
 
 const nextFrame = () => new Promise((resolve) => {
@@ -50,23 +52,80 @@ const nextFrame = () => new Promise((resolve) => {
   requestAnimationFrame(() => requestAnimationFrame(resolve));
 });
 
-/** Wait (briefly) for web fonts so Thai text is not captured with a fallback face. */
+/** Do not race Thai font loading against a short timer: metrics must be final. */
 async function fontsReady() {
-  try {
-    if (document.fonts?.ready) await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 800))]);
-  } catch { /* ignore */ }
+  if (!document.fonts) return;
+  await Promise.all(['Google Sans', 'Google Sans Code', 'Noto Sans Thai'].flatMap(family =>
+    [400, 500, 600, 700].map(weight =>
+      document.fonts.load(`${weight} 16px "${family}"`, 'ผู้จ่าย น้ำ ค่าใช้จ่าย ฿ 123 ABC'))));
+  await document.fonts.ready;
+}
+
+async function imagesReady(el) {
+  await Promise.all([...el.querySelectorAll('img')].map(async image => {
+    image.loading = 'eager';
+    try { await image.decode(); } catch { /* missing external photos are optional */ }
+  }));
+}
+
+/** Scope layout repairs to this capture and restore the exact original state. */
+function prepareCapture(el) {
+  // A Leaflet viewport must retain its exact tile/projection geometry.
+  if (el.matches('.leaflet-container')) return () => {};
+  const previousClass = el.getAttribute('class');
+  const previousStyle = el.getAttribute('style');
+  const folded = [...el.querySelectorAll('.rcpt-extra[hidden], #settle-overview-details[hidden]')];
+  folded.forEach(node => node.removeAttribute('hidden'));
+  el.classList.add('export-capture');
+  if (!el.matches('.itin-sheet, .leaflet-container')) {
+    const width = Math.max(el.getBoundingClientRect().width, el.matches('.receipt') ? 600 : 960);
+    el.style.setProperty('width', `${width}px`, 'important');
+    el.style.setProperty('max-width', 'none', 'important');
+  }
+  return () => {
+    folded.forEach(node => node.setAttribute('hidden', ''));
+    if (previousClass == null) el.removeAttribute('class'); else el.setAttribute('class', previousClass);
+    if (previousStyle == null) el.removeAttribute('style'); else el.setAttribute('style', previousStyle);
+  };
+}
+
+function rememberPageRanges(canvas, node) {
+  const root = node.getBoundingClientRect();
+  const ratio = canvas.width / Math.max(root.width, node.scrollWidth, 1);
+  const ranges = [];
+  const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    if (!walker.currentNode.textContent.trim()) continue;
+    const range = document.createRange();
+    range.selectNodeContents(walker.currentNode);
+    for (const rect of range.getClientRects()) {
+      if (rect.height && rect.width) ranges.push({ top: (rect.top - root.top) * ratio, bottom: (rect.bottom - root.top) * ratio });
+    }
+  }
+  for (const row of node.querySelectorAll('tr, .debt-tx-row, svg')) {
+    const rect = row.getBoundingClientRect();
+    ranges.push({ top: (rect.top - root.top) * ratio, bottom: (rect.bottom - root.top) * ratio });
+  }
+  canvas.exportProtectedRanges = ranges;
+  return canvas;
 }
 
 function baseOptions(el, options = {}) {
+  const width = Math.ceil(Math.max(el.getBoundingClientRect().width, el.scrollWidth, el.clientWidth, 1));
+  const height = Math.ceil(Math.max(el.getBoundingClientRect().height, el.scrollHeight, el.clientHeight, 1));
+  // Stay below browser canvas limits for long statements instead of a blank PNG.
+  const scale = Math.min(options.scale || 2, 16000 / Math.max(width, height), Math.sqrt(64000000 / (width * height)));
   return {
-    scale: options.scale || 2,
+    scale,
+    width,
+    height,
     useCORS: true,
     allowTaint: false,
     logging: false,
     // NEVER hand html2canvas a computed colour string: Chromium serialises
     // color-mix() as `color(srgb …)` and html2canvas throws on it.
-    backgroundColor: resolveSafeBackgroundColor(document.body),
-    windowWidth: Math.max(el.scrollWidth || 0, el.clientWidth || 0, 320) + 24,
+    backgroundColor: options.flat !== false ? '#ffffff' : resolveSafeBackgroundColor(el),
+    windowWidth: Math.max(document.documentElement.clientWidth, el.scrollWidth || 0, el.clientWidth || 0, 320) + 24,
     windowHeight: Math.max(el.scrollHeight || 0, el.clientHeight || 0, 200) + 24,
     scrollX: 0,
     scrollY: 0
@@ -86,11 +145,13 @@ function resolveTarget(elementId, options = {}) {
 async function renderToCanvas(el, options = {}) {
   const html2canvas = await loadHtml2Canvas();
   const warnings = [];
+  const restoreCapture = prepareCapture(el);
   let useFlat = options.flat !== false;
   const restoreFlat = useFlat ? applyFlatMode(el) : () => {};
 
   try {
     await fontsReady();
+    await imagesReady(el);
     await nextFrame();
 
     // --- attempt 1: the plain clone (bullet-proof against modern colours) ---
@@ -99,10 +160,18 @@ async function renderToCanvas(el, options = {}) {
       // The clone is inline-styled, but ::before/::after still come from CSS.
       const sheet = injectPlainPseudoSheet();
       try {
+        for (const svg of plain.node.querySelectorAll('svg')) {
+          if (svg.querySelector('text')) await embedSvgFonts(svg, svg);
+          await Promise.all([...svg.querySelectorAll('image')].map(async image => {
+            const data = await hrefToDataUrl(image.getAttribute('href') || image.getAttribute('xlink:href'));
+            if (data) { image.setAttribute('href', data); image.removeAttribute('xlink:href'); }
+            else image.remove();
+          }));
+        }
         const leftovers = findModernColors(plain.node);
         if (!leftovers.length) {
           const canvas = await html2canvas(plain.node, baseOptions(plain.node, options));
-          return canvas;
+          return rememberPageRanges(canvas, plain.node);
         }
         warnings.push(`clone still had ${leftovers.length} modern colour(s): ${leftovers.slice(0, 3).join(', ')}`);
       } catch (e) {
@@ -117,7 +186,7 @@ async function renderToCanvas(el, options = {}) {
     const restore = sanitizeColorsForExport(el);
     try {
       const canvas = await html2canvas(el, baseOptions(el, options));
-      return canvas;
+      return rememberPageRanges(canvas, el);
     } catch (e) {
       warnings.push(`sanitised capture failed: ${e?.message || e}`);
     } finally {
@@ -127,7 +196,7 @@ async function renderToCanvas(el, options = {}) {
     // --- attempt 3: flat palette (no gradients, shadows or filters at all) ---
     const restoreHard = hardPlainPalette(el);
     try {
-      return await html2canvas(el, baseOptions(el, options));
+      return rememberPageRanges(await html2canvas(el, baseOptions(el, options)), el);
     } catch (e2) {
       warnings.push(`flat palette failed: ${e2?.message || e2}`);
       const err = new Error(`${warnings.join(' | ')}`);
@@ -138,6 +207,7 @@ async function renderToCanvas(el, options = {}) {
     }
   } finally {
     restoreFlat();
+    restoreCapture();
   }
 }
 
@@ -209,6 +279,7 @@ export async function exportSvgToPng(svgEl, filename = 'diagram.png', { scale = 
   const height = Math.round((viewBox?.height || rect.height) || 0);
   if (!width || !height) throw new Error('แผนภาพยังไม่มีขนาด — รอสักครู่แล้วลองใหม่');
 
+  await fontsReady();
   const clone = svgEl.cloneNode(true);
 
   /* 1. Freeze the computed look onto the clone. */
@@ -252,6 +323,10 @@ export async function exportSvgToPng(svgEl, filename = 'diagram.png', { scale = 
      faces the labels actually need are embedded as data URLs. */
   await embedSvgFonts(svgEl, clone);
 
+  clone.style.setProperty('width', `${width}px`, 'important');
+  clone.style.setProperty('height', `${height}px`, 'important');
+  clone.style.setProperty('min-width', '0', 'important');
+  clone.style.setProperty('max-width', 'none', 'important');
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   clone.setAttribute('width', String(width));
   clone.setAttribute('height', String(height));
@@ -370,25 +445,25 @@ export async function exportToPdf(elementId, filename = 'export.pdf', orientatio
   const el = resolveTarget(elementId);
   if (!el) throw new Error('ไม่พบเนื้อหาที่จะบันทึกเป็น PDF (element หายไป)');
 
-  const [html2canvas, jspdfMod] = await Promise.all([
-    loadHtml2Canvas(),
-    import('https://esm.sh/jspdf@2.5.2')
+  // Exactly the PNG pipeline: fonts, expanded layout, safe palette and cleanup.
+  const [canvas, { jsPDF }] = await Promise.all([
+    renderToCanvas(el), import('https://esm.sh/jspdf@2.5.2')
   ]);
-  const { jsPDF } = jspdfMod;
-
-  const restoreFlat = applyFlatMode(el);
-  await nextFrame();
-  const restore = sanitizeColorsForExport(el);
-  try {
-    const canvas = await html2canvas(el, baseOptions(el));
-    const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF({ orientation, unit: 'px', format: [canvas.width, canvas.height] });
-    pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-    pdf.save(filename);
-  } finally {
-    restore();
-    restoreFlat();
+  const pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4', compress: true });
+  const margin = 12;
+  const printableWidth = pdf.internal.pageSize.getWidth() - margin * 2;
+  const printableHeight = pdf.internal.pageSize.getHeight() - margin * 2;
+  const pixelsPerMm = canvas.width / printableWidth;
+  const cuts = exportPageCuts(canvas.height, Math.floor(printableHeight * pixelsPerMm), canvas.exportProtectedRanges);
+  for (let i = 1; i < cuts.length; i++) {
+    if (i > 1) pdf.addPage();
+    const slice = document.createElement('canvas');
+    slice.width = canvas.width;
+    slice.height = cuts[i] - cuts[i - 1];
+    slice.getContext('2d').drawImage(canvas, 0, cuts[i - 1], canvas.width, slice.height, 0, 0, slice.width, slice.height);
+    pdf.addImage(slice.toDataURL('image/png'), 'PNG', margin, margin, printableWidth, slice.height / pixelsPerMm, undefined, 'FAST');
   }
+  pdf.save(filename);
 }
 
 export function copyExpenseAsLineText(expense, membersMap) {
@@ -410,4 +485,12 @@ export function copySettlementAsLineText(transactions, membersMap, currency = 'T
     const amt = formatCurrency(t.amountMinor, currency);
     return `${from} → ${to}: ${amt}`;
   }).join('\n');
+}
+
+/** All native print buttons wait for the same final font/image metrics. */
+export async function printDocument() {
+  await fontsReady();
+  await imagesReady(document.body);
+  await nextFrame();
+  window.print();
 }

@@ -174,3 +174,33 @@ export async function testCrowdedDebtMapCalloutsShowEveryAmount() {
     if (i) assert(!shares(result[i - 1].box, result[i].box, 4), 'callouts never overlap');
   }
 }
+
+export async function testDebtMapPeopleUseEvenPerimeterSpacing() {
+  const { debtMapNodeAngles } = await import('../../src/js/utils/debtMap.js');
+  const angles = debtMapNodeAngles(24, 600, 300);
+  const points = angles.map(a => ({ x: 600 * Math.cos(a), y: 300 * Math.sin(a) }));
+  const distances = points.map((p, i) => {
+    const next = points[(i + 1) % points.length];
+    return Math.hypot(p.x - next.x, p.y - next.y);
+  });
+  assert(Math.max(...distances) / Math.min(...distances) < 1.06, 'people should not bunch up at ellipse ends');
+}
+
+export function testAmountOnlyFallbackStaysOnItsLine() {
+  const edge = { start: { x: 20, y: 100 }, control: { x: 200, y: 100 }, end: { x: 380, y: 100 }, label: '฿1,234.00' };
+  const [spot] = layoutDebtMapAmounts([edge], [{ left: 0, right: 400, top: 0, bottom: 200 }], { width: 400, height: 200, amountOnly: true });
+  assert(spot.kind === 'label', 'full amounts must not become callouts or numbered dots');
+  assert(spot.y === 100, 'amount must remain on the transfer line');
+}
+
+export function testDesktopDebtMapFitsCardWithoutHorizontalScrolling() {
+  const app = readFileSync(path.join(here, '../../src/js/app.js'), 'utf8');
+  const css = readFileSync(path.join(here, '../../src/css/dimension.css'), 'utf8');
+  const responsive = readFileSync(path.join(here, '../../src/css/refresh.css'), 'utf8');
+  assert(app.includes('style="--debt-map-natural-width:${W}px"'), 'natural size is a CSS variable, not a forced inline minimum');
+  assert(!app.includes('style="min-width:${W}px"'), 'inline width must not force desktop overflow');
+  const desktop = css.slice(css.indexOf('@media (min-width: 1024px)'));
+  assert(/\.debt-map-svg\s*\{[^}]*width: 100%;[^}]*min-width: 0;[^}]*max-width: 100%;/.test(desktop), 'desktop scales the whole SVG into the card');
+  assert(desktop.includes('.debt-map-scroll-hint { display: none; }'), 'desktop does not ask users to scroll');
+  assert(responsive.includes('min-width: var(--debt-map-natural-width, 540px)'), 'mobile retains readable natural-size drawing');
+}

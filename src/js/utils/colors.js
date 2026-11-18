@@ -509,6 +509,8 @@ const FLATTEN_PROPS = [
   'order', 'grid-template-columns', 'grid-template-rows', 'grid-auto-flow', 'grid-column', 'grid-row',
   'list-style-type', 'border-collapse', 'border-spacing', 'table-layout',
   'object-fit', 'object-position', 'box-shadow', 'text-shadow', 'filter', 'backdrop-filter',
+  'fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-opacity', 'stroke-dasharray',
+  'stroke-linecap', 'stroke-linejoin', 'text-anchor', 'dominant-baseline', 'paint-order',
   'aspect-ratio', 'direction', 'visibility', 'mix-blend-mode', 'outline-width', 'outline-style', 'outline-color',
   '-webkit-text-fill-color', '-webkit-text-stroke-color', '-webkit-text-stroke-width'
 ];
@@ -573,7 +575,11 @@ export function buildPlainClone(root, win = globalThis.window, { hidden = true }
       css += `${prop}:${value} !important;`;
     }
     try { dst.style.cssText = css; } catch { /* ignore */ }
-    if (dst.tagName === 'CANVAS') continue;
+    if (dst.tagName === 'CANVAS') {
+      dst.width = src.width;
+      dst.height = src.height;
+      try { dst.getContext('2d').drawImage(src, 0, 0); } catch { /* tainted external map */ }
+    }
   }
 
   // Rasterised canvases (map exports) must travel as images.

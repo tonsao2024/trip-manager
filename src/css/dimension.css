@@ -129,9 +129,21 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 .debt-map-card > .debt-map-container { margin: 0 0 4px; }
 .debt-map-note { margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-tertiary); }
 @media (min-width: 1024px) {
-  /* The drawing keeps a readable scale on a wide desktop card instead of
-     stretching to 1.5× its natural size. */
-  .debt-map-card > .debt-map-container .debt-map-svg { max-width: 960px; margin-inline: auto; }
+  /* Fit the entire drawing, not a clipped viewport with a hidden scrollbar.
+     SVG viewBox scaling preserves node spacing and keeps amounts on their arcs. */
+  .debt-map-card > .debt-map-container {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden !important;
+  }
+  .debt-map-card > .debt-map-container .debt-map-svg {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    height: auto;
+    margin-inline: auto;
+  }
+  .debt-map-scroll-hint { display: none; }
 }
 @media (max-width: 600px) {
   .debt-map-heading { align-items: stretch; flex-direction: column; gap: 12px; }
@@ -512,4 +524,114 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
   .debt-payer-list .debt-tx-row, .debt-payer-list .debt-tx-row:last-child { display: grid; grid-template-columns: 26px minmax(0, 1fr) minmax(130px, 180px) auto; }
   .debt-route { display: grid; grid-template-columns: minmax(0, 1fr) 32px minmax(0, 1fr); }
   .debt-amount-block { min-width: 0; }
+}
+
+/* Export documents are paper, independent of the selected application theme.
+   Applied before style flattening so final wrapping/Thai metrics are measured. */
+.export-capture {
+  box-sizing: border-box !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  padding: 24px !important;
+}
+.export-capture :is(.table-wrap, .table-responsive, .overflow-x-auto, .overflow-auto, .debt-map-container) {
+  overflow: visible !important;
+  max-height: none !important;
+  height: auto !important;
+}
+.export-capture :is(.truncate, [class*="line-clamp"], .debt-person-name, .rcpt-who-name) {
+  white-space: normal !important;
+  text-overflow: clip !important;
+  overflow: visible !important;
+  -webkit-line-clamp: unset !important;
+  max-height: none !important;
+  height: auto !important;
+}
+.export-capture :is(p, h1, h2, h3, h4, td, th, b, strong, small, span, a) {
+  line-height: 1.65 !important;
+  overflow-wrap: anywhere;
+}
+.export-capture :is(td, th) { padding-block: 10px !important; }
+.export-capture :is(.no-export, .no-print) { display: none !important; }
+.export-capture :is(.debt-map-scroll-hint) { display: none !important; }
+.export-capture .debt-map-svg { width: 100% !important; min-width: 0 !important; max-width: 100% !important; }
+.export-flat, .export-flat * {
+  --text: #1f2937;
+  --text-primary: #1f2937;
+  --text-strong: #111827;
+  --text-secondary: #374151;
+  --text-tertiary: #4b5563;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f3f4f6;
+  --surface: #ffffff;
+  --surface-2: #f3f4f6;
+  --border: #d1d5db;
+  --border-light: #e5e7eb;
+}
+.export-flat *:not(svg):not(svg *) {
+  background-color: #ffffff !important;
+  -webkit-text-fill-color: currentColor !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
+}
+/* Do not apply icon-only fill:none to a diagram's text, plates or arrowheads. */
+.export-flat .debt-map-svg text { fill: #111827 !important; stroke: none !important; }
+.export-flat .debt-map-svg rect { fill: #ffffff !important; }
+.export-flat .debt-map-svg .debt-pill-tag { fill: #ffffff !important; }
+.export-flat .debt-map-svg .debt-map-label { stroke: #ffffff !important; paint-order: stroke fill; }
+.export-flat .debt-map-svg .debt-map-edge path { fill: none !important; }
+
+@media print {
+  @page { size: A4; margin: 12mm; }
+  html, body { background: #fff !important; color: #111827 !important; height: auto !important; overflow: visible !important; }
+  body * { text-shadow: none !important; box-shadow: none !important; }
+  body :is(.card, .receipt, .cal-cell, .cal-pill, .badge, td, th) {
+    background: #fff !important;
+    color: #111827 !important;
+    border-color: #9ca3af !important;
+  }
+  body :is(p, h1, h2, h3, h4, span, b, small, a, td, th) {
+    color: #111827 !important;
+    -webkit-text-fill-color: currentColor !important;
+    line-height: 1.6 !important;
+  }
+  .no-print, .no-export { display: none !important; }
+  :is(.overflow-auto, .overflow-x-auto, .table-wrap, .table-responsive) { overflow: visible !important; max-height: none !important; }
+  :is(.truncate, [class*="line-clamp"], .cal-pill) {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    -webkit-line-clamp: unset !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow-wrap: anywhere;
+  }
+  thead { display: table-header-group; }
+  tr, .cal-cell, .debt-tx-row { break-inside: avoid; }
+  h1, h2, h3, h4 { break-after: avoid; }
+  .cal-cell { min-width: 0 !important; height: auto !important; }
+  .debt-map-container { overflow: visible !important; }
+  .debt-map-svg { width: 100% !important; min-width: 0 !important; }
+  .debt-map-scroll-hint { display: none !important; }
+}
+
+.export-capture :is(.receipt-line, .rcpt-card-row, .rcpt-block-head, .rcpt-who-row, .itin-sheet-head, .itin-sheet-foot) {
+  flex-wrap: wrap !important;
+  gap: 8px 16px !important;
+}
+.export-capture :is(.rcpt-block-title, .debt-person-copy) { min-width: 0 !important; flex: 1 1 120px; }
+.export-capture :is(.receipt-table, .itin-sheet-table) { width: 100% !important; table-layout: auto !important; }
+.export-capture :is(.receipt-table, .itin-sheet-table) :is(td, th) { white-space: normal !important; overflow-wrap: anywhere; }
+.export-capture :is(.receipt-table, .itin-sheet-table) .num { min-width: 100px; }
+.export-capture :is(.badge, .chip, .rcpt-chip, .rcpt-flag, .itin-sheet-status) {
+  height: auto !important;
+  max-height: none !important;
+  padding-block: 5px !important;
+  white-space: normal !important;
+}
+.export-capture .rcpt-cards { padding: 12px !important; }
+.export-capture .rcpt-card-row { display: flex !important; align-items: baseline; justify-content: space-between; padding-block: 6px; }
+@media print {
+  body *:not(svg):not(svg *) { background-color: #fff !important; background-image: none !important; }
 }
