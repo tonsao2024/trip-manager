@@ -43,6 +43,7 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > “paging: running total นับทุกรายการ”, “the full-screen step is gone”; เหลือเฉพาะข้อ PNG ที่ jsdom
 > rasterize ไม่ได้ซึ่งเป็นของเดิมและล้มเหมือนกันบน base commit). Cache-buster: `?v=46` ทุกไฟล์ +
 > `&expense-v46=1` (`flat.css`, `material.css`, `app.js`), `&debt-zoom=1` (`dimension.css`, `refresh.css`, `app.js`).
+> อ่านโค้ด/เหตุผลการออกแบบทั้งหมดได้ที่ [`docs/EXPENSES-DEBTMAP-2026-11-18.md`](docs/EXPENSES-DEBTMAP-2026-11-18.md).
 >
 > **v45 — 18 Nov 2026, แผนที่หนี้เห็นครบในจอเดียว (คอม) + เลือกครอปภาพปกเองได้.** ตามคำขอของเจ้าของโปรเจกต์ 2 ข้อ.
 > **(1) “แผนที่หนี้ ตอนนี้มันกว้างใหญ่เกินไป ต้องสโครลหลายรอบ กว่าจะเห็นครบ (ดูในคอม)”** — แผนที่เคยวาดบนชีต
