@@ -65,11 +65,13 @@ export function layoutDebtMapAmounts(edges = [], obstacles = [], {
   gap = 4,
   labelHeight = 21,
   charWidth = 6.7,
-  numberSize = 20
+  numberSize = 20,
+  amountOnly = false
 } = {}) {
   // Start at the middle of the arc and walk outwards: the label belongs where a
   // reader looks first, and sliding along the same curve keeps it on its line.
-  const samples = [0.5, 0.42, 0.58, 0.34, 0.66, 0.27, 0.73, 0.2, 0.8, 0.14, 0.86];
+  const samples = Array.from({ length: 81 }, (_, i) => 0.1 + i * 0.01)
+    .sort((a, b) => Math.abs(a - 0.5) - Math.abs(b - 0.5));
   const placed = [];
   const positions = [];
 
@@ -95,6 +97,17 @@ export function layoutDebtMapAmounts(edges = [], obstacles = [], {
       }
       // No room for the plate → a small numbered dot still marks the line, and
       // the numbered list carries the amount. A dot only has to dodge the people.
+      if (!position && amountOnly) {
+        // Last-resort placement remains on the actual arc, never in a callout.
+        const candidates = samples.map(t => {
+          const point = curvePoint(edge.start, edge.control, edge.end, t);
+          const angle = debtMapLabelAngle(edge, t);
+          const box = boxFor({ ...point, width: labelWidth, height: labelHeight, angle });
+          const score = [...obstacles, ...placed].filter(other => overlaps(box, other, gap)).length;
+          return { kind: 'label', ...point, t, angle, width: labelWidth, height: labelHeight, label, box, score };
+        });
+        position = candidates.sort((a, b) => a.score - b.score)[0];
+      }
       if (!position) {
         for (const t of samples) {
           const point = curvePoint(edge.start, edge.control, edge.end, t);
@@ -190,5 +203,26 @@ export function layoutDebtMapCallouts(placements, edges, graphWidth, { charWidth
     const y = 22 + row++ * (labelHeight + 8);
     return { kind: 'callout', x, y, angle: 0, width, height: labelHeight, label,
       box: boxFor({ x, y, width, height: labelHeight }) };
+  });
+}
+
+/** Equal arc-length slots avoid crowding at the narrow ends of an ellipse. */
+export function debtMapNodeAngles(count, radiusX, radiusY) {
+  if (count <= 0) return [];
+  const steps = Math.max(720, count * 32);
+  const lengths = [0];
+  let previous = { x: 0, y: -radiusY };
+  for (let i = 1; i <= steps; i++) {
+    const angle = i / steps * Math.PI * 2 - Math.PI / 2;
+    const point = { x: radiusX * Math.cos(angle), y: radiusY * Math.sin(angle) };
+    lengths.push(lengths[i - 1] + Math.hypot(point.x - previous.x, point.y - previous.y));
+    previous = point;
+  }
+  let cursor = 1;
+  return Array.from({ length: count }, (_, i) => {
+    const target = lengths[steps] * i / count;
+    while (cursor < steps && lengths[cursor] < target) cursor++;
+    const fraction = (target - lengths[cursor - 1]) / (lengths[cursor] - lengths[cursor - 1] || 1);
+    return (cursor - 1 + fraction) / steps * Math.PI * 2 - Math.PI / 2;
   });
 }

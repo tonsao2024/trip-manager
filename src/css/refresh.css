@@ -796,9 +796,9 @@ select.input { border-radius: var(--radius); }
   border-radius: 13px;
   background: color-mix(in srgb, var(--surface) 88%, var(--primary-light));
 }
-/* Below 1024px the map is drawn in screen pixels (debtMapHtml), so it fits the
-   card without a forced width or sideways scroll, and every label is ≥ 12px. */
-.debt-map-svg--compact { min-width: 0; }
+/* Small screens retain the natural drawing size for readable labels. Desktop
+   fits the complete viewBox into its card (see dimension.css). */
+.debt-map-svg--compact { min-width: var(--debt-map-natural-width, 540px); }
 .debt-map-svg--compact .debt-map-amount-label .debt-map-amount { font-size: 12.5px; }
 .debt-map-amount-label rect { vector-effect: non-scaling-stroke; }
 .debt-map-amount-label .debt-map-amount {

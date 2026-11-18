@@ -39,7 +39,7 @@ import { listMembers, createMember, updateMember, deleteMember, countMemberRefer
 import { dayjs, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay, parseDurationInput, thaiDate, thaiDateRange } from './utils/date.js';
 import { expensesInThb, convertCurrency, formatCurrency, formatCurrencyHtml, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually, tripCurrencyList } from './utils/currency.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses, groupTransfersByPayer } from './utils/settlement.js';
-import { debtMapColor, layoutDebtMapAmounts, layoutDebtMapCallouts, debtMapEdgeRuns } from './utils/debtMap.js';
+import { debtMapColor, debtMapNodeAngles, layoutDebtMapAmounts, debtMapEdgeRuns } from './utils/debtMap.js';
 import { splitCustom, splitEqual, participantsOf, averagePerPerson, scaleToTotal } from './utils/split.js';
 import { escapeHtml, sanitizeUrl } from './utils/sanitize.js';
 import { APP_VERSION, APP_VERSION_LABEL, APP_UPDATED_ISO, APP_NAME, APP_AUTHOR, APP_NAME_BY, appUpdatedLabel, appUpdatedShort, copyrightNote } from './utils/buildInfo.js';
@@ -6101,12 +6101,12 @@ async function renderItinerary(params) {
     }));
   }
 
-  async function exportItineraryPng() {
+  async function exportItineraryPng(format = 'png') {
     const wrap = document.getElementById('itinerary-export-wrap');
     if (!wrap) return;
     const tLoad = toast.loading(th('กำลังสร้างรูปแผนการเดินทาง…', 'Building the itinerary image…'));
     try {
-      const { elementToPngDataUrl, exportToPng } = await import('./exports/index.js');
+      const { elementToPngDataUrl, exportToPng, exportToPdf } = await import('./exports/index.js');
       const ordered = await prepareItineraryExport();
 
       // The live map is captured first (real tiles), schematic SVG as fallback.
@@ -6120,9 +6120,11 @@ async function renderItinerary(params) {
       await waitForSheetImages(wrap);
       wrap.classList.add('is-capturing');
       const safeName = String(trip?.name || tripId).replace(/[\\/:*?"<>|\s]+/g, '-').slice(0, 40);
-      await exportToPng('itinerary-export-sheet', `itinerary-${safeName}-${dayjs().format('YYYYMMDD')}.png`, { flat: false, scale: 2 });
+      const filename = `itinerary-${safeName}-${dayjs().format('YYYYMMDD')}.${format}`;
+      if (format === 'pdf') await exportToPdf('itinerary-export-sheet', filename);
+      else await exportToPng('itinerary-export-sheet', filename, { flat: false, scale: 2 });
       tLoad.close();
-      toast.success(th('ส่งออกรูปแผนการเดินทางแล้ว', 'Itinerary image exported'));
+      toast.success(format === 'pdf' ? th('ส่งออก PDF แผนการเดินทางแล้ว', 'Itinerary PDF exported') : th('ส่งออกรูปแผนการเดินทางแล้ว', 'Itinerary image exported'));
       confetti({ y: 150, count: 14 });
     } catch (e) {
       tLoad.close();
@@ -7137,7 +7139,10 @@ async function renderItinerary(params) {
 
   bind('add-itinerary-btn', 'click', () => openItemForm(null, showAll ? null : selectedDate));
   renderFAB(location.hash.slice(1), { pageReady: true });
-  loadItems();
+  await loadItems();
+  if (!isStale(token) && new URLSearchParams(location.hash.split('?')[1] || '').get('print') === '1') {
+    await exportItineraryPng('pdf');
+  }
   // ?action=add opens one sheet — a second paint of the same route (data refresh,
   // a repeated hashchange) must not stack another form with the same ids.
   if (action === 'add' && !document.getElementById('itinerary-form')) openItemForm(null, showAll ? null : selectedDate);
@@ -10356,7 +10361,7 @@ async function renderSettlement(params) {
    * are collision-checked against other tags and member labels. If the graph is
    * too dense, a tag gets its own row below the drawing instead of overlapping.
    */
-  function debtMapHtml() {
+  function debtMapHtml(layoutAttempt = 0) {
     const txns = (state.transactions || []).filter(tx => tx?.from && tx?.to && tx.from !== tx.to);
     const membersMap = state.membersMap || {};
     if (!txns.length) {
@@ -10387,8 +10392,8 @@ async function renderSettlement(params) {
     const vw = (typeof window !== 'undefined' && window.innerWidth) || 1024;
     const compact = vw < 1024;
     // Grow the canvas rather than squeeze people together; narrow screens scroll.
-    const graphWidth = Math.max(820, ids.length * 64 + 180);
-    const GRAPH_H = Math.max(500, ids.length * 64 + 160, txns.length * 31 + 40);
+    const graphWidth = Math.max(900, ids.length * 100 + 180) * (1 + layoutAttempt * 0.35);
+    const GRAPH_H = Math.max(620, ids.length * 90 + 160, txns.length * 38 + 80) * (1 + layoutAttempt * 0.35);
     const FS = compact
       ? { initial: 13, name: 12.5, role: 12, nameCharW: 7.4, charW: 7.6, labelH: 24 }
       : { initial: 12, name: 11, role: 11, nameCharW: 6.6, charW: 6.6, labelH: 22 };
@@ -10397,7 +10402,8 @@ async function renderSettlement(params) {
     const radiusX = graphWidth / 2 - 100;
     const radiusY = GRAPH_H / 2 - 85;
     const labelAbove = (pt) => Math.sin(pt.ang) < -0.4;
-    const angleOf = (i) => (2 * Math.PI * i) / Math.max(1, n) - Math.PI / 2;
+    const nodeAngles = debtMapNodeAngles(n, radiusX, radiusY);
+    const angleOf = (i) => nodeAngles[i];
     let order = ids.slice();
     if (n > 2) {
       const idxOf = new Map(order.map((id, i) => [id, i]));
@@ -10442,7 +10448,7 @@ async function renderSettlement(params) {
      * Every transfer = one arc bent towards the middle of the circle. Amounts are
      * printed ON that arc, rotated with the line and never on a person's name
      * (utils/debtMap.js owns the collision rules). A dense map falls back to a
-     * numbered dot on the line; the numbered list below always carries the amount.
+     * larger canvas so the full amount stays on its own line.
      */
     const edgeRows = sortedTx.map((tx, i) => {
       const p1 = posOf.get(tx.from), p2 = posOf.get(tx.to);
@@ -10482,20 +10488,23 @@ async function renderSettlement(params) {
         gap: 4,
         labelHeight: compact ? 23 : 21,
         charWidth: FS.charW,
-        numberSize: compact ? 23 : 21
+        numberSize: compact ? 23 : 21,
+        amountOnly: layoutAttempt >= 12
       }
     );
     const placementByIndex = new Map(
       edgeRows.map((edge, i) => [i, edge]).sort((a, b) => a[1].arc - b[1].arc).map(([i], k) => [i, placements[k]])
     );
     const orderedPlacements = edgeRows.map((edge, i) => placementByIndex.get(i) || { kind: 'none' });
-    const hasCallouts = orderedPlacements.some(position => position.kind !== 'label');
-    const finalPlacements = layoutDebtMapCallouts(orderedPlacements, edgeRows, graphWidth, { charWidth: FS.charW, labelHeight: compact ? 23 : 21 });
-    const W = graphWidth + (hasCallouts ? 256 : 0);
-    edgeRows.forEach((edge, i) => { edge.placement = finalPlacements[i]; });
+    // Make more space and re-layout people/lines instead of moving amounts
+    // into a detached side column or replacing them with numbered dots.
+    if (orderedPlacements.some(position => position.kind !== 'label') && layoutAttempt < 12) {
+      return debtMapHtml(layoutAttempt + 1);
+    }
+    const W = graphWidth;
+    edgeRows.forEach((edge, i) => { edge.placement = orderedPlacements[i]; });
 
     let edgesHtml = '';
-    let leadersHtml = '';
     let labelsHtml = '';
     edgeRows.forEach((edge) => {
       const { tx, payer, receiver, color, markerId, placement } = edge;
@@ -10503,7 +10512,7 @@ async function renderSettlement(params) {
       // (utils/debtMap.js owns the rule) — a line may no longer cross a label.
       const runs = debtMapEdgeRuns(edge, nodeTextBoxes, { gap: compact ? 4 : 5, samples: 96 });
       const d = `M${edge.start.x.toFixed(1)},${edge.start.y.toFixed(1)} Q${edge.control.x.toFixed(1)},${edge.control.y.toFixed(1)} ${edge.end.x.toFixed(1)},${edge.end.y.toFixed(1)}`;
-      const onLine = (placement.kind === 'label' || placement.kind === 'callout')
+      const onLine = placement.kind === 'label'
         ? `<g class="debt-pill debt-map-amount-label is-amount" data-pill="${edge.index + 1}" data-label-kind="label" data-overflow-label="false" transform="translate(${placement.x.toFixed(1)} ${placement.y.toFixed(1)}) rotate(${placement.angle.toFixed(1)})">
              <rect x="${(-placement.width / 2).toFixed(1)}" y="${(-placement.height / 2).toFixed(1)}" width="${placement.width.toFixed(1)}" height="${placement.height.toFixed(1)}" rx="${(placement.height / 2).toFixed(1)}" fill="var(--surface)" stroke="${escapeHtml(color)}" stroke-opacity=".55" stroke-width="1"/>
              <circle cx="${(-placement.width / 2 + 10).toFixed(1)}" cy="0" r="6.2" fill="${escapeHtml(color)}"/>
@@ -10516,12 +10525,6 @@ async function renderSettlement(params) {
                <text class="debt-pill-tag" x="0" y="0.4" text-anchor="middle" dominant-baseline="central" fill="var(--text-strong)" font-size="10" font-weight="600">${edge.index + 1}</text>
              </g>`
           : '';
-      if (placement.kind === 'callout') {
-        const t = 0.5;
-        const x = (1-t)**2 * edge.start.x + 2*(1-t)*t * edge.control.x + t**2 * edge.end.x;
-        const y = (1-t)**2 * edge.start.y + 2*(1-t)*t * edge.control.y + t**2 * edge.end.y;
-        leadersHtml += `<path d="M${x.toFixed(1)},${y.toFixed(1)} L${(placement.x - placement.width / 2).toFixed(1)},${placement.y.toFixed(1)}" fill="none" stroke="${escapeHtml(color)}" stroke-width="1" stroke-dasharray="3 3" opacity=".65"/>`;
-      }
       labelsHtml += onLine;
       edgesHtml += `
         <g class="debt-map-edge" data-edge="${escapeHtml(tx.from)}→${escapeHtml(tx.to)}" data-color="${escapeHtml(color)}" ${placement.kind === 'label' ? '' : 'data-offgraph="true"'}>
@@ -10605,13 +10608,12 @@ async function renderSettlement(params) {
           <span class="debt-legend-item is-in">${th('รับเงิน', 'Receives')}</span>
           <span class="debt-legend-item debt-legend-item--unique"><i class="debt-legend-swatch" aria-hidden="true">${order.filter(id => (recv.get(id) || 0) > 0).slice(0, 4).map(id => `<span style="background:${escapeHtml(nodeColors.get(id) || 'var(--primary)')}"></span>`).join('')}</i>${th('สีเส้น = สีของผู้รับเงินรายการนั้น', 'Line colour = the receiver’s colour')}</span>
         </div>
-        <p class="debt-map-note">${th('เลื่อนภาพแนวนอนเพื่อดูแผนที่ทั้งหมด', 'Scroll horizontally to see the whole map.')}</p>
+        <p class="debt-map-note debt-map-scroll-hint">${th('เลื่อนภาพแนวนอนเพื่อดูแผนที่ทั้งหมด', 'Scroll horizontally to see the whole map.')}</p>
         <div class="debt-map-container">
-          <svg class="debt-map-svg${compact ? ' debt-map-svg--compact' : ''}" viewBox="0 0 ${W} ${GRAPH_H}" style="min-width:${W}px" role="group" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected by money-transfer lines'))}">
-            <defs>${markerDefs.join('')}</defs>${edgesHtml}${leadersHtml}${labelsHtml}${nodesHtml}
+          <svg class="debt-map-svg${compact ? ' debt-map-svg--compact' : ''}" viewBox="0 0 ${W} ${GRAPH_H}" style="--debt-map-natural-width:${W}px" role="group" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected by money-transfer lines'))}">
+            <defs>${markerDefs.join('')}</defs>${edgesHtml}${labelsHtml}${nodesHtml}
           </svg>
         </div>
-        ${hasCallouts ? `<p class="debt-map-note">${th('ยอดด้านข้างเชื่อมกับเส้นด้วยเส้นประ และเลขตรงกับรายการด้านล่าง', 'Amounts at the side connect to their lines with dashed leaders; numbers match the list below.')}</p>` : ''}
         <div class="debt-list-heading"><h4>${th('รายการโอนที่เหลือ', 'Remaining transfers')}</h4><span>${txns.length} ${th('รายการ', 'transfers')}</span></div>
         <div class="debt-payer-list">${rowsHtml}</div>
         <p class="debt-map-action-hint">${th('หลังโอนเงินจริงแล้ว กด “จ่ายแล้ว” เพื่อบันทึกยอดเต็มหรือบางส่วน', 'After sending money, select “Mark paid” to record a full or partial payment.')}</p>
@@ -12338,7 +12340,7 @@ async function renderImportExport(params) {
   }));
 
   bind('exp-itinerary-png', 'click', () => { location.hash = `#/trip/${tripId}/itinerary`; setTimeout(() => toast.info(th('กดปุ่ม PNG ที่หน้าแผนการเดินทาง', 'Use the PNG button on the itinerary page')), 500); });
-  bind('exp-print', 'click', () => window.print());
+  bind('exp-print', 'click', async () => { const { printDocument } = await import('./exports/index.js'); await printDocument(); });
 
   bind('exp-expenses-json', 'click', () => withLoading(th('กำลังส่งออก...', 'Exporting...'), async () => {
     const data = await exportExpensesToJson(tripId);
@@ -15744,7 +15746,7 @@ async function renderCalendar(params) {
       if (!cell.inMonth) cls.push('is-outside');
       if (cell.inTrip) cls.push('is-trip');
       if (cell.isToday) cls.push('is-today');
-      const pills = cell.pills.map(p => `<span class="cal-pill">${escapeHtml(String(p.title).slice(0, 22))}</span>`).join('');
+      const pills = cell.pills.map(p => `<span class="cal-pill">${escapeHtml(String(p.title))}</span>`).join('');
       return `<button class="${cls.join(' ')}" data-day="${cell.iso}">
         <span class="cal-day">${cell.inMonth ? cell.day : `<span style="opacity:.6">${cell.day}</span>`}</span>
         ${pills}
@@ -15798,7 +15800,7 @@ async function renderCalendar(params) {
   bind('cal-prev', 'click', () => { view = shiftMonth(view.year, view.month, -1); paint(); });
   bind('cal-next', 'click', () => { view = shiftMonth(view.year, view.month, 1); paint(); });
   bind('cal-today', 'click', () => { const t = dayjs().format('YYYY-MM-DD'); selected = t; view = { year: Number(t.slice(0, 4)), month: Number(t.slice(5, 7)) }; paint(); paintDetail(); });
-  bind('cal-print', 'click', () => window.print());
+  bind('cal-print', 'click', async () => { const { printDocument } = await import('./exports/index.js'); await printDocument(); });
   document.querySelectorAll('[data-month]').forEach(btn => btn.addEventListener('click', (e) => {
     const [y, m] = e.currentTarget.getAttribute('data-month').split('-').map(Number);
     view = { year: y, month: m }; paint();
@@ -15813,7 +15815,7 @@ async function renderCalendar(params) {
   });
 
   paint(); paintDetail();
-  if (autoPrint) setTimeout(() => window.print(), 700);
+  if (autoPrint) { const { printDocument } = await import('./exports/index.js'); await printDocument(); }
 }
 
 /* ================================================================== *
