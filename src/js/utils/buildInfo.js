@@ -17,7 +17,7 @@ export const APP_VERSION = '41';
 export const APP_VERSION_LABEL = 'v41';
 /** Name of the DEFAULT palette — a theme is chosen on top of it (utils/themes.js). */
 export const APP_PALETTE = 'Google Material';
-export const APP_UPDATED_ISO = '2026-11-17';
+export const APP_UPDATED_ISO = '2026-11-18';
 
 /** Copyright owner + the licence note asked for by the app owner. */
 export const APP_COPYRIGHT_HOLDER = 'TonSkywalker';

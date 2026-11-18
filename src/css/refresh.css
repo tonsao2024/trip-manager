@@ -788,6 +788,13 @@ select.input { border-radius: var(--radius); }
 /* v28+ debt map: distinct transfer hues and collision-checked amount tags. */
 .debt-map-card { overflow: hidden; }
 .debt-map-container { overflow-x: auto !important; overscroll-behavior-inline: contain; }
+/* v45: the frame carries the sheet's own numbers — its natural width (phones
+   keep it and scroll sideways) and the aspect ratio + height budget the desktop
+   fit uses so the whole map is one glance (dimension.css). */
+.debt-map-frame {
+  --debt-map-fit-height: min(72vh, 760px);
+  min-width: var(--debt-map-natural-width, 540px);
+}
 .debt-map-svg {
   display: block;
   width: 100%;

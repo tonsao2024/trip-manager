@@ -1,5 +1,5 @@
 import { bindMoneyInputs } from './utils/moneyInput.js';
-import { normalizeCoverPosition, dragCoverPosition } from './utils/coverPosition.js';
+import { normalizeCoverPosition, dragCoverPosition, coverCropStyle, coverCropAxes } from './utils/coverPosition.js';
 import { DASHBOARD_WIDGETS, DASHBOARD_WIDGET_KEYS, normalizeWidgetOrder, normalizeHiddenWidgets } from './dashboard/widgets.js?v=2';
 import { ideaCategoryId, placeCategoryLabel, placeCategoryColor, placeCategoryIcon } from './utils/categories.js';
 import { attachMapExpand } from './maps/index.js';
@@ -39,7 +39,7 @@ import { listMembers, createMember, updateMember, deleteMember, countMemberRefer
 import { dayjs, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay, parseDurationInput, thaiDate, thaiDateRange } from './utils/date.js';
 import { expensesInThb, convertCurrency, formatCurrency, formatCurrencyHtml, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually, tripCurrencyList } from './utils/currency.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses, groupTransfersByPayer } from './utils/settlement.js';
-import { debtMapColor, debtMapNodeAngles, layoutDebtMapAmounts, debtMapEdgeRuns } from './utils/debtMap.js';
+import { debtMapColor, debtMapCanvas, debtMapNodeAngles, layoutDebtMapAmounts, debtMapEdgeRuns } from './utils/debtMap.js';
 import { splitCustom, splitEqual, participantsOf, averagePerPerson, scaleToTotal } from './utils/split.js';
 import { escapeHtml, sanitizeUrl } from './utils/sanitize.js';
 import { APP_VERSION, APP_VERSION_LABEL, APP_UPDATED_ISO, APP_NAME, APP_AUTHOR, APP_NAME_BY, appUpdatedLabel, appUpdatedShort, copyrightNote } from './utils/buildInfo.js';
@@ -2992,7 +2992,7 @@ async function openTripForm(existingTrip = null, { onSaved = null } = {}) {
                 <button type="button" id="change-image" class="btn btn-ghost btn-sm text-xs" style="min-height:32px;padding:4px 8px;">${icon('replace', 'w-3 h-3')} ${lang==='th' ? 'เปลี่ยน' : 'Change'}</button>
               </div>
               <div class="w-full h-28 rounded-xl overflow-hidden border" style="border-color: var(--border);">
-                <img decoding="async" id="cover-img" class="w-full h-full object-cover" src="${escapeHtml(trip.coverImage || '')}" alt="">
+                <img decoding="async" id="cover-img" class="w-full h-full object-cover" src="${escapeHtml(trip.coverImage || '')}" style="${coverCropStyle(trip.coverPosition)}" alt="">
               </div>
               <p id="cover-info" class="text-xs text-[var(--text-tertiary)] mt-1"></p>
             </div>
@@ -3183,9 +3183,9 @@ async function openTripForm(existingTrip = null, { onSaved = null } = {}) {
         });
         if (croppedBlob || coverFile) {
           const url = await uploadCoverImage(trip.id, croppedBlob || coverFile, currentUser.uid);
-          if (url) await updateTrip(trip.id, { coverImage: url, coverPosition: { x: 50, y: 50 } });
+          if (url) await updateTrip(trip.id, { coverImage: url, coverPosition: { x: 50, y: 50, zoom: 1 } });
         } else if (coverUrl && coverUrl !== trip.coverImage) {
-          await updateTrip(trip.id, { coverImage: coverUrl, coverPosition: { x: 50, y: 50 } });
+          await updateTrip(trip.id, { coverImage: coverUrl, coverPosition: { x: 50, y: 50, zoom: 1 } });
         }
         tLoad.close();
         toast.success(lang==='th' ? 'บันทึกการแก้ไขทริปแล้ว' : 'Trip updated');
@@ -3264,7 +3264,7 @@ async function openTripActions(trip, { onChanged } = {}) {
     <div class="space-y-4">
       <div class="flex items-center gap-3">
         <div class="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0" style="background: var(--surface-2); border: 1px solid var(--border);">
-          ${trip.coverImage ? `<img decoding="async" src="${escapeHtml(trip.coverImage)}" class="w-full h-full object-cover" alt="">` : ''}
+          ${trip.coverImage ? `<img decoding="async" src="${escapeHtml(trip.coverImage)}" data-cover-trip="${escapeHtml(trip.id)}" style="${coverCropStyle(trip.coverPosition)}" class="w-full h-full object-cover" alt="">` : ''}
         </div>
         <div class="min-w-0">
           <h3 class="font-semibold truncate" style="font-family: var(--font-display);">${escapeHtml(trip.name)}</h3>
@@ -3480,7 +3480,7 @@ async function renderTripSelector() {
     return `
       <div class="card card-hover p-0 overflow-hidden cursor-pointer group trip-card" data-trip="${trip.id}" style="animation-delay: ${idx * 0.06}s" role="button" tabindex="0" aria-label="${escapeHtml(trip.name)}">
         <div class="trip-card-cover ${trip.coverImage ? 'has-image' : 'is-empty'} ${compact ? 'h-28' : 'h-36'} relative overflow-hidden">
-          ${trip.coverImage ? `<img decoding="async" src="${escapeHtml(trip.coverImage)}" class="w-full h-full object-cover" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.replace('has-image', 'is-empty')">
+          ${trip.coverImage ? `<img decoding="async" src="${escapeHtml(trip.coverImage)}" data-cover-trip="${escapeHtml(trip.id)}" style="${coverCropStyle(trip.coverPosition)}" class="w-full h-full object-cover" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.replace('has-image', 'is-empty')">
           <div class="absolute inset-0 trip-card-scrim"></div>` : ''}
           ${!compact ? `<div class="absolute top-3 right-3 flex items-center gap-2">
             ${countdownText ? `<span class="badge bg-white/90 backdrop-blur text-xs" style="border-color:transparent;color:#333;">${icon('hourglass', 'w-3 h-3')} ${countdownText}</span>` : ''}
@@ -3666,6 +3666,194 @@ async function loadTrip(tripId) {
   }
 }
 
+/* ================================================================== *
+ * Cover crop — one choice, every frame (v45)
+ *
+ * Owner, 18 Nov 2026: “ภาพหน้าปก ให้สามารถเลือกคริปภาพที่ดึงมาแสดงได้ด้วยสิ
+ * ตอนนี้ระบบครอปให้อัตโนมัติอาจจะได้ไม่ถูกใจ”. `object-fit: cover` used to decide
+ * what was visible, and the only control (a pan dialog buried in the dashboard's
+ * ⋯ menu) could not tighten the crop and did not reach the trip cards. The crop
+ * is now one stored choice — x, y and zoom (utils/coverPosition.js) — edited from
+ * a button on the cover itself, from the ⋯ menu, from the trip form and from
+ * Settings, and read by every frame that shows the photo.
+ * ================================================================== */
+
+/** The real shapes a cover is shown in, so the choice is checked where it lands. */
+const COVER_CROP_FRAMES = [
+  { key: 'banner', aspect: 4.2, th: 'แถบแดชบอร์ด', en: 'Dashboard banner' },
+  { key: 'card', aspect: 2.4, th: 'การ์ดทริป', en: 'Trip card' },
+  { key: 'thumb', aspect: 1, th: 'ภาพย่อ', en: 'Thumbnail' }
+];
+
+/**
+ * Pick which part of the cover photo the app shows, and how close it is.
+ * @param {object} trip trip document (needs `coverImage`)
+ * @param {{onSaved?: (position:{x:number,y:number,zoom:number}) => void}} [options]
+ */
+async function openCoverCropDialog(trip, { onSaved } = {}) {
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const coverUrl = trip?.coverImage || '';
+  if (!coverUrl) {
+    toast.error(th('ยังไม่มีภาพปก — เพิ่มภาพก่อน แล้วค่อยเลือกครอป', 'No cover image yet — add one first, then choose its crop.'));
+    return null;
+  }
+  let position = normalizeCoverPosition(trip?.coverPosition);
+  let frame = COVER_CROP_FRAMES[0];
+
+  const dialog = showModal(`
+    <div class="cover-crop">
+      <div class="cover-crop-head">
+        <h3>${icon('crop', 'w-5 h-5')} ${th('เลือกครอปภาพปก', 'Choose the cover crop')}</h3>
+        <p class="input-hint">${th('ลากภาพเพื่อเลือกส่วนที่จะแสดง แล้วปรับความใกล้ด้วย “ขยาย” — ครอปนี้ใช้กับทุกกรอบที่แสดงภาพปก และสมาชิกทุกคนเห็นแบบเดียวกัน', 'Drag the photo to choose what shows, then set how close it is with “Zoom”. The same crop is used by every frame that shows the cover, and everyone on the trip sees it.')}</p>
+      </div>
+      <div class="chip-row cover-crop-frames" role="group" aria-label="${th('ดูตัวอย่างในกรอบจริง', 'Preview in the real frames')}">
+        ${COVER_CROP_FRAMES.map(f => `<button type="button" class="chip${f.key === frame.key ? ' chip-active' : ''}" data-crop-frame="${f.key}">${th(f.th, f.en)}</button>`).join('')}
+      </div>
+      <div class="cover-position-preview cover-crop-frame" data-crop-preview style="aspect-ratio:${frame.aspect}">
+        <img src="${escapeHtml(coverUrl)}" alt="${th('ภาพปกที่กำลังเลือกครอป', 'The cover photo being cropped')}" draggable="false">
+        <span class="cover-crop-guides" aria-hidden="true"></span>
+        <span class="cover-crop-drag-hint">${icon('move', 'w-3.5 h-3.5')} ${th('ลากเพื่อเลื่อนภาพ', 'Drag to move')}</span>
+      </div>
+      <div class="cover-crop-controls">
+        <label class="cover-position-control" data-axis="x"><span>${th('แนวนอน', 'Horizontal')}</span><input type="range" min="0" max="100" step="1" data-cover-x aria-label="${th('เลื่อนซ้าย–ขวา', 'Move left / right')}"></label>
+        <label class="cover-position-control" data-axis="y"><span>${th('แนวตั้ง', 'Vertical')}</span><input type="range" min="0" max="100" step="1" data-cover-y aria-label="${th('เลื่อนขึ้น–ลง', 'Move up / down')}"></label>
+        <label class="cover-position-control" data-axis="zoom"><span>${th('ขยาย', 'Zoom')}</span><input type="range" min="100" max="300" step="5" data-cover-zoom aria-label="${th('ความใกล้ของครอป', 'How close the crop is')}"><b class="cover-crop-zoom-level" data-zoom-level>100%</b></label>
+      </div>
+      <div class="cover-crop-quick">
+        <span class="cover-crop-quick-label">${th('ตำแหน่งเร็ว', 'Quick')}</span>
+        <div class="chip-row">
+          ${[['top', 'บน', 'Top'], ['middle', 'กลาง', 'Middle'], ['bottom', 'ล่าง', 'Bottom'], ['left', 'ซ้าย', 'Left'], ['right', 'ขวา', 'Right']].map(([key, a, b]) => `<button type="button" class="chip" data-crop-preset="${key}">${th(a, b)}</button>`).join('')}
+        </div>
+      </div>
+      <div class="cover-position-actions">
+        <button type="button" class="btn btn-secondary" data-cover-reset>${th('คืนค่าอัตโนมัติ', 'Back to auto')}</button>
+        <button type="button" class="btn btn-primary" data-cover-save>${icon('check', 'w-4 h-4')} ${th('บันทึกครอป', 'Save crop')}</button>
+      </div>
+    </div>
+  `, { className: 'cover-crop-modal', maxWidth: 'min(720px, 96vw)' });
+
+  const preview = dialog.modal.querySelector('[data-crop-preview]');
+  const img = preview.querySelector('img');
+  const xInput = dialog.modal.querySelector('[data-cover-x]');
+  const yInput = dialog.modal.querySelector('[data-cover-y]');
+  const zoomInput = dialog.modal.querySelector('[data-cover-zoom]');
+  const zoomLevel = dialog.modal.querySelector('[data-zoom-level]');
+  const axisX = dialog.modal.querySelector('[data-axis="x"]');
+  const axisY = dialog.modal.querySelector('[data-axis="y"]');
+
+  const paint = () => {
+    img.style.objectPosition = `${position.x}% ${position.y}%`;
+    img.style.transform = position.zoom > 1 ? `scale(${position.zoom})` : '';
+    xInput.value = String(position.x);
+    yInput.value = String(position.y);
+    zoomInput.value = String(Math.round(position.zoom * 100));
+    zoomLevel.textContent = `${Math.round(position.zoom * 100)}%`;
+    // An axis with no overflow cannot move (a wide banner over a tall photo only
+    // crops vertically) — hide the control instead of showing one that does nothing.
+    const bounds = preview.getBoundingClientRect();
+    const axes = coverCropAxes(position, bounds.width, bounds.height, img.naturalWidth, img.naturalHeight);
+    axisX.classList.toggle('is-off', !axes.x);
+    axisY.classList.toggle('is-off', !axes.y);
+    preview.classList.toggle('can-drag', axes.x || axes.y);
+  };
+  img.addEventListener('load', paint);
+  paint();
+
+  xInput.addEventListener('input', () => { position = normalizeCoverPosition({ ...position, x: Number(xInput.value) }); paint(); });
+  yInput.addEventListener('input', () => { position = normalizeCoverPosition({ ...position, y: Number(yInput.value) }); paint(); });
+  zoomInput.addEventListener('input', () => { position = normalizeCoverPosition({ ...position, zoom: Number(zoomInput.value) / 100 }); paint(); });
+
+  dialog.modal.querySelectorAll('[data-crop-frame]').forEach(button => {
+    button.addEventListener('click', () => {
+      frame = COVER_CROP_FRAMES.find(item => item.key === button.dataset.cropFrame) || frame;
+      preview.style.aspectRatio = String(frame.aspect);
+      dialog.modal.querySelectorAll('[data-crop-frame]').forEach(other => other.classList.toggle('chip-active', other === button));
+      paint();
+    });
+  });
+  dialog.modal.querySelectorAll('[data-crop-preset]').forEach(button => {
+    button.addEventListener('click', () => {
+      const preset = button.dataset.cropPreset;
+      position = normalizeCoverPosition({
+        ...position,
+        x: preset === 'left' ? 0 : preset === 'right' ? 100 : position.x,
+        y: preset === 'top' ? 0 : preset === 'bottom' ? 100 : preset === 'middle' ? 50 : position.y
+      });
+      paint();
+    });
+  });
+  dialog.modal.querySelector('[data-cover-reset]').addEventListener('click', () => {
+    position = { x: 50, y: 50, zoom: 1 };
+    paint();
+  });
+
+  // Drag = the photo follows the finger/cursor exactly (utils/coverPosition.js
+  // converts screen pixels into object-position percent, zoom included).
+  let drag = null;
+  preview.addEventListener('pointerdown', (e) => {
+    if (!img.naturalWidth || !img.naturalHeight) return;
+    drag = { x: e.clientX, y: e.clientY, position: { ...position } };
+    preview.classList.add('is-grabbing');
+    try { preview.setPointerCapture(e.pointerId); } catch { /* older browsers */ }
+  });
+  preview.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const bounds = preview.getBoundingClientRect();
+    position = dragCoverPosition(drag.position, e.clientX - drag.x, e.clientY - drag.y, bounds.width, bounds.height, img.naturalWidth, img.naturalHeight);
+    paint();
+  });
+  const endDrag = () => { drag = null; preview.classList.remove('is-grabbing'); };
+  preview.addEventListener('pointerup', endDrag);
+  preview.addEventListener('pointercancel', endDrag);
+  preview.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    position = normalizeCoverPosition({ ...position, zoom: position.zoom * (e.deltaY < 0 ? 1.08 : 1 / 1.08) });
+    paint();
+  }, { passive: false });
+
+  const save = dialog.modal.querySelector('[data-cover-save]');
+  save.addEventListener('click', async () => {
+    save.disabled = true;
+    const next = normalizeCoverPosition(position);
+    try {
+      await updateTrip(trip.id, { coverPosition: { x: next.x, y: next.y, zoom: next.zoom } });
+    } catch (error) {
+      // The deployed rules may still be the x/y-only version (v44): keep the pan
+      // the reader chose and say what is missing, instead of losing the whole edit.
+      const denied = /permission-denied|permission/i.test(String(error?.message || error?.code || ''));
+      if (denied && next.zoom > 1) {
+        try {
+          await updateTrip(trip.id, { coverPosition: { x: next.x, y: next.y } });
+          position = { ...next, zoom: 1 };
+          paint();
+          toast.error(th('บันทึกตำแหน่งแล้ว แต่ “ขยาย” ยังใช้ไม่ได้ — ผู้ดูแลต้อง deploy Firestore Rules ใหม่ (coverPosition.zoom)', 'Position saved, but zoom is not allowed yet — an admin must deploy the updated Firestore rules (coverPosition.zoom).'));
+          save.disabled = false;
+          onSaved?.(position);
+          return;
+        } catch { /* fall through to the generic error below */ }
+      }
+      toast.error(error?.message || th('บันทึกครอปไม่สำเร็จ', 'Could not save the crop'));
+      save.disabled = false;
+      return;
+    }
+    position = next;
+    dialog.close();
+    toast.success(th('บันทึกครอปภาพปกแล้ว — ทุกกรอบใช้ครอปเดียวกัน', 'Cover crop saved — every frame now uses it'));
+    onSaved?.(position);
+  });
+  return dialog;
+}
+
+/** Paint a saved crop onto every cover already on screen (no re-render needed). */
+function applyCoverCropToDom(tripId, position) {
+  const next = normalizeCoverPosition(position);
+  document.querySelectorAll(`[data-cover-trip="${tripId}"]`).forEach(img => {
+    img.style.objectPosition = `${next.x}% ${next.y}%`;
+    img.style.transform = next.zoom > 1 ? `scale(${next.zoom})` : '';
+  });
+}
+
 async function renderDashboard(params) {
   const tripId = params.tripId;
   const token = beginRender();
@@ -3680,6 +3868,10 @@ async function renderDashboard(params) {
 
   const coverUrl = trip?.coverImage || '';
   const coverPosition = normalizeCoverPosition(trip?.coverPosition);
+  // v45: the crop is the reader's choice, so the control lives ON the cover as
+  // well as in the ⋯ menu — and a trip admin gets it too, not only a member
+  // manager (the framing is a trip setting, saved for everyone).
+  const canEditCover = Boolean(coverUrl) && (canEditDashboard || Boolean(perms.isAdmin));
   const placeLabel = [trip?.country, trip?.city].filter(Boolean).join(' · ');
   const rangeLabel = tripRangeLabel(trip);
   const dragHandle = (what) => canEditDashboard ? `<div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลาก','Drag')}${what}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>` : '';
@@ -3687,7 +3879,7 @@ async function renderDashboard(params) {
     <div class="page-enter space-y-4" id="dashboard-view">
       <header class="dash-head${coverUrl ? ' has-cover' : ''}">
         <div class="dash-head-row">
-          ${coverUrl ? `<figure class="dash-cover"><img decoding="async" src="${escapeHtml(coverUrl)}" style="object-position:${coverPosition.x}% ${coverPosition.y}%" alt="" onerror="this.closest('.dash-cover')?.remove()"></figure>` : ''}
+          ${coverUrl ? `<figure class="dash-cover"><img decoding="async" src="${escapeHtml(coverUrl)}" data-cover-trip="${escapeHtml(tripId)}" style="${coverCropStyle(coverPosition)}" alt="" onerror="this.closest('.dash-cover')?.remove()">${canEditCover ? `<button type="button" id="dash-cover-crop" class="dash-cover-edit no-export" title="${th('เลือกส่วนภาพปกที่จะแสดง','Choose which part of the cover shows')}">${icon('crop', 'w-4 h-4')} <span>${th('เลือกครอปภาพปก','Cover crop')}</span></button>` : ''}</figure>` : ''}
           <div class="dash-head-main">
             <h1 class="page-title">${escapeHtml(trip?.name || t('dashboard'))}</h1>
             <p class="dash-meta">
@@ -3704,7 +3896,7 @@ async function renderDashboard(params) {
                 aria-controls="dash-more-menu" aria-label="${th('ตัวเลือกเพิ่มเติม','More options')}" title="${th('ตัวเลือกเพิ่มเติม','More options')}">${icon('more-horizontal', 'w-4 h-4')}</button>
               <div class="menu-pop" id="dash-more-menu" role="menu" hidden>
                 <button id="add-place-quick" type="button" class="menu-pop-item" role="menuitem">${icon('map-pin', 'w-4 h-4')} ${t('addPlace')}</button>
-                ${canEditDashboard && coverUrl ? `<button id="dash-position-cover" type="button" class="menu-pop-item" role="menuitem">${icon('crop', 'w-4 h-4')} ${th('ปรับตำแหน่งภาพปก','Adjust cover position')}</button>` : ''}
+                ${canEditCover ? `<button id="dash-position-cover" type="button" class="menu-pop-item" role="menuitem">${icon('crop', 'w-4 h-4')} ${th('เลือกครอปภาพปก','Choose cover crop')}</button>` : ''}
                 ${perms.isAdmin ? `<button id="dash-edit-trip" type="button" class="menu-pop-item" role="menuitem">${icon('pencil', 'w-4 h-4')} ${th('แก้ไขทริป','Edit trip')}</button>` : ''}
                 <div class="menu-pop-sep" role="separator"></div>
                 ${canEditDashboard ? `<button id="dash-widgets-btn" type="button" class="menu-pop-item" role="menuitem" title="${th('เลือกการ์ดที่แสดงบนแดชบอร์ด','Choose which cards show on the dashboard')}">${icon('layout-grid', 'w-4 h-4')} ${th('เลือกการ์ด','Choose cards')}</button>
@@ -3875,56 +4067,17 @@ async function renderDashboard(params) {
   initReveal(appEl);
   if (isStale(token)) return;
 
-  bind('dash-position-cover', 'click', () => {
-    const liveFrame = appEl.querySelector('.dash-cover');
-    const rect = liveFrame?.getBoundingClientRect();
-    const ratio = rect?.height ? rect.width / rect.height : 3;
-    let position = normalizeCoverPosition(latestDashboardTrip.coverPosition);
-    const dialog = showModal(`
-      <h3>${th('ปรับตำแหน่งภาพปก', 'Adjust cover position')}</h3>
-      <p class="input-hint">${th('ลากภาพ หรือใช้แถบเลื่อนเพื่อเลือกตำแหน่ง สมาชิกทุกคนจะเห็นตำแหน่งที่บันทึก', 'Drag the image or use the sliders. Everyone will see the saved position.')}</p>
-      <div class="cover-position-preview" style="aspect-ratio:${ratio}"><img src="${escapeHtml(latestDashboardTrip.coverImage || coverUrl)}" alt="" draggable="false"></div>
-      <label class="cover-position-control">${th('แนวนอน', 'Horizontal')} <input type="range" min="0" max="100" step="1" data-cover-x></label>
-      <label class="cover-position-control">${th('แนวตั้ง', 'Vertical')} <input type="range" min="0" max="100" step="1" data-cover-y></label>
-      <div class="cover-position-actions"><button type="button" class="btn btn-secondary" data-cover-reset>${th('กึ่งกลาง', 'Center')}</button><button type="button" class="btn btn-primary" data-cover-save>${th('บันทึก', 'Save')}</button></div>
-    `);
-    const frame = dialog.modal.querySelector('.cover-position-preview');
-    const img = frame.querySelector('img');
-    const x = dialog.modal.querySelector('[data-cover-x]');
-    const y = dialog.modal.querySelector('[data-cover-y]');
-    const paint = () => { img.style.objectPosition = `${position.x}% ${position.y}%`; x.value = position.x; y.value = position.y; };
-    paint();
-    x.addEventListener('input', () => { position.x = Number(x.value); paint(); });
-    y.addEventListener('input', () => { position.y = Number(y.value); paint(); });
-    dialog.modal.querySelector('[data-cover-reset]').addEventListener('click', () => { position = { x: 50, y: 50 }; paint(); });
-    let drag = null;
-    frame.addEventListener('pointerdown', e => {
-      if (!img.naturalWidth || !img.naturalHeight) return;
-      drag = { x: e.clientX, y: e.clientY, position: { ...position } };
-      frame.setPointerCapture(e.pointerId);
-    });
-    frame.addEventListener('pointermove', e => {
-      if (!drag) return;
-      const bounds = frame.getBoundingClientRect();
-      position = dragCoverPosition(drag.position, e.clientX - drag.x, e.clientY - drag.y, bounds.width, bounds.height, img.naturalWidth, img.naturalHeight);
-      paint();
-    });
-    frame.addEventListener('pointerup', () => { drag = null; });
-    frame.addEventListener('pointercancel', () => { drag = null; });
-    const save = dialog.modal.querySelector('[data-cover-save]');
-    save.addEventListener('click', async () => {
-      save.disabled = true;
-      try {
-        await updateTrip(tripId, { coverPosition: position });
-        const cover = appEl.querySelector('.dash-cover img');
-        if (cover) cover.style.objectPosition = `${position.x}% ${position.y}%`;
-        latestDashboardTrip = { ...latestDashboardTrip, coverPosition: position };
-        dialog.close();
-        toast.success(th('บันทึกตำแหน่งภาพปกแล้ว', 'Cover position saved'));
-      } catch (error) { toast.error(error.message || th('บันทึกไม่สำเร็จ', 'Could not save')); }
-      finally { save.disabled = false; }
-    });
+  // v45: the cover crop is one shared editor (utils/coverPosition.js owns the
+  // numbers) — the button sitting on the photo and the ⋯ menu item both open it,
+  // and the saved crop is painted onto every cover already on screen.
+  const openCoverCrop = () => openCoverCropDialog(latestDashboardTrip || trip, {
+    onSaved: (position) => {
+      latestDashboardTrip = { ...latestDashboardTrip, coverPosition: position };
+      applyCoverCropToDom(tripId, position);
+    }
   });
+  bind('dash-cover-crop', 'click', openCoverCrop);
+  bind('dash-position-cover', 'click', openCoverCrop);
   bind('dash-edit-trip', 'click', () => openTripForm(trip, { onSaved: () => router.handle() }));
   bind('add-place-quick', 'click', () => { location.hash = `#/trip/${tripId}/itinerary?action=add`; });
   bind('add-expense-quick', 'click', () => { location.hash = `#/trip/${tripId}/expenses/add`; });
@@ -4179,6 +4332,9 @@ async function renderDashboard(params) {
     if (cover) {
       const position = normalizeCoverPosition(latestTrip.coverPosition);
       cover.style.objectPosition = `${position.x}% ${position.y}%`;
+      // v45: the saved crop also carries how close it is; both axes are shared,
+      // so another member's choice lands here without a reload.
+      cover.style.transform = position.zoom > 1 ? `scale(${position.zoom})` : '';
       if (latestTrip.coverImage && cover.getAttribute('src') !== latestTrip.coverImage) cover.src = latestTrip.coverImage;
     }
     currentTrip = latestTrip;
@@ -10360,11 +10516,22 @@ async function renderSettlement(params) {
    * every transfer gets its own high-contrast colour and curve, and amount tags
    * are collision-checked against other tags and member labels. If the graph is
    * too dense, a tag gets its own row below the drawing instead of overlapping.
+   *
+   * v45 (owner: “แผนที่หนี้กว้างใหญ่เกินไป ต้องสโครลหลายรอบ กว่าจะเห็นครบ (ดูในคอม)”):
+   * the sheet the drawing is laid out on is now bounded — see
+   * utils/debtMap.js:debtMapCanvas. On the page it stays no wider than the card
+   * (so the labels render at ~100% instead of shrinking) and always landscape (so
+   * the whole map is one glance, not several screens of scrolling). A map too
+   * dense for a full amount pill keeps that pill's numbered dot on its own line —
+   * the numbered list under the drawing carries the amount — and one tap on
+   * “ขยายดูเต็มจอ” opens the same drawing on the generous sheet where every
+   * amount fits in full (`detailed: true`), with pan and zoom.
    */
-  function debtMapHtml(layoutAttempt = 0) {
+  function debtMapHtml(layoutAttempt = 0, { detailed = false } = {}) {
     const txns = (state.transactions || []).filter(tx => tx?.from && tx?.to && tx.from !== tx.to);
     const membersMap = state.membersMap || {};
     if (!txns.length) {
+      if (detailed) return '';
       return `<div class="card p-4">${renderEmptyState({ icon: 'party-popper', title: t('noDebt'), desc: t('allCleared') })}</div>`;
     }
     const shortName = (person, max = 22) => {
@@ -10391,9 +10558,12 @@ async function renderSettlement(params) {
     /* ---- layout: one ellipse, barycentre ordering to shorten the lines ---- */
     const vw = (typeof window !== 'undefined' && window.innerWidth) || 1024;
     const compact = vw < 1024;
-    // Grow the canvas rather than squeeze people together; narrow screens scroll.
-    const graphWidth = Math.max(900, ids.length * 100 + 180) * (1 + layoutAttempt * 0.35);
-    const GRAPH_H = Math.max(620, ids.length * 90 + 160, txns.length * 38 + 80) * (1 + layoutAttempt * 0.35);
+    // v45: the sheet is bounded (utils/debtMap.js) — a sheet wider than the card
+    // shrinks every label, and a sheet taller than the screen makes the reader
+    // scroll back and forth to see one diagram.
+    const sheet = debtMapCanvas({ people: ids.length, transfers: txns.length, attempt: layoutAttempt, compact, detailed });
+    const graphWidth = sheet.width;
+    const GRAPH_H = sheet.height;
     const FS = compact
       ? { initial: 13, name: 12.5, role: 12, nameCharW: 7.4, charW: 7.6, labelH: 24 }
       : { initial: 12, name: 11, role: 11, nameCharW: 6.6, charW: 6.6, labelH: 22 };
@@ -10489,7 +10659,10 @@ async function renderSettlement(params) {
         labelHeight: compact ? 23 : 21,
         charWidth: FS.charW,
         numberSize: compact ? 23 : 21,
-        amountOnly: layoutAttempt >= 12
+        // The expanded sheet keeps widening until every amount has its full pill;
+        // the bounded on-page sheet hands the rest to numbered dots instead of
+        // letting a pill sit on a name or on another pill.
+        amountOnly: detailed && layoutAttempt >= sheet.maxAttempt
       }
     );
     const placementByIndex = new Map(
@@ -10498,8 +10671,8 @@ async function renderSettlement(params) {
     const orderedPlacements = edgeRows.map((edge, i) => placementByIndex.get(i) || { kind: 'none' });
     // Make more space and re-layout people/lines instead of moving amounts
     // into a detached side column or replacing them with numbered dots.
-    if (orderedPlacements.some(position => position.kind !== 'label') && layoutAttempt < 12) {
-      return debtMapHtml(layoutAttempt + 1);
+    if (orderedPlacements.some(position => position.kind !== 'label') && sheet.canGrow) {
+      return debtMapHtml(layoutAttempt + 1, { detailed });
     }
     const W = graphWidth;
     edgeRows.forEach((edge, i) => { edge.placement = orderedPlacements[i]; });
@@ -10527,7 +10700,7 @@ async function renderSettlement(params) {
           : '';
       labelsHtml += onLine;
       edgesHtml += `
-        <g class="debt-map-edge" data-edge="${escapeHtml(tx.from)}→${escapeHtml(tx.to)}" data-color="${escapeHtml(color)}" ${placement.kind === 'label' ? '' : 'data-offgraph="true"'}>
+        <g class="debt-map-edge" data-edge="${escapeHtml(tx.from)}→${escapeHtml(tx.to)}" data-step="${edge.index + 1}" data-color="${escapeHtml(color)}" ${placement.kind === 'label' ? '' : 'data-offgraph="true"'}>
           <title>${escapeHtml(payer.displayName || '')} ${th('จ่ายให้', 'pays')} ${escapeHtml(receiver.displayName || '')}: ${escapeHtml(edge.label)}</title>
           ${(runs.length ? runs : [d]).map((run, runIndex, all) => `<path d="${run}" fill="none" stroke="${escapeHtml(color)}" stroke-width="2.6" stroke-opacity=".85" stroke-linecap="round"${runIndex === all.length - 1 ? ` marker-end="url(#${markerId})"` : ''}/>`).join('')}
         </g>`;
@@ -10587,6 +10760,22 @@ async function renderSettlement(params) {
       </div>`;
     }).join('');
     const totalMove = txns.reduce((sum, tx) => sum + (tx.amountMinor || 0), 0);
+    // v45: an amount whose pill had no room on the bounded sheet keeps its
+    // numbered dot ON its own line — the numbered list under the drawing carries
+    // the amount, and “ขยายดูเต็มจอ” redraws every pill in full.
+    const dotCount = edgeRows.filter(edge => edge.placement?.kind !== 'label').length;
+
+    /* The drawing on its own, so the expanded view can reuse the exact same
+       layout code on the generous sheet (debtMapHtml(0, { detailed: true })). */
+    const drawingHtml = `
+        <div class="debt-map-container">
+          <div class="debt-map-frame" style="--debt-map-natural-width:${W}px;--debt-map-ar:${(W / GRAPH_H).toFixed(4)}">
+            <svg class="debt-map-svg${compact ? ' debt-map-svg--compact' : ''}" viewBox="0 0 ${W} ${GRAPH_H}" style="--debt-map-natural-width:${W}px" role="group" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected by money-transfer lines'))}">
+              <defs>${markerDefs.join('')}</defs>${edgesHtml}${labelsHtml}${nodesHtml}
+            </svg>
+          </div>
+        </div>`;
+    if (detailed) return drawingHtml;
 
     return `
       <div class="card p-5 debt-map-card">
@@ -10598,8 +10787,13 @@ async function renderSettlement(params) {
           <div class="debt-map-side">
             <div class="debt-map-total"><span>${th('ยอดที่ต้องโอนทั้งหมด', 'Total to transfer')}</span><strong>${money(totalMove)}</strong><small>${txns.length} ${th('รายการโอน', 'transfers')}</small></div>
             ${/* v44: the diagram itself is shareable — one tap turns the SVG into a PNG
-                 (exports/index.js: exportSvgToPng rasterises the drawing, not the page). */ ''}
-            <button type="button" id="export-debt-map-png" class="btn btn-secondary btn-sm no-export">${icon('image', 'w-4 h-4')} ${th('แผนภาพ PNG','Diagram PNG')}</button>
+                 (exports/index.js: exportSvgToPng rasterises the drawing, not the page).
+                 v45: “ขยายดูเต็มจอ” opens the same drawing on the generous sheet, where
+                 a dense map has room for every amount in full, with pan and zoom. */ ''}
+            <div class="debt-map-tools">
+              <button type="button" id="debt-map-expand" class="btn btn-secondary btn-sm no-export">${icon('maximize', 'w-4 h-4')} ${th('ขยายดูเต็มจอ','Expand')}</button>
+              <button type="button" id="export-debt-map-png" class="btn btn-secondary btn-sm no-export">${icon('image', 'w-4 h-4')} ${th('แผนภาพ PNG','Diagram PNG')}</button>
+            </div>
           </div>
         </div>
         <p class="debt-total-explanation">${th('ผลรวมของทุกรายการโอน อาจต่างจากยอดสุทธิรวม หากสมาชิกคนเดียวกันทั้งโอนและรับเงิน', 'Sum of all transfers; this may differ from the net total when someone both pays and receives.')}</p>
@@ -10609,16 +10803,150 @@ async function renderSettlement(params) {
           <span class="debt-legend-item debt-legend-item--unique"><i class="debt-legend-swatch" aria-hidden="true">${order.filter(id => (recv.get(id) || 0) > 0).slice(0, 4).map(id => `<span style="background:${escapeHtml(nodeColors.get(id) || 'var(--primary)')}"></span>`).join('')}</i>${th('สีเส้น = สีของผู้รับเงินรายการนั้น', 'Line colour = the receiver’s colour')}</span>
         </div>
         <p class="debt-map-note debt-map-scroll-hint">${th('เลื่อนภาพแนวนอนเพื่อดูแผนที่ทั้งหมด', 'Scroll horizontally to see the whole map.')}</p>
-        <div class="debt-map-container">
-          <svg class="debt-map-svg${compact ? ' debt-map-svg--compact' : ''}" viewBox="0 0 ${W} ${GRAPH_H}" style="--debt-map-natural-width:${W}px" role="group" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected by money-transfer lines'))}">
-            <defs>${markerDefs.join('')}</defs>${edgesHtml}${labelsHtml}${nodesHtml}
-          </svg>
-        </div>
+        ${drawingHtml}
+        ${dotCount ? `<p class="debt-map-note debt-map-dot-note">${icon('info', 'w-3.5 h-3.5')} ${th(`${dotCount} รายการที่พื้นที่ภาพไม่พอ แสดงยอดเป็นเลขกำกับบนเส้นของตัวเอง — อ่านจำนวนเงินได้ที่เลขเดียวกันในรายการด้านล่าง หรือกด “ขยายดูเต็มจอ” เพื่อดูยอดบนเส้นทุกเส้น`, `${dotCount} transfers had no room for the full amount on their line, so they show their number instead — read the same number in the list below, or choose “Expand” to see every amount on its line.`)}</p>` : ''}
         <div class="debt-list-heading"><h4>${th('รายการโอนที่เหลือ', 'Remaining transfers')}</h4><span>${txns.length} ${th('รายการ', 'transfers')}</span></div>
         <div class="debt-payer-list">${rowsHtml}</div>
         <p class="debt-map-action-hint">${th('หลังโอนเงินจริงแล้ว กด “จ่ายแล้ว” เพื่อบันทึกยอดเต็มหรือบางส่วน', 'After sending money, select “Mark paid” to record a full or partial payment.')}</p>
       </div>
       ${netSummaryHtml()}`;
+  }
+
+  /**
+   * The same drawing, full screen, on the generous sheet (v45).
+   *
+   * The card now fits the whole map into one landscape glance — which means a very
+   * dense trip hands a few amounts to their numbered dot instead of shrinking the
+   * labels below reading size. Expanded, the sheet grows until every amount has
+   * its full pill on its own line, and the reader pans/zooms the drawing instead
+   * of scrolling the page up and down to see it all.
+   */
+  function openDebtMapZoom() {
+    const content = document.getElementById('settlement-content');
+    if (!content?.querySelector('.debt-map-container svg')) return;
+    // Same layout code, generous sheet. The drawing sits beside the page copy, so
+    // its marker/clip ids get a suffix: one shared id would let the arrowheads on
+    // one sheet resolve against the other sheet's <defs>.
+    const stamp = Date.now().toString(36);
+    const holder = document.createElement('div');
+    holder.innerHTML = debtMapHtml(0, { detailed: true })
+      .replace(/debt-arrow-/g, `debt-arrow-${stamp}-`)
+      .replace(/debt-avatar-/g, `debt-avatar-${stamp}-`);
+    const svg = holder.querySelector('svg');
+    if (!svg) return;
+    const box = String(svg.getAttribute('viewBox') || '0 0 1200 800').split(/[\s,]+/).map(Number);
+    const naturalW = box[2] || 1200;
+    const naturalH = box[3] || 800;
+
+    const dialog = showModal(`
+      <div class="debt-zoom">
+        <div class="debt-zoom-head">
+          <div class="debt-zoom-title">
+            <h3>${th('แผนที่หนี้ · ดูเต็มจอ', 'Debt map · full screen')}</h3>
+            <p class="input-hint">${th('ลากเพื่อดูรอบ ๆ · ปุ่ม +/− หรือ Ctrl+ล้อเมาส์เพื่อขยาย · กดชื่อใครเพื่อดูรายการของเขา', 'Drag to look around · +/− or Ctrl+wheel to zoom · tap a name for that person’s items.')}</p>
+          </div>
+          <div class="debt-zoom-controls no-export">
+            <button type="button" class="btn btn-secondary btn-sm" data-zoom="out" aria-label="${th('ย่อ', 'Zoom out')}">−</button>
+            <span class="debt-zoom-level" data-zoom-level aria-live="polite">100%</span>
+            <button type="button" class="btn btn-secondary btn-sm" data-zoom="in" aria-label="${th('ขยาย', 'Zoom in')}">+</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-zoom="fit">${th('พอดีจอ', 'Fit')}</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-zoom="png">${icon('image', 'w-4 h-4')} PNG</button>
+          </div>
+        </div>
+        <div class="debt-zoom-viewport" data-zoom-viewport tabindex="0" role="group" aria-label="${th('แผนที่หนี้แบบขยาย', 'Zoomable debt map')}">
+          <div class="debt-zoom-stage" data-zoom-stage></div>
+        </div>
+      </div>
+    `, { className: 'debt-zoom-modal', maxWidth: 'min(1360px, 96vw)' });
+
+    const viewport = dialog.modal.querySelector('[data-zoom-viewport]');
+    const stage = dialog.modal.querySelector('[data-zoom-stage]');
+    const level = dialog.modal.querySelector('[data-zoom-level]');
+    stage.appendChild(svg);
+    svg.classList.add('debt-map-svg--zoomed');
+
+    let zoom = 1;
+    const fitZoom = () => Math.max(0.25, (viewport.clientWidth - 8) / naturalW);
+    const paint = () => {
+      svg.style.width = `${Math.round(naturalW * zoom)}px`;
+      svg.style.height = `${Math.round(naturalH * zoom)}px`;
+      level.textContent = `${Math.round(zoom * 100)}%`;
+    };
+    const setZoom = (next, anchor) => {
+      const clamped = Math.max(0.25, Math.min(4, next));
+      // Keep the point under the cursor (or the centre) where it is while zooming.
+      const focusX = (anchor?.x ?? viewport.clientWidth / 2) + viewport.scrollLeft;
+      const focusY = (anchor?.y ?? viewport.clientHeight / 2) + viewport.scrollTop;
+      const ratio = clamped / (zoom || 1);
+      zoom = clamped;
+      paint();
+      viewport.scrollLeft = focusX * ratio - ((anchor?.x ?? viewport.clientWidth / 2));
+      viewport.scrollTop = focusY * ratio - ((anchor?.y ?? viewport.clientHeight / 2));
+    };
+    // Start at 100% (a small map is scaled up to the modal width instead), so the
+    // expanded view is always at least as readable as the card.
+    zoom = Math.max(1, fitZoom());
+    paint();
+
+    dialog.modal.querySelectorAll('[data-zoom]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const action = button.dataset.zoom;
+        if (action === 'in') return setZoom(zoom * 1.25);
+        if (action === 'out') return setZoom(zoom / 1.25);
+        if (action === 'fit') return setZoom(fitZoom());
+        if (action !== 'png') return;
+        button.disabled = true;
+        const tLoad = toast.loading(th('กำลังสร้างรูป…', 'Creating image…'));
+        try {
+          const { exportSvgToPng } = await import('./exports/index.js');
+          await exportSvgToPng(svg, `debt-map-${tripId}.png`, {
+            background: getComputedStyle(svg).backgroundColor || '#ffffff'
+          });
+          tLoad.close();
+          toast.success(th('ส่งออกแผนภาพแล้ว', 'Diagram exported'));
+        } catch (e) {
+          tLoad.close();
+          toast.error(e?.message || th('ส่งออกแผนภาพไม่สำเร็จ', 'Could not export the diagram'));
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+    viewport.addEventListener('wheel', (e) => {
+      if (!e.ctrlKey) return;               // a plain wheel still scrolls the sheet
+      e.preventDefault();
+      const rect = viewport.getBoundingClientRect();
+      setZoom(zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12), { x: e.clientX - rect.left, y: e.clientY - rect.top });
+    }, { passive: false });
+
+    // Drag to pan; a tap that did not move still opens that person's items.
+    let pan = null;
+    let moved = false;
+    viewport.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      pan = { x: e.clientX, y: e.clientY, left: viewport.scrollLeft, top: viewport.scrollTop };
+      moved = false;
+      viewport.classList.add('is-grabbing');
+      try { viewport.setPointerCapture(e.pointerId); } catch { /* older browsers */ }
+    });
+    viewport.addEventListener('pointermove', (e) => {
+      if (!pan) return;
+      const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+      viewport.scrollLeft = pan.left - dx;
+      viewport.scrollTop = pan.top - dy;
+    });
+    const endPan = () => { pan = null; viewport.classList.remove('is-grabbing'); };
+    viewport.addEventListener('pointerup', endPan);
+    viewport.addEventListener('pointercancel', endPan);
+    svg.querySelectorAll('[data-debt-person]').forEach(node => {
+      node.addEventListener('click', () => {
+        if (moved) return;
+        const id = node.dataset.debtPerson;
+        dialog.close();
+        if (id) openReceiptDetail(id);
+      });
+    });
   }
 
   /** Debt-map interactions: nodes / rows open that member's itemized expense receipt. */
@@ -10663,6 +10991,31 @@ async function renderSettlement(params) {
       } finally {
         exportBtn.disabled = false;
       }
+    });
+
+    // v45: one tap opens the same drawing full screen, on the sheet that has room
+    // for every amount in full, with pan and zoom.
+    content.querySelector('#debt-map-expand')?.addEventListener('click', () => openDebtMapZoom());
+
+    // Reading a dense map: hovering (or keyboard-focusing) a transfer row lights up
+    // its own line and amount and dims the rest, so the eye never has to trace
+    // twenty crossing arcs to find the one it asked about.
+    const mapSvg = content.querySelector('.debt-map-container svg');
+    const focusStep = (step) => {
+      if (!mapSvg) return;
+      mapSvg.querySelectorAll('.debt-map-edge, .debt-map-amount-label').forEach(node => {
+        const own = Number(node.dataset.step || node.dataset.pill || 0);
+        node.classList.toggle('is-focus', Boolean(step) && own === step);
+        node.classList.toggle('is-dimmed', Boolean(step) && own !== step);
+      });
+    };
+    content.querySelectorAll('.debt-tx-row').forEach(row => {
+      const step = Number(row.dataset.debtStep || 0);
+      if (!step) return;
+      row.addEventListener('pointerenter', () => focusStep(step));
+      row.addEventListener('pointerleave', () => focusStep(0));
+      row.addEventListener('focusin', () => focusStep(step));
+      row.addEventListener('focusout', () => focusStep(0));
     });
   }
 
@@ -12615,14 +12968,17 @@ async function renderSettings(params) {
             <label class="input-label">${t('coverImage')}</label>
             <div class="flex gap-2">
               <div class="rounded-xl overflow-hidden border flex-1" style="border-color:var(--border); max-height:92px;">
-                <img decoding="async" id="s-cover-preview" class="w-full h-full object-cover" style="aspect-ratio:16/9; max-height:90px;" src="${escapeHtml(trip?.coverImage || '')}" onerror="this.style.display='none'" alt="">
+                <img decoding="async" id="s-cover-preview" class="w-full h-full object-cover" style="aspect-ratio:16/9; max-height:90px; ${coverCropStyle(trip?.coverPosition)}" src="${escapeHtml(trip?.coverImage || '')}" onerror="this.style.display='none'" alt="">
               </div>
               <div class="flex-1 space-y-2">
                 <input id="s-cover-url" class="input text-xs !min-h-[32px]" placeholder="https://..." value="${trip?.coverImage && String(trip.coverImage).startsWith('http') ? escapeHtml(trip.coverImage) : ''}">
                 <input id="s-cover-file" type="file" accept="image/*" class="input text-xs !min-h-[32px]">
               </div>
             </div>
-            <p class="input-hint !mt-1">${th('อัปโหลดหรือวางลิงก์','Upload or paste URL')}</p>
+            ${/* v45: the crop is a trip setting of its own — saved at once, shared
+                 with every member, and used by the dashboard banner and the cards. */ ''}
+            <button type="button" id="s-cover-crop" class="btn btn-secondary btn-sm mt-2 text-xs">${icon('crop', 'w-3 h-3')} ${th('เลือกครอปภาพปก','Choose cover crop')}</button>
+            <p class="input-hint !mt-1">${th('อัปโหลดหรือวางลิงก์ แล้วกด “เลือกครอปภาพปก” เพื่อเลือกส่วนที่จะแสดงเอง (บันทึกแล้วใช้กับทุกกรอบ)','Upload or paste a URL, then choose “Cover crop” to pick the part that shows (saved once, used by every frame).')}</p>
           </div>
         </div>
         <button id="save-settings" class="btn btn-primary w-full mt-3 !min-h-[40px]">${icon('save', 'w-4 h-4')} ${t('save')}</button>
@@ -12918,6 +13274,18 @@ async function renderSettings(params) {
     };
     reader.readAsDataURL(file);
   });
+  // v45: choose the crop of the cover that is on the trip now — the same editor
+  // the dashboard button opens, so the choice is stored once and shared.
+  bind('s-cover-crop', 'click', () => openCoverCropDialog(trip, {
+    onSaved: (position) => {
+      const preview = document.getElementById('s-cover-preview');
+      if (preview) {
+        preview.style.objectPosition = `${position.x}% ${position.y}%`;
+        preview.style.transform = position.zoom > 1 ? `scale(${position.zoom})` : '';
+      }
+      applyCoverCropToDom(trip?.id, position);
+    }
+  }));
 
   bindMoneyInputs(document);
 
@@ -13245,10 +13613,10 @@ async function renderSettings(params) {
       await updateTrip(tripId, payload);
       if (file) {
         const url = await uploadCoverImage(tripId, file, currentUser.uid);
-        if (url) await updateTrip(tripId, { coverImage: url, coverPosition: { x: 50, y: 50 } });
+        if (url) await updateTrip(tripId, { coverImage: url, coverPosition: { x: 50, y: 50, zoom: 1 } });
       } else {
         const coverUrl = document.getElementById('s-cover-url').value.trim();
-        if (coverUrl && coverUrl !== trip?.coverImage) await updateTrip(tripId, { coverImage: coverUrl, coverPosition: { x: 50, y: 50 } });
+        if (coverUrl && coverUrl !== trip?.coverImage) await updateTrip(tripId, { coverImage: coverUrl, coverPosition: { x: 50, y: 50, zoom: 1 } });
       }
       tLoad.close();
       toast.success(th('บันทึกการตั้งค่าแล้ว', 'Settings saved'));

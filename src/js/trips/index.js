@@ -4,6 +4,7 @@ import { deleteTransfer } from '../settlement/transfers.js';
 import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, query, where, limit, startAfter, arrayUnion, arrayRemove, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { compressImage } from '../utils/helpers.js';
+import { normalizeCoverPosition } from '../utils/coverPosition.js';
 import { generateInviteCode, normalizeInviteCode, isValidInviteCode } from '../utils/invite.js';
 import { cachedRead, cacheInvalidate, cacheForget, cacheClear, cacheSet, seedFromPersist, persistSet, persistDelete } from '../utils/datacache.js';
 
@@ -419,7 +420,9 @@ export async function createTrip(data, userId) {
     timezone: data.timezone || 'Asia/Bangkok',
     baseCurrency: data.baseCurrency || 'THB',
     coverImage: coverImageUrl,
-    ...(data.coverPosition ? { coverPosition: data.coverPosition } : {}),
+    // v45: a cover crop is stored clamped, so a legacy or duplicated trip can
+    // never carry coordinates (or a zoom) the rules would reject.
+    ...(data.coverPosition ? { coverPosition: normalizeCoverPosition(data.coverPosition) } : {}),
     themeColor: data.themeColor || brandPrimary(), // brand-locked since v16 (kept for older exports)
     status: 'draft',
     memberUids: [userId],

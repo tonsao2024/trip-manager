@@ -129,7 +129,10 @@ const TRIP = {
   baseCurrency: 'THB', timezone: 'Asia/Tokyo', exchangeRateToTHB: 0.24, themeColor: '#8bb89a',
   inviteCode: 'FUJI23', inviteEnabled: true,
   status: 'active', createdBy: 'u1', memberUids: ['u1', 'u2'], budgetTotal: 5000000, budgetPerPerson: 2500000,
-  createdAt: now, coverImage: ''
+  createdAt: now,
+  // v45: a saved crop (x, y, zoom) — the cover checks below assert that every
+  // frame reads it instead of letting object-fit: cover choose for itself.
+  coverImage: '/public/favicon-512.png', coverPosition: { x: 30, y: 70, zoom: 1.4 }
 };
 fsdb.__seed('trips/t1', TRIP);
 fsdb.__seed('trips/t1/members/u1', { displayName: 'สมชาย', username: 'admin', role: 'trip_admin', color: '#8bb89a', status: 'active', permissions: { canEditItinerary: true, canEditExpense: true, canManageMembers: true }, createdAt: now });
@@ -288,6 +291,59 @@ check((q('#category-stats')?.querySelectorAll('.progress').length || 0) >= 9, 'd
 check(!!q('#recent-expenses .expense-row'), 'dashboard: recent expenses');
 check(!!q('#upnext-list .step-num, #upnext-list .empty-state'), 'dashboard: up-next list');
 check(!errors.some(e => e.includes("Cannot set properties of null")), 'dashboard: no innerHTML-on-null errors');
+
+// v45 (owner 18 Nov 2026: “ภาพหน้าปก ให้สามารถเลือกคริปภาพที่ดึงมาแสดงได้ด้วยสิ
+// ตอนนี้ระบบครอปให้อัตโนมัติอาจจะได้ไม่ถูกใจ”) — the cover crop is a stored choice
+// (x, y, zoom) that every cover frame reads, and the reader can change it.
+console.log('\n▶ cover crop: the reader chooses what the cover shows (v45)');
+{
+  const pos = String(q('.dash-cover img')?.style.objectPosition || '').replace(/\s+/g, ' ');
+  check(!!q('.dash-cover img'), 'cover crop: the banner shows the trip cover');
+  check(pos === '30% 70%', `cover crop: the banner reads the saved x/y crop (${pos})`);
+  check(String(q('.dash-cover img')?.style.transform || '').replace(/\s+/g, ' ') === 'scale(1.4)', 'cover crop: the banner reads the saved zoom');
+  check(q('.dash-cover img')?.dataset.coverTrip === 't1', 'cover crop: the banner can be repainted when a member saves a new crop');
+  check(!!q('#dash-cover-crop'), 'cover crop: the control sits ON the cover, not only in the ⋯ menu');
+  check(!!q('#dash-position-cover'), 'cover crop: the ⋯ menu still offers the same editor');
+
+  await click('#dash-cover-crop');
+  await waitFor(() => q('.cover-crop-modal [data-crop-preview]'), { timeout: 6000, label: 'cover crop editor' }).catch(() => {});
+  check(!!q('.cover-crop-modal'), 'cover crop: the editor opens');
+  check(qa('[data-crop-frame]').length === 3, 'cover crop: the editor previews the three frames the photo appears in');
+  check(q('[data-cover-zoom]')?.value === '140', 'cover crop: the zoom control starts at the saved crop');
+  check(q('[data-zoom-level]')?.textContent === '140%', 'cover crop: the zoom is announced in percent');
+  check(qa('[data-crop-preset]').length === 5, 'cover crop: quick positions are one tap away');
+
+  const zoomInput = q('[data-cover-zoom]');
+  zoomInput.value = '220';
+  zoomInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await sleep(60);
+  check(/scale\(2\.2\)/.test(q('[data-crop-preview] img')?.style.transform || ''), 'cover crop: the zoom slider tightens the crop live');
+  check(q('[data-zoom-level]')?.textContent === '220%', 'cover crop: the announced zoom follows the slider');
+
+  const xInput = q('[data-cover-x]');
+  xInput.value = '12';
+  xInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await sleep(60);
+  check(String(q('[data-crop-preview] img')?.style.objectPosition || '').replace(/\s+/g, ' ') === '12% 70%', 'cover crop: the horizontal slider moves the crop live');
+  await click('[data-crop-preset="top"]');
+  await sleep(60);
+  check(String(q('[data-crop-preview] img')?.style.objectPosition || '').replace(/\s+/g, ' ') === '12% 0%', 'cover crop: “บน” pins the crop to the top edge');
+
+  await click('[data-cover-save]');
+  await waitFor(() => {
+    const savedCrop = fsdb.__dump('trips/t1')?.coverPosition;
+    return savedCrop && savedCrop.x === 12 && savedCrop.y === 0 && savedCrop.zoom === 2.2 && !q('.cover-crop-modal');
+  }, { timeout: 6000, label: 'cover crop saved' }).catch(() => {});
+  const savedCrop = fsdb.__dump('trips/t1')?.coverPosition;
+  check(savedCrop?.x === 12 && savedCrop?.y === 0 && savedCrop?.zoom === 2.2, `cover crop: the crop is saved on the shared trip (${JSON.stringify(savedCrop)})`);
+  check(!q('.cover-crop-modal'), 'cover crop: the editor closes after saving');
+  check(String(q('.dash-cover img')?.style.objectPosition || '').replace(/\s+/g, ' ') === '12% 0%'
+    && /scale\(2\.2\)/.test(q('.dash-cover img')?.style.transform || ''), 'cover crop: the banner shows the new crop without a reload');
+  check(/\.cover-position-control\.is-off \{ display: none; \}/.test(fs.readFileSync(path.join(root, 'src/css/dimension.css'), 'utf8')),
+    'cover crop: an axis with no overflow is hidden, not shown as a dead slider');
+  check(/managerMayUpdateCoverPosition[\s\S]*hasOnly\(\['x', 'y', 'zoom'\]\)/.test(fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8')),
+    'cover crop: the shared rules accept the zoom a crop stores');
+}
 
 console.log('\n▶ nav active-state follows the route without needless rebuilds (v33)');
 {
@@ -2705,6 +2761,41 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   }
   const debtRows = qa('#settlement-content .debt-tx-row [data-settle-person]');
   check(debtRows.length >= 2, `debt map: payer and recipient names are tappable (${debtRows.length} targets)`);
+
+  // v45 (owner 18 Nov 2026: “แผนที่หนี้ ตอนนี้มันกว้างใหญ่เกินไป ต้องสโครลหลายรอบ
+  // กว่าจะเห็นครบ (ดูในคอม)”) — the sheet the drawing is laid out on is bounded and
+  // landscape, the frame fits it into one glance, and one tap opens the generous
+  // sheet where a dense map still draws every amount in full.
+  const debtSheet = q('.debt-map-svg');
+  const debtFrame = q('.debt-map-frame');
+  const [, , sheetW, sheetH] = String(debtSheet?.getAttribute('viewBox') || '0 0 0 0').split(/[\s,]+/).map(Number);
+  check(!!debtFrame, 'debt map: the drawing sits in a fit frame');
+  check(sheetW > 0 && sheetW <= 1200, `debt map: the sheet never outgrows the card that shows it (${sheetW}px)`);
+  check(sheetW / sheetH >= 1.3, `debt map: the sheet stays landscape, so the whole map is one glance (${sheetW}×${sheetH})`);
+  check(/--debt-map-ar:[\d.]+/.test(debtFrame?.getAttribute('style') || ''), 'debt map: the frame carries the sheet’s aspect ratio');
+  check(/--debt-map-fit-height/.test(fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8'))
+    && /\.debt-map-frame\s*\{[^}]*aspect-ratio: var\(--debt-map-ar/.test(fs.readFileSync(path.join(root, 'src/css/dimension.css'), 'utf8')),
+    'debt map: desktop bounds the drawing height with a token, not a magic number');
+  check(!!q('#debt-map-expand'), 'debt map: one tap opens the drawing full screen');
+  check(qa('.debt-tx-row').every(row => Number(row.dataset.debtStep) > 0) && qa('.debt-map-edge').every(edge => Number(edge.dataset.step) > 0),
+    'debt map: every row and its line share a number, so hovering a row can light up its own line');
+  await click('#debt-map-expand');
+  await waitFor(() => q('.debt-zoom-stage svg'), { timeout: 6000, label: 'expanded debt map' }).catch(() => {});
+  const zoomStage = q('.debt-zoom-stage svg');
+  check(!!zoomStage && !!q('.debt-zoom-viewport'), 'debt map: the expanded sheet opens in its own pan/zoom viewport');
+  check(qa('.debt-zoom-stage .debt-map-amount-label[data-label-kind="label"]').length === qa('.debt-zoom-stage .debt-map-edge').length,
+    'debt map: expanded, every amount is drawn in full on its own line');
+  const zoomIds = qa('.debt-zoom-stage [id]').map(node => node.id);
+  check(new Set(zoomIds).size === zoomIds.length, 'debt map: the expanded sheet does not reuse the page sheet’s marker ids');
+  const widthBeforeZoom = Number.parseFloat(zoomStage?.style.width || '0');
+  check(widthBeforeZoom > 0, 'debt map: the expanded sheet has an explicit size, so zoom can change it');
+  await click('.debt-zoom-controls [data-zoom="in"]');
+  check(Number.parseFloat(q('.debt-zoom-stage svg')?.style.width || '0') > widthBeforeZoom, 'debt map: zoom in enlarges the drawing');
+  await click('.debt-zoom-controls [data-zoom="fit"]');
+  check(/%$/.test(q('[data-zoom-level]')?.textContent || ''), 'debt map: the zoom level is announced');
+  await click('.debt-zoom-modal [data-popup-close]');
+  await sleep(400);
+  check(!q('.debt-zoom-stage'), 'debt map: the expanded sheet closes again');
 
   {
     const { listTransfers } = await import(pathToFileURL(path.join(outDir, 'settlement/index.js')).href);

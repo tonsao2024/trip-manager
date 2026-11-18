@@ -370,6 +370,25 @@ describe('Firestore security rules', () => {
     await assertFails(updateDoc(ref(coadminUid), { coverPosition: { x: 10, y: 50 }, name: 'other' }));
   });
 
+  // v45 (owner: “ภาพหน้าปก ให้สามารถเลือกคริปภาพที่ดึงมาแสดงได้ด้วยสิ”): the crop
+  // also stores how close it is (zoom 1–3). The rule must accept a clamped zoom,
+  // reject one that would letterbox or blow past the frame, and still accept an
+  // older x/y-only write so a client that has not updated keeps working.
+  it('accepts a clamped cover zoom and rejects one outside the frame', async () => {
+    const ref = uid => doc(dbFor(uid), 'trips', tripId);
+    await assertSucceeds(updateDoc(ref(coadminUid), { coverPosition: { x: 40, y: 60, zoom: 2.2 }, updatedAt: serverTimestamp() }));
+    const snapshot = await assertSucceeds(getDoc(ref(memberUid)));
+    assert.deepEqual(snapshot.data().coverPosition, { x: 40, y: 60, zoom: 2.2 });
+    // A legacy x/y-only write is still valid (zoom is optional).
+    await assertSucceeds(updateDoc(ref(coadminUid), { coverPosition: { x: 50, y: 50 }, updatedAt: serverTimestamp() }));
+    // zoom < 1 would letterbox the cover; zoom > 3 is past what the app writes.
+    await assertFails(updateDoc(ref(coadminUid), { coverPosition: { x: 50, y: 50, zoom: 0.5 } }));
+    await assertFails(updateDoc(ref(coadminUid), { coverPosition: { x: 50, y: 50, zoom: 4 } }));
+    await assertFails(updateDoc(ref(coadminUid), { coverPosition: { x: 50, y: 50, zoom: 'big' } }));
+    // A non-manager still cannot write the crop, zoom or not.
+    await assertFails(updateDoc(ref(memberUid), { coverPosition: { x: 50, y: 50, zoom: 2 } }));
+  });
+
   it('limits non-admin trip-document writes to their specific capabilities', async () => {
     const memberDb = dbFor(memberUid);
     const tripRef = doc(memberDb, 'trips', tripId);

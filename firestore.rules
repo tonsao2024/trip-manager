@@ -132,10 +132,16 @@ service cloud.firestore {
     function managerMayUpdateCoverPosition(tripId) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['coverPosition', 'updatedAt'])
         && request.resource.data.coverPosition is map
-        && request.resource.data.coverPosition.keys().hasOnly(['x', 'y'])
+        // v45: the crop also stores `zoom` (how close the chosen part is). x/y stay
+        // required so an older client's write is still valid; zoom is optional and
+        // clamped to the same range the app writes (utils/coverPosition.js).
+        && request.resource.data.coverPosition.keys().hasOnly(['x', 'y', 'zoom'])
         && request.resource.data.coverPosition.keys().hasAll(['x', 'y'])
         && request.resource.data.coverPosition.x is number && request.resource.data.coverPosition.x >= 0 && request.resource.data.coverPosition.x <= 100
         && request.resource.data.coverPosition.y is number && request.resource.data.coverPosition.y >= 0 && request.resource.data.coverPosition.y <= 100
+        && request.resource.data.coverPosition.get('zoom', 1) is number
+        && request.resource.data.coverPosition.get('zoom', 1) >= 1
+        && request.resource.data.coverPosition.get('zoom', 1) <= 3
         && canManageMembers(tripId);
     }
 
