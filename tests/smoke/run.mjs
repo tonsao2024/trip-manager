@@ -3033,8 +3033,10 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
     await click('.itin-thumb-zoom[data-act="photo"]');
     await waitFor(() => q('.modal-card--lightbox [data-lb="img"]'), { timeout: 4000, label: 'image viewer' }).catch(() => {});
     check(!!q('.modal-card--lightbox [data-lb="img"]'), 'plan: tapping the photo opens the large viewer');
-    await click('.modal-card--lightbox [data-lb="close"]');
-    await sleep(300);
+    check(!!q('.modal-card--lightbox .popup-close'), 'plan: the viewer carries the shared ✕ in its corner');
+    await click('.modal-card--lightbox .popup-close');
+    await sleep(320);
+    check(!q('.modal-card--lightbox'), 'plan: the ✕ closes the viewer');
   }
 
   // ---- 7) ไอเดีย: ป๊อปอัพภาพใหญ่เต็มจอ ไม่ถูกขอบบัง ----
@@ -3055,8 +3057,32 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
     const lbCss = fs.readFileSync(path.join(root, 'src/css/components.css'), 'utf8');
     check(/\.modal-card--lightbox/.test(lbCss) && /max-height: min\(76vh/.test(lbCss),
       'ideas: the lightbox CSS keeps the whole photo on screen');
-    await click('.modal-card--lightbox [data-lb="close"]');
-    await sleep(300);
+    await click('.modal-card--lightbox .popup-close');
+    await sleep(320);
+    check(!q('.modal-card--lightbox'), 'ideas: the ✕ closes the photo popup');
+  }
+
+  /* ---- v44: every popup, every page, has the ✕ in the top-right corner ---- */
+  await goto('#/trip/t1/dashboard');
+  await waitFor(() => q('#recent-expenses [data-expense]'), { timeout: 8000, label: 'recent rows' }).catch(() => {});
+  if (q('#recent-expenses [data-expense]')) {
+    await click('#recent-expenses [data-expense]');
+    await waitFor(() => q('.bottom-sheet .popup-close'), { timeout: 4000, label: 'sheet close' }).catch(() => {});
+    const sheetBtn = q('.bottom-sheet .popup-close');
+    check(!!sheetBtn, 'popups: a dashboard sheet opens with the ✕');
+    if (sheetBtn) {
+      const sheetEl = q('.bottom-sheet');
+      const sheetBox = sheetEl.getBoundingClientRect();
+      const btnBox = sheetBtn.getBoundingClientRect();
+      const sheetCss = fs.readFileSync(path.join(root, 'src/css/flat.css'), 'utf8');
+      check(/\.popup-close\s*\{[^}]*position:\s*absolute/.test(sheetCss) && /top:\s*4px/.test(sheetCss) && /right:\s*8px/.test(sheetCss),
+        'popups: the ✕ is pinned to the top-right corner by CSS');
+      check(btnBox.top - sheetBox.top < 16 && sheetBox.right - btnBox.right < 16,
+        'popups: the ✕ actually sits in that corner on screen');
+      await click('.bottom-sheet .popup-close');
+      await sleep(420);
+      check(!sheetEl.isConnected, 'popups: the ✕ closes the sheet');
+    }
   }
 }
 

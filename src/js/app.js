@@ -1,5 +1,5 @@
 import { bindMoneyInputs } from './utils/moneyInput.js';
-import { DASHBOARD_WIDGETS, DASHBOARD_WIDGET_KEYS, normalizeWidgetOrder, normalizeHiddenWidgets } from './dashboard/widgets.js';
+import { DASHBOARD_WIDGETS, DASHBOARD_WIDGET_KEYS, normalizeWidgetOrder, normalizeHiddenWidgets, pairWidgetRows } from './dashboard/widgets.js';
 import { ideaCategoryId, placeCategoryLabel, placeCategoryColor, placeCategoryIcon } from './utils/categories.js';
 import { attachMapExpand } from './maps/index.js';
 import { expenseUpdateForCost } from './utils/reservations.js';
@@ -34,11 +34,11 @@ import {
 } from './expenses/index.js';
 import { fetchSettlementData, recordTransfer, deleteTransfer } from './settlement/index.js';
 
-import { listMembers, createMember, updateMember, deleteMember, countMemberReferences, mapFunctionError, MEMBER_ROLES } from './members/index.js';
+import { listMembers, createMember, updateMember, deleteMember, countMemberReferences, mapFunctionError, MEMBER_ROLES, hydrateMemberPhotos } from './members/index.js';
 import { dayjs, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay, parseDurationInput, thaiDate, thaiDateRange } from './utils/date.js';
 import { expensesInThb, convertCurrency, formatCurrency, formatCurrencyHtml, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually, tripCurrencyList } from './utils/currency.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses, groupTransfersByPayer } from './utils/settlement.js';
-import { debtMapColor, layoutDebtMapAmounts } from './utils/debtMap.js';
+import { debtMapColor, layoutDebtMapAmounts, debtMapEdgeRuns } from './utils/debtMap.js';
 import { splitCustom, splitEqual, participantsOf, averagePerPerson, scaleToTotal } from './utils/split.js';
 import { escapeHtml, sanitizeUrl } from './utils/sanitize.js';
 import { APP_VERSION, APP_VERSION_LABEL, APP_UPDATED_ISO, APP_NAME, APP_AUTHOR, APP_NAME_BY, appUpdatedLabel, appUpdatedShort, copyrightNote } from './utils/buildInfo.js';
@@ -2025,12 +2025,11 @@ function openImageViewer(images, startIndex = 0, title = '') {
   const imgs = (images || []).filter(Boolean);
   if (!imgs.length) return null;
   let cur = Math.min(Math.max(0, startIndex | 0), imgs.length - 1);
-  const closeLabel = getLang() === 'th' ? 'ปิด' : 'Close';
   const dlg = showModal(`
     <div class="idea-lightbox">
+      <!-- v44: the ✕ in the corner is the popup-wide one (components/modal.js). -->
       <div class="flex items-start justify-between gap-2 mb-2">
         <h3 class="font-semibold text-sm pr-2 min-w-0 truncate">${icon('images', 'w-4 h-4')} ${escapeHtml(title || '')}</h3>
-        <button class="icon-btn flex-shrink-0" data-lb="close" aria-label="${closeLabel}">${icon('x', 'w-4 h-4')}</button>
       </div>
       <div class="idea-lightbox-main">
         ${imgs.length > 1 ? `<button class="idea-lightbox-nav" data-lb="prev" aria-label="‹">${icon('chevron-left', 'w-5 h-5')}</button>` : ''}
@@ -3888,6 +3887,7 @@ async function renderDashboard(params) {
   const dashboardWidgetKeys = DASHBOARD_WIDGET_KEYS;
   const dashboardBoard = document.getElementById('dashboard-board');
   const normalizeDashboardOrder = (raw) => normalizeWidgetOrder(raw);
+  const dashboardHiddenWidgetKeys = () => normalizeHiddenWidgets(trip?.dashboardHidden);
   let lastDashboardOrder = normalizeDashboardOrder(trip?.dashboardLayout);
   let dashboardLayoutEditing = false;
   let dashboardLayoutSaving = false;
@@ -3903,7 +3903,9 @@ async function renderDashboard(params) {
      `dashboardLayout` document are untouched. */
   const applyDashboardOrder = (raw) => {
     if (!dashboardBoard) return;
-    const order = normalizeDashboardOrder(raw);
+    // v44: “การจองที่กำลังจะถึง” and “รายการล่าสุด” are one pair, so the order is
+    // also made grid-aware — the pair always shares a row (see DASHBOARD_PAIRS).
+    const order = pairWidgetRows(dashboardHiddenWidgetKeys(), raw);
     for (const key of order) {
       const widget = dashboardBoard.querySelector(`[data-dashboard-widget="${key}"]`);
       if (widget) dashboardBoard.appendChild(widget);
@@ -4548,21 +4550,24 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
     const bal = balances.find(b => b.memberId === id)?.net || 0;
     const settled = Math.abs(bal) < 1;
     return `
-      <div class="member-row ${isMe ? 'is-me' : ''}" data-mid="${escapeHtml(id)}" role="button" tabindex="0" title="${th('แตะเพื่อดูรายการของคนนี้','Tap to see this person’s bills')}">
+      <div class="member-row ${isMe ? 'is-me' : ''}" data-mid="${escapeHtml(id)}" role="button" tabindex="0" title="${escapeHtml(`${th('แตะเพื่อดูรายการของคนนี้','Tap to see this person’s bills')}${secondary(paidBy[id] || 0) ? ` · ${th('จ่ายไป','paid')} ${secondary(paidBy[id] || 0)}` : ''}${secondary(bal) ? ` · ${th('คงเหลือ','net')} ${secondary(bal)}` : ''}`)}">
         <div class="member-row-main">
           <div class="avatar member-row-avatar" style="${avatarStyle(m?.color)};">
             ${m?.photoURL ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">` : escapeHtml(getInitials(m?.displayName || 'U'))}
           </div>
-          <div class="min-w-0">
+          <div class="member-row-text">
             <div class="member-row-name"><span class="truncate">${escapeHtml(m?.displayName || id.slice(0,6))}</span>${isMe ? `<span class="you-badge">${th('คุณ','You')}</span>` : ''}</div>
-            <div class="member-row-sub">${th('จ่าย','Paid')} ${fmt(paidBy[id] || 0)} · ${th('รับผิดชอบ','share')} ${fmt(shareBy[id] || 0)}</div>
-            ${thbTag(paidBy[id] || 0)}
+            ${/* v44: the trip-currency chip rides on the “paid · share” line, so a
+                 member is two lines — name, then one quiet facts line. */ ''}
+            ${/* v44: the paid-in-trip-currency figure moved to the row tooltip — on the
+                 line it pushed “รับผิดชอบ …” into an ellipsis and made the card look
+                 untidy. The net column keeps its own “≈ ¥” figure. */ ''}
+            <div class="member-row-sub"><span class="member-row-facts">${th('จ่าย','Paid')} ${fmt(paidBy[id] || 0)} · ${th('รับผิดชอบ','share')} ${fmt(shareBy[id] || 0)}</span></div>
           </div>
         </div>
         <div class="member-row-net">
           <div class="member-row-amount ${settled ? '' : bal > 0 ? 'text-success' : 'text-danger'}">${settled ? fmt(0) : `${bal > 0 ? '+' : '−'}${fmt(Math.abs(bal))}`}</div>
-          ${thbTag(bal)}
-          <div class="member-row-hint">${settled ? th('ไม่มียอดค้าง','Settled') : bal > 0 ? th('ได้คืน','gets back') : th('ต้องจ่าย','pays')}</div>
+          <div class="member-row-hint">${thbTag(bal)}<span>${settled ? th('ไม่มียอดค้าง','Settled') : bal > 0 ? th('ได้คืน','gets back') : th('ต้องจ่าย','pays')}</span></div>
         </div>
       </div>`;
   }).join('') : `<p class="text-sm text-[var(--text-secondary)]">${t('noData')}</p>`);
@@ -4655,13 +4660,18 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
               </div>
             </article>`;
         };
+        /* v43 — the “whole trip” card is the benchmark every team is compared
+           with, so it is written as one self-contained block instead of a team
+           card's top/foot pair: head → figures (left) + categories (right) →
+           facts / leftover members as the footer. That lets CSS stretch it
+           across the full row on an iPad and still keep three tidy bands. */
         teamBox.innerHTML = report.groups.map(teamCard).join('') + `
           <article class="team-card team-card--trip" data-gid="__trip" role="button" tabindex="0">
-            <div class="team-card-top">
-              <div class="team-card-head">
-                <span class="team-card-name">${icon('compass', 'w-4 h-4')} ${th('ทั้งทริป','Whole trip')}</span>
-                <span class="badge badge-planned text-xs ml-auto">${report.trip.memberCount} ${th('คน','pax')}</span>
-              </div>
+            <div class="team-card-head">
+              <span class="team-card-name">${icon('compass', 'w-4 h-4')} ${th('ทั้งทริป','Whole trip')}</span>
+              <span class="badge badge-planned text-xs ml-auto">${report.trip.memberCount} ${th('คน','pax')}</span>
+            </div>
+            <div class="team-trip-body">
               <div class="team-stats">
                 <div class="team-stat">
                   <span class="team-stat-label">${th('เฉลี่ย / คน','Per person')}</span>
@@ -4674,9 +4684,12 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
                   <span class="team-delta">${th('จ่ายไป','paid')} ${fmt(report.trip.paidMinor)}</span>
                 </div>
               </div>
-              ${teamCatsHtml(report.trip.categories, report.trip.shareMinor)}
+              <div class="team-trip-side">
+                <span class="team-trip-label">${th('หมวดที่ใช้จ่าย','Spend by category')}</span>
+                ${teamCatsHtml(report.trip.categories, report.trip.shareMinor)}
+              </div>
             </div>
-            <div class="team-card-foot">
+            <div class="team-trip-foot">
               <div class="team-facts">
                 <span>${items.length} ${th('ที่','places')}</span>
                 <span>· ${expenses.length} ${th('รายการ','items')}</span>
@@ -4693,18 +4706,25 @@ function renderDashboardData({ tripId, trip, expenses, members, transfers = [], 
   }
 
   /* ---- Recent expenses ---- */
-  const recent = [...originalExpenses].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 5);
+  /* v44 (owner: “ปรับเนื้อหาด้านในของการ์ด รายการล่าสุด ให้กระชับขึ้น เป็นระเบียบ
+     มากขึ้น”) — two tidy lines per row instead of three: title (+ the “ประมาณการ”
+     marker as a quiet chip on the same line), then one meta line; the money keeps
+     the right edge and lives on a single line. Four rows keep the card inside the
+     members card height (see the v44 rules in flat.css). */
+  const recent = [...originalExpenses].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 4);
   setHtml('recent-expenses', recent.length ? recent.map(e => {
     const payer = expensePayments(e).map(p => membersMap[p.memberId]?.displayName || p.memberId).join(', ');
     return `
       <button type="button" class="expense-row" data-expense="${e.id}">
-        <span class="min-w-0 flex-1 text-left">
-          <span class="expense-row-title">${escapeHtml(e.title)}</span>
+        <span class="expense-row-main">
+          <span class="expense-row-line">
+            <span class="expense-row-title">${escapeHtml(e.title)}</span>
+            ${e.isEstimated ? `<span class="expense-row-est">${th('ประมาณการ','est.')}</span>` : ''}
+          </span>
           <span class="expense-row-meta">${[categoryLabel(e.category, lang), payer, shortDay(e.date)].filter(Boolean).map(x => escapeHtml(x)).join(' · ')}</span>
         </span>
         <span class="expense-row-amount">
           ${moneyHtml(e.netTotalMinor || 0, e.currency || currency, e.thbRate || resolveTripThbRate(trip, originalExpenses, e.currency || currency))}
-          ${e.isEstimated ? `<span class="expense-row-est">${th('ประมาณการ','est.')}</span>` : ''}
         </span>
       </button>`;
   }).join('') : `<p class="text-sm text-[var(--text-secondary)]">${th('ยังไม่มีค่าใช้จ่าย','No expenses yet')}</p>`);
@@ -10435,6 +10455,9 @@ async function renderSettlement(params) {
     let labelsHtml = '';
     edgeRows.forEach((edge) => {
       const { tx, payer, receiver, color, markerId, placement } = edge;
+      // v44: the arc is drawn in the runs that stay clear of every member name
+      // (utils/debtMap.js owns the rule) — a line may no longer cross a label.
+      const runs = debtMapEdgeRuns(edge, nodeTextBoxes, { gap: compact ? 4 : 5, samples: 96 });
       const d = `M${edge.start.x.toFixed(1)},${edge.start.y.toFixed(1)} Q${edge.control.x.toFixed(1)},${edge.control.y.toFixed(1)} ${edge.end.x.toFixed(1)},${edge.end.y.toFixed(1)}`;
       const onLine = placement.kind === 'label'
         ? `<g class="debt-pill debt-map-amount-label is-amount" data-pill="${edge.index + 1}" data-label-kind="label" data-overflow-label="false" transform="translate(${placement.x.toFixed(1)} ${placement.y.toFixed(1)}) rotate(${placement.angle.toFixed(1)})">
@@ -10453,7 +10476,7 @@ async function renderSettlement(params) {
       edgesHtml += `
         <g class="debt-map-edge" data-edge="${escapeHtml(tx.from)}→${escapeHtml(tx.to)}" data-color="${escapeHtml(color)}" ${placement.kind === 'label' ? '' : 'data-offgraph="true"'}>
           <title>${escapeHtml(payer.displayName || '')} ${th('จ่ายให้', 'pays')} ${escapeHtml(receiver.displayName || '')}: ${escapeHtml(edge.label)}</title>
-          <path d="${d}" fill="none" stroke="${escapeHtml(color)}" stroke-width="2.6" stroke-opacity=".85" stroke-linecap="round" marker-end="url(#${markerId})"/>
+          ${(runs.length ? runs : [d]).map((run, runIndex, all) => `<path d="${run}" fill="none" stroke="${escapeHtml(color)}" stroke-width="2.6" stroke-opacity=".85" stroke-linecap="round"${runIndex === all.length - 1 ? ` marker-end="url(#${markerId})"` : ''}/>`).join('')}
         </g>`;
     });
 
@@ -10482,8 +10505,8 @@ async function renderSettlement(params) {
           <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${nodeR + 6}" fill="${escapeHtml(color)}" opacity=".13"/>
           <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${nodeR}" fill="${escapeHtml(color)}"/>
           ${person.photoURL ? `<image href="${escapeHtml(person.photoURL)}" x="${(p.x - nodeR).toFixed(1)}" y="${(p.y - nodeR).toFixed(1)}" width="${nodeR * 2}" height="${nodeR * 2}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clipId})"/>` : `<text x="${p.x.toFixed(1)}" y="${(p.y + 1).toFixed(1)}" text-anchor="middle" dominant-baseline="central" fill="${escapeHtml(avatarInk(color))}" font-size="${FS.initial}" font-weight="600" font-family="var(--font-display)">${initial(person)}</text>`}
-          <text x="${p.x.toFixed(1)}" y="${nameY.toFixed(1)}" text-anchor="middle" fill="var(--text-strong)" font-size="${FS.name}" font-weight="500" font-family="var(--font-sans)">${shortName(person, 16)}</text>
-          <text x="${p.x.toFixed(1)}" y="${roleY.toFixed(1)}" text-anchor="middle" fill="${tone}" font-size="${FS.role}" font-weight="600" font-family="var(--font-sans)">${roleLabel}</text>
+          <text class="debt-map-label" x="${p.x.toFixed(1)}" y="${nameY.toFixed(1)}" text-anchor="middle" fill="var(--text-strong)" font-size="${FS.name}" font-weight="500" font-family="var(--font-sans)">${shortName(person, 16)}</text>
+          <text class="debt-map-label" x="${p.x.toFixed(1)}" y="${roleY.toFixed(1)}" text-anchor="middle" fill="${tone}" font-size="${FS.role}" font-weight="600" font-family="var(--font-sans)">${roleLabel}</text>
         </g>`;
     });
 
@@ -10523,7 +10546,12 @@ async function renderSettlement(params) {
             <h3>${th('ใครโอนให้ใคร', 'Who pays whom')}</h3>
             <p>${th('ยอดเงินเขียนอยู่บนเส้นของตัวเอง — ลูกศรชี้จากผู้โอนไปยังผู้รับ เลขบนเส้นตรงกับเลขในรายการด้านล่าง', 'Each amount sits on its own line — arrows point from payer to receiver, and the number on a line matches the list below.')}</p>
           </div>
-          <div class="debt-map-total"><span>${th('ยอดที่ต้องโอนทั้งหมด', 'Total to transfer')}</span><strong>${money(totalMove)}</strong><small>${txns.length} ${th('รายการโอน', 'transfers')}</small></div>
+          <div class="debt-map-side">
+            <div class="debt-map-total"><span>${th('ยอดที่ต้องโอนทั้งหมด', 'Total to transfer')}</span><strong>${money(totalMove)}</strong><small>${txns.length} ${th('รายการโอน', 'transfers')}</small></div>
+            ${/* v44: the diagram itself is shareable — one tap turns the SVG into a PNG
+                 (exports/index.js: exportSvgToPng rasterises the drawing, not the page). */ ''}
+            <button type="button" id="export-debt-map-png" class="btn btn-secondary btn-sm no-export">${icon('image', 'w-4 h-4')} ${th('แผนภาพ PNG','Diagram PNG')}</button>
+          </div>
         </div>
         <p class="debt-total-explanation">${th('ผลรวมของทุกรายการโอน อาจต่างจากยอดสุทธิรวม หากสมาชิกคนเดียวกันทั้งโอนและรับเงิน', 'Sum of all transfers; this may differ from the net total when someone both pays and receives.')}</p>
         <div class="debt-map-legend">
@@ -10564,6 +10592,29 @@ async function renderSettlement(params) {
         open(el);
       });
     });
+
+    // Export the diagram as a PNG (v44). The SVG is rasterised on its own — no
+    // page capture — so the download is the drawing, not a screenshot.
+    const exportBtn = content.querySelector('#export-debt-map-png');
+    if (exportBtn) exportBtn.addEventListener('click', async () => {
+      const svg = content.querySelector('.debt-map-container svg');
+      if (!svg) return;
+      const tLoad = toast.loading(lang === 'th' ? 'กำลังสร้างรูป…' : 'Creating image…');
+      exportBtn.disabled = true;
+      try {
+        const { exportSvgToPng } = await import('./exports/index.js');
+        await exportSvgToPng(svg, `debt-map-${tripId}.png`, {
+          background: getComputedStyle(svg).backgroundColor || '#ffffff'
+        });
+        tLoad.close();
+        toast.success(lang === 'th' ? 'ส่งออกแผนภาพแล้ว' : 'Diagram exported');
+      } catch (e) {
+        tLoad.close();
+        toast.error(e?.message || th('ส่งออกแผนภาพไม่สำเร็จ', 'Could not export the diagram'));
+      } finally {
+        exportBtn.disabled = false;
+      }
+    });
   }
 
   function renderView() {
@@ -10598,10 +10649,17 @@ async function renderSettlement(params) {
       // A balance is financial advice: always read the current expense book here.
       // The general 5-minute dashboard cache can otherwise omit another member's
       // recently-created expense on this device.
-      const { expenses, members, transfers } = await fetchSettlementData(tripId, { fresh: true });
+      const { expenses, members: rawMembers, transfers } = await fetchSettlementData(tripId, { fresh: true });
       commentsAll = await listComments(tripId).catch(() => []);
       commentMap = commentsByExpense(commentsAll);
       if (!document.getElementById('settlement-content')) return;
+      // v44: the debt map draws each member's real profile photo. Member rows that
+      // predate stored photos get theirs from the account directory, with a short
+      // deadline so a slow/denied lookup never holds the page up.
+      const members = await Promise.race([
+        hydrateMemberPhotos(rawMembers).catch(() => rawMembers),
+        new Promise(resolve => setTimeout(() => resolve(rawMembers), 1200))
+      ]);
       const membersMap = Object.fromEntries(members.map(m => [m.id, m]));
       const normalized = expensesInThb(expenses, trip);
       const { balances, transactions } = calculateSettlement(normalized, members, transfers || []);
