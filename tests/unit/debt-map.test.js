@@ -204,3 +204,58 @@ export function testDesktopDebtMapFitsCardWithoutHorizontalScrolling() {
   assert(desktop.includes('.debt-map-scroll-hint { display: none; }'), 'desktop does not ask users to scroll');
   assert(responsive.includes('min-width: var(--debt-map-natural-width, 540px)'), 'mobile retains readable natural-size drawing');
 }
+
+// v45 (owner report 18 Nov 2026: “แผนที่หนี้ ตอนนี้มันกว้างใหญ่เกินไป ต้องสโครล
+// หลายรอบ กว่าจะเห็นครบ (ดูในคอม)”): the SVG is scaled to fit its card, so the
+// sheet's own size is the reading experience. A sheet wider than the card shrinks
+// every label below reading size; a sheet taller than the screen turns one
+// diagram into several screens of scrolling. Both are bounded now.
+export async function testDebtMapSheetStaysInsideOneDesktopGlance() {
+  const { debtMapCanvas } = await import('../../src/js/utils/debtMap.js');
+  for (const [people, transfers] of [[2, 1], [4, 6], [6, 15], [8, 28], [10, 45], [12, 66]]) {
+    for (let attempt = 0; attempt <= 12; attempt++) {
+      const sheet = debtMapCanvas({ people, transfers, attempt });
+      assert(sheet.width <= 1200, `${people}p/${transfers}t: the sheet never outgrows the card that shows it (${sheet.width})`);
+      assert(sheet.width / sheet.height >= 1.3, `${people}p/${transfers}t: the sheet stays landscape (${sheet.width}×${sheet.height})`);
+      assert(sheet.height >= 400, `${people}p/${transfers}t: the sheet keeps enough room for the ring of people (${sheet.height})`);
+    }
+    // Growth is gentle and stops at the cap instead of inflating forever.
+    const grown = debtMapCanvas({ people, transfers, attempt: 1 });
+    const capped = debtMapCanvas({ people, transfers, attempt: 12 });
+    assert(capped.width >= grown.width, 'a retry never shrinks the sheet');
+    assert(capped.canGrow === false, 'at the cap the layout stops retrying');
+    assert(capped.width === debtMapCanvas({ people, transfers, attempt: 99 }).width, 'attempts past the cap change nothing');
+  }
+  // Phones keep their own budget: a natural-size drawing they can scroll sideways.
+  const phone = debtMapCanvas({ people: 8, transfers: 28, compact: true, attempt: 6 });
+  assert(phone.width <= 1000 && phone.width >= 560, `phone sheets stay scrollable, not endless (${phone.width})`);
+}
+
+export async function testDebtMapExpandKeepsTheGenerousSheet() {
+  const { debtMapCanvas } = await import('../../src/js/utils/debtMap.js');
+  // The expanded view is where a dense map gets room for every amount in full, so
+  // it keeps growing well past the on-page cap (the reader pans and zooms it).
+  const page = debtMapCanvas({ people: 12, transfers: 66, attempt: 6 });
+  const expanded = debtMapCanvas({ people: 12, transfers: 66, attempt: 6, detailed: true });
+  assert(expanded.width * expanded.height > page.width * page.height, 'expanding gives the drawing more sheet, not less');
+  assert(expanded.width <= 3600, 'even the expanded sheet stays inside a rasterisable size');
+  assert(debtMapCanvas({ people: 4, transfers: 6, detailed: true, attempt: 12 }).canGrow === false, 'the expanded sheet stops growing too');
+  // v44 behaviour is preserved for the expanded sheet: the old generous formula.
+  const legacy = debtMapCanvas({ people: 8, transfers: 28, attempt: 1, detailed: true });
+  assert(legacy.width === Math.round(Math.max(900, 8 * 100 + 180) * 1.35), 'the expanded sheet keeps the v44 width formula');
+}
+
+export function testDebtMapFitFrameAndExpandAreWired() {
+  const app = readFileSync(path.join(here, '../../src/js/app.js'), 'utf8');
+  const css = readFileSync(path.join(here, '../../src/css/dimension.css'), 'utf8');
+  const responsive = readFileSync(path.join(here, '../../src/css/refresh.css'), 'utf8');
+  assert(/class="debt-map-frame"/.test(app), 'the drawing sits in a fit frame');
+  assert(/--debt-map-ar:\$\{/.test(app), 'the frame is told the sheet’s aspect ratio');
+  assert(/id="debt-map-expand"/.test(app), 'one tap opens the drawing full screen');
+  assert(/debtMapHtml\(0, \{ detailed: true \}\)/.test(app), 'the expanded view re-lays out on the generous sheet');
+  assert(/data-zoom="fit"/.test(app) && /data-zoom="in"/.test(app) && /data-zoom="out"/.test(app), 'the expanded view can be zoomed and re-fitted');
+  assert(/\.debt-map-frame\s*\{[^}]*aspect-ratio: var\(--debt-map-ar/.test(css), 'desktop bounds the drawing height so the whole map is one glance');
+  assert(/\.debt-map-edge\.is-dimmed/.test(css), 'hovering a transfer row dims the other lines');
+  assert(responsive.includes('--debt-map-fit-height'), 'the height budget is a token, not a magic number');
+  assert(responsive.includes('.debt-map-frame'), 'phones keep the natural-size sheet inside the frame');
+}

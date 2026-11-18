@@ -226,3 +226,75 @@ export function debtMapNodeAngles(count, radiusX, radiusY) {
     return (cursor - 1 + fraction) / steps * Math.PI * 2 - Math.PI / 2;
   });
 }
+
+/**
+ * The sheet a debt map is drawn on.
+ *
+ * v45 (owner report 18 Nov 2026: “แผนที่หนี้ ตอนนี้มันกว้างใหญ่เกินไป ต้องสโครล
+ * หลายรอบ กว่าจะเห็นครบ (ดูในคอม)”): the SVG is scaled to fit its card, so the
+ * sheet's size *is* the reading experience —
+ *  · a sheet much wider than the card shrinks every label below reading size
+ *    (a 1323×1544 sheet in a 1200px card renders 11.5px amounts at ~10px, and
+ *    taller sheets pushed it under 8px), and
+ *  · a sheet taller than the screen turns one diagram into several screens of
+ *    scrolling, which is exactly what the owner had to do.
+ * The on-page sheet is therefore bounded: never wider than a desktop card (so
+ * labels render at ~100%) and always landscape (so the whole map is one glance).
+ * Retries widen it gently and stop at the cap; a map that is still too dense for
+ * a full amount pill keeps that pill's numbered dot on its own line, and the
+ * numbered list right below the drawing carries the amount.
+ *
+ * `detailed: true` is the expanded view (one tap → full-screen sheet): it keeps
+ * the old generous growth, because there the reader can pan and zoom, so every
+ * amount is drawn in full on its own line.
+ */
+export const DEBT_MAP_SHEET = {
+  fitWidth: 1200,          // ≈ the desktop card's inner width
+  fitCompactWidth: 1000,   // phones keep their own horizontal scroll
+  fitGrowth: 0.12,         // gentle widening per retry
+  fitMaxAttempt: 6,
+  fitMaxRatio: 0.76,       // height ≤ 0.76 × width → landscape
+  fitMinRatio: 0.5,
+  detailWidth: 3600,       // expanded view: room for every pill
+  detailGrowth: 0.35,
+  detailMaxAttempt: 12
+};
+
+/**
+ * @param {{people?:number,transfers?:number,attempt?:number,compact?:boolean,detailed?:boolean,maxWidth?:number}} [options]
+ * @returns {{width:number,height:number,aspect:number,growth:number,attempt:number,maxAttempt:number,capped:boolean,canGrow:boolean}}
+ */
+export function debtMapCanvas({ people = 0, transfers = 0, attempt = 0, compact = false, detailed = false, maxWidth = 0 } = {}) {
+  const n = Math.max(2, Math.round(Number(people) || 0));
+  const moves = Math.max(1, Math.round(Number(transfers) || 0));
+  const step = Math.max(0, Math.round(Number(attempt) || 0));
+
+  if (detailed) {
+    const maxAttempt = DEBT_MAP_SHEET.detailMaxAttempt;
+    const cappedAttempt = Math.min(step, maxAttempt);
+    const growth = 1 + cappedAttempt * DEBT_MAP_SHEET.detailGrowth;
+    const cap = Number(maxWidth) > 0 ? Number(maxWidth) : DEBT_MAP_SHEET.detailWidth;
+    const width = Math.min(cap, Math.max(900, n * 100 + 180) * growth);
+    const height = Math.min(width * 1.6, Math.max(620, n * 90 + 160, moves * 38 + 80) * growth);
+    return {
+      width: Math.round(width), height: Math.round(height), aspect: Number((width / height).toFixed(3)),
+      growth, attempt: cappedAttempt, maxAttempt, capped: width >= cap - 0.5,
+      canGrow: width < cap - 0.5 && cappedAttempt < maxAttempt
+    };
+  }
+
+  const maxAttempt = DEBT_MAP_SHEET.fitMaxAttempt;
+  const cappedAttempt = Math.min(step, maxAttempt);
+  const growth = 1 + cappedAttempt * DEBT_MAP_SHEET.fitGrowth;
+  const cap = Number(maxWidth) > 0 ? Number(maxWidth) : (compact ? DEBT_MAP_SHEET.fitCompactWidth : DEBT_MAP_SHEET.fitWidth);
+  const baseWidth = compact ? Math.max(560, n * 86 + 150) : Math.max(780, n * 98 + 210);
+  const width = Math.min(cap, baseWidth * growth);
+  // Height follows the width (landscape) with room for the people and the lines.
+  const wanted = Math.max(compact ? 380 : 440, n * (compact ? 52 : 58) + 150, moves * (compact ? 15 : 17) + 200) * growth;
+  const height = Math.min(width * DEBT_MAP_SHEET.fitMaxRatio, Math.max(wanted, width * DEBT_MAP_SHEET.fitMinRatio));
+  return {
+    width: Math.round(width), height: Math.round(height), aspect: Number((width / height).toFixed(3)),
+    growth, attempt: cappedAttempt, maxAttempt, capped: width >= cap - 0.5,
+    canGrow: width < cap - 0.5 && cappedAttempt < maxAttempt
+  };
+}
