@@ -3841,6 +3841,38 @@ console.log('\n▶ v36: the trip list is paged (no silent 30-trip cap)');
   window.localStorage.removeItem('fuji_trips_cache');
 }
 
+console.log('\n▶ memberUids drift: a member document alone must surface the trip');
+{
+  await goto('#/trips');
+  await waitFor(() => text$().includes('ทริปฟูจิ'), { label: 'trip list before drift check' });
+  const tripsMod = await import(pathToFileURL(path.join(outDir, 'trips/index.js')).href);
+  const base = fsdb.__dump('trips/t1') || {};
+  // The reported incident, reproduced: the admin's Members page reads
+  // trips/drift1/members/u9 (so the admin sees the member), but the flat
+  // memberUids array on the trip — the only thing listTrips could query —
+  // never got u9's uid, e.g. a legacy or duplicated trip.
+  fsdb.__seed('trips/drift1', { ...base, name: 'ทริปล่องหน', inviteCode: 'DRFT01', createdBy: 'u1', memberUids: ['u1'] });
+  fsdb.__seed('trips/drift1/members/u9', { uid: 'u9', displayName: 'สมาชิกที่มองไม่เห็นทริป', role: 'member', status: 'active', authType: 'account' });
+  // An inactive member document must NOT surface its trip.
+  fsdb.__seed('trips/drift2', { ...base, name: 'ทริปที่ถูกถอดออก', inviteCode: 'DRFT02', createdBy: 'u1', memberUids: ['u1'] });
+  fsdb.__seed('trips/drift2/members/u9', { uid: 'u9', displayName: 'ถูกถอดออก', role: 'member', status: 'inactive', authType: 'account' });
+  tripsMod.clearTripsCache();
+  const mine = await tripsMod.listTrips('u9', false);
+  check(mine.some(t => t.id === 'drift1'), `drift: trip found through the member document (${mine.map(t => t.id).join(',')})`);
+  check(!mine.some(t => t.id === 'drift2'), 'drift: an inactive member document surfaces nothing');
+  check((fsdb.__dump('trips/drift1')?.memberUids || []).includes('u9'), 'drift: memberUids entry restored for the next sign-in');
+  check(!(fsdb.__dump('trips/drift2')?.memberUids || []).includes('u9'), 'drift: inactive member is not restored to memberUids');
+  // Admin-side repair (Members page) uses the same reconciliation.
+  const restored = await tripsMod.reconcileTripMemberUids('drift2', [{ id: 'u7', uid: 'u7', status: 'active' }], ['u1']);
+  check(restored.includes('u7') && (fsdb.__dump('trips/drift2')?.memberUids || []).includes('u7'), 'drift: admin reconcile adds missing active members');
+  fsdb.__store.delete('trips/drift1');
+  fsdb.__store.delete('trips/drift1/members/u9');
+  fsdb.__store.delete('trips/drift2');
+  fsdb.__store.delete('trips/drift2/members/u9');
+  tripsMod.clearTripsCache();
+  window.localStorage.removeItem('fuji_trips_cache');
+}
+
 console.log('\n▶ v36: reference checks and comments are not capped at 300/200 rows');
 {
   await goto('#/trips');

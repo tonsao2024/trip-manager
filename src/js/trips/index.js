@@ -1,7 +1,8 @@
 import { db, storage, functions, httpsCallable, serverTimestamp, isStorageAvailable } from '../firebase.js';
 import { brandPrimary } from '../utils/brand.js';
 import { deleteTransfer } from '../settlement/transfers.js';
-import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, query, where, limit, startAfter, arrayUnion, arrayRemove, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { collection, collectionGroup, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, query, where, limit, startAfter, arrayUnion, arrayRemove, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { missingMemberUids, mergeTripsById, tripIdFromMemberPath } from '../utils/memberUids.js';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { compressImage } from '../utils/helpers.js';
 import { normalizeCoverPosition } from '../utils/coverPosition.js';
@@ -171,28 +172,136 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false) {
     }
   }
 
-  // Try 1: array-contains on memberUids (indexed, scoped to the signed-in user)
-  try {
-    const trips = await readAllPages(query(collection(db, 'trips'), where('memberUids', 'array-contains', userId)), 'memberUids', 5000);
+  // The sources below are MERGED, never alternatives. The old code returned
+  // as soon as one query found something, so a member who had also created a
+  // trip (or vice versa) silently lost the other trips — and when the
+  // `memberUids` array had drifted from the member documents (see
+  // utils/memberUids.js) the member's list came back empty while the admin,
+  // reading the member documents, still saw everybody.
+  let anyQuerySucceeded = false;
+  let permissionError = null;
+  const noteFailure = (e) => {
+    if (e?.code === 'permission-denied') permissionError = e;
+    else console.warn('trip list query failed', e?.code || e?.message || e);
+  };
 
-    if (trips.length) { setCachedTrips(trips, userId); return trips; }
+  // Source 1: array-contains on memberUids (indexed, scoped to the signed-in user)
+  let listedTrips = [];
+  try {
+    listedTrips = await readAllPages(query(collection(db, 'trips'), where('memberUids', 'array-contains', userId)), 'memberUids', 5000);
+    anyQuerySucceeded = true;
+  } catch (e) { noteFailure(e); }
+
+  // Source 2: trips this account created (scoped to the signed-in user). A
+  // brand-new account has no trips yet — that is an empty list, not an error.
+  let createdTrips = [];
+  try {
+    createdTrips = await readAllPages(query(collection(db, 'trips'), where('createdBy', '==', userId)), 'createdBy', 5000);
+    anyQuerySucceeded = true;
+  } catch (e) { noteFailure(e); }
+
+  // Source 3: the member documents themselves. `trips/{id}/members/{uid}` is
+  // the record the admin sees; finding trips through it makes the list immune
+  // to a stale/missing `memberUids` entry. Each candidate is then read as a
+  // normal trip document (the rules allow that read for a real member), and a
+  // trip found this way gets its `memberUids` entry restored when possible.
+  let discoveredTrips = [];
+  try {
+    discoveredTrips = await discoverTripsByMemberDocs(userId, new Set(
+      [...listedTrips, ...createdTrips].map(t => t.id)
+    ));
+    anyQuerySucceeded = true;
   } catch (e) {
-    if (e.code === 'permission-denied' && cached?.length) return cached;
+    // Older published rules deny the collection-group read. That must not hide
+    // the trips the first two queries already found — the array query above is
+    // still the primary path until the new rules are published.
+    console.warn('member-document trip discovery unavailable', e?.code || e?.message || e);
   }
 
-  // Try 2: createdBy (scoped to the signed-in user). A brand-new account has no
-  // trips yet — that is an empty list, not a permission error.
-  try {
-    const trips = await readAllPages(query(collection(db, 'trips'), where('createdBy', '==', userId)), 'createdBy', 5000);
-    if (trips.length) setCachedTrips(trips, userId);
-    return trips;
-  } catch (e) {
-    if (e.code === 'permission-denied' && cached?.length) return cached;
-  }
-
+  const trips = mergeTripsById(listedTrips, createdTrips, discoveredTrips);
+  if (trips.length) { setCachedTrips(trips, userId); return trips; }
+  if (anyQuerySucceeded) return trips;
   if (cached?.length) return cached;
-
+  void permissionError;
   throw new Error('ไม่มีสิทธิ์เข้าถึง - ต้อง deploy Firestore Rules ใหม่ที่ Firebase Console > Firestore > Rules > วาง firestore.rules > Publish');
+}
+
+/**
+ * Find trips through this account's member documents (collection group over
+ * every `members` subcollection), for member docs whose `memberUids` entry on
+ * the trip document is missing. Returns full trip documents; inactive member
+ * documents never grant a trip. Best-effort self-repair: a trip found here is
+ * missing the caller's uid in `memberUids`, so the entry is restored (the
+ * rules allow a member to restore *their own* listing only; under older rules
+ * the write is denied and simply retried on the next sign-in).
+ */
+async function discoverTripsByMemberDocs(userId, knownTripIds = new Set()) {
+  if (!db || !userId || typeof collectionGroup !== 'function') return [];
+  const tripIds = new Set(knownTripIds);
+  const candidates = new Map(); // tripId -> member document data
+  // Account members are keyed by `uid`; a local member linked to an account
+  // later is found through `authUid` instead (see utils/memberUids.js).
+  for (const field of ['uid', 'authUid']) {
+    const snap = await getDocs(query(collectionGroup(db, 'members'), where(field, '==', userId)));
+    for (const memberDoc of snap.docs) {
+      const data = memberDoc.data() || {};
+      if (String(data.status || 'active') === 'inactive') continue;
+      const tripId = memberDoc.ref?.parent?.parent?.id
+        || tripIdFromMemberPath(memberDoc.ref?.path || '');
+      if (tripId && !candidates.has(tripId)) candidates.set(tripId, data);
+    }
+  }
+
+  const trips = [];
+  for (const tripId of candidates.keys()) {
+    if (tripIds.has(tripId)) continue;
+    try {
+      const snap = await getDoc(doc(db, 'trips', tripId));
+      if (!snap.exists()) continue;
+      const trip = { id: snap.id, ...snap.data() };
+      trips.push(trip);
+      if (!Array.isArray(trip.memberUids) || !trip.memberUids.includes(userId)) {
+        try {
+          await updateDoc(doc(db, 'trips', tripId), {
+            memberUids: arrayUnion(userId), updatedAt: serverTimestamp()
+          });
+          trip.memberUids = [...(Array.isArray(trip.memberUids) ? trip.memberUids : []), userId];
+        } catch (e) {
+          console.warn('memberUids self-repair failed (rules not published yet?)', e?.code || e?.message);
+        }
+      }
+    } catch (e) {
+      // Not actually readable (inactive/removed member, rules not yet
+      // published): skip this candidate, never fail the whole list.
+      console.warn('discovered trip not readable', tripId, e?.code || e?.message);
+    }
+  }
+  return trips;
+}
+
+/**
+ * Repair `trips/{tripId}.memberUids` from the member documents (admin-side).
+ *
+ * The Members page is where the drift is visible — the admin sees member
+ * documents whose owners cannot see the trip — so opening that page as a trip
+ * admin / member manager rewrites the missing entries in one write. Returns
+ * the uids that were added ([] when the array was already in sync).
+ */
+export async function reconcileTripMemberUids(tripId, members, currentMemberUids = null) {
+  if (!db || !tripId) return [];
+  let listed = currentMemberUids;
+  if (!Array.isArray(listed)) {
+    const snap = await getDoc(doc(db, 'trips', tripId));
+    if (!snap.exists()) return [];
+    listed = snap.data().memberUids;
+  }
+  const missing = missingMemberUids(listed, members);
+  if (!missing.length) return [];
+  await updateDoc(doc(db, 'trips', tripId), {
+    memberUids: arrayUnion(...missing), updatedAt: serverTimestamp()
+  });
+  invalidateTrip(tripId);
+  return missing;
 }
 
 /** New code for a trip that was created before invite codes existed, or to revoke one. */
@@ -661,9 +770,20 @@ export async function duplicateTrip(sourceTrip, userId, { nameSuffix = ' (สำ
   // Copy members (without login accounts) so splitting keeps working
   try {
     const members = await getDocs(collection(db, `trips/${sourceTrip.id}/members`));
+    const copiedMembers = [];
     for (const m of members.docs) {
       const { ...data } = m.data();
       await setDoc(doc(db, `trips/${newId}/members`, m.id), data, { merge: true });
+      copiedMembers.push({ id: m.id, ...data });
+    }
+    // createTrip() seeded memberUids with the creator only. Without this the
+    // copied member documents exist (the admin sees everyone in the copy) but
+    // none of those members can ever see the copied trip in their list.
+    const missing = missingMemberUids([userId], copiedMembers);
+    if (missing.length) {
+      await updateDoc(doc(db, 'trips', newId), {
+        memberUids: arrayUnion(...missing), updatedAt: serverTimestamp()
+      });
     }
   } catch (e) { console.warn('copy members failed', e?.message); }
 

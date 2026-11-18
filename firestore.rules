@@ -121,6 +121,33 @@ service cloud.firestore {
         && canManageMembers(tripId);
     }
 
+    /**
+     * Self-repair of a drifted `memberUids` entry. The member documents
+     * (`trips/{tripId}/members/{uid}`) and the flat `memberUids` array can
+     * drift apart (legacy trips, duplicated trips, a failed write); the trip
+     * list query reads only the array, so a real member then sees no trip.
+     * Somebody who already holds an ACTIVE member document may add back
+     * exactly one entry — their own uid — and nothing else: every existing
+     * entry is kept, no other field changes, and no access is granted that
+     * the member document does not already give (isTripMember reads it).
+     */
+    function memberMayRestoreOwnListing(tripId) {
+      let before = resource.data.get('memberUids', []);
+      let after = request.resource.data.get('memberUids', null);
+      return isAuthenticated()
+        && hasMemberDoc(tripId)
+        && memberData(tripId).get('status', 'active') != 'inactive'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids', 'updatedAt'])
+        && after is list
+        && after.hasAll(before)
+        // Exactly one entry may be added, and it must be the caller's own:
+        // either the caller was missing and the list grows by one around
+        // their uid, or they were already listed and the list is unchanged.
+        && (before.hasAny([request.auth.uid])
+          ? after.size() == before.size()
+          : (after.size() == before.size() + 1 && after.hasAny([request.auth.uid])));
+    }
+
     /** A trip admin or delegated member manager sets the layout for everyone. */
     function managerMayUpdateDashboard(tripId) {
       return request.resource.data.diff(resource.data).affectedKeys()
@@ -389,6 +416,21 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Trip discovery for signed-in members (collection-group reads only).
+    // The trip list reads `trips.memberUids`, which can drift from the member
+    // documents; a member may therefore look up *their own* member documents
+    // across trips to find the trips they already belong to. This grants no
+    // access to anyone else's document (the nested trips/{tripId}/members
+    // rules below still govern reads inside a known trip) and an inactive
+    // document is filtered out by the client and grants no trip access.
+    match /{path=**}/members/{memberId} {
+      allow get, list: if isAuthenticated()
+        && memberHasNoClientCredentialFields(resource.data)
+        && (resource.data.get('uid', '') == request.auth.uid
+          || resource.data.get('authUid', '') == request.auth.uid
+          || memberId == request.auth.uid);
+    }
+
     // Trips - isolated to trip members, creator, or super admin
     match /trips/{tripId} {
       allow get: if isAuthenticated() && isTripMember(tripId);
@@ -411,6 +453,9 @@ service cloud.firestore {
           isTripAdmin(tripId) ||
           // Membership removals must be paired with the matching membership batch.
           managerOnlyChangesMemberUids(tripId) ||
+          // A real member whose memberUids entry drifted away may restore
+          // their own listing (and nothing else) — see the helper above.
+          memberMayRestoreOwnListing(tripId) ||
           // Non-admin writes are limited to fields covered by their specific capability.
           managerMayUpdateDashboard(tripId) ||
           managerMayUpdateCoverPosition(tripId) ||

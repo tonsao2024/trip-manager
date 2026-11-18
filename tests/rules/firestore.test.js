@@ -11,6 +11,7 @@ import {
   arrayRemove,
   arrayUnion,
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -437,6 +438,43 @@ describe('Firestore security rules', () => {
       collection(db, 'trips'),
       where('memberUids', 'array-contains', inactiveUid)
     )));
+  });
+
+  it('lets a drifted member find and restore their own trip listing, and nothing more', async () => {
+    // Drift: the member document exists (the admin sees this member) but the
+    // trip's memberUids array never received the uid, so the member's trip
+    // list query returns nothing.
+    const driftUid = 'drift-a';
+    const driftTripId = 'trip-drift';
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'trips', driftTripId), {
+        createdBy: adminUid, memberUids: [adminUid], name: 'Drift trip',
+        startDate: '2027-04-01', endDate: '2027-04-07', inviteEnabled: false
+      });
+      await setDoc(doc(db, 'trips', driftTripId, 'members', driftUid), {
+        uid: driftUid, role: 'member', status: 'active',
+        permissions: { canManageMembers: false }
+      });
+    });
+
+    const db = dbFor(driftUid);
+    // Discovery: only their OWN member documents, never somebody else's.
+    await assertSucceeds(getDocs(query(collectionGroup(db, 'members'), where('uid', '==', driftUid))));
+    await assertFails(getDocs(query(collectionGroup(db, 'members'), where('uid', '==', memberUid))));
+    // The trip itself is readable through the member document…
+    await assertSucceeds(getDoc(doc(db, 'trips', driftTripId)));
+    // …and the member may restore exactly their own memberUids entry.
+    await assertSucceeds(updateDoc(doc(db, 'trips', driftTripId), {
+      memberUids: arrayUnion(driftUid), updatedAt: serverTimestamp()
+    }));
+    // But not anybody else's entry, and not any other trip field.
+    await assertFails(updateDoc(doc(db, 'trips', driftTripId), {
+      memberUids: arrayUnion('someone-else'), updatedAt: serverTimestamp()
+    }));
+    await assertFails(updateDoc(doc(db, 'trips', driftTripId), {
+      memberUids: arrayUnion(driftUid), name: 'Hijacked', updatedAt: serverTimestamp()
+    }));
   });
 
   it('limits co-admin membership changes and prevents role/permission escalation', async () => {
