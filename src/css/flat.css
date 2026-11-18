@@ -3951,7 +3951,7 @@ body::before {
   .expense-pagination { flex-direction: row; justify-content: center; gap: 16px; }
 }
 
-/* ---------- 4. One expense card: three fixed zones -------------------- */
+/* ---------- 4. Expense card base: stacked zones below desktop width ---- */
 .expense-card {
   /* One variable keeps every indented zone on the title's left edge: the icon
      tile plus the head grid's column gap. Change the tile, and the facts and
@@ -4175,3 +4175,186 @@ body::before {
 
 /* “กระทัดรัด” keeps the same indentation spine with the smaller tile. */
 .expenses-compact .expense-card { --exp-card-icon: 32px; --exp-card-gap: 9px; }
+
+/* ---------- 7. Desktop expenses: compact, aligned ledger rows ----------
+   The phone layout intentionally stacks the card's zones. At laptop widths the
+   old stack left a large blank band between the metadata and action buttons,
+   while long amounts wrapped at arbitrary characters. Turn each card into a
+   content-sized ledger row: title/amount/actions, then facts, then optional
+   details. No fixed heights; extra content is allowed to add only the space it
+   actually needs. */
+@media (min-width: 768px) {
+  #expenses-view .expense-filter-bar {
+    gap: 4px;
+    margin-bottom: 10px;
+    padding: 8px 12px;
+  }
+  #expenses-view .expense-filter-bar .chip {
+    min-height: 29px;
+    padding: 3px 9px;
+    font-size: 11.5px;
+  }
+  .expense-filter-label { min-width: 48px; font-size: 10.5px; }
+  .expense-filter-row--primary,
+  .expense-filter-row--secondary { padding-bottom: 4px; }
+  .expense-filter-row--tools { padding-top: 0; }
+  .expense-filter-group--view .segmented-item { min-height: 28px; padding: 3px 9px; }
+
+  #expenses-view .expense-list-rows { gap: 6px; }
+  #expenses-view .expense-card {
+    --exp-card-icon: 36px;
+    --exp-card-gap: 10px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto;
+    align-items: center;
+    gap: 2px 12px;
+    padding: 8px 12px;
+    border-radius: 14px;
+  }
+  #expenses-view .expense-card .expense-head {
+    grid-column: 1;
+    grid-row: 1;
+    grid-template-columns: auto minmax(0, 1fr) max-content;
+    align-items: center;
+    gap: 0 10px;
+    min-height: 36px;
+  }
+  #expenses-view .expense-card .exp-card-icon {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    border-radius: 11px !important;
+  }
+  #expenses-view .expense-card .exp-card-icon svg { width: 18px; height: 18px; }
+  #expenses-view .expense-card .exp-card-copy {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+    min-width: 0;
+  }
+  #expenses-view .expense-card .expense-title {
+    flex: 1 1 220px;
+    min-width: 0;
+    font-size: 13.5px;
+    line-height: 1.4;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    display: block;
+    -webkit-line-clamp: unset;
+    -webkit-box-orient: initial;
+  }
+  #expenses-view .expense-card .exp-card-status {
+    flex: 0 1 auto;
+    max-width: 100%;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin-top: 0;
+    overflow: hidden;
+  }
+  #expenses-view .expense-card .exp-card-status .badge {
+    flex: 0 0 auto;
+    padding: 0 7px;
+    font-size: 10px;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+  #expenses-view .expense-card .expense-amount {
+    max-width: none;
+    min-width: max-content;
+    text-align: right;
+    white-space: nowrap;
+  }
+  #expenses-view .expense-card .expense-amount .money-primary {
+    font-size: 14px;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: keep-all;
+  }
+  #expenses-view .expense-card .expense-amount .money-dual {
+    flex-wrap: nowrap;
+    max-width: none;
+    white-space: nowrap;
+    column-gap: 3px;
+  }
+  #expenses-view .expense-card .expense-facts {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    flex-wrap: wrap;
+    gap: 3px 8px;
+    padding-left: calc(var(--exp-card-icon) + var(--exp-card-gap));
+    overflow: visible;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  #expenses-view .expense-card .exp-fact {
+    flex: 0 1 auto;
+    max-width: min(28vw, 360px);
+  }
+  #expenses-view .expense-card .expense-actions {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+  #expenses-view .expense-card .expense-actions .icon-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+  }
+  #expenses-view .expense-card .expense-extras {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 12px;
+    padding-left: calc(var(--exp-card-icon) + var(--exp-card-gap));
+  }
+  #expenses-view .expense-card .expense-desc {
+    flex: 0 1 420px;
+    min-width: 120px;
+    max-width: 38vw;
+    display: block;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+  #expenses-view .expense-card .expense-edited,
+  #expenses-view .expense-card .expense-comment-preview {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: min(36vw, 420px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  #expenses-view .expense-card .expense-receipt-thumb { max-height: 36px; }
+
+  #expenses-view.expenses-compact .expense-card {
+    --exp-card-icon: 30px;
+    --exp-card-gap: 8px;
+    gap: 1px 10px;
+    padding: 6px 9px;
+  }
+  #expenses-view.expenses-compact .expense-card .exp-card-icon {
+    width: 30px !important;
+    height: 30px !important;
+    min-width: 30px;
+    border-radius: 9px !important;
+  }
+  #expenses-view.expenses-compact .expense-card .exp-card-icon svg { width: 16px; height: 16px; }
+  #expenses-view.expenses-compact .expense-card .expense-head { min-height: 30px; }
+  #expenses-view.expenses-compact .expense-card .expense-title { font-size: 12.5px; }
+  #expenses-view.expenses-compact .expense-card .expense-amount .money-primary { font-size: 13px; }
+  #expenses-view.expenses-compact .expense-card .expense-actions .icon-btn { width: 27px; height: 27px; }
+  #expenses-view.expenses-compact .expense-card .expense-extras { display: none; }
+}
