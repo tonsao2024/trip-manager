@@ -1,4 +1,5 @@
 import { bindMoneyInputs } from './utils/moneyInput.js';
+import { normalizeCoverPosition, dragCoverPosition } from './utils/coverPosition.js';
 import { DASHBOARD_WIDGETS, DASHBOARD_WIDGET_KEYS, normalizeWidgetOrder, normalizeHiddenWidgets } from './dashboard/widgets.js?v=2';
 import { ideaCategoryId, placeCategoryLabel, placeCategoryColor, placeCategoryIcon } from './utils/categories.js';
 import { attachMapExpand } from './maps/index.js';
@@ -38,7 +39,7 @@ import { listMembers, createMember, updateMember, deleteMember, countMemberRefer
 import { dayjs, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay, parseDurationInput, thaiDate, thaiDateRange } from './utils/date.js';
 import { expensesInThb, convertCurrency, formatCurrency, formatCurrencyHtml, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually, tripCurrencyList } from './utils/currency.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses, groupTransfersByPayer } from './utils/settlement.js';
-import { debtMapColor, layoutDebtMapAmounts, debtMapEdgeRuns } from './utils/debtMap.js';
+import { debtMapColor, layoutDebtMapAmounts, layoutDebtMapCallouts, debtMapEdgeRuns } from './utils/debtMap.js';
 import { splitCustom, splitEqual, participantsOf, averagePerPerson, scaleToTotal } from './utils/split.js';
 import { escapeHtml, sanitizeUrl } from './utils/sanitize.js';
 import { APP_VERSION, APP_VERSION_LABEL, APP_UPDATED_ISO, APP_NAME, APP_AUTHOR, APP_NAME_BY, appUpdatedLabel, appUpdatedShort, copyrightNote } from './utils/buildInfo.js';
@@ -3182,9 +3183,9 @@ async function openTripForm(existingTrip = null, { onSaved = null } = {}) {
         });
         if (croppedBlob || coverFile) {
           const url = await uploadCoverImage(trip.id, croppedBlob || coverFile, currentUser.uid);
-          if (url) await updateTrip(trip.id, { coverImage: url });
+          if (url) await updateTrip(trip.id, { coverImage: url, coverPosition: { x: 50, y: 50 } });
         } else if (coverUrl && coverUrl !== trip.coverImage) {
-          await updateTrip(trip.id, { coverImage: coverUrl });
+          await updateTrip(trip.id, { coverImage: coverUrl, coverPosition: { x: 50, y: 50 } });
         }
         tLoad.close();
         toast.success(lang==='th' ? 'บันทึกการแก้ไขทริปแล้ว' : 'Trip updated');
@@ -3678,6 +3679,7 @@ async function renderDashboard(params) {
   const th = (a, b) => (lang === 'th' ? a : b);
 
   const coverUrl = trip?.coverImage || '';
+  const coverPosition = normalizeCoverPosition(trip?.coverPosition);
   const placeLabel = [trip?.country, trip?.city].filter(Boolean).join(' · ');
   const rangeLabel = tripRangeLabel(trip);
   const dragHandle = (what) => canEditDashboard ? `<div class="dash-widget-handle" title="${th('กดค้างเพื่อลากการ์ด','Drag this card')}" aria-label="${th('ลาก','Drag')}${what}">${icon('grip-vertical', 'w-4 h-4')} <span>${th('ลากย้าย','Drag')}</span></div>` : '';
@@ -3685,7 +3687,7 @@ async function renderDashboard(params) {
     <div class="page-enter space-y-4" id="dashboard-view">
       <header class="dash-head${coverUrl ? ' has-cover' : ''}">
         <div class="dash-head-row">
-          ${coverUrl ? `<figure class="dash-cover"><img decoding="async" src="${escapeHtml(coverUrl)}" alt="" onerror="this.closest('.dash-cover')?.remove()"></figure>` : ''}
+          ${coverUrl ? `<figure class="dash-cover"><img decoding="async" src="${escapeHtml(coverUrl)}" style="object-position:${coverPosition.x}% ${coverPosition.y}%" alt="" onerror="this.closest('.dash-cover')?.remove()"></figure>` : ''}
           <div class="dash-head-main">
             <h1 class="page-title">${escapeHtml(trip?.name || t('dashboard'))}</h1>
             <p class="dash-meta">
@@ -3702,6 +3704,7 @@ async function renderDashboard(params) {
                 aria-controls="dash-more-menu" aria-label="${th('ตัวเลือกเพิ่มเติม','More options')}" title="${th('ตัวเลือกเพิ่มเติม','More options')}">${icon('more-horizontal', 'w-4 h-4')}</button>
               <div class="menu-pop" id="dash-more-menu" role="menu" hidden>
                 <button id="add-place-quick" type="button" class="menu-pop-item" role="menuitem">${icon('map-pin', 'w-4 h-4')} ${t('addPlace')}</button>
+                ${canEditDashboard && coverUrl ? `<button id="dash-position-cover" type="button" class="menu-pop-item" role="menuitem">${icon('crop', 'w-4 h-4')} ${th('ปรับตำแหน่งภาพปก','Adjust cover position')}</button>` : ''}
                 ${perms.isAdmin ? `<button id="dash-edit-trip" type="button" class="menu-pop-item" role="menuitem">${icon('pencil', 'w-4 h-4')} ${th('แก้ไขทริป','Edit trip')}</button>` : ''}
                 <div class="menu-pop-sep" role="separator"></div>
                 ${canEditDashboard ? `<button id="dash-widgets-btn" type="button" class="menu-pop-item" role="menuitem" title="${th('เลือกการ์ดที่แสดงบนแดชบอร์ด','Choose which cards show on the dashboard')}">${icon('layout-grid', 'w-4 h-4')} ${th('เลือกการ์ด','Choose cards')}</button>
@@ -3872,6 +3875,56 @@ async function renderDashboard(params) {
   initReveal(appEl);
   if (isStale(token)) return;
 
+  bind('dash-position-cover', 'click', () => {
+    const liveFrame = appEl.querySelector('.dash-cover');
+    const rect = liveFrame?.getBoundingClientRect();
+    const ratio = rect?.height ? rect.width / rect.height : 3;
+    let position = normalizeCoverPosition(latestDashboardTrip.coverPosition);
+    const dialog = showModal(`
+      <h3>${th('ปรับตำแหน่งภาพปก', 'Adjust cover position')}</h3>
+      <p class="input-hint">${th('ลากภาพ หรือใช้แถบเลื่อนเพื่อเลือกตำแหน่ง สมาชิกทุกคนจะเห็นตำแหน่งที่บันทึก', 'Drag the image or use the sliders. Everyone will see the saved position.')}</p>
+      <div class="cover-position-preview" style="aspect-ratio:${ratio}"><img src="${escapeHtml(latestDashboardTrip.coverImage || coverUrl)}" alt="" draggable="false"></div>
+      <label class="cover-position-control">${th('แนวนอน', 'Horizontal')} <input type="range" min="0" max="100" step="1" data-cover-x></label>
+      <label class="cover-position-control">${th('แนวตั้ง', 'Vertical')} <input type="range" min="0" max="100" step="1" data-cover-y></label>
+      <div class="cover-position-actions"><button type="button" class="btn btn-secondary" data-cover-reset>${th('กึ่งกลาง', 'Center')}</button><button type="button" class="btn btn-primary" data-cover-save>${th('บันทึก', 'Save')}</button></div>
+    `);
+    const frame = dialog.modal.querySelector('.cover-position-preview');
+    const img = frame.querySelector('img');
+    const x = dialog.modal.querySelector('[data-cover-x]');
+    const y = dialog.modal.querySelector('[data-cover-y]');
+    const paint = () => { img.style.objectPosition = `${position.x}% ${position.y}%`; x.value = position.x; y.value = position.y; };
+    paint();
+    x.addEventListener('input', () => { position.x = Number(x.value); paint(); });
+    y.addEventListener('input', () => { position.y = Number(y.value); paint(); });
+    dialog.modal.querySelector('[data-cover-reset]').addEventListener('click', () => { position = { x: 50, y: 50 }; paint(); });
+    let drag = null;
+    frame.addEventListener('pointerdown', e => {
+      if (!img.naturalWidth || !img.naturalHeight) return;
+      drag = { x: e.clientX, y: e.clientY, position: { ...position } };
+      frame.setPointerCapture(e.pointerId);
+    });
+    frame.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const bounds = frame.getBoundingClientRect();
+      position = dragCoverPosition(drag.position, e.clientX - drag.x, e.clientY - drag.y, bounds.width, bounds.height, img.naturalWidth, img.naturalHeight);
+      paint();
+    });
+    frame.addEventListener('pointerup', () => { drag = null; });
+    frame.addEventListener('pointercancel', () => { drag = null; });
+    const save = dialog.modal.querySelector('[data-cover-save]');
+    save.addEventListener('click', async () => {
+      save.disabled = true;
+      try {
+        await updateTrip(tripId, { coverPosition: position });
+        const cover = appEl.querySelector('.dash-cover img');
+        if (cover) cover.style.objectPosition = `${position.x}% ${position.y}%`;
+        latestDashboardTrip = { ...latestDashboardTrip, coverPosition: position };
+        dialog.close();
+        toast.success(th('บันทึกตำแหน่งภาพปกแล้ว', 'Cover position saved'));
+      } catch (error) { toast.error(error.message || th('บันทึกไม่สำเร็จ', 'Could not save')); }
+      finally { save.disabled = false; }
+    });
+  });
   bind('dash-edit-trip', 'click', () => openTripForm(trip, { onSaved: () => router.handle() }));
   bind('add-place-quick', 'click', () => { location.hash = `#/trip/${tripId}/itinerary?action=add`; });
   bind('add-expense-quick', 'click', () => { location.hash = `#/trip/${tripId}/expenses/add`; });
@@ -4122,6 +4175,12 @@ async function renderDashboard(params) {
   const stopDashboardTripSync = subscribeTrip(tripId, (latestTrip) => {
     if (!latestTrip || isStale(token)) return;
     latestDashboardTrip = latestTrip;
+    const cover = appEl.querySelector('.dash-cover img');
+    if (cover) {
+      const position = normalizeCoverPosition(latestTrip.coverPosition);
+      cover.style.objectPosition = `${position.x}% ${position.y}%`;
+      if (latestTrip.coverImage && cover.getAttribute('src') !== latestTrip.coverImage) cover.src = latestTrip.coverImage;
+    }
     currentTrip = latestTrip;
     paintSharedDashboard();
   });
@@ -10327,16 +10386,17 @@ async function renderSettlement(params) {
     /* ---- layout: one ellipse, barycentre ordering to shorten the lines ---- */
     const vw = (typeof window !== 'undefined' && window.innerWidth) || 1024;
     const compact = vw < 1024;
-    const W = compact ? Math.round(Math.max(300, Math.min(820, vw - (vw < 768 ? 72 : 112)))) : 820;
-    const GRAPH_H = compact ? Math.round(Math.max(400, Math.min(520, W * 1.25))) : 500;
+    // Grow the canvas rather than squeeze people together; narrow screens scroll.
+    const graphWidth = Math.max(820, ids.length * 64 + 180);
+    const GRAPH_H = Math.max(500, ids.length * 64 + 160, txns.length * 31 + 40);
     const FS = compact
       ? { initial: 13, name: 12.5, role: 12, nameCharW: 7.4, charW: 7.6, labelH: 24 }
       : { initial: 12, name: 11, role: 11, nameCharW: 6.6, charW: 6.6, labelH: 22 };
-    const cx = W / 2, cy = GRAPH_H / 2 - 4;
+    const cx = graphWidth / 2, cy = GRAPH_H / 2 - 4;
     const n = ids.length;
-    const radiusX = compact ? Math.max(64, Math.min(W / 2 - 72, 190 + n * 14)) : Math.min(320, 190 + n * 14);
-    const radiusY = compact ? Math.max(90, Math.min(GRAPH_H / 2 - 84, 118 + n * 10)) : Math.min(192, 118 + n * 10);
-    const labelAbove = (pt) => compact && Math.sin(pt.ang) < -0.4;
+    const radiusX = graphWidth / 2 - 100;
+    const radiusY = GRAPH_H / 2 - 85;
+    const labelAbove = (pt) => Math.sin(pt.ang) < -0.4;
     const angleOf = (i) => (2 * Math.PI * i) / Math.max(1, n) - Math.PI / 2;
     let order = ids.slice();
     if (n > 2) {
@@ -10353,23 +10413,9 @@ async function renderSettlement(params) {
       order = order.map((id, i) => ({ id, key: bary[i] })).sort((a, b) => a.key - b.key).map(o => o.id);
     }
     const posOf = new Map();
-    let prevPoint = null;
     order.forEach((id, i) => {
       const ang = angleOf(i);
-      const raw = { x: cx + radiusX * Math.cos(ang), y: cy + radiusY * Math.sin(ang) };
-      // Keep neighbouring nodes at least ~68px apart even when the ellipse is
-      // squeezed by a narrow screen.
-      if (prevPoint) {
-        const dx = raw.x - prevPoint.x, dy = raw.y - prevPoint.y;
-        const dist = Math.hypot(dx, dy) || 1;
-        const minDist = compact ? 62 : 74;
-        if (dist < minDist) {
-          raw.x = prevPoint.x + (dx / dist) * minDist;
-          raw.y = prevPoint.y + (dy / dist) * minDist;
-        }
-      }
-      prevPoint = raw;
-      posOf.set(id, { ...raw, ang });
+      posOf.set(id, { x: cx + radiusX * Math.cos(ang), y: cy + radiusY * Math.sin(ang), ang });
     });
 
     /* ---- ONE colour per person; every line takes the RECEIVER's colour ----- */
@@ -10430,7 +10476,7 @@ async function renderSettlement(params) {
         .map(({ edge }) => ({ start: edge.start, control: edge.control, end: edge.end, label: edge.label })),
       [...nodeBoxes, ...nodeTextBoxes],
       {
-        width: W,
+        width: graphWidth,
         height: GRAPH_H,
         padding: 7,
         gap: 4,
@@ -10442,9 +10488,14 @@ async function renderSettlement(params) {
     const placementByIndex = new Map(
       edgeRows.map((edge, i) => [i, edge]).sort((a, b) => a[1].arc - b[1].arc).map(([i], k) => [i, placements[k]])
     );
-    edgeRows.forEach((edge, i) => { edge.placement = placementByIndex.get(i) || { kind: 'none' }; });
+    const orderedPlacements = edgeRows.map((edge, i) => placementByIndex.get(i) || { kind: 'none' });
+    const hasCallouts = orderedPlacements.some(position => position.kind !== 'label');
+    const finalPlacements = layoutDebtMapCallouts(orderedPlacements, edgeRows, graphWidth, { charWidth: FS.charW, labelHeight: compact ? 23 : 21 });
+    const W = graphWidth + (hasCallouts ? 256 : 0);
+    edgeRows.forEach((edge, i) => { edge.placement = finalPlacements[i]; });
 
     let edgesHtml = '';
+    let leadersHtml = '';
     let labelsHtml = '';
     edgeRows.forEach((edge) => {
       const { tx, payer, receiver, color, markerId, placement } = edge;
@@ -10452,7 +10503,7 @@ async function renderSettlement(params) {
       // (utils/debtMap.js owns the rule) — a line may no longer cross a label.
       const runs = debtMapEdgeRuns(edge, nodeTextBoxes, { gap: compact ? 4 : 5, samples: 96 });
       const d = `M${edge.start.x.toFixed(1)},${edge.start.y.toFixed(1)} Q${edge.control.x.toFixed(1)},${edge.control.y.toFixed(1)} ${edge.end.x.toFixed(1)},${edge.end.y.toFixed(1)}`;
-      const onLine = placement.kind === 'label'
+      const onLine = (placement.kind === 'label' || placement.kind === 'callout')
         ? `<g class="debt-pill debt-map-amount-label is-amount" data-pill="${edge.index + 1}" data-label-kind="label" data-overflow-label="false" transform="translate(${placement.x.toFixed(1)} ${placement.y.toFixed(1)}) rotate(${placement.angle.toFixed(1)})">
              <rect x="${(-placement.width / 2).toFixed(1)}" y="${(-placement.height / 2).toFixed(1)}" width="${placement.width.toFixed(1)}" height="${placement.height.toFixed(1)}" rx="${(placement.height / 2).toFixed(1)}" fill="var(--surface)" stroke="${escapeHtml(color)}" stroke-opacity=".55" stroke-width="1"/>
              <circle cx="${(-placement.width / 2 + 10).toFixed(1)}" cy="0" r="6.2" fill="${escapeHtml(color)}"/>
@@ -10465,6 +10516,12 @@ async function renderSettlement(params) {
                <text class="debt-pill-tag" x="0" y="0.4" text-anchor="middle" dominant-baseline="central" fill="var(--text-strong)" font-size="10" font-weight="600">${edge.index + 1}</text>
              </g>`
           : '';
+      if (placement.kind === 'callout') {
+        const t = 0.5;
+        const x = (1-t)**2 * edge.start.x + 2*(1-t)*t * edge.control.x + t**2 * edge.end.x;
+        const y = (1-t)**2 * edge.start.y + 2*(1-t)*t * edge.control.y + t**2 * edge.end.y;
+        leadersHtml += `<path d="M${x.toFixed(1)},${y.toFixed(1)} L${(placement.x - placement.width / 2).toFixed(1)},${placement.y.toFixed(1)}" fill="none" stroke="${escapeHtml(color)}" stroke-width="1" stroke-dasharray="3 3" opacity=".65"/>`;
+      }
       labelsHtml += onLine;
       edgesHtml += `
         <g class="debt-map-edge" data-edge="${escapeHtml(tx.from)}→${escapeHtml(tx.to)}" data-color="${escapeHtml(color)}" ${placement.kind === 'label' ? '' : 'data-offgraph="true"'}>
@@ -10505,9 +10562,6 @@ async function renderSettlement(params) {
 
     /* ---- the authoritative list: number, payer → receiver, amount, action --- */
     const rowsHtml = edgeRows.map(({ tx, payer, receiver, color, index, label, placement }) => {
-      const note = placement.kind === 'label'
-        ? ''
-        : `<i class="debt-offgraph-note">${th(`ยอดนี้อยู่ในรายการ — เลข ${index + 1} คือจุดบนเส้นของรายการนี้`, `This amount is in the list — line marker #${index + 1} matches this row`)}</i>`;
       return `
       <div class="debt-tx-row${placement.kind === 'label' ? '' : ' debt-tx-row--offgraph'}" style="--debt-edge-color:${escapeHtml(color)};" data-debt-step="${index + 1}">
         <span class="debt-step" aria-hidden="true">${index + 1}</span>
@@ -10525,7 +10579,6 @@ async function renderSettlement(params) {
         <div class="debt-amount-block">
           <span>${th('ยอดที่ต้องโอน', 'Amount to transfer')}</span>
           <b class="debt-row-amount">${label}</b>
-          ${note}
         </div>
         ${canPay ? `<button type="button" class="btn btn-secondary btn-sm debt-pay-btn no-export" data-settle-pay data-settle-from="${escapeHtml(tx.from)}" data-settle-to="${escapeHtml(tx.to)}" data-settle-amount="${tx.amountMinor}" aria-label="${escapeHtml(th(`บันทึกว่า ${payer.displayName || 'ผู้โอน'} จ่ายให้ ${receiver.displayName || 'ผู้รับ'} แล้ว`, `Record payment from ${payer.displayName || 'payer'} to ${receiver.displayName || 'receiver'}`))}">${th('จ่ายแล้ว', 'Mark paid')}</button>` : ''}
       </div>`;
@@ -10537,7 +10590,7 @@ async function renderSettlement(params) {
         <div class="debt-map-heading">
           <div><p class="debt-map-eyebrow">${th('สรุปการเคลียร์บิล', 'SETTLEMENT')}</p>
             <h3>${th('ใครโอนให้ใคร', 'Who pays whom')}</h3>
-            <p>${th('ยอดเงินเขียนอยู่บนเส้นของตัวเอง — ลูกศรชี้จากผู้โอนไปยังผู้รับ เลขบนเส้นตรงกับเลขในรายการด้านล่าง', 'Each amount sits on its own line — arrows point from payer to receiver, and the number on a line matches the list below.')}</p>
+            <p>${th('ลูกศรชี้จากผู้โอนไปยังผู้รับ เลขกำกับยอดตรงกับรายการด้านล่าง', 'Arrows point from payer to receiver; amount numbers match the list below.')}</p>
           </div>
           <div class="debt-map-side">
             <div class="debt-map-total"><span>${th('ยอดที่ต้องโอนทั้งหมด', 'Total to transfer')}</span><strong>${money(totalMove)}</strong><small>${txns.length} ${th('รายการโอน', 'transfers')}</small></div>
@@ -10552,12 +10605,13 @@ async function renderSettlement(params) {
           <span class="debt-legend-item is-in">${th('รับเงิน', 'Receives')}</span>
           <span class="debt-legend-item debt-legend-item--unique"><i class="debt-legend-swatch" aria-hidden="true">${order.filter(id => (recv.get(id) || 0) > 0).slice(0, 4).map(id => `<span style="background:${escapeHtml(nodeColors.get(id) || 'var(--primary)')}"></span>`).join('')}</i>${th('สีเส้น = สีของผู้รับเงินรายการนั้น', 'Line colour = the receiver’s colour')}</span>
         </div>
+        <p class="debt-map-note">${th('เลื่อนภาพแนวนอนเพื่อดูแผนที่ทั้งหมด', 'Scroll horizontally to see the whole map.')}</p>
         <div class="debt-map-container">
-          <svg class="debt-map-svg${compact ? ' debt-map-svg--compact' : ''}" viewBox="0 0 ${W} ${GRAPH_H}" role="group" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected by money-transfer lines'))}">
-            <defs>${markerDefs.join('')}</defs>${edgesHtml}${labelsHtml}${nodesHtml}
+          <svg class="debt-map-svg${compact ? ' debt-map-svg--compact' : ''}" viewBox="0 0 ${W} ${GRAPH_H}" style="min-width:${W}px" role="group" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected by money-transfer lines'))}">
+            <defs>${markerDefs.join('')}</defs>${edgesHtml}${leadersHtml}${labelsHtml}${nodesHtml}
           </svg>
         </div>
-        ${edgeRows.some(edge => edge.placement.kind !== 'label') ? `<p class="debt-map-note">${th('วงกลมเล็กที่มีเลข = พื้นที่บนภาพไม่พอ จึงพิมพ์ยอดของรายการนั้นไว้ในรายการด้านล่าง (เลขตรงกัน)', 'A small numbered circle means the amount did not fit on the drawing — it is printed in the list below under the same number.')}</p>` : ''}
+        ${hasCallouts ? `<p class="debt-map-note">${th('ยอดด้านข้างเชื่อมกับเส้นด้วยเส้นประ และเลขตรงกับรายการด้านล่าง', 'Amounts at the side connect to their lines with dashed leaders; numbers match the list below.')}</p>` : ''}
         <div class="debt-list-heading"><h4>${th('รายการโอนที่เหลือ', 'Remaining transfers')}</h4><span>${txns.length} ${th('รายการ', 'transfers')}</span></div>
         <div class="debt-payer-list">${rowsHtml}</div>
         <p class="debt-map-action-hint">${th('หลังโอนเงินจริงแล้ว กด “จ่ายแล้ว” เพื่อบันทึกยอดเต็มหรือบางส่วน', 'After sending money, select “Mark paid” to record a full or partial payment.')}</p>
@@ -13189,10 +13243,10 @@ async function renderSettings(params) {
       await updateTrip(tripId, payload);
       if (file) {
         const url = await uploadCoverImage(tripId, file, currentUser.uid);
-        if (url) await updateTrip(tripId, { coverImage: url });
+        if (url) await updateTrip(tripId, { coverImage: url, coverPosition: { x: 50, y: 50 } });
       } else {
         const coverUrl = document.getElementById('s-cover-url').value.trim();
-        if (coverUrl && coverUrl !== trip?.coverImage) await updateTrip(tripId, { coverImage: coverUrl });
+        if (coverUrl && coverUrl !== trip?.coverImage) await updateTrip(tripId, { coverImage: coverUrl, coverPosition: { x: 50, y: 50 } });
       }
       tLoad.close();
       toast.success(th('บันทึกการตั้งค่าแล้ว', 'Settings saved'));

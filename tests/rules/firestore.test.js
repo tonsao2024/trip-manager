@@ -359,6 +359,17 @@ describe('Firestore security rules', () => {
     }
   });
 
+  it('shares cover framing while restricting delegated writes', async () => {
+    const ref = uid => doc(dbFor(uid), 'trips', tripId);
+    await assertSucceeds(updateDoc(ref(coadminUid), { coverPosition: { x: 20, y: 80 }, updatedAt: serverTimestamp() }));
+    const snapshot = await assertSucceeds(getDoc(ref(memberUid)));
+    assert.deepEqual(snapshot.data().coverPosition, { x: 20, y: 80 });
+    await assertFails(updateDoc(ref(memberUid), { coverPosition: { x: 50, y: 50 } }));
+    await assertFails(updateDoc(ref(coadminUid), { coverPosition: { x: 101, y: 50 } }));
+    await assertFails(updateDoc(ref(coadminUid), { coverPosition: { x: 10, y: 50, extra: true } }));
+    await assertFails(updateDoc(ref(coadminUid), { coverPosition: { x: 10, y: 50 }, name: 'other' }));
+  });
+
   it('limits non-admin trip-document writes to their specific capabilities', async () => {
     const memberDb = dbFor(memberUid);
     const tripRef = doc(memberDb, 'trips', tripId);

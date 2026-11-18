@@ -128,6 +128,17 @@ service cloud.firestore {
         && canManageMembers(tripId);
     }
 
+    /** Cover framing is shared, and delegated managers may only write valid coordinates. */
+    function managerMayUpdateCoverPosition(tripId) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['coverPosition', 'updatedAt'])
+        && request.resource.data.coverPosition is map
+        && request.resource.data.coverPosition.keys().hasOnly(['x', 'y'])
+        && request.resource.data.coverPosition.keys().hasAll(['x', 'y'])
+        && request.resource.data.coverPosition.x is number && request.resource.data.coverPosition.x >= 0 && request.resource.data.coverPosition.x <= 100
+        && request.resource.data.coverPosition.y is number && request.resource.data.coverPosition.y >= 0 && request.resource.data.coverPosition.y <= 100
+        && canManageMembers(tripId);
+    }
+
     /** Shared map defaults follow the itinerary permission. */
     function memberMayUpdateMapDefault(tripId) {
       return request.resource.data.diff(resource.data).affectedKeys()
@@ -396,6 +407,7 @@ service cloud.firestore {
           managerOnlyChangesMemberUids(tripId) ||
           // Non-admin writes are limited to fields covered by their specific capability.
           managerMayUpdateDashboard(tripId) ||
+          managerMayUpdateCoverPosition(tripId) ||
           memberMayUpdateMapDefault(tripId) ||
           memberMayUpdateCards(tripId)
         );

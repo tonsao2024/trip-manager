@@ -162,3 +162,15 @@ export function testDebtMapLabelsAndExportAreWired() {
   // and member rows that predate photos are backfilled from the account directory.
   assert(/hydrateMemberPhotos/.test(appSource), 'the settlement page backfills missing profile photos');
 }
+
+export async function testCrowdedDebtMapCalloutsShowEveryAmount() {
+  const { layoutDebtMapCallouts } = await import('../../src/js/utils/debtMap.js');
+  const edges = Array.from({ length: 15 }, (_, i) => ({ label: `฿${i + 1},234.56` }));
+  const placements = edges.map(() => ({ kind: 'none' }));
+  const result = layoutDebtMapCallouts(placements, edges, 820);
+  assert(result.length === edges.length && result.every(p => p.kind === 'callout'), 'all crowded transfers have a visible amount');
+  for (let i = 0; i < result.length; i++) {
+    assert(result[i].label === edges[i].label && result[i].box.left > 820, 'amount stays in the separate column');
+    if (i) assert(!shares(result[i - 1].box, result[i].box, 4), 'callouts never overlap');
+  }
+}

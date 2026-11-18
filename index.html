@@ -67,7 +67,7 @@
 
   <!-- Design System v35 “Calm” (cache-busted) — tokens.css explains the rules -->
   <link rel="stylesheet" href="./src/css/tokens.css?v=41">
-  <link rel="stylesheet" href="./src/css/components.css?v=41">
+  <link rel="stylesheet" href="./src/css/components.css?v=41&amp;select-fix=1">
   <link rel="stylesheet" href="./src/css/refresh.css?v=41&amp;footer=removed">
   <link rel="stylesheet" href="./src/css/animations.css?v=41">
   <!-- FLAT DESIGN LAYER (v34 → v35 calm pass) — every surface, button, card and
@@ -79,7 +79,7 @@
        Replaces the Play CDN runtime compiler. Loaded AFTER the app stylesheets
        to keep the same cascade order the CDN's injected <style> used to have. -->
   <link rel="stylesheet" href="./src/css/tailwind.css?v=41">
-  <link rel="stylesheet" href="./src/css/dimension.css?v=41">
+  <link rel="stylesheet" href="./src/css/dimension.css?v=41&amp;cover-fix=1">
   <!-- v41 “Google Material” skin — loads LAST so the whole product reads like
        Google Maps / Google Travel (Google Sans, white cards on the grey canvas,
        Google blue, Material elevation, pill chips). Everything it overrides is
@@ -438,6 +438,6 @@
   <script src="./fcm-vapid.js"></script>
 
   <!-- App (cache-busted) -->
-  <script type="module" src="./src/js/app.js?v=41&amp;expense-fix=3&amp;dashboard-fix=1"></script>
+  <script type="module" src="./src/js/app.js?v=41&amp;expense-fix=3&amp;dashboard-fix=1&amp;cover-fix=1"></script>
 </body>
 </html>
