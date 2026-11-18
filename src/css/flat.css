@@ -2812,17 +2812,7 @@ body {
   .pay-method-option { font-size: 12px; padding: 6px 4px; gap: 4px; }
 }
 
-/* --- 4. Expense filter bar -------------------------------------------- */
-.expense-filter-bar { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
-.expense-filter-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.expense-filter-group { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.expense-filter-label { flex: 0 0 auto; color: var(--text-tertiary); font-size: 11px; font-weight: 600; white-space: nowrap; }
-.expense-filter-bar .chip-row { margin: 0; }
-.expense-filter-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.expense-more-filters { color: var(--text-secondary); }
-.expense-extra-controls { display: none; padding: 8px 0 0; }
-.expense-extra-controls.is-open { display: block; }
-#expenses-view .kpi-strip { margin-bottom: 8px; }
+/* --- 4. Expense filter bar (structure: § v46 at the end of this file) --- */
 #expenses-view .group-avg-strip { margin-bottom: 8px; }
 #expenses-view .page-head { margin-bottom: 12px; }
 
@@ -3145,10 +3135,8 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
 #settlement-content .card-summary-grid { gap: 6px; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); }
 #settlement-content .pending-row { padding: 6px 8px; }
 
-/* Expenses list: cards on a tighter baseline (the compact toggle stays). */
-#expenses-view .expense-card { padding: 10px 12px; }
-#expenses-view .expense-day-total-bar { padding: 8px 10px; }
-#expenses-view .chip { min-height: 30px; }
+/* Expenses list: § v46 owns the card's padding and the chip height now — a
+   second, later declaration here was silently undoing that grid. */
 
 /* Forms across the app: sections one step closer together. */
 .form-section { padding: 14px; }
@@ -3605,3 +3593,571 @@ body::before {
 }
 #dashboard-view .member-row-hint .money-orig { font-size: 11px; }
 #dashboard-view .member-row .you-badge { padding: 0 6px; font-size: 10.5px; line-height: 15px; }
+
+/* =================================================================== *
+ * v46 — Expenses: one summary, one filter surface, one steady list row
+ *
+ * What the owner saw (screenshots, 18 Nov 2026 — iPhone + iPad):
+ *   · five KPI tiles in one row: on a phone every figure was clamped to
+ *     ~10px and dual-currency totals broke mid-number (“฿167,7 / 23.09”);
+ *   · the filter area was four stacked chip rows with different alignment
+ *     per row, so the eye had no left edge to follow;
+ *   · the expense card packed icon, title, amount, six badges and four meta
+ *     lines into one wrapping flex row — the amount jumped under the title on
+ *     some cards and stayed right on others, and the chips wrapped into a
+ *     ragged second paragraph.
+ * The rules below give the page a single reading spine (every zone starts at
+ * the same left edge, on every screen) and keep every number the old layout
+ * had. Progressive disclosure — not deletion — does the tidying: the payment
+ * filters and the list tools fold behind one clearly labelled control on a
+ * phone and are always visible on a desk.
+ *
+ * Breakpoints: phones < 640px (the reported iPhone widths are 390–440px),
+ * tablets 640–1023px (the iPad report), desktop ≥ 1024px.
+ * =================================================================== */
+
+/* ---------- 1. The summary: a hero total + three facts + the average ---- */
+.exp-summary {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  min-width: 0;
+}
+.exp-summary-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 12px);
+  background: var(--surface);
+  box-shadow: var(--elev-1);
+  min-width: 0;
+}
+.exp-summary-main { min-width: 0; }
+.exp-summary-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+/* The one number the page is about: the largest text on the page, tabular, and
+   never smaller than 22px — the old strip shrank the total to ~10px on a phone
+   so a five-card row would fit. The figure itself holds one line (see
+   `.money-primary` below) while the SECONDARY currency wraps under it. */
+.exp-summary-total {
+  margin: 2px 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(22px, 6.4vw, 28px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+.exp-summary-total .money-secondary { font-size: 12px; font-weight: 500; line-height: 1.4; }
+.exp-summary-scope {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-tertiary);
+}
+.exp-summary-scope.is-filtered { color: var(--primary-strong); font-weight: 600; }
+/* The average is a peer of the total, not a fifth tile: quiet label, one figure,
+   then the “per person / per group” sentence under it. */
+.exp-summary-avg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+  row-gap: 0;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  min-width: 0;
+}
+.exp-summary-avg .exp-avg-label { font-size: 11.5px; font-weight: 600; line-height: 1.4; color: var(--text-secondary); }
+.exp-summary-avg .exp-avg-value {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+.exp-summary-avg .exp-avg-sub { flex: 1 1 100%; font-size: 11.5px; font-weight: 600; line-height: 1.4; color: var(--text-tertiary); }
+
+/* Three facts, never five: equal tiles, one line each, no clipping. */
+.exp-summary-facts {
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.exp-summary-facts .kpi-mini { padding: 10px 12px; border-radius: var(--radius-md, 12px); gap: 2px; }
+.exp-summary-facts .kpi-mini-label { font-size: 11.5px; line-height: 1.35; color: var(--text-secondary); }
+.exp-summary-facts .kpi-mini b {
+  font-size: 15px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.exp-summary-facts .money-dual { flex-wrap: wrap; align-items: baseline; column-gap: 3px; }
+.exp-summary-facts .money-dec { display: inline; }
+/* The one number the page is about keeps its decimals and never breaks inside a
+   figure — the hero is wide enough for it at 390px, and the fact tiles wrap the
+   secondary currency instead of the digits. */
+.exp-summary-total .money-primary { white-space: nowrap; }
+.exp-summary-facts .money-primary { white-space: nowrap; font-size: inherit; }
+.exp-summary-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md, 12px);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+.exp-summary-note svg { flex: 0 0 auto; margin-top: 2px; }
+.exp-summary-note[hidden] { display: none; }
+
+/* 640px+: the hero and the average sit side by side (the iPad report). */
+@media (min-width: 640px) {
+  .exp-summary-hero {
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    align-items: end;
+    gap: 8px 20px;
+    padding: 16px 18px;
+  }
+  .exp-summary-avg {
+    flex-direction: column;
+    align-items: flex-end;
+    text-align: right;
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+    align-self: stretch;
+    justify-content: center;
+    border-left: 1px solid var(--border);
+    padding-left: 20px;
+  }
+  .exp-summary-avg .exp-avg-sub { flex: 0 0 auto; }
+  .exp-summary-total { font-size: clamp(24px, 3vw, 30px); }
+}
+
+/* ---------- 2. The filter surface: three aligned zones ---------------- */
+/* Phones: status + category stay open; payment and the list tools fold behind
+   “ตัวเลือกเพิ่มเติม” (one control, a real 44px target). */
+#expenses-view .expense-filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 12px);
+  background: var(--surface);
+  min-width: 0;
+}
+.expense-filter-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  min-width: 0;
+}
+.expense-filter-row--primary,
+.expense-filter-row--secondary { align-items: flex-start; }
+/* Phones: the tools row holds only the view switch, so it stays on one line with
+   the room it needs instead of pushing a second row of its own. */
+.expense-filter-row--tools { padding-top: 2px; }
+.expense-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.expense-filter-label {
+  flex: 0 0 auto;
+  min-width: 52px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+}
+#expenses-view .expense-filter-bar .chip-row {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  padding-bottom: 2px;
+}
+/* One chip shape for every filter row (same height, radius, icon size) — the
+   old surface mixed 30px, 36px and segmented controls in the same block. */
+#expenses-view .expense-filter-bar .chip {
+  min-height: 32px;
+  padding: 5px 11px;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  border-radius: 999px;
+}
+#expenses-view .expense-filter-bar .chip svg { width: 13px; height: 13px; }
+.expense-filter-group--method .chip,
+.expense-filter-group--cards .chip { color: var(--text-secondary); }
+/* The status row is the first thing the reader filters by — no label needed above
+   it, so it may use the whole width of the panel. */
+.expense-filter-group--status .expense-filter-label { display: none; }
+.expense-filter-group--status .chip-row { flex: 1 1 100%; }
+.expense-filter-row--tools { justify-content: space-between; gap: 8px; }
+.expense-filter-group--view { margin-left: auto; }
+.expense-filter-group--view .expense-filter-label { min-width: 0; }
+.expense-filter-group--view .segmented { gap: 3px; padding: 3px; }
+.expense-filter-group--view .segmented-item { min-height: 30px; padding: 4px 10px; gap: 5px; font-size: 12px; }
+.expense-filter-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#expenses-view .expense-more-filters { color: var(--text-secondary); }
+#expenses-view .expense-extra-controls { display: none; padding: 8px 0 0; }
+#expenses-view .expense-extra-controls.is-open { display: block; }
+#expenses-view .expense-extra-actions { margin-bottom: 0; }
+
+/* Phones: fold the two secondary rows behind one control. */
+@media (max-width: 639px) {
+  #expenses-view .expense-filter-bar { gap: 8px; padding: 10px; }
+  .expense-filter-group { align-items: stretch; flex-direction: column; gap: 4px; }
+  .expense-filter-label { min-width: 0; font-size: 11px; }
+  /* Chips get the full width and wrap instead of a sideways swipe: a filter the
+     reader cannot see is a filter they will not use. */
+  .expense-filter-group .chip-row {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 6px;
+    overflow: visible;
+    padding: 0;
+    scroll-snap-type: none;
+  }
+  .expense-filter-group .chip { flex: 0 1 auto; max-width: 100%; min-height: 34px; padding: 5px 10px; }
+  .expense-filter-group .chip > span,
+  .expense-filter-group .chip { white-space: normal; overflow-wrap: anywhere; text-align: left; }
+  .expense-filter-row--tools { flex-wrap: wrap; align-items: center; }
+  .expense-filter-group--view { flex-direction: row; align-items: center; margin-left: 0; flex: 1 1 auto; }
+  .expense-filter-foot { width: 100%; }
+  #expenses-view .expense-filter-row--more { display: flex; }
+  #expenses-view .expense-more-filters {
+    display: flex;
+    width: 100%;
+    justify-content: flex-start;
+    gap: 8px;
+    min-height: 44px;
+    margin: 0;
+  }
+  #expenses-view .expense-more-filters [data-expense-filter-summary] { margin-left: auto; font-size: 12px; }
+  #expenses-view .expense-extra-controls.is-open {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 0 0;
+  }
+  #expenses-view .expense-extra-actions { justify-content: flex-start; gap: 4px 8px; }
+  /* v46: “ตัวเลือกเพิ่มเติม” is ONE disclosure for the two secondary rows — the
+     payment filters (with the card chips) and the list tools. Folded, the reader
+     meets two rows (status, category) and the list starts a screen earlier; open,
+     they get the full filter set with the same alignment as the rest. */
+  #expenses-view .expense-filter-bar:not(.is-open) .expense-filter-row--pay,
+  #expenses-view .expense-filter-bar:not(.is-open) #expense-extra-controls,
+  /* the card chips only matter while the payment row is open */
+  #expenses-view .expense-filter-bar:not(.is-open) #card-filters-group { display: none; }
+  #expenses-view .expense-filter-bar.is-open .expense-filter-row--pay {
+    display: flex;
+    padding-top: 2px;
+  }
+  #expenses-view .expense-filter-bar.is-open #expense-extra-controls {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 0 0;
+    margin: 0;
+    border: 0;
+    background: none;
+  }
+}
+/* 640px+: nothing folds — one framed surface, three quiet rows, labelled. */
+@media (min-width: 640px) {
+  #expenses-view .expense-filter-bar { padding: 12px 14px; gap: 8px; }
+  .expense-filter-row--primary { padding-bottom: 8px; border-bottom: 1px solid var(--border-light); }
+  .expense-filter-row--secondary { padding-bottom: 8px; border-bottom: 1px solid var(--border-light); }
+  .expense-filter-row--tools { padding-top: 2px; }
+  #expenses-view .expense-filter-row--more { display: none; }
+  /* The extra controls are not “extra” on a desk: they are the row's tools. */
+  #expenses-view .expense-extra-controls {
+    display: flex;
+    align-items: center;
+    padding: 0;
+    margin-left: auto;
+  }
+  #expenses-view .expense-extra-actions { gap: 4px 10px; align-items: center; }
+  #expenses-view .expense-extra-actions :is(.btn, .link-btn) { min-height: 30px; padding: 3px 8px; font-size: 12px; }
+}
+
+/* ---------- 3. The list: a caption, then steady rows ------------------ */
+.expense-list-caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin: 0 0 8px;
+  padding: 0 2px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+.expense-list-caption > span,
+.expense-list-caption-label { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.expense-list-caption-label { font-weight: 600; color: var(--text-strong); }
+.expense-list-caption b { color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.expense-list-caption .money-primary { font-family: var(--font-display); font-weight: 600; }
+.expense-list-caption .money-orig { font-size: 11.5px; }
+.expense-list-caption > i { font-style: normal; color: var(--text-tertiary); margin-left: auto; }
+.expense-list-caption-sum { color: var(--text-secondary); }
+.expense-list-rows { display: flex; flex-direction: column; gap: 8px; }
+.expense-pagination {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+.expense-list-footer { display: flex; justify-content: center; }
+.expense-list-footer:empty { display: none; }
+@media (min-width: 640px) {
+  .expense-pagination { flex-direction: row; justify-content: center; gap: 16px; }
+}
+
+/* ---------- 4. One expense card: three fixed zones -------------------- */
+.expense-card {
+  /* One variable keeps every indented zone on the title's left edge: the icon
+     tile plus the head grid's column gap. Change the tile, and the facts and
+     extras follow it — no magic 42px that drifts when the tile resizes. */
+  --exp-card-icon: 40px;
+  --exp-card-gap: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  padding: 12px 14px;
+  cursor: pointer;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.exp-card-copy { flex: 1 1 auto; min-width: 0; }
+/* head: icon · title · amount. The amount keeps a fixed right edge on every
+   card, so a column of amounts lines up and can be scanned in one pass. */
+.expense-card .expense-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px var(--exp-card-gap);
+  min-width: 0;
+}
+.expense-card .exp-card-icon { flex: 0 0 auto; }
+/* The tile takes its hue from the expense's own group (the same colour as its
+   category pill), not the generic blue tile every row shared — so the icon and
+   the pill read as one thing. The glyph is mixed toward the ink colour so it
+   keeps ≥4.5:1 on the tint in both themes. */
+.expense-card .exp-card-icon {
+  background: color-mix(in srgb, var(--chip-color, var(--primary-raw)) 12%, var(--surface)) !important;
+  color: color-mix(in srgb, var(--chip-color, var(--primary-raw)) 62%, var(--text-strong)) !important;
+}
+[data-theme="dark"] .expense-card .exp-card-icon {
+  background: color-mix(in srgb, var(--chip-color, var(--primary-raw)) 22%, var(--surface)) !important;
+  color: color-mix(in srgb, var(--chip-color, var(--primary-raw)) 45%, #ffffff) !important;
+}
+.expense-card .expense-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.exp-card-status { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.exp-card-status .badge { font-size: 11px; padding: 1px 7px; line-height: 1.5; }
+.expense-card .expense-amount {
+  min-width: 0;
+  max-width: 48%;
+  text-align: right;
+}
+.expense-card .expense-amount .money-primary {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+  color: var(--text-strong);
+}
+.expense-card .expense-amount .money-dual {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  column-gap: 3px;
+  row-gap: 0;
+  min-width: 0;
+}
+.expense-card .expense-amount .money-orig,
+.expense-card .expense-amount .money-eq,
+.expense-card .expense-amount .money-norate { font-size: 11px; }
+/* facts: ONE line of small facts with the same rhythm on every card, indented
+   to the title's left edge. It scrolls sideways rather than wrapping into a
+   ragged paragraph — nothing is hidden, nothing reflows. */
+.expense-card .expense-facts {
+  display: flex;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  padding-left: calc(var(--exp-card-icon) + var(--exp-card-gap));
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.expense-card .expense-facts::-webkit-scrollbar { display: none; }
+.expense-card .exp-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 46vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.expense-card .exp-fact svg { flex: 0 0 auto; width: 13px; height: 13px; color: var(--text-tertiary); }
+.expense-card .exp-fact--cat {
+  padding: 1px 8px 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--chip-color, var(--primary-raw)) 10%, var(--surface));
+  color: color-mix(in srgb, var(--chip-color, var(--primary-raw)) 62%, var(--text-strong));
+  font-weight: 600;
+}
+.expense-card .exp-fact--cat svg { color: inherit; }
+.expense-card .expense-facts .rcpt-chip { flex: 0 0 auto; font-size: 11px; padding: 1px 7px; line-height: 1.6; }
+/* extras: description / receipt / comment / edit trail — one quiet block. */
+.expense-card .expense-extras {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: calc(var(--exp-card-icon) + var(--exp-card-gap));
+  min-width: 0;
+}
+.expense-card .expense-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.expense-card .expense-edited {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-tertiary);
+}
+.expense-card .expense-edited svg { flex: 0 0 auto; width: 12px; height: 12px; }
+.expense-card .expense-comment-preview { margin: 0; font-size: 11.5px; line-height: 1.5; }
+/* actions: same place on every card — the right edge of its own row. */
+.expense-card .expense-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.expense-card .expense-actions .icon-btn { width: 32px; height: 32px; }
+.expense-card .expense-receipt-thumb { max-height: 72px; width: auto; }
+
+/* Phones: the facts line starts at the card's own left edge (no 42px indent —
+   the title is already two lines tall at 390px), and the actions share the
+   facts row's baseline so a card is one tight block, not three paragraphs. */
+@media (max-width: 639px) {
+  .expense-card { --exp-card-icon: 36px; --exp-card-gap: 9px; padding: 10px 12px; gap: 4px; }
+  .expense-card .expense-facts,
+  .expense-card .expense-extras { padding-left: 0; }
+  .expense-card .expense-facts { gap: 4px 8px; }
+  .expense-card .exp-fact { max-width: 60vw; }
+  /* The head is a 3-column grid; the amount gets a bit more room on a phone and
+     its figure scales instead of clipping, because the test forbids both wrap and
+     ellipsis on an amount. */
+  .expense-card .expense-amount { max-width: 52%; }
+  .expense-card .expense-amount .money-primary { font-size: clamp(13.5px, 4.1vw, 15px); }
+  .expense-card .expense-actions { gap: 2px; }
+  .expense-card .expense-actions .icon-btn { width: 34px; height: 34px; }
+}
+
+/* ---------- 5. Day grouping: a header, the rows, one quiet footer ------ */
+.expense-day { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; min-width: 0; }
+.expense-day .expense-day-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 12px);
+  background: var(--surface-2);
+  min-width: 0;
+}
+.expense-day .expense-day-copy { flex: 1 1 auto; min-width: 0; }
+.expense-day .expense-day-title { font-size: 13px; font-weight: 600; line-height: 1.45; }
+.expense-day .expense-day-sub { font-size: 11.5px; line-height: 1.4; color: var(--text-tertiary); }
+.expense-day .expense-day-total {
+  margin-left: auto;
+  text-align: right;
+  min-width: 0;
+}
+.expense-day .expense-day-total .money-primary {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.expense-day .expense-day-total .money-orig { font-size: 11px; }
+.expense-day-items { display: flex; flex-direction: column; gap: 8px; }
+.expense-day-foot { margin: 0 2px; display: flex; justify-content: flex-end; }
+.expense-day-foot:empty { display: none; }
+@media (max-width: 639px) {
+  .expense-day .expense-day-head { padding: 8px 10px; gap: 8px; }
+  .expense-day .expense-day-total { width: 100%; text-align: left; margin-left: 0; padding-left: 43px; }
+  .expense-day-foot { justify-content: flex-start; }
+}
+
+/* ---------- 6. Group averages strip: cards that share one baseline ----- */
+.group-avg-strip { gap: 8px; padding: 2px 0 8px; }
+.group-avg-card { min-width: 148px; padding: 10px 12px; gap: 2px; border-radius: var(--radius-md, 12px); }
+.group-avg-name { font-size: 11.5px; line-height: 1.4; }
+.group-avg-per { font-size: 16px; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.group-avg-total { font-size: 11.5px; line-height: 1.45; }
+@media (max-width: 639px) {
+  /* Two per row instead of one-and-a-half: a half-cut card reads as a bug. */
+  .group-avg-strip { flex-wrap: wrap; overflow: visible; }
+  .group-avg-card { flex: 1 1 calc(50% - 4px); min-width: 0; }
+}
+
+/* “กระทัดรัด” keeps the same indentation spine with the smaller tile. */
+.expenses-compact .expense-card { --exp-card-icon: 32px; --exp-card-gap: 9px; }

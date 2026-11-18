@@ -47,8 +47,13 @@ try {
           const report = await page.evaluate(() => {
             const root = document.querySelector('#expenses-view');
             const viewport = document.documentElement.clientWidth;
-            const filters = [...root.querySelectorAll('#expense-filters .chip, #method-filters .chip, #cat-filters .chip')];
-            const tiles = [...root.querySelectorAll('.kpi-strip .kpi-mini')];
+            // v46: the summary is the hero total + 3 fact tiles, and the payment
+            // filters fold behind “ตัวเลือกเพิ่มเติม” — so open it first, exactly
+            // as a reader would, before checking that nothing is clipped.
+            const more = root.querySelector('#expense-more-filters');
+            if (more?.getAttribute('aria-expanded') !== 'true') more?.click();
+            const filters = [...root.querySelectorAll('#expense-filters .chip, #cat-filters .chip, #method-filters .chip, .expense-filter-row--pay .chip')];
+            const tiles = [...root.querySelectorAll('.exp-summary-facts .kpi-mini')];
             const clips = [...filters, ...tiles].filter(el => {
               const r = el.getBoundingClientRect();
               return r.left < -1 || r.right > viewport + 1 || el.scrollWidth > el.clientWidth + 1;
@@ -56,16 +61,24 @@ try {
             const title = root.querySelector('.expense-card[data-expense="e1"] .expense-title');
             const currency = root.querySelector('#exp-sum-total .money-primary');
             const decimal = currency?.querySelector('.money-dec');
+            const summary = root.querySelector('.exp-summary');
+            const card = root.querySelector('.expense-card[data-expense="e1"]');
+            const head = card?.querySelector('.expense-amount');
             return { clips, viewport, documentWidth: document.documentElement.scrollWidth,
-              kpiScroll: root.querySelector('.kpi-strip').scrollWidth - root.querySelector('.kpi-strip').clientWidth,
+              kpiScroll: summary.scrollWidth - summary.clientWidth,
               titleText: title.textContent, titleStyle: getComputedStyle(title).textOverflow,
               titleWhitespace: getComputedStyle(title).whiteSpace,
               decimalVisible: decimal && getComputedStyle(decimal).display !== 'none',
-              totalText: currency?.textContent };
+              totalText: currency?.textContent,
+              // the amount keeps a right edge of its own instead of wrapping under the title
+              amountRightAligned: !!head && getComputedStyle(head).textAlign === 'right',
+              amountFont: parseFloat(getComputedStyle(head?.querySelector('.money-primary') || head).fontSize) };
           });
           assert.equal(report.documentWidth, report.viewport, JSON.stringify(report));
           assert.equal(report.kpiScroll, 0, JSON.stringify(report));
           assert.deepEqual(report.clips, [], JSON.stringify(report));
+          assert(report.amountRightAligned, JSON.stringify(report));
+          assert(report.amountFont >= 14, `expense amount stays readable (${report.amountFont}px)`);
           assert.equal(report.titleStyle, 'clip');
           assert.notEqual(report.titleWhitespace, 'nowrap');
           assert(report.titleText.endsWith('โทรศัพท์') && report.decimalVisible && /\.\d\d/.test(report.totalText), JSON.stringify(report));

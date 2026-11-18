@@ -7370,20 +7370,45 @@ async function renderExpenses(params) {
              primary “เพิ่มค่าใช้จ่าย” CTA is never half-cut at the screen edge -->
       </div>
 
-      <div class="kpi-strip mb-3">
-        <div class="kpi-mini"><span class="kpi-mini-label">${th('รวมทั้งหมด','Total')}</span><b id="exp-sum-total">--</b></div>
-        <div class="kpi-mini"><span class="kpi-mini-label">${th('จ่ายจริง','Actual')}</span><b id="exp-sum-actual">--</b></div>
-        <div class="kpi-mini"><span class="kpi-mini-label">${th('ประมาณการ','Estimated')}</span><b id="exp-sum-est">--</b></div>
-        <div class="kpi-mini"><span class="kpi-mini-label">${th('รายการ','Items')}</span><b id="exp-sum-count">--</b></div>
-        <div class="kpi-mini"><span class="kpi-mini-label" id="exp-sum-avg-label">${th('เฉลี่ย / กลุ่ม','Avg / group')}</span><b id="exp-sum-avg">--</b><span class="kpi-mini-sub" id="exp-sum-avg-sub"></span></div>
-      </div>
+      <!-- v46: ONE answer first. The old strip squeezed five tiles (and five
+           two-line dual-currency labels) into a single row, which on a phone cut
+           every figure to ~10px and wrapped the totals mid-number. Now the trip
+           total is a hero figure, the three facts that qualify it sit beside it,
+           and the per-person / per-group averages get their own line. Nothing was
+           dropped — every number the old strip showed is still here. -->
+      <section class="exp-summary" aria-label="${th('สรุปยอดค่าใช้จ่าย','Expense summary')}">
+        <div class="exp-summary-hero">
+          <div class="exp-summary-main">
+            <span class="exp-summary-label">${th('ยอดรวมทั้งทริป','Trip total')}</span>
+            <p class="exp-summary-total" id="exp-sum-total">--</p>
+            <span class="exp-summary-scope" id="exp-sum-scope"></span>
+          </div>
+          <div class="exp-summary-avg">
+            <span class="exp-avg-label" id="exp-sum-avg-label">${th('เฉลี่ย / คน','Avg / person')}</span>
+            <b class="exp-avg-value" id="exp-sum-avg">--</b>
+            <span class="exp-avg-sub" id="exp-sum-avg-sub"></span>
+          </div>
+        </div>
+        <div class="kpi-strip exp-summary-facts">
+          <div class="kpi-mini"><span class="kpi-mini-label" id="exp-sum-actual-label">${th('จ่ายจริง','Actual')}</span><b id="exp-sum-actual">--</b></div>
+          <div class="kpi-mini"><span class="kpi-mini-label">${th('ประมาณการ','Estimated')}</span><b id="exp-sum-est">--</b></div>
+          <div class="kpi-mini"><span class="kpi-mini-label">${th('รายการ','Items')}</span><b id="exp-sum-count">--</b></div>
+        </div>
+      </section>
 
       <!-- เฉลี่ยต่อกลุ่ม แล้วแยกเป็นต่อคนของแต่ละกลุ่ม (a request) -->
-      <div id="exp-group-avg" class="group-avg-strip mb-4"></div>
+      <div id="exp-group-avg" class="group-avg-strip mb-2"></div>
+      <p id="exp-group-note" class="exp-summary-note" hidden></p>
 
-      <div class="expense-filter-bar" role="region" aria-label="${th('ตัวกรองค่าใช้จ่าย','Expense filters')}">
+      <!-- v46: the filter surface is one framed panel with a fixed shape at every
+           width — status, then the category the reader is most likely to want,
+           then (on request) payment method, cards and the list tools. On a phone
+           the two chip rows plus one compact control row are all that show until
+           “ตัวเลือกเพิ่มเติม” is tapped, so the list itself starts a screen earlier
+           instead of three chip rows further down. -->
+      <div class="expense-filter-bar" id="expense-filter-bar" role="region" aria-label="${th('ตัวกรองค่าใช้จ่าย','Expense filters')}">
         <div class="expense-filter-row expense-filter-row--primary">
-          <div class="expense-filter-group">
+          <div class="expense-filter-group expense-filter-group--status">
             <span class="expense-filter-label">${th('สถานะ','Status')}</span>
             <div class="chip-row" id="expense-filters">
               <button class="chip chip-active" data-filter="all">${icon('layers', 'w-3.5 h-3.5')} ${t('all')}</button>
@@ -7392,8 +7417,25 @@ async function renderExpenses(params) {
               <button class="chip" data-filter="actual">${icon('check-circle', 'w-3.5 h-3.5')} ${th('จ่ายจริง','Actual')}</button>
             </div>
           </div>
-          <!-- วิธีจ่าย: กรองเงินสด / บัตรเครดิต (รายใบ) / โอน (a request) -->
-          <div class="expense-filter-group">
+        </div>
+        <!-- กรองเป็นรายกลุ่ม (หมวดค่าใช้จ่าย) — the everyday filter, kept on screen -->
+        <div class="expense-filter-row expense-filter-row--secondary">
+          <div class="expense-filter-group expense-filter-group--cats">
+            <span class="expense-filter-label">${th('หมวด','Category')}</span>
+            <div class="chip-row chip-row-scroll" id="cat-filters" aria-label="${th('กรองตามกลุ่มค่าใช้จ่าย','Filter by expense group')}">
+              <button class="chip chip-active" data-cat="">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('ทุกกลุ่ม','All groups')}</button>
+              ${getAllExpenseCategories().map(c => `<button class="chip" data-cat="${escapeHtml(c.id)}" style="--chip-color:${escapeHtml(c.color || 'var(--primary)')}">${icon(escapeHtml(c.icon), 'w-3.5 h-3.5')} ${escapeHtml(lang==='th'?(c.th||c.en):(c.en||c.th))}</button>`).join('')}
+            </div>
+          </div>
+        </div>
+        <!-- “ตัวเลือกเพิ่มเติม” sits directly under the two always-visible rows: what
+             it reveals opens below the thumb that tapped it, not above. -->
+        <div class="expense-filter-row expense-filter-row--more">
+          <button type="button" id="expense-more-filters" class="btn btn-ghost btn-sm expense-more-filters" aria-expanded="false" aria-controls="expense-pay-controls expense-extra-controls">${icon('sliders-horizontal', 'w-4 h-4')} <span data-more-label>${th('ตัวเลือกเพิ่มเติม','More options')}</span> <span data-expense-filter-summary></span> ${icon('chevron-down', 'w-4 h-4')}</button>
+        </div>
+        <!-- วิธีจ่าย + บัตร — one tap away on a phone, always visible on a desk -->
+        <div class="expense-filter-row expense-filter-row--pay" id="expense-pay-controls">
+          <div class="expense-filter-group expense-filter-group--method">
             <span class="expense-filter-label">${th('วิธีจ่าย','Payment')}</span>
             <div class="chip-row chip-row-scroll" id="method-filters" aria-label="${th('กรองตามวิธีจ่าย','Filter by payment method')}">
               <button class="chip chip-active" data-method="">${icon('wallet', 'w-3.5 h-3.5')} ${th('ทุกวิธีจ่าย','All methods')}</button>
@@ -7407,25 +7449,15 @@ async function renderExpenses(params) {
             <span class="expense-filter-label">${th('บัตร','Card')}</span>
             <div class="chip-row chip-row-scroll hidden" id="card-filters" aria-label="${th('กรองตามบัตรเครดิต','Filter by credit card')}"></div>
           </div>
+        </div>
+        <!-- มุมมองรายการ + เครื่องมือ (กระทัดรัด / ประวัติ / จัดการกลุ่ม) -->
+        <div class="expense-filter-row expense-filter-row--tools">
           <div class="expense-filter-group expense-filter-group--view">
             <span class="expense-filter-label">${th('มุมมอง','View')}</span>
             <div class="segmented" id="expense-group-toggle">
               <button type="button" class="segmented-item active" data-group="list">${icon('list', 'w-3.5 h-3.5')} ${th('เรียงรายการ','List')}</button>
               <button type="button" class="segmented-item" data-group="day">${icon('calendar-days', 'w-3.5 h-3.5')} ${th('แยกตามวัน','By day')}</button>
             </div>
-          </div>
-        </div>
-        <!-- กรองเป็นรายกลุ่ม (หมวดค่าใช้จ่าย) + เครื่องมือมุมมอง/ประวัติ/จัดการกลุ่มในแนวเดียวกันบนคอม -->
-        <div class="expense-filter-row expense-filter-row--secondary">
-          <div class="expense-filter-group expense-filter-group--cats">
-            <span class="expense-filter-label">${th('หมวด','Category')}</span>
-            <div class="chip-row chip-row-scroll" id="cat-filters" aria-label="${th('กรองตามกลุ่มค่าใช้จ่าย','Filter by expense group')}">
-              <button class="chip chip-active" data-cat="">${icon('layout-grid', 'w-3.5 h-3.5')} ${th('ทุกกลุ่ม','All groups')}</button>
-              ${getAllExpenseCategories().map(c => `<button class="chip" data-cat="${escapeHtml(c.id)}" style="--chip-color:${escapeHtml(c.color || 'var(--primary)')}">${icon(escapeHtml(c.icon), 'w-3.5 h-3.5')} ${escapeHtml(lang==='th'?(c.th||c.en):(c.en||c.th))}</button>`).join('')}
-            </div>
-          </div>
-          <div class="expense-filter-foot">
-            <button type="button" id="expense-more-filters" class="btn btn-ghost btn-sm expense-more-filters" aria-expanded="false" aria-controls="expense-extra-controls">${icon('sliders-horizontal', 'w-4 h-4')} ${th('ตัวเลือกเพิ่มเติม','More options')} <span data-expense-filter-summary></span> ${icon('chevron-down', 'w-4 h-4')}</button>
           </div>
           <div id="expense-extra-controls" class="expense-extra-controls">
             <div class="btn-row expense-extra-actions">
@@ -7438,7 +7470,10 @@ async function renderExpenses(params) {
       </div>
 
       <div id="expense-list" class="space-y-2 stagger"></div>
-      <div id="expense-pagination" class="flex justify-center mt-4"><button id="load-more" class="btn btn-secondary btn-sm">${icon('chevron-down', 'w-4 h-4')} ${th('โหลดเพิ่ม','Load more')}</button></div>
+      <div id="expense-pagination" class="expense-pagination">
+        <div id="expense-list-footer" class="expense-list-footer"></div>
+        <button id="load-more" class="btn btn-secondary btn-sm">${icon('chevron-down', 'w-4 h-4')} ${th('โหลดเพิ่ม','Load more')}</button>
+      </div>
     </div>
   `;
   queueIcons();
@@ -7491,11 +7526,29 @@ async function renderExpenses(params) {
     applyFilterRender();
   }));
 
-  bind('expense-more-filters', 'click', () => {
-    const panel = document.getElementById('expense-extra-controls');
+  /**
+   * v46: one disclosure for the two secondary filter rows. On a phone the payment
+   * filters and the list tools are folded behind “ตัวเลือกเพิ่มเติม” (they were
+   * two more chip rows between the reader and their first bill); from 640px up
+   * CSS keeps both rows open, so this handler is only reachable on a phone — and
+   * the `is-open` class is what makes the rows appear there.
+   */
+  function setFilterBarExpanded(expanded) {
+    const bar = document.getElementById('expense-filter-bar');
     const button = document.getElementById('expense-more-filters');
-    const expanded = panel.classList.toggle('is-open');
-    button.setAttribute('aria-expanded', String(expanded));
+    if (!bar) return;
+    bar.classList.toggle('is-open', expanded);
+    button?.setAttribute('aria-expanded', String(expanded));
+    const label = button?.querySelector('[data-more-label]');
+    if (label) label.textContent = expanded ? th('ย่อตัวเลือก','Fewer options') : th('ตัวเลือกเพิ่มเติม','More options');
+  }
+  bind('expense-more-filters', 'click', () => {
+    const bar = document.getElementById('expense-filter-bar');
+    const expanded = !bar?.classList.contains('is-open');
+    setFilterBarExpanded(expanded);
+    // The tools panel keeps its own state class (it is also opened by code that
+    // reveals it, e.g. after a filter is chosen).
+    document.getElementById('expense-extra-controls')?.classList.toggle('is-open', expanded);
   });
   document.querySelectorAll('#expense-filters .chip, #method-filters .chip, #cat-filters .chip').forEach(btn => btn.setAttribute('aria-pressed', String(btn.classList.contains('chip-active'))));
 
@@ -7607,7 +7660,27 @@ async function renderExpenses(params) {
     return out;
   }
 
-  function renderSummary() {
+  /**
+   * The one number the page is about, then the facts that qualify it.
+   *
+   * v46: `filtered` is the list the reader is actually looking at. The hero total
+   * and the average follow it (that is what “ยอดรวมตามตัวกรองนี้” always claimed),
+   * and the caption under the total says which slice it is, so a filtered screen
+   * can never be mistaken for the whole trip. The three fact tiles stay on the
+   * whole trip, and SAY so in their label, because “จ่ายจริง / ประมาณการ” are only
+   * meaningful against everything that was recorded.
+   */
+  function renderSummary(filtered = null) {
+    const scopeLabel = (() => {
+      const parts = [];
+      if (activeFilter === 'today') parts.push(th('วันนี้','today'));
+      if (activeFilter === 'estimated') parts.push(th('ประมาณการ','estimated only'));
+      if (activeFilter === 'actual') parts.push(th('จ่ายจริง','actual only'));
+      if (methodFilter) parts.push(methodLabelOf(methodFilter));
+      if (cardFilter) parts.push(cardFilter);
+      if (catFilter) parts.push(categoryLabel(catFilter, lang));
+      return parts.join(' • ');
+    })();
     let normalized;
     try { normalized = expensesInThb(allLoaded, trip); }
     catch (err) {
@@ -7620,10 +7693,28 @@ async function renderExpenses(params) {
     const est = sumExpenses(normalized, { estimatedOnly: true });
     const rate = resolveTripThbRate(trip, allLoaded, currency);
     const withThb = minor => thbPlusLabelHtml(minor, currency !== 'THB' && rate ? formatCurrency(convertCurrency(minor, 'THB', currency, 1 / rate), currency) : '');
-    setHtml('exp-sum-total', withThb(total));
+    /* ---- the hero: the total of what the list is showing right now ---- */
+    let listTotal = null;
+    try {
+      listTotal = sumExpenses(expensesInThb(Array.isArray(filtered) ? filtered : allLoaded, trip));
+    } catch { /* missing rate — fall back to the whole trip below */ }
+    setHtml('exp-sum-total', withThb(listTotal == null ? total : listTotal));
+    setText('exp-sum-count', String(allLoaded.length));
+    const scopeEl = document.getElementById('exp-sum-scope');
+    if (scopeEl) {
+      const scoped = scopeLabel || (typeof filtered !== 'undefined' && Array.isArray(filtered) && filtered.length !== allLoaded.length);
+      scopeEl.textContent = scoped
+        ? th(`ตามตัวกรอง: ${scopeLabel || `${Array.isArray(filtered) ? filtered.length : allLoaded.length} รายการ`}`, `Filtered: ${scopeLabel || `${Array.isArray(filtered) ? filtered.length : allLoaded.length} items`}`)
+        : th(`ทุกรายการในทริป • ${allLoaded.length} รายการ`, `All ${allLoaded.length} items in this trip`);
+      scopeEl.classList.toggle('is-filtered', Boolean(scoped));
+    }
+    /* The fact tiles describe the whole trip; their labels say so. */
+    const tripOnly = scopeLabel
+      ? th('ทั้งทริป · จ่ายจริง','Trip · actual')
+      : th('จ่ายจริง','Actual');
+    setText('exp-sum-actual-label', tripOnly);
     setHtml('exp-sum-actual', withThb(actual));
     setHtml('exp-sum-est', withThb(est));
-    setText('exp-sum-count', String(allLoaded.length));
     // “เฉลี่ยต่อกลุ่ม แล้วแต่ละกลุ่มเฉลี่ยเป็นต่อคน” (a request): the headline is how
     // much ONE group costs (trip total ÷ how many groups there are); the per-person
     // number of the whole trip stays visible as the small line below, and every
@@ -7642,6 +7733,11 @@ async function renderExpenses(params) {
       setHtml('exp-sum-avg', withThb(perPerson));
       setHtml('exp-sum-avg-sub', th('ยังไม่มีกลุ่ม — สร้างได้ที่หน้าสมาชิก', 'No groups yet — add them on the Members page'));
     }
+  }
+
+  /** “เงินสด / บัตรเครดิต / โอนเงิน” — the payment filter's own label. */
+  function methodLabelOf(method) {
+    return method === 'card' ? th('บัตรเครดิต','Card') : method === 'transfer' ? th('โอนเงิน','Transfer') : th('เงินสด','Cash');
   }
 
   /**
@@ -7665,10 +7761,17 @@ async function renderExpenses(params) {
         <span class="group-avg-total">${th('รวม','total')} ${money(totalMinor)} • ${pax} ${th('คน','pax')}${places != null ? ` • ${places} ${th('ที่','places')}` : ''}</span>
       </div>`;
     box.innerHTML = report.groups.map(g => card(g.name, g.icon, g.color, g.shareMinor, g.perPersonMinor, g.memberCount, { places: groupPlaceCount(g.id) })).join('')
-      + card(th('ทั้งทริป','Whole trip'), 'users-round', 'var(--primary)', report.trip.shareMinor, report.trip.perPersonMinor, report.trip.memberCount, { trip: true })
-      + (normalized.some(e => e && e.isEstimated && e.status !== 'voided')
-        ? `<p class="group-avg-note">${th('ตัวเลขชุดนี้หารจาก “ยอดที่หารกัน” จึงรวมประมาณการไว้ด้วย — กดตัวกรอง “จ่ายจริง” ด้านล่างเพื่อดูเฉพาะเงินจริง', 'Group figures divide “shares”, so they include estimated bills — tap the “Actual” filter below for actual money only')}</p>`
-        : '');
+      + card(th('ทั้งทริป','Whole trip'), 'users-round', 'var(--primary)', report.trip.shareMinor, report.trip.perPersonMinor, report.trip.memberCount, { trip: true });
+    // v46: the caveat sits UNDER the strip (its own line, full width) instead of
+    // riding along inside the scrolling row, where it competed with the numbers.
+    const note = document.getElementById('exp-group-note');
+    if (note) {
+      const hasEstimates = normalized.some(e => e && e.isEstimated && e.status !== 'voided');
+      note.hidden = !hasEstimates;
+      note.innerHTML = hasEstimates
+        ? `${icon('info', 'w-3.5 h-3.5')} ${th('ตัวเลขกลุ่มหารจาก “ยอดที่หารกัน” จึงรวมประมาณการไว้ด้วย — กดตัวกรอง “จ่ายจริง” เพื่อดูเฉพาะเงินจริง', 'Group figures divide “shares”, so they include estimated bills — tap the “Actual” filter for actual money only')}`
+        : '';
+    }
     queueIcons();
   }
 
@@ -7688,40 +7791,60 @@ async function renderExpenses(params) {
     const participants = (e.allocations || []).filter(a => a.amountMinor > 0).length;
     const method = e.paymentMethod === 'card' ? 'card' : e.paymentMethod === 'transfer' ? 'transfer' : 'cash';
     const methodText = method === 'card' ? th('บัตรเครดิต','Card') : method === 'transfer' ? th('โอนเงิน','Transfer') : th('เงินสด','Cash');
+    /**
+     * v46 — one expense = one glance, in three fixed zones.
+     *
+     * The old card dumped icon + title + amount + up to six badges + four
+     * metadata lines + the action buttons into ONE flex row. On a phone that row
+     * wrapped, so the amount sat under a truncated title and the chips started a
+     * new paragraph at a different left edge on every card — the “ไม่เป็นระเบียบ”
+     * the owner reported. Now every card is a stable grid:
+     *   row 1 (head):  category icon · title (+ status pills) ......... amount
+     *   row 2 (facts): category · date · payer · people · payment (one line)
+     *   row 3 (foot):  only when there is something to say, actions right-aligned
+     * Same left edge, same reading order, every card — and all the old details are
+     * still here, in the order a reader looks for them.
+     */
+    const statusPills = [
+      e.isEstimated ? `<span class="badge badge-skipped text-xs">${icon('hourglass', 'w-2.5 h-2.5')} ${th('ประมาณการ','estimated')}</span>` : '',
+      e.source === 'itinerary-estimate' ? `<span class="badge badge-skipped text-xs">${icon('map-pinned', 'w-2.5 h-2.5')} ${th('จากแผน','from itinerary')}</span>` : '',
+      e.payerPending ? `<span class="badge badge-pending text-xs" title="${th('ยังไม่รู้ว่าจะใครสำรองจ่าย — ยอดยังไม่ถูกนับเป็นหนี้ของใคร','Nobody is hosting this bill yet — it stays out of balances until assigned')}">${icon('help-circle', 'w-2.5 h-2.5')} ${th('ยังไม่ระบุเจ้าภาพ','payer TBD')}</span>` : ''
+    ].join('');
+    const facts = [
+      `<span class="exp-fact exp-fact--cat" style="--chip-color:${escapeHtml(categoryColor(e.category) || 'var(--primary)')}">${icon(categoryIcon(e.category), 'w-3 h-3')} ${escapeHtml(catLabel)}</span>`,
+      `<span class="exp-fact">${icon('calendar', 'w-3 h-3')} ${escapeHtml(shortDay(e.date))}</span>`,
+      e.payerPending ? '' : (payer ? `<span class="exp-fact truncate" title="${escapeHtml(payer)}">${icon('user', 'w-3 h-3')} ${escapeHtml(payer)}</span>` : ''),
+      participants ? `<span class="exp-fact">${icon('split', 'w-3 h-3')} ${participants} ${th('คน','pax')}</span>` : '',
+      `<span class="rcpt-chip rcpt-chip--${method}">${icon(method === 'card' ? 'credit-card' : method === 'transfer' ? 'arrow-left-right' : 'banknote', 'w-2.5 h-2.5')} ${methodText}</span>`,
+      e.cardName ? `<span class="rcpt-chip rcpt-chip--card truncate" title="${escapeHtml(e.cardName)}">${icon('credit-card', 'w-2.5 h-2.5')} ${escapeHtml(e.cardName)}</span>` : ''
+    ].filter(Boolean).join('');
+    const extras = [
+      e.description ? `<p class="expense-desc">${escapeHtml(e.description)}</p>` : '',
+      e.receiptImage ? `<img decoding="async" class="expense-receipt-thumb" src="${escapeHtml(e.receiptImage)}" alt="${th('รูปใบเสร็จ','Receipt photo')}" loading="lazy">` : '',
+      commentMap.get(e.id)?.length ? `<p class="expense-comment-preview">${icon('message-square', 'w-3 h-3')} <b>${escapeHtml(commentMap.get(e.id)[commentMap.get(e.id).length - 1].name || '')}</b>: ${escapeHtml((commentMap.get(e.id)[commentMap.get(e.id).length - 1].text || '').slice(0, 70))}</p>` : '',
+      (e.updatedByName || e.createdByName) ? `<p class="expense-edited">${icon('history', 'w-3 h-3')} ${escapeHtml(lastEditorText({ ...e, updatedAt: e.updatedByName ? e.updatedAt : null }, lang))}</p>` : ''
+    ].filter(Boolean).join('');
     return `
       <div class="expense-card card card-hover" data-expense="${e.id}">
-        <div class="row-icon">
-          ${icon(categoryIcon(e.category), 'w-5 h-5')}
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="expense-heading flex items-start justify-between gap-2">
-            <h3 class="expense-title font-semibold text-sm truncate">${escapeHtml(e.title)}</h3>
-            <div class="expense-amount text-right flex-shrink-0">
-              ${moneyHtml(e.netTotalMinor || 0, e.currency || currency, e.thbRate || resolveTripThbRate(trip, allLoaded, e.currency || currency))}
-            </div>
+        <div class="expense-head">
+          <div class="row-icon exp-card-icon" style="--chip-color:${escapeHtml(categoryColor(e.category) || 'var(--primary)')}">
+            ${icon(categoryIcon(e.category), 'w-5 h-5')}
           </div>
-          <div class="flex items-center gap-2 flex-wrap mt-1">
-            <span class="badge badge-planned text-xs">${icon(categoryIcon(e.category), 'w-2.5 h-2.5')} ${escapeHtml(catLabel)}</span>
-            ${e.isEstimated ? `<span class="badge badge-skipped text-xs">${icon('hourglass', 'w-2.5 h-2.5')} ${th('ประมาณการ','est.')}</span>` : ''}
-            ${e.source === 'itinerary-estimate' ? `<span class="badge badge-skipped text-xs">${icon('map-pinned', 'w-2.5 h-2.5')} ${th('จากแผน','from itinerary')}</span>` : ''}
-            <span class="meta-line">${icon('calendar', 'w-3 h-3')} ${escapeHtml(shortDay(e.date))}</span>
-            ${e.payerPending
-              ? `<span class="badge badge-pending text-xs" title="${th('ยังไม่รู้ว่าจะใครสำรองจ่าย — ยอดยังไม่ถูกนับเป็นหนี้ของใคร','Nobody is hosting this bill yet — it stays out of balances until assigned')}">${icon('help-circle', 'w-2.5 h-2.5')} ${th('ยังไม่ระบุเจ้าภาพ','payer TBD')}</span>`
-              : payer ? `<span class="meta-line">${icon('user', 'w-3 h-3')} ${escapeHtml(payer)}</span>` : ''}
-            ${participants ? `<span class="meta-line">${icon('split', 'w-3 h-3')} ${participants} ${th('คน','pax')}</span>` : ''}
-            <span class="rcpt-chip rcpt-chip--${method}">${icon(method === 'card' ? 'credit-card' : method === 'transfer' ? 'arrow-left-right' : 'banknote', 'w-2.5 h-2.5')} ${methodText}</span>
-            ${e.cardName ? `<span class="rcpt-chip rcpt-chip--card" title="${th('บัตรเครดิต','Card')}">${icon('credit-card', 'w-2.5 h-2.5')} ${escapeHtml(e.cardName)}</span>` : ''}
+          <div class="exp-card-copy">
+            <h3 class="expense-title">${escapeHtml(e.title)}</h3>
+            ${statusPills ? `<div class="exp-card-status">${statusPills}</div>` : ''}
           </div>
-          ${e.description ? `<p class="text-xs text-[var(--text-secondary)] mt-1 line-clamp-2">${escapeHtml(e.description)}</p>` : ''}
-          ${e.receiptImage ? `<img decoding="async" class="expense-receipt-thumb" src="${escapeHtml(e.receiptImage)}" alt="${th('รูปใบเสร็จ','Receipt photo')}" loading="lazy">` : ''}
-          ${(e.updatedByName || e.createdByName) ? `<p class="meta-line mt-1" style="color:var(--text-tertiary);">${icon('history', 'w-3 h-3')} ${escapeHtml(lastEditorText({ ...e, updatedAt: e.updatedByName ? e.updatedAt : null }, lang))}</p>` : ''}
-          ${commentMap.get(e.id)?.length ? `<p class="expense-comment-preview">${icon('message-square', 'w-3 h-3')} <b>${escapeHtml(commentMap.get(e.id)[commentMap.get(e.id).length - 1].name || '')}</b>: ${escapeHtml((commentMap.get(e.id)[commentMap.get(e.id).length - 1].text || '').slice(0, 70))}</p>` : ''}
+          <div class="expense-amount">
+            ${moneyHtml(e.netTotalMinor || 0, e.currency || currency, e.thbRate || resolveTripThbRate(trip, allLoaded, e.currency || currency))}
+          </div>
         </div>
+        <div class="expense-facts">${facts}</div>
+        ${extras ? `<div class="expense-extras">${extras}</div>` : ''}
         <div class="expense-actions">
           ${commentButton(e.id)}
           ${perms.canEditExpense ? `
-          <button class="icon-btn" data-act="edit" data-id="${e.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
-          <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${e.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>` : ''}
+          <button class="icon-btn" data-act="edit" data-id="${e.id}" title="${t('edit')}" aria-label="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
+          <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${e.id}" title="${t('delete')}" aria-label="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>` : ''}
         </div>
       </div>`;
   }
@@ -7764,8 +7887,8 @@ async function renderExpenses(params) {
     if (!listEl) return;
     renderCardFilters();
     updateFilterSummary();
-    renderSummary();
     const matchingItems = filterItems(allLoaded);
+    renderSummary(matchingItems);
     renderGroupAverages(matchingItems);
     const items = matchingItems.slice(0, visibleExpenseCount);
     document.getElementById('load-more')?.classList.toggle('hidden', matchingItems.length <= visibleExpenseCount);
@@ -7801,17 +7924,17 @@ async function renderExpenses(params) {
           <section class="expense-day" data-day="${escapeHtml(day)}">
             <header class="expense-day-head">
               <span class="expense-day-num">${day === '—' ? icon('calendar-x', 'w-4 h-4') : dayjs(day).format('DD')}</span>
-              <div class="min-w-0">
+              <div class="expense-day-copy">
                 <div class="expense-day-title">${day === '—' ? th('ไม่ระบุวันที่','No date') : escapeHtml(formatDate(day, lang, trip?.timezone))}</div>
                 <div class="expense-day-sub">${fullDayItems.length} ${th('รายการ','items')}</div>
               </div>
               <div class="expense-day-total">
                 <b class="money-primary">${dayTotal == null ? th('ยังไม่มีเรท THB','THB rate needed') : formatCurrency(dayTotal, 'THB')}</b>
                 ${thbTotal}
-                ${dayTotal != null ? avgChipHtml(fullDayItems) : ''}
               </div>
             </header>
-            <div class="space-y-3 stagger">${dayItems.map(e => expenseCardHtml(e)).join('')}</div>
+            <div class="expense-day-items">${dayItems.map(e => expenseCardHtml(e)).join('')}</div>
+            ${dayTotal != null ? `<p class="expense-day-foot">${avgChipHtml(fullDayItems)}</p>` : ''}
           </section>`;
       }).join('');
     } else {
@@ -7823,16 +7946,21 @@ async function renderExpenses(params) {
       const listThb = listTotal != null && currency !== 'THB' && listRate
         ? origTextChipHtml(formatCurrency(convertCurrency(listTotal, 'THB', currency, 1 / listRate), currency)) : '';
       const dayCount = new Set(matchingItems.map(e => e.date).filter(Boolean)).size;
+      /* v46: the running total is now a list header — a quiet caption line above
+         the cards — instead of a second summary card that repeated the hero
+         figure at the top of the page. The average chip moved down beside the
+         “load more” control, where the reader is when they ask “how many?”. */
       listEl.innerHTML = `
-        <div class="expense-day-total-bar">
-          <span>${icon('wallet', 'w-3.5 h-3.5')} ${th('ยอดรวมทั้งทริป (ตามตัวกรองนี้)', 'Trip total (this filter)')}</span>
-          <b class="money-primary">${listTotal == null ? th('ยังไม่มีเรท THB', 'THB rate needed') : formatCurrency(listTotal, 'THB')}</b>
-          ${listThb}
-          ${listTotal == null ? '' : avgChipHtml(matchingItems)}
+        <p class="expense-list-caption">
+          <span class="expense-list-caption-label">${icon('receipt-text', 'w-3.5 h-3.5')} ${th('ยอดรวมทั้งทริป (ตามตัวกรองนี้)', 'Trip total (this filter)')}</span>
+          <span class="expense-list-caption-sum">${th('รวม', 'Total')} <b class="money-primary">${listTotal == null ? th('ยังไม่มีเรท THB', 'THB rate needed') : formatCurrency(listTotal, 'THB')}</b>${listThb ? ` ${listThb}` : ''}</span>
           <i>${matchingItems.length} ${th('รายการ', 'items')}${dayCount ? ` • ${dayCount} ${th('วัน', 'days')}` : ''}</i>
-        </div>
-        ${items.map(e => expenseCardHtml(e)).join('')}`;
+        </p>
+        <div class="expense-list-rows">${items.map(e => expenseCardHtml(e)).join('')}</div>`;
     }
+    // The “เฉลี่ย / คน” chip lives beside the pager, where the reader looks for it.
+    const listFooter = document.getElementById('expense-list-footer');
+    if (listFooter) listFooter.innerHTML = avgChipHtml(matchingItems);
     listEl.querySelectorAll('[data-comment]').forEach(btn => btn.addEventListener('click', async (ev) => {
       ev.stopPropagation();
       const id = btn.dataset.comment;
@@ -10523,9 +10651,8 @@ async function renderSettlement(params) {
    * (so the labels render at ~100% instead of shrinking) and always landscape (so
    * the whole map is one glance, not several screens of scrolling). A map too
    * dense for a full amount pill keeps that pill's numbered dot on its own line —
-   * the numbered list under the drawing carries the amount — and one tap on
-   * “ขยายดูเต็มจอ” opens the same drawing on the generous sheet where every
-   * amount fits in full (`detailed: true`), with pan and zoom.
+   * the numbered list under the drawing carries the amount — and the map's own
+   * toolbar zooms in on the drawing in place, on every device (v46: no sheet).
    */
   function debtMapHtml(layoutAttempt = 0, { detailed = false } = {}) {
     const txns = (state.transactions || []).filter(tx => tx?.from && tx?.to && tx.from !== tx.to);
@@ -10762,17 +10889,26 @@ async function renderSettlement(params) {
     const totalMove = txns.reduce((sum, tx) => sum + (tx.amountMinor || 0), 0);
     // v45: an amount whose pill had no room on the bounded sheet keeps its
     // numbered dot ON its own line — the numbered list under the drawing carries
-    // the amount, and “ขยายดูเต็มจอ” redraws every pill in full.
+    // the amount, and v46's in-page zoom lets the reader enlarge the drawing.
     const dotCount = edgeRows.filter(edge => edge.placement?.kind !== 'label').length;
 
-    /* The drawing on its own, so the expanded view can reuse the exact same
-       layout code on the generous sheet (debtMapHtml(0, { detailed: true })). */
+    /* The drawing on its own.
+       v46 (owner: “หน้าเคลียร์บิลส่วนที่เป็นแผนที่ … อยากให้กดย่อขยายได้จากหน้าแผนที่
+       เลย ไม่ต้องกดไปที่ขยายดูเต็มจอ … ให้ตั้งค่าเริ่มต้นเป็นพอดีจอในทุกอุปกรณ์”):
+       there is no full-screen sheet any more. The map is ONE SVG in a pan/zoom
+       viewport on the page itself, sized by `zoom` (a CSS pixel width in the
+       viewport's own coordinate space) — or by `fit`, which means “scale the whole
+       drawing to the viewport's width”, i.e. the default on every device. */
     const drawingHtml = `
         <div class="debt-map-container">
-          <div class="debt-map-frame" style="--debt-map-natural-width:${W}px;--debt-map-ar:${(W / GRAPH_H).toFixed(4)}">
-            <svg class="debt-map-svg${compact ? ' debt-map-svg--compact' : ''}" viewBox="0 0 ${W} ${GRAPH_H}" style="--debt-map-natural-width:${W}px" role="group" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected by money-transfer lines'))}">
-              <defs>${markerDefs.join('')}</defs>${edgesHtml}${labelsHtml}${nodesHtml}
-            </svg>
+          <div class="debt-map-viewport" data-debt-zoom-viewport tabindex="0" role="group"
+               aria-label="${escapeHtml(th('แผนที่หนี้แบบซูมได้ — ลากเพื่อเลื่อน ปุ่ม + และ − เพื่อซูม','Zoomable debt map — drag to pan, + and − to zoom'))}"
+               style="--debt-map-natural-width:${W}px;--debt-map-natural-height:${GRAPH_H}px">
+            <div class="debt-map-stage" data-debt-zoom-stage style="width:${W}px">
+              <svg class="debt-map-svg${compact ? ' debt-map-svg--compact' : ''}" viewBox="0 0 ${W} ${GRAPH_H}" width="${W}" height="${GRAPH_H}" style="--debt-map-natural-width:${W}px" role="group" aria-label="${escapeHtml(th('แผนที่หนี้: สมาชิกทุกคนเชื่อมด้วยเส้นการโอนเงิน', 'Debt map: every member connected with money-transfer lines'))}">
+                <defs>${markerDefs.join('')}</defs>${edgesHtml}${labelsHtml}${nodesHtml}
+              </svg>
+            </div>
           </div>
         </div>`;
     if (detailed) return drawingHtml;
@@ -10788,10 +10924,9 @@ async function renderSettlement(params) {
             <div class="debt-map-total"><span>${th('ยอดที่ต้องโอนทั้งหมด', 'Total to transfer')}</span><strong>${money(totalMove)}</strong><small>${txns.length} ${th('รายการโอน', 'transfers')}</small></div>
             ${/* v44: the diagram itself is shareable — one tap turns the SVG into a PNG
                  (exports/index.js: exportSvgToPng rasterises the drawing, not the page).
-                 v45: “ขยายดูเต็มจอ” opens the same drawing on the generous sheet, where
-                 a dense map has room for every amount in full, with pan and zoom. */ ''}
+                 v46: zoom/pan/fit live on the card (bindDebtMapZoom), so this is the
+                 only action left in the header. */ ''}
             <div class="debt-map-tools">
-              <button type="button" id="debt-map-expand" class="btn btn-secondary btn-sm no-export">${icon('maximize', 'w-4 h-4')} ${th('ขยายดูเต็มจอ','Expand')}</button>
               <button type="button" id="export-debt-map-png" class="btn btn-secondary btn-sm no-export">${icon('image', 'w-4 h-4')} ${th('แผนภาพ PNG','Diagram PNG')}</button>
             </div>
           </div>
@@ -10802,9 +10937,15 @@ async function renderSettlement(params) {
           <span class="debt-legend-item is-in">${th('รับเงิน', 'Receives')}</span>
           <span class="debt-legend-item debt-legend-item--unique"><i class="debt-legend-swatch" aria-hidden="true">${order.filter(id => (recv.get(id) || 0) > 0).slice(0, 4).map(id => `<span style="background:${escapeHtml(nodeColors.get(id) || 'var(--primary)')}"></span>`).join('')}</i>${th('สีเส้น = สีของผู้รับเงินรายการนั้น', 'Line colour = the receiver’s colour')}</span>
         </div>
-        <p class="debt-map-note debt-map-scroll-hint">${th('เลื่อนภาพแนวนอนเพื่อดูแผนที่ทั้งหมด', 'Scroll horizontally to see the whole map.')}</p>
+        <div class="debt-map-zoombar no-export" role="toolbar" aria-label="${escapeHtml(th('ย่อ/ขยายแผนที่หนี้','Zoom the debt map'))}">
+          <button type="button" class="debt-zoom-btn" data-debt-zoom="out" aria-label="${escapeHtml(th('ย่อ','Zoom out'))}">${icon('minus', 'w-4 h-4')}</button>
+          <span class="debt-zoom-level" data-debt-zoom-level aria-live="polite">${th('พอดีจอ','Fit')}</span>
+          <button type="button" class="debt-zoom-btn" data-debt-zoom="in" aria-label="${escapeHtml(th('ขยาย','Zoom in'))}">${icon('plus', 'w-4 h-4')}</button>
+          <button type="button" class="debt-zoom-btn debt-zoom-fit" data-debt-zoom="fit" aria-pressed="true" title="${escapeHtml(th('แสดงทั้งแผนให้พอดีจอ (ค่าเริ่มต้น)','Fit the whole map to the screen (default)'))}">${icon('maximize-2', 'w-4 h-4')} <span>${th('พอดีจอ','Fit')}</span></button>
+          <span class="debt-zoom-hint">${th('ลากภาพเพื่อเลื่อน · บีบนิ้วหรือ Ctrl+ล้อเพื่อซูม','Drag to pan · pinch or Ctrl+wheel to zoom')}</span>
+        </div>
         ${drawingHtml}
-        ${dotCount ? `<p class="debt-map-note debt-map-dot-note">${icon('info', 'w-3.5 h-3.5')} ${th(`${dotCount} รายการที่พื้นที่ภาพไม่พอ แสดงยอดเป็นเลขกำกับบนเส้นของตัวเอง — อ่านจำนวนเงินได้ที่เลขเดียวกันในรายการด้านล่าง หรือกด “ขยายดูเต็มจอ” เพื่อดูยอดบนเส้นทุกเส้น`, `${dotCount} transfers had no room for the full amount on their line, so they show their number instead — read the same number in the list below, or choose “Expand” to see every amount on its line.`)}</p>` : ''}
+        ${dotCount ? `<p class="debt-map-note debt-map-dot-note">${icon('info', 'w-3.5 h-3.5')} ${th(`${dotCount} รายการที่พื้นที่ภาพไม่พอ แสดงยอดเป็นเลขกำกับบนเส้นของตัวเอง — อ่านจำนวนเงินได้ที่เลขเดียวกันในรายการด้านล่าง หรือกด “ขยาย” บนแถบเครื่องมือเพื่อดูยอดบนเส้นทุกเส้น`, `${dotCount} transfers had no room for the full amount on their line, so they show their number instead — read the same number in the list below, or tap “Zoom in” on the map toolbar to see every amount on its line.`)}</p>` : ''}
         <div class="debt-list-heading"><h4>${th('รายการโอนที่เหลือ', 'Remaining transfers')}</h4><span>${txns.length} ${th('รายการ', 'transfers')}</span></div>
         <div class="debt-payer-list">${rowsHtml}</div>
         <p class="debt-map-action-hint">${th('หลังโอนเงินจริงแล้ว กด “จ่ายแล้ว” เพื่อบันทึกยอดเต็มหรือบางส่วน', 'After sending money, select “Mark paid” to record a full or partial payment.')}</p>
@@ -10821,132 +10962,175 @@ async function renderSettlement(params) {
    * its full pill on its own line, and the reader pans/zooms the drawing instead
    * of scrolling the page up and down to see it all.
    */
-  function openDebtMapZoom() {
-    const content = document.getElementById('settlement-content');
-    if (!content?.querySelector('.debt-map-container svg')) return;
-    // Same layout code, generous sheet. The drawing sits beside the page copy, so
-    // its marker/clip ids get a suffix: one shared id would let the arrowheads on
-    // one sheet resolve against the other sheet's <defs>.
-    const stamp = Date.now().toString(36);
-    const holder = document.createElement('div');
-    holder.innerHTML = debtMapHtml(0, { detailed: true })
-      .replace(/debt-arrow-/g, `debt-arrow-${stamp}-`)
-      .replace(/debt-avatar-/g, `debt-avatar-${stamp}-`);
-    const svg = holder.querySelector('svg');
-    if (!svg) return;
-    const box = String(svg.getAttribute('viewBox') || '0 0 1200 800').split(/[\s,]+/).map(Number);
-    const naturalW = box[2] || 1200;
-    const naturalH = box[3] || 800;
+  /**
+   * v46 — in-page zoom for the debt map (no full-screen sheet).
+   *
+   * The owner asked for the map itself to zoom, with “fit the whole thing” as
+   * the default on every device. So the drawing is one SVG inside a scroll
+   * viewport, and the toolbar above it drives three things:
+   *   · zoom  — the SVG's own pixel size (`state.px`), clamped to 0.6×–2.6× of
+   *             its fitted size so text never drops below legibility and never
+   *             becomes one enormous name;
+   *   · pan   — drag, or the viewport scrolls (two fingers on iOS scroll too);
+   *   · fit   — back to “the whole map, edge to edge”, which is also the state
+   *             the view starts in, on a phone, a tablet or a desk.
+   * Everything is owned by CSS custom properties + inline width, so resizing the
+   * window or rotating an iPad re-fits without a re-render (a `resize` listener
+   * re-applies `fit` only while the reader has not zoomed away from it).
+   */
+  function bindDebtMapZoom(content) {
+    const viewport = content?.querySelector('[data-debt-zoom-viewport]');
+    const stage = content?.querySelector('[data-debt-zoom-stage]');
+    const svg = stage?.querySelector('svg');
+    if (!viewport || !stage || !svg) return;
+    const level = content.querySelector('[data-debt-zoom-level]');
+    const fitBtn = content.querySelector('[data-debt-zoom="fit"]');
+    const buttons = Array.from(content.querySelectorAll('[data-debt-zoom]'));
+    const naturalW = Number(svg.getAttribute('width')) || Number(svg.getAttribute('viewBox')?.split(/\s+/)[2]) || 640;
+    const naturalH = Number(svg.getAttribute('height')) || Number(svg.getAttribute('viewBox')?.split(/\s+/)[3]) || 480;
+    const MIN = 0.6;
+    const MAX = 2.6;
+    let px = naturalW;
+    let fitted = true;
 
-    const dialog = showModal(`
-      <div class="debt-zoom">
-        <div class="debt-zoom-head">
-          <div class="debt-zoom-title">
-            <h3>${th('แผนที่หนี้ · ดูเต็มจอ', 'Debt map · full screen')}</h3>
-            <p class="input-hint">${th('ลากเพื่อดูรอบ ๆ · ปุ่ม +/− หรือ Ctrl+ล้อเมาส์เพื่อขยาย · กดชื่อใครเพื่อดูรายการของเขา', 'Drag to look around · +/− or Ctrl+wheel to zoom · tap a name for that person’s items.')}</p>
-          </div>
-          <div class="debt-zoom-controls no-export">
-            <button type="button" class="btn btn-secondary btn-sm" data-zoom="out" aria-label="${th('ย่อ', 'Zoom out')}">−</button>
-            <span class="debt-zoom-level" data-zoom-level aria-live="polite">100%</span>
-            <button type="button" class="btn btn-secondary btn-sm" data-zoom="in" aria-label="${th('ขยาย', 'Zoom in')}">+</button>
-            <button type="button" class="btn btn-ghost btn-sm" data-zoom="fit">${th('พอดีจอ', 'Fit')}</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-zoom="png">${icon('image', 'w-4 h-4')} PNG</button>
-          </div>
-        </div>
-        <div class="debt-zoom-viewport" data-zoom-viewport tabindex="0" role="group" aria-label="${th('แผนที่หนี้แบบขยาย', 'Zoomable debt map')}">
-          <div class="debt-zoom-stage" data-zoom-stage></div>
-        </div>
-      </div>
-    `, { className: 'debt-zoom-modal', maxWidth: 'min(1360px, 96vw)' });
+    // The width the whole drawing must fit into — the viewport, minus the frame's
+    // own padding, and never the page's (the card clips it).
+    const viewportWidth = () => Math.max(240, Math.floor(viewport.clientWidth || 320));
+    const fitPx = () => Math.min(naturalW, Math.max(240, viewportWidth() - 4));
 
-    const viewport = dialog.modal.querySelector('[data-zoom-viewport]');
-    const stage = dialog.modal.querySelector('[data-zoom-stage]');
-    const level = dialog.modal.querySelector('[data-zoom-level]');
-    stage.appendChild(svg);
-    svg.classList.add('debt-map-svg--zoomed');
-
-    let zoom = 1;
-    const fitZoom = () => Math.max(0.25, (viewport.clientWidth - 8) / naturalW);
     const paint = () => {
-      svg.style.width = `${Math.round(naturalW * zoom)}px`;
-      svg.style.height = `${Math.round(naturalH * zoom)}px`;
-      level.textContent = `${Math.round(zoom * 100)}%`;
-    };
-    const setZoom = (next, anchor) => {
-      const clamped = Math.max(0.25, Math.min(4, next));
-      // Keep the point under the cursor (or the centre) where it is while zooming.
-      const focusX = (anchor?.x ?? viewport.clientWidth / 2) + viewport.scrollLeft;
-      const focusY = (anchor?.y ?? viewport.clientHeight / 2) + viewport.scrollTop;
-      const ratio = clamped / (zoom || 1);
-      zoom = clamped;
-      paint();
-      viewport.scrollLeft = focusX * ratio - ((anchor?.x ?? viewport.clientWidth / 2));
-      viewport.scrollTop = focusY * ratio - ((anchor?.y ?? viewport.clientHeight / 2));
-    };
-    // Start at 100% (a small map is scaled up to the modal width instead), so the
-    // expanded view is always at least as readable as the card.
-    zoom = Math.max(1, fitZoom());
-    paint();
-
-    dialog.modal.querySelectorAll('[data-zoom]').forEach(button => {
-      button.addEventListener('click', async () => {
-        const action = button.dataset.zoom;
-        if (action === 'in') return setZoom(zoom * 1.25);
-        if (action === 'out') return setZoom(zoom / 1.25);
-        if (action === 'fit') return setZoom(fitZoom());
-        if (action !== 'png') return;
-        button.disabled = true;
-        const tLoad = toast.loading(th('กำลังสร้างรูป…', 'Creating image…'));
-        try {
-          const { exportSvgToPng } = await import('./exports/index.js');
-          await exportSvgToPng(svg, `debt-map-${tripId}.png`, {
-            background: getComputedStyle(svg).backgroundColor || '#ffffff'
-          });
-          tLoad.close();
-          toast.success(th('ส่งออกแผนภาพแล้ว', 'Diagram exported'));
-        } catch (e) {
-          tLoad.close();
-          toast.error(e?.message || th('ส่งออกแผนภาพไม่สำเร็จ', 'Could not export the diagram'));
-        } finally {
-          button.disabled = false;
-        }
+      const width = Math.round(px);
+      stage.style.width = `${width}px`;
+      svg.style.width = `${width}px`;
+      svg.style.height = `${Math.round(width * (naturalH / naturalW))}px`;
+      // The map is never taller than a comfortable card: a zoomed drawing pans,
+      // it does not push the settlement rows three screens down.
+      const fitHeight = Math.round(fitPx() * (naturalH / naturalW));
+      viewport.style.maxHeight = `${Math.min(Math.round(fitHeight * 1.5), Math.round(window.innerHeight * 0.8))}px`;
+      const ratio = fitPx() ? width / fitPx() : 1;
+      const pct = Math.round(ratio * 100);
+      if (level) level.textContent = Math.abs(pct - 100) <= 2 ? th('พอดีจอ', 'Fit') : `${pct}%`;
+      fitBtn?.setAttribute('aria-pressed', String(fitted && Math.abs(pct - 100) <= 2));
+      buttons.forEach(b => {
+        const action = b.dataset.debtZoom;
+        if (action === 'in') b.disabled = ratio >= MAX - 0.01;
+        if (action === 'out') b.disabled = ratio <= MIN + 0.01;
       });
-    });
+      viewport.classList.toggle('is-zoomed', ratio > 1.02);
+    };
+
+    /**
+     * Zoom while keeping one point still. `anchor` is in viewport coordinates;
+     * without it the centre of the current view stays put, which is what a
+     * reader pressing + expects (the thing they are looking at gets bigger).
+     */
+    const setPx = (next, anchor) => {
+      const limitLow = Math.max(240, fitPx() * MIN);
+      const limitHigh = Math.max(limitLow, fitPx() * MAX);
+      const clamped = Math.max(limitLow, Math.min(limitHigh, next));
+      const focusX = anchor?.x ?? viewport.clientWidth / 2;
+      const focusY = anchor?.y ?? viewport.clientHeight / 2;
+      const before = px || 1;
+      px = clamped;
+      fitted = Math.abs(px - fitPx()) <= 1;
+      paint();
+      const k = px / before;
+      viewport.scrollLeft = Math.max(0, (viewport.scrollLeft + focusX) * k - focusX);
+      viewport.scrollTop = Math.max(0, (viewport.scrollTop + focusY) * k - focusY);
+    };
+    const fit = () => {
+      px = fitPx();
+      fitted = true;
+      paint();
+      viewport.scrollLeft = 0;
+      viewport.scrollTop = 0;
+    };
+
+    fit();
+    buttons.forEach(button => button.addEventListener('click', () => {
+      const action = button.dataset.debtZoom;
+      if (action === 'in') return setPx(px * 1.2);
+      if (action === 'out') return setPx(px / 1.2);
+      if (action === 'fit') return fit();
+    }));
+
+    // Pinch / Ctrl+wheel / trackpad zoom, anchored under the fingers or cursor.
     viewport.addEventListener('wheel', (e) => {
-      if (!e.ctrlKey) return;               // a plain wheel still scrolls the sheet
+      if (!e.ctrlKey && !e.metaKey) return;   // a plain wheel still scrolls the page
       e.preventDefault();
       const rect = viewport.getBoundingClientRect();
-      setZoom(zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12), { x: e.clientX - rect.left, y: e.clientY - rect.top });
+      setPx(px * (e.deltaY < 0 ? 1.1 : 1 / 1.1), { x: e.clientX - rect.left, y: e.clientY - rect.top });
     }, { passive: false });
 
-    // Drag to pan; a tap that did not move still opens that person's items.
+    let pinch = null;
+    const touchGap = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    viewport.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 2) return;
+      const rect = viewport.getBoundingClientRect();
+      const t = e.touches;
+      pinch = {
+        gap: touchGap(t),
+        startPx: px,
+        x: (t[0].clientX + t[1].clientX) / 2 - rect.left,
+        y: (t[0].clientY + t[1].clientY) / 2 - rect.top
+      };
+    }, { passive: true });
+    viewport.addEventListener('touchmove', (e) => {
+      if (!pinch || e.touches.length !== 2) return;
+      const gap = touchGap(e.touches);
+      if (!gap || !pinch.gap) return;
+      if (e.cancelable) e.preventDefault();
+      setPx(pinch.startPx * (gap / pinch.gap), { x: pinch.x, y: pinch.y });
+    }, { passive: false });
+    const endPinch = (e) => { if (!e.touches || e.touches.length < 2) pinch = null; };
+    viewport.addEventListener('touchend', endPinch);
+    viewport.addEventListener('touchcancel', endPinch);
+
+    // Drag to pan with a mouse or a stylus. A tap that did not move still opens
+    // that person's items (the node's own click handler runs).
     let pan = null;
-    let moved = false;
     viewport.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch') return;       // touch pans natively
       if (e.pointerType === 'mouse' && e.button !== 0) return;
-      pan = { x: e.clientX, y: e.clientY, left: viewport.scrollLeft, top: viewport.scrollTop };
-      moved = false;
+      pan = { x: e.clientX, y: e.clientY, left: viewport.scrollLeft, top: viewport.scrollTop, moved: false };
       viewport.classList.add('is-grabbing');
       try { viewport.setPointerCapture(e.pointerId); } catch { /* older browsers */ }
     });
     viewport.addEventListener('pointermove', (e) => {
       if (!pan) return;
-      const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
-      if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+      const dx = e.clientX - pan.x;
+      const dy = e.clientY - pan.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) pan.moved = true;
       viewport.scrollLeft = pan.left - dx;
       viewport.scrollTop = pan.top - dy;
     });
     const endPan = () => { pan = null; viewport.classList.remove('is-grabbing'); };
     viewport.addEventListener('pointerup', endPan);
     viewport.addEventListener('pointercancel', endPan);
-    svg.querySelectorAll('[data-debt-person]').forEach(node => {
-      node.addEventListener('click', () => {
-        if (moved) return;
-        const id = node.dataset.debtPerson;
-        dialog.close();
-        if (id) openReceiptDetail(id);
-      });
+    // A drag that ends over a node must not also open that person's receipt.
+    viewport.addEventListener('click', (e) => {
+      if (pan?.moved) { e.stopPropagation(); e.preventDefault(); }
+    }, true);
+
+    // Keyboard: + / − / 0, like every other zoomable surface.
+    viewport.addEventListener('keydown', (e) => {
+      if (e.key === '+' || e.key === '=') { e.preventDefault(); setPx(px * 1.2); }
+      else if (e.key === '-' || e.key === '_') { e.preventDefault(); setPx(px / 1.2); }
+      else if (e.key === '0') { e.preventDefault(); fit(); }
     });
+
+    // Rotating a phone or resizing a window keeps the map fitting while the
+    // reader is still at “fit”; a deliberate zoom survives.
+    const onResize = () => {
+      if (fitted) fit();
+      else { px = Math.min(px, fitPx() * MAX); paint(); }
+    };
+    window.addEventListener('resize', onResize);
+    // The card re-renders on every settlement refresh; drop the listener with it.
+    const observer = new MutationObserver(() => {
+      if (!document.body.contains(viewport)) { window.removeEventListener('resize', onResize); observer.disconnect(); }
+    });
+    observer.observe(content, { childList: true, subtree: false });
   }
 
   /** Debt-map interactions: nodes / rows open that member's itemized expense receipt. */
@@ -10993,9 +11177,9 @@ async function renderSettlement(params) {
       }
     });
 
-    // v45: one tap opens the same drawing full screen, on the sheet that has room
-    // for every amount in full, with pan and zoom.
-    content.querySelector('#debt-map-expand')?.addEventListener('click', () => openDebtMapZoom());
+    // v46: zoom / pan / fit live ON the card itself — there is no full-screen
+    // sheet to open any more.
+    bindDebtMapZoom(content);
 
     // Reading a dense map: hovering (or keyboard-focusing) a transfer row lights up
     // its own line and amount and dims the rest, so the eye never has to trace

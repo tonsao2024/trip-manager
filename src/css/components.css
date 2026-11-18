@@ -676,12 +676,10 @@ input[type="color"].input, input[type="color"] { padding: 4px; cursor: pointer; 
 .link-btn { background: none; border: 0; cursor: pointer; font-size: 12px; }
 
 /* ---------- Expense cards ---------- */
-.expense-card { display: flex; align-items: center; gap: 12px; padding: 16px; cursor: pointer; }
+/* v46: the card's shape (three fixed zones) is owned by flat.css § v46 — this
+   used to be a wrapping flex row, which is why the amount moved under the title
+   on some cards. Only the shared button row is declared here. */
 .expense-actions { display: flex; gap: 4px; flex: 0 0 auto; }
-@media (max-width: 520px) {
-  .expense-card { flex-wrap: wrap; }
-  .expense-actions { width: 100%; justify-content: flex-end; }
-}
 
 /* Recent expense row */
 .expense-row { transition: transform 0.16s var(--ease), background 0.2s var(--ease), border-color 0.2s var(--ease);
@@ -3109,20 +3107,18 @@ button.idea-pin-line:hover, button.idea-near-line:hover { background: var(--surf
      “+ เพิ่มค่าใช้จ่าย” is never half-cut at the right edge. */
   .btn-row.exp-top-actions { flex-wrap: wrap; justify-content: flex-end; overflow-x: visible; }
 
-  /* KPI amounts must never break mid-number (“฿167,7 / 23.09”): drop the
-     decimals on a phone (desktop keeps them) and hold each amount on ONE line.
-     The tiles lend the amount a little horizontal room so “฿167,723” fits at
-     375–440px without ellipsis (the check fails on either wrap or ellipsis). */
+  /* v46: the expenses summary is no longer a 5-up KPI strip — it is the hero
+     total + three fact tiles (§ v46 in flat.css), so the old “shrink the amount
+     to 9.5px and clip it” rules would only hurt the surfaces still using
+     .kpi-strip. Amounts keep ONE line and their decimals; the containers are
+     allowed to be narrow instead. */
   .kpi-strip .kpi-mini b { overflow-wrap: normal; }
   .kpi-strip .kpi-mini .money-primary {
-  font-size: clamp(9.5px, 2.75vw, 15px);
-  white-space: nowrap;
-  overflow-wrap: normal;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-  .kpi-strip .money-dec, .kpi-mini-sub .money-dec { display: none; }
+    font-size: clamp(12px, 3.4vw, 15px);
+    white-space: nowrap;
+    overflow-wrap: normal;
+    max-width: 100%;
+  }
   .kpi-mini-sub { overflow-wrap: normal; }
 }
 

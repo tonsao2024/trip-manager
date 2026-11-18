@@ -42,7 +42,7 @@
     } catch (e) { /* private mode — keep the defaults */ }
   </script>
   <!-- Build identity — source of truth: src/js/utils/buildInfo.js (a unit test keeps these in sync) -->
-  <meta name="app-version" content="41">
+  <meta name="app-version" content="46">
   <meta name="app-palette" content="Google Material">
   <meta name="app-updated" content="2026-11-18">
   <meta property="og:title" content="Trip Manager by TonSkywalker">
@@ -63,32 +63,32 @@
   <link rel="preload" href="./src/fonts/google-sans-thai-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="./src/fonts/google-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="./src/fonts/google-sans-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="./src/css/fonts.css?v=41">
+  <link rel="stylesheet" href="./src/css/fonts.css?v=46">
 
   <!-- Design System v35 “Calm” (cache-busted) — tokens.css explains the rules -->
-  <link rel="stylesheet" href="./src/css/tokens.css?v=41">
-  <link rel="stylesheet" href="./src/css/components.css?v=41&amp;select-fix=1">
-  <link rel="stylesheet" href="./src/css/refresh.css?v=41&amp;footer=removed&amp;debt-fit=1">
-  <link rel="stylesheet" href="./src/css/animations.css?v=41">
+  <link rel="stylesheet" href="./src/css/tokens.css?v=46">
+  <link rel="stylesheet" href="./src/css/components.css?v=46&amp;select-fix=1">
+  <link rel="stylesheet" href="./src/css/refresh.css?v=46&amp;footer=removed&amp;debt-fit=1&amp;debt-zoom=1">
+  <link rel="stylesheet" href="./src/css/animations.css?v=46">
   <!-- FLAT DESIGN LAYER (v34 → v35 calm pass) — every surface, button, card and
        menu is shaped here. It loads after the legacy sheets and before the
        compiled Tailwind utilities; Settings → Appearance can re-scale radius /
        density / depth live. -->
-  <link rel="stylesheet" href="./src/css/flat.css?v=41&amp;theme-fix=3&amp;dashboard-fix=1">
+  <link rel="stylesheet" href="./src/css/flat.css?v=46&amp;theme-fix=3&amp;dashboard-fix=1&amp;expense-v46=1">
   <!-- Tailwind: precompiled static utilities (tools/build-assets.mjs).
        Replaces the Play CDN runtime compiler. Loaded AFTER the app stylesheets
        to keep the same cascade order the CDN's injected <style> used to have. -->
-  <link rel="stylesheet" href="./src/css/tailwind.css?v=41">
-  <link rel="stylesheet" href="./src/css/dimension.css?v=41&amp;cover-fix=1&amp;debt-fit=1&amp;cover-crop=1">
+  <link rel="stylesheet" href="./src/css/tailwind.css?v=46">
+  <link rel="stylesheet" href="./src/css/dimension.css?v=46&amp;cover-fix=1&amp;debt-fit=1&amp;cover-crop=1&amp;debt-zoom=1">
   <!-- v41 “Google Material” skin — loads LAST so the whole product reads like
        Google Maps / Google Travel (Google Sans, white cards on the grey canvas,
        Google blue, Material elevation, pill chips). Everything it overrides is
        listed at the top of the file. -->
-  <link rel="stylesheet" href="./src/css/material.css?v=41&amp;theme-fix=3">
+  <link rel="stylesheet" href="./src/css/material.css?v=46&amp;theme-fix=3&amp;expense-v46=1">
 
   <!-- Lucide icons: local subset (272 icons) instead of the full ~1500-icon CDN
        bundle. Deferred so it never blocks first paint; runs before app.js. -->
-  <script src="./src/js/vendor/lucide.js?v=41" defer></script>
+  <script src="./src/js/vendor/lucide.js?v=46" defer></script>
 
   <!-- Import Map -->
   <script type="importmap">
@@ -438,6 +438,6 @@
   <script src="./fcm-vapid.js"></script>
 
   <!-- App (cache-busted) -->
-  <script type="module" src="./src/js/app.js?v=41&amp;expense-fix=3&amp;dashboard-fix=1&amp;cover-fix=1&amp;debt-fit=1&amp;cover-crop=1"></script>
+  <script type="module" src="./src/js/app.js?v=46&amp;expense-fix=3&amp;dashboard-fix=1&amp;cover-fix=1&amp;debt-fit=1&amp;cover-crop=1&amp;expense-v46=1&amp;debt-zoom=1"></script>
 </body>
 </html>

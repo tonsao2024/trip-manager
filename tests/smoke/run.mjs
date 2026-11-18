@@ -635,9 +635,11 @@ console.log('\n▶ v19 plan → money: one expense form, two screens + teams per
   await sleep(500);
   check(qa('.expense-card').length === 30, `paging: first page shows 30 of the matching rows (${qa('.expense-card').length})`);
   check(!q('#load-more')?.classList.contains('hidden'), 'paging: “Load more” is offered while rows remain');
-  const bar = q('.expense-day-total-bar')?.textContent || '';
+  // v46: the running total is the list's caption line (the old second summary
+  // card repeated the hero figure), and it still counts EVERY matching row.
+  const bar = q('.expense-list-caption')?.textContent || q('.expense-day-total-bar')?.textContent || '';
   const listed = Number((bar.match(/(\d+)\s*รายการ/) || [])[1] || 0);
-  check(listed >= 46, `paging: the total bar counts every matching row, not just the page (${listed})`);
+  check(listed >= 46, `paging: the running total counts every matching row, not just the page (${listed})`);
   await click('#load-more');
   await sleep(200);
   check(qa('.expense-card').length > 30, `paging: “Load more” reveals the next rows (${qa('.expense-card').length})`);
@@ -2767,35 +2769,32 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   // landscape, the frame fits it into one glance, and one tap opens the generous
   // sheet where a dense map still draws every amount in full.
   const debtSheet = q('.debt-map-svg');
-  const debtFrame = q('.debt-map-frame');
   const [, , sheetW, sheetH] = String(debtSheet?.getAttribute('viewBox') || '0 0 0 0').split(/[\s,]+/).map(Number);
-  check(!!debtFrame, 'debt map: the drawing sits in a fit frame');
+  check(!!q('.debt-map-viewport'), 'debt map: the drawing sits in its own zoomable viewport');
   check(sheetW > 0 && sheetW <= 1200, `debt map: the sheet never outgrows the card that shows it (${sheetW}px)`);
   check(sheetW / sheetH >= 1.3, `debt map: the sheet stays landscape, so the whole map is one glance (${sheetW}×${sheetH})`);
-  check(/--debt-map-ar:[\d.]+/.test(debtFrame?.getAttribute('style') || ''), 'debt map: the frame carries the sheet’s aspect ratio');
-  check(/--debt-map-fit-height/.test(fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8'))
-    && /\.debt-map-frame\s*\{[^}]*aspect-ratio: var\(--debt-map-ar/.test(fs.readFileSync(path.join(root, 'src/css/dimension.css'), 'utf8')),
-    'debt map: desktop bounds the drawing height with a token, not a magic number');
-  check(!!q('#debt-map-expand'), 'debt map: one tap opens the drawing full screen');
+  // v46: the zoom lives ON the card — no full-screen sheet to open.
+  check(!q('#debt-map-expand'), 'debt map: the full-screen “ขยายดูเต็มจอ” step is gone');
+  check(!!q('.debt-map-zoombar [data-debt-zoom="in"]') && !!q('.debt-map-zoombar [data-debt-zoom="out"]') && !!q('.debt-map-zoombar [data-debt-zoom="fit"]'),
+    'debt map: expand / shrink / fit are on the map card itself');
+  check(q('.debt-map-zoombar [data-debt-zoom="fit"]')?.getAttribute('aria-pressed') === 'true',
+    'debt map: fit-to-screen is the default state');
   check(qa('.debt-tx-row').every(row => Number(row.dataset.debtStep) > 0) && qa('.debt-map-edge').every(edge => Number(edge.dataset.step) > 0),
     'debt map: every row and its line share a number, so hovering a row can light up its own line');
-  await click('#debt-map-expand');
-  await waitFor(() => q('.debt-zoom-stage svg'), { timeout: 6000, label: 'expanded debt map' }).catch(() => {});
-  const zoomStage = q('.debt-zoom-stage svg');
-  check(!!zoomStage && !!q('.debt-zoom-viewport'), 'debt map: the expanded sheet opens in its own pan/zoom viewport');
-  check(qa('.debt-zoom-stage .debt-map-amount-label[data-label-kind="label"]').length === qa('.debt-zoom-stage .debt-map-edge').length,
-    'debt map: expanded, every amount is drawn in full on its own line');
-  const zoomIds = qa('.debt-zoom-stage [id]').map(node => node.id);
-  check(new Set(zoomIds).size === zoomIds.length, 'debt map: the expanded sheet does not reuse the page sheet’s marker ids');
-  const widthBeforeZoom = Number.parseFloat(zoomStage?.style.width || '0');
-  check(widthBeforeZoom > 0, 'debt map: the expanded sheet has an explicit size, so zoom can change it');
-  await click('.debt-zoom-controls [data-zoom="in"]');
-  check(Number.parseFloat(q('.debt-zoom-stage svg')?.style.width || '0') > widthBeforeZoom, 'debt map: zoom in enlarges the drawing');
-  await click('.debt-zoom-controls [data-zoom="fit"]');
-  check(/%$/.test(q('[data-zoom-level]')?.textContent || ''), 'debt map: the zoom level is announced');
-  await click('.debt-zoom-modal [data-popup-close]');
-  await sleep(400);
-  check(!q('.debt-zoom-stage'), 'debt map: the expanded sheet closes again');
+  const widthBeforeZoom = Number.parseFloat(q('.debt-map-stage')?.style.width || '0');
+  check(widthBeforeZoom > 0, 'debt map: the drawing has an explicit size, so zoom can change it');
+  check(fs.readFileSync(path.join(root, 'src/css/refresh.css'), 'utf8').includes('bindDebtMapZoom')
+    || fs.readFileSync(path.join(root, 'src/js/app.js'), 'utf8').includes('function bindDebtMapZoom'),
+    'debt map: one controller owns the in-page zoom');
+  await click('.debt-map-zoombar [data-debt-zoom="in"]');
+  check(Number.parseFloat(q('.debt-map-stage')?.style.width || '0') > widthBeforeZoom, 'debt map: zoom in enlarges the drawing');
+  check(q('.debt-map-zoombar [data-debt-zoom="fit"]')?.getAttribute('aria-pressed') === 'false',
+    'debt map: zooming in releases the fit state');
+  await click('.debt-map-zoombar [data-debt-zoom="out"]');
+  await click('.debt-map-zoombar [data-debt-zoom="fit"]');
+  check(Number.parseFloat(q('.debt-map-stage')?.style.width || '0') <= widthBeforeZoom + 1, 'debt map: fit returns the drawing to the card width');
+  check(q('[data-debt-zoom-level]')?.textContent?.length > 0, 'debt map: the zoom level is announced');
+  check(!q('.debt-zoom-modal') && !q('.debt-zoom-stage'), 'debt map: nothing opens over the page any more');
 
   {
     const { listTransfers } = await import(pathToFileURL(path.join(outDir, 'settlement/index.js')).href);

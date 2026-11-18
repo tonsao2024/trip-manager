@@ -123,41 +123,100 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
 .debt-row-amount { font-size: 16px; }
 .debt-map-action-hint { color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
 .debt-map-action-hint { margin: 12px 0 0; }
-/* v42: the diagram is the first thing on the page — amounts are printed on the
-   lines, so the drawing and its legend sit directly under the heading. */
+/* v46 — the diagram is the first thing on the page and it fits itself: the
+   zoom controller (app.js: bindDebtMapZoom) measures the viewport and sizes the
+   SVG, so “พอดีจอ” is the truth on a phone, an iPad and a desk rather than a
+   media-query guess. What is left here is how the frame looks and how it clips. */
 .debt-map-card .debt-map-legend { margin: 16px 0 10px; }
 .debt-map-card > .debt-map-container { margin: 0 0 4px; }
 .debt-map-note { margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-tertiary); }
-@media (min-width: 1024px) {
-  /* Fit the entire drawing, not a clipped viewport with a hidden scrollbar.
-     SVG viewBox scaling preserves node spacing and keeps amounts on their arcs. */
-  .debt-map-card > .debt-map-container {
-    min-width: 0;
-    max-width: 100%;
-    overflow: hidden !important;
-  }
-  /* v45 (owner: “แผนที่หนี้ ตอนนี้มันกว้างใหญ่เกินไป ต้องสโครลหลายรอบ กว่าจะเห็นครบ
-     (ดูในคอม)”): the frame keeps the sheet's own aspect ratio and never grows
-     taller than the reader's viewport, so the whole map is ONE glance — no
-     letterbox bands and no page-long scrolling. The labels still render at ~100%
-     because the sheet itself is bounded to the card width
-     (utils/debtMap.js:debtMapCanvas); anything denser is one tap away in
-     “ขยายดูเต็มจอ”, which pans and zooms the generous sheet. */
-  .debt-map-card > .debt-map-container .debt-map-frame {
-    width: min(100%, calc(var(--debt-map-fit-height, 660px) * var(--debt-map-ar, 1.5)));
-    aspect-ratio: var(--debt-map-ar, 1.5);
-    min-width: 0;
-    margin-inline: auto;
-  }
-  .debt-map-card > .debt-map-container .debt-map-svg {
-    width: 100%;
-    min-width: 0;
-    max-width: 100%;
-    height: 100%;
-    margin-inline: auto;
-  }
-  .debt-map-scroll-hint { display: none; }
+
+/* The zoomable viewport: one screenful of map, pannable inside its own frame.
+   `touch-action: pinch-zoom` keeps the browser out of the two-finger gesture (we
+   handle it ourselves) while still allowing a one-finger page scroll — a map
+   must never trap the reader on the card. */
+.debt-map-viewport {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md, 12px);
+  background: color-mix(in srgb, var(--surface) 88%, var(--primary-light));
+  cursor: grab;
+  touch-action: pan-x pan-y;
+  scrollbar-width: thin;
 }
+.debt-map-viewport.is-grabbing { cursor: grabbing; }
+.debt-map-viewport.is-zoomed { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary-raw) 30%, var(--border)); }
+.debt-map-viewport:focus-visible { outline: 2px solid var(--primary-raw); outline-offset: 2px; }
+.debt-map-stage { margin: 0 auto; }
+.debt-map-stage .debt-map-svg { max-width: none; margin: 0; }
+.debt-map-container { overflow: hidden !important; }
+
+/* The toolbar: − fit + , the current level, and a labelled “พอดีจอ”. Same row
+   at every size — it is three 44px targets, so it never needs to wrap. */
+.debt-map-zoombar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 8px 0 8px;
+}
+.debt-zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.debt-zoom-btn:hover:not(:disabled) { background: var(--surface-2); }
+.debt-zoom-btn:disabled { opacity: .45; cursor: not-allowed; }
+.debt-zoom-btn svg { width: 15px; height: 15px; }
+.debt-zoom-fit[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--primary-raw) 40%, var(--border));
+  background: color-mix(in srgb, var(--primary-raw) 10%, var(--surface));
+  color: var(--primary-strong);
+}
+.debt-zoom-level {
+  min-width: 54px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.debt-zoom-hint {
+  flex: 1 1 140px;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-tertiary);
+}
+@media (max-width: 600px) {
+  /* Phones: − / level / + on one line, “พอดีจอ” fills the next, hint below. The
+     hint is the only copy that may wrap to two lines. */
+  .debt-map-zoombar { gap: 6px; }
+  .debt-zoom-btn { min-height: 44px; }
+  .debt-zoom-btn.debt-zoom-fit { flex: 1 1 100%; justify-content: center; }
+  .debt-zoom-hint { flex: 1 1 100%; }
+  /* The map is the first thing on the card, so it starts right under the bar. */
+  .debt-map-card > .debt-map-container { margin-top: 0; }
+}
+@media (min-width: 1024px) { .debt-map-scroll-hint { display: none; } }
+
 /* v45: the two diagram actions sit side by side under the total. */
 .debt-map-tools { display: flex; gap: 8px; }
 .debt-map-tools .btn { flex: 1 1 0; min-width: 0; }
@@ -172,56 +231,9 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
   .debt-map-edge, .debt-map-amount-label { transition: none; }
 }
 
-/* v45: “ขยายดูเต็มจอ” — the same drawing on the generous sheet, pan + zoom. */
-.debt-zoom-modal {
-  width: min(1360px, 96vw);
-  max-width: min(1360px, 96vw);
-  max-height: 92dvh;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow: hidden;
-}
-.debt-zoom { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-.debt-zoom-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; }
-.debt-zoom-title { min-width: 0; }
-.debt-zoom-title h3 { margin: 0 0 4px; font-size: 18px; }
-.debt-zoom-title .input-hint { margin: 0; }
-.debt-zoom-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.debt-zoom-controls .btn { min-width: 40px; justify-content: center; }
-.debt-zoom-level { min-width: 52px; text-align: center; font-size: 13px; font-weight: 600; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.debt-zoom-viewport {
-  flex: 1 1 auto;
-  min-height: 220px;
-  max-height: calc(92dvh - 150px);
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding: 8px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--surface) 88%, var(--primary-light));
-  cursor: grab;
-  touch-action: pan-x pan-y;
-}
-.debt-zoom-viewport.is-grabbing { cursor: grabbing; }
-.debt-zoom-viewport:focus-visible { outline: 2px solid var(--primary-raw); outline-offset: 2px; }
-.debt-zoom-stage { width: max-content; min-width: 100%; }
-.debt-zoom-stage .debt-map-svg {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-  height: auto;
-  margin: 0;
-}
-@media (max-width: 600px) {
-  .debt-zoom-modal { width: 100vw; max-width: 100vw; max-height: 94dvh; padding: 12px; }
-  .debt-zoom-head { gap: 8px; }
-  .debt-zoom-controls { width: 100%; }
-  .debt-zoom-controls .btn { flex: 1 1 auto; }
-  .debt-zoom-viewport { max-height: calc(94dvh - 190px); }
-}
+/* v46: `.debt-zoom-modal` / `.debt-zoom-*` (the v45 full-screen sheet) are gone
+   with the sheet itself — zoom, pan and fit live on the card now. */
+
 @media (max-width: 600px) {
   .debt-map-heading { align-items: stretch; flex-direction: column; gap: 12px; }
   .debt-map-total { min-width: 0; }
@@ -243,19 +255,12 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
   .debt-pay-btn { margin-left: auto; }
   .debt-amount-block { flex: 1 1 auto; }
 }
-.expense-more-filters { display: none; }
-.expense-extra-actions { margin-bottom: 8px; }
-@media (max-width: 767px) {
-  .expense-more-filters { display: flex; width: 100%; justify-content: flex-start; gap: 8px; min-height: 44px; margin: 0 0 12px; }
-  .expense-more-filters [data-expense-filter-summary] { margin-left: auto; color: var(--text-secondary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .expense-extra-controls:not(.is-open) { display: none; }
-  .expense-extra-controls { padding: 12px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
-  .expense-extra-controls #cat-filters { margin-bottom: 0; }
-}
-.expense-more-filters [data-expense-filter-summary] { line-height: 1.5; }
+/* v46: the expenses filter surface (including where “ตัวเลือกเพิ่มเติม” shows and
+   folds) is owned by flat.css § v46 · 2 — it is scoped to #expenses-view there, so
+   these were unreachable leftovers. */
 @media (max-width: 600px) { .debt-amount-block .debt-row-amount { margin-left: 0; } }
 @media (max-width: 767px) {
-  .btn.btn-sm.debt-pay-btn, .btn.btn-sm.expense-more-filters { min-height: 44px !important; }
+  .btn.btn-sm.debt-pay-btn { min-height: 44px !important; }
 }
 
 /* A richer, still restrained palette makes statuses and dashboard sections easier to scan. */
@@ -693,13 +698,17 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
   max-height: none !important;
   height: auto !important;
 }
-/* v45: the on-screen frame is a viewport fit; paper gets the full sheet width. */
-.export-capture .debt-map-frame {
-  width: 100% !important;
-  min-width: 0 !important;
+/* v46: an export always gets the WHOLE drawing at its natural size — the
+   reader's on-screen zoom level must never crop the PNG or the printout. */
+.export-capture :is(.debt-map-viewport, .debt-map-stage) {
+  width: auto !important;
+  max-width: none !important;
   max-height: none !important;
-  aspect-ratio: auto !important;
+  overflow: visible !important;
+  padding: 0 !important;
+  border: 0 !important;
 }
+.export-capture .debt-map-stage .debt-map-svg { width: 100% !important; height: auto !important; }
 .export-capture :is(.truncate, [class*="line-clamp"], .debt-person-name, .rcpt-who-name) {
   white-space: normal !important;
   text-overflow: clip !important;
@@ -772,7 +781,7 @@ html[data-depth="flat"] :is(.card-hover:hover, .place-card:hover) { box-shadow: 
   h1, h2, h3, h4 { break-after: avoid; }
   .cal-cell { min-width: 0 !important; height: auto !important; }
   .debt-map-container { overflow: visible !important; }
-  .debt-map-frame { width: 100% !important; min-width: 0 !important; aspect-ratio: auto !important; }
+  .debt-map-viewport, .debt-map-stage { max-height: none !important; overflow: visible !important; }
   .debt-map-svg { width: 100% !important; min-width: 0 !important; height: auto !important; }
   .debt-map-scroll-hint { display: none !important; }
 }
