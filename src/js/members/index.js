@@ -4,7 +4,7 @@ import { expensePayments } from '../utils/payments.js';
 import { db, serverTimestamp } from '../firebase.js';
 import { brandPrimary } from '../utils/brand.js';
 import {
-  collection, doc, getDoc, getDocs, updateDoc, query, where, limit, writeBatch, arrayUnion, arrayRemove
+  collection, doc, getDoc, getDocs, getDocsFromServer, updateDoc, query, where, limit, writeBatch, arrayUnion, arrayRemove
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { cachedRead, cacheInvalidate, cacheForget, seedFromPersist, persistSet, persistDelete } from '../utils/datacache.js';
 import { setMemberPin, publishMemberLookup, clearMemberPin, normalizeUsername } from '../auth/memberAuth.js';
@@ -28,9 +28,10 @@ export function invalidateMembers(tripId) {
   persistDelete(`members:${tripId}`);
 }
 
-async function loadMembersUncached(tripId) {
-  const snap = await getDocs(collection(db, `trips/${tripId}/members`));
-  const members = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+async function loadMembersUncached(tripId, { fromServer = false } = {}) {
+  const ref = collection(db, `trips/${tripId}/members`);
+  const snap = await (fromServer ? getDocsFromServer(ref) : getDocs(ref));
+  const members = snap.docs.map(d => ({ ...d.data(), id: d.id }));
   members.sort((a, b) => (a.order ?? 999) - (b.order ?? 999) || String(a.displayName || '').localeCompare(String(b.displayName || '')));
   return members;
 }
@@ -40,7 +41,7 @@ export async function listMembers(tripId, { fresh = false } = {}) {
   const key = `members:${tripId}`;
   if (fresh) { cacheForget(key); persistDelete(key); }
   else seedFromPersist(key);
-  const members = await cachedRead(key, () => loadMembersUncached(tripId), { maxAgeMs: 5 * 60 * 1000 });
+  const members = await cachedRead(key, () => loadMembersUncached(tripId, { fromServer: fresh }), { maxAgeMs: 5 * 60 * 1000 });
   persistSet(key, members);
   return members;
 }
