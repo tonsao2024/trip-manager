@@ -1378,9 +1378,10 @@ console.log('\n▶ performance: switching menus with a slow connection');
   if (process.env.SMOKE_TRACE) console.log('   [debug] timings', JSON.stringify(timings));
   check(worst < 1500, `perf: slowest menu ready in ${worst}ms (target < 1500ms @120ms latency)`);
   const totalReads = timings.reduce((n, t) => n + t.reads, 0);
-  // +1 read allowance: the settlement page now resolves the permission that gates
-  // its payment buttons (one extra member read on a cold menu).
-  check(totalReads <= 25, `perf: the 8 menus together cost ${totalReads} Firestore reads (target ≤ 25)`);
+  // Settlement resolves permissions (+1); the members page also reads the
+  // live member list and trip before any membership repair (+2). Never trade
+  // those authorization checks for a cached snapshot just to save reads.
+  check(totalReads <= 27, `perf: the 8 menus together cost ${totalReads} Firestore reads (target ≤ 27)`);
   fsdb.__setReadLatency(0);
 }
 
@@ -3862,13 +3863,15 @@ console.log('\n▶ memberUids drift: a member document alone must surface the tr
   check(!mine.some(t => t.id === 'drift2'), 'drift: an inactive member document surfaces nothing');
   check((fsdb.__dump('trips/drift1')?.memberUids || []).includes('u9'), 'drift: memberUids entry restored for the next sign-in');
   check(!(fsdb.__dump('trips/drift2')?.memberUids || []).includes('u9'), 'drift: inactive member is not restored to memberUids');
-  // Admin-side repair (Members page) uses the same reconciliation.
-  const restored = await tripsMod.reconcileTripMemberUids('drift2', [{ id: 'u7', uid: 'u7', status: 'active' }], ['u1']);
+  // Admin-side repair rechecks the real member document inside a transaction.
+  fsdb.__seed('trips/drift2/members/u7', { uid: 'u7', status: 'active' });
+  const restored = await tripsMod.reconcileTripMemberUids('drift2', [{ id: 'u7', uid: 'u7', status: 'active' }]);
   check(restored.includes('u7') && (fsdb.__dump('trips/drift2')?.memberUids || []).includes('u7'), 'drift: admin reconcile adds missing active members');
   fsdb.__store.delete('trips/drift1');
   fsdb.__store.delete('trips/drift1/members/u9');
   fsdb.__store.delete('trips/drift2');
   fsdb.__store.delete('trips/drift2/members/u9');
+  fsdb.__store.delete('trips/drift2/members/u7');
   tripsMod.clearTripsCache();
   window.localStorage.removeItem('fuji_trips_cache');
 }

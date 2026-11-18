@@ -11,6 +11,7 @@ export const __store = store;
 export function __reset() {
   store.clear();
   denyPaths = [];
+  deniedQueryFields = [];
   batchCreated = 0;
   batchCommitSizes.length = 0;
 }
@@ -20,8 +21,10 @@ export function __batchStats() {
 
 // --- simulated security rules: __deny('trips/t1/joinRequests') blocks a path ---
 let denyPaths = [];
+let deniedQueryFields = [];
 export function __deny(prefix) { denyPaths.push(prefix); }
-export function __allowAll() { denyPaths = []; }
+export function __denyQueryField(path, field) { deniedQueryFields.push({ path, field }); }
+export function __allowAll() { denyPaths = []; deniedQueryFields = []; }
 export function __allow(prefix) { denyPaths = denyPaths.filter(p => p !== prefix); }
 function denyCheck(path) {
   if (denyPaths.some(p => path.startsWith(p))) {
@@ -192,6 +195,12 @@ export async function getDocs(target) {
   denyCheck(path);
   await countRead(path);
   const constraints = target.__type === 'query' ? target.constraints : [];
+  if (deniedQueryFields.some(denied => denied.path === path &&
+      constraints.some(c => c.__type === 'where' && c.field === denied.field))) {
+    const err = new Error('Simulated failed query.');
+    err.code = 'failed-precondition';
+    throw err;
+  }
   const baseRef = target.__type === 'query' ? target.ref : target;
   let entries = baseRef?.__type === 'collectionGroup' ? collectionGroupDocs(path) : childDocs(path);
   for (const c of constraints) {
@@ -384,6 +393,7 @@ export function runTransaction(db, updateFunction) {
     const tx = {
       get: ref => getDoc(ref),
       set: (ref, data, options) => { denyCheck(ref.path); writes.push(() => setDoc(ref, data, options)); },
+      update: (ref, data) => { denyCheck(ref.path); writes.push(() => updateDoc(ref, data)); },
       delete: ref => { denyCheck(ref.path); writes.push(() => deleteDoc(ref)); }
     };
     const result = await updateFunction(tx);

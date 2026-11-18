@@ -8,6 +8,7 @@
     "build:assets": "node tools/build-assets.mjs",
     "test": "node tests/node-runner.mjs",
     "test:rules": "node --test tests/rules/firestore.test.js",
+    "test:membership": "node --test tests/firestore-indexes.test.mjs tests/membership-repair.test.mjs",
     "test:smoke": "node tests/smoke/run.mjs",
     "test:browser:build": "node tests/browser/mobile-build.mjs",
     "test:browser:mobile": "node tests/browser/mobile-check.mjs",

@@ -3547,7 +3547,10 @@ async function renderTripSelector() {
       queueIcons();
       return;
     }
-    grid.innerHTML = trips.map((trip, idx) => tripCardHtml(trip, idx)).join('');
+    const partialNotice = trips.incomplete
+      ? `<div class="notice col-span-full p-3 text-xs" role="status">${lang === 'th' ? 'โหลดได้บางทริปเท่านั้น — ตรวจการเชื่อมต่อและ Firestore Rules/Indexes แล้วลองใหม่' : 'Some trips could not be checked — verify connectivity and Firestore Rules/Indexes, then retry.'}</div>`
+      : '';
+    grid.innerHTML = partialNotice + trips.map((trip, idx) => tripCardHtml(trip, idx)).join('');
     attachTripCards(grid);
     initReveal(grid);
     queueIcons();
@@ -3583,8 +3586,8 @@ async function renderTripSelector() {
     try {
       const cached = localStorage.getItem('fuji_trips_cache');
       if (cached) {
-        const { data } = JSON.parse(cached);
-        if (data?.length) {
+        const { data, uid: cachedUid, timestamp } = JSON.parse(cached);
+        if (cachedUid === currentUser?.uid && Date.now() - timestamp <= 10 * 60 * 1000 && data?.length) {
           tripsCache = data;
           grid.innerHTML = `
             <div class="notice col-span-full flex items-start gap-2 p-3 rounded-xl text-xs">
@@ -11916,6 +11919,7 @@ async function renderMembers(params) {
       <div class="card p-5 space-y-3 mb-5" id="account-members-card">
         <h3 class="font-semibold flex items-center gap-2">${icon('user-check', 'w-4 h-4')} ${th('สมาชิกที่ล็อกอินด้วยบัญชี (Google / อีเมล)','Members with an account (Google / email)')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('สมาชิกสมัครบัญชีเองได้ แล้วส่งคำขอเข้าร่วมด้วยรหัสเชิญ — แอดมินกดอนุมัติได้เลย (ไม่ต้องใช้ Cloud Functions)','Members create their own account and ask to join with the invite code — approve them here (no Cloud Functions needed).')}</p>
+        ${canApprove ? `<p id="member-repair-status" class="text-xs text-[var(--text-secondary)]" role="status">${th('กำลังตรวจสอบการเชื่อมโยงสมาชิก…', 'Checking member access…')}</p>` : ''}
         <div id="join-requests" class="space-y-2"><div class="skeleton h-10"></div></div>
         <div class="btn-row">
           <button id="add-by-email-btn" class="btn btn-secondary btn-sm">${icon('mail-plus', 'w-4 h-4')} ${th('เพิ่มด้วยอีเมล','Add by email')}</button>
@@ -12081,24 +12085,25 @@ async function renderMembers(params) {
     if (!list) return;
     list.innerHTML = `<div class="skeleton h-16"></div><div class="skeleton h-16"></div>`;
     try {
-      const members = await listMembers(tripId);
+      // An authorization repair must not use a persisted/stale member list.
+      const members = await listMembers(tripId, { fresh: canApprove });
       memberRows = members || [];
       if (isStale(token)) return;
-      // Repair drift between the member documents (what this page shows) and
-      // `trips.memberUids` (the only thing a member's own trip list can see).
-      // Members whose uid is missing from the array sign in to an empty list
-      // even though the admin sees them here — restore their entries so the
-      // trip appears for them on their next sign-in, no re-joining needed.
-      if (canApprove && members?.length) {
+      if (canApprove) {
+        const repairStatus = document.getElementById('member-repair-status');
         try {
-          const restored = await reconcileTripMemberUids(tripId, members, trip?.memberUids);
+          const restored = await reconcileTripMemberUids(tripId, members);
+          if (isStale(token)) return;
           if (restored?.length) {
             if (Array.isArray(trip.memberUids)) trip.memberUids = [...new Set([...trip.memberUids, ...restored])];
-            toast.info(th(
-              `ซ่อมรายชื่อสมาชิกให้ ${restored.length} บัญชีแล้ว — สมาชิกจะเห็นทริปนี้เมื่อเข้าสู่ระบบครั้งถัดไป`,
-              `Restored the trip listing for ${restored.length} account(s) — those members will see this trip at their next sign-in`));
+            if (repairStatus) repairStatus.textContent = th(`ซ่อมรายการบัญชีแล้ว ${restored.length} รายการ — ให้สมาชิกรีเฟรชและเข้าสู่ระบบด้วยบัญชีเดิม`, `Restored ${restored.length} account entries — members should refresh and sign in with their original account.`);
+          } else if (repairStatus) {
+            repairStatus.textContent = th('ตรวจรายการบัญชีแล้ว ไม่พบรายการที่ขาด — หากยังไม่เห็นทริป ให้ตรวจว่าล็อกอินด้วยบัญชีเดิม', 'No missing account entries found. If a trip is still missing, check the original sign-in account.');
           }
-        } catch (e) { console.warn('memberUids reconcile failed', e?.code || e?.message); }
+        } catch (e) {
+          console.warn('memberUids reconcile failed', e?.code || e?.message);
+          if (repairStatus) repairStatus.textContent = th('ตรวจหรือซ่อมรายการบัญชีไม่สำเร็จ — ตรวจการเชื่อมต่อและ Firestore Rules แล้วเปิดหน้านี้ใหม่', 'Could not check or repair account entries — check connectivity and Firestore Rules, then reopen this page.');
+        }
       }
       if (!members.length) {
         list.innerHTML = renderEmptyState({
@@ -12167,6 +12172,8 @@ async function renderMembers(params) {
     } catch (e) {
       if (isStale(token)) return;
       console.error(e);
+      const repairStatus = document.getElementById('member-repair-status');
+      if (repairStatus) repairStatus.textContent = th('โหลดรายชื่อไม่สำเร็จ จึงยังตรวจการเชื่อมโยงไม่ได้', 'Could not load members, so access could not be checked.');
       list.innerHTML = `<div class="card p-4 text-center"><p class="text-sm font-semibold" style="color:var(--danger);">${escapeHtml(e.message)}</p><button id="mem-retry" class="btn btn-secondary btn-sm mt-3">${icon('refresh-cw', 'w-4 h-4')} ${th('ลองใหม่','Retry')}</button></div>`;
       bind('mem-retry', 'click', loadMembersList);
       queueIcons();

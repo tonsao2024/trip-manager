@@ -12,6 +12,7 @@ on:
     paths:
       - 'firestore.rules'
       - 'firestore.indexes.json'
+      - 'tests/firestore-indexes.test.mjs'
       - 'firebase.json'
       - '.github/workflows/deploy-firebase.yml'
   workflow_dispatch:
@@ -29,6 +30,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate Firestore index configuration
+        run: node --test tests/firestore-indexes.test.mjs
 
       - name: Which credential is available?
         id: creds
