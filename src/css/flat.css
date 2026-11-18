@@ -819,6 +819,46 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary-raw); 
   border-radius: var(--radius-lg);
   box-shadow: var(--overlay-shadow-strong);
 }
+
+/* v44 — one ✕, top-right, on every popup (sheet or dialog, every page).
+   The two popup constructors in components/modal.js inject it, so no window can
+   be missed; the ✕ glyph is text, not an icon-font request, so it survives a
+   failed CDN load. Space is reserved so it never sits on a title:
+   sheets keep the drag-handle band on phones and gain 40px of headroom on
+   desktop, dialogs gain a 46px top inset. */
+/* The sheet is already `position: fixed` (its own containing block), so only the
+   dialog needs a positioning context for the ✕. */
+.modal-card { position: relative; }
+.popup-close {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.16s var(--ease), color 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+.popup-close:hover { background: var(--surface-2); color: var(--text-strong); border-color: var(--border-strong); }
+.popup-close:active { background: var(--surface-2); }
+.popup-close:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.modal-card.has-popup-close { padding-top: 46px; }
+.modal-card.has-popup-close .popup-close { top: 10px; right: 12px; }
+@media (min-width: 768px) {
+  /* Desktop sheets have no handle band: start the content below the ✕. */
+  .bottom-sheet.has-popup-close .bottom-sheet-content { padding-top: 40px; }
+}
 .sheet-panel { background: var(--surface); border-color: var(--border); box-shadow: var(--overlay-shadow-strong); }
 
 .toast {
@@ -3468,3 +3508,92 @@ body::before {
   .rcpt-who-row { flex-wrap: wrap; }
   .rcpt-who-amount { margin-left: 38px; }
 }
+
+/* ====================================================================== *
+ * v44 — “รายการล่าสุด” + “สมาชิก” interiors, compact and orderly
+ *
+ * Owner: “ปรับเนื้อหาด้านในของการ์ด รายการล่าสุด ให้กระชับขึ้น เป็นระเบียบมาก
+ * ขึ้น และ การ์ด สมาชิก … ให้กระชับขึ้น”, plus “ความสูงของ 2 การ์ด (การจอง +
+ * รายการล่าสุด) รวมกันต้องไม่เกิน การ์ดสมาชิก”. Both cards are list cards, so
+ * both lose their third text line: a row is now name/title + ONE quiet facts
+ * line, with the money (and its secondary-currency chip) on the same line as
+ * the facts instead of stacked under it. Density comes from rhythm, not from
+ * shrinking type: title 13.5px, facts 11.5px, 7px/10px padding, 5px gap.
+ * ====================================================================== */
+#dashboard-view .expense-row,
+#dashboard-view .member-row {
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  margin-bottom: 5px;
+  border-radius: 9px;
+}
+/* The pair “การจอง + รายการล่าสุด” must stay shorter than the members card, so
+   the expense rows are a notch tighter than the member rows: 5px of air instead
+   of 7px, which is what buys the four rows their ~25px of headroom. */
+#dashboard-view .expense-row { padding: 5px 10px; }
+#dashboard-view .expense-row:last-child,
+#dashboard-view .member-row:last-child {
+  margin-bottom: 0;
+  padding-bottom: 5px;
+}
+#dashboard-view .member-row:last-child { padding-bottom: 7px; }
+
+/* --- recent expenses: title (+ ประมาณการ) / facts · money ---------------- */
+#dashboard-view .expense-row-main { display: block; flex: 1 1 auto; min-width: 0; text-align: left; }
+#dashboard-view .expense-row-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+#dashboard-view .expense-row-line .expense-row-title { flex: 0 1 auto; min-width: 0; font-size: 13.5px; line-height: 1.4; }
+#dashboard-view .expense-row-est {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-secondary);
+}
+#dashboard-view .expense-row-meta { margin-top: 1px; font-size: 11.5px; line-height: 1.4; }
+/* The money keeps its own width (never squeezed by the title column, which would
+   break “฿2,880.00” in half) and stays on one line: the title/facts column is the
+   one allowed to truncate. */
+#dashboard-view .expense-row-amount { flex: 0 0 auto; max-width: 62%; font-size: 13.5px; line-height: 1.3; white-space: nowrap; }
+#dashboard-view .expense-row-amount .money-dual { flex-wrap: nowrap; justify-content: flex-end; align-items: baseline; }
+@media (max-width: 560px) {
+  #dashboard-view .expense-row-amount { font-size: 12.5px; }
+  #dashboard-view .expense-row-amount .money-orig { font-size: 11px; }
+}
+@media (max-width: 380px) {
+  #dashboard-view .expense-row-amount { font-size: 11.5px; }
+  #dashboard-view .expense-row-amount .money-orig { font-size: 10px; }
+}
+
+/* --- members: name (+ คุณ) / paid · share · ¥ — net on the right ---------
+   Line heights stay at 1.4 for every clipped Thai line (design rule: a tighter
+   line box clips ที่ / ปู่ / ฎ). */
+#dashboard-view .member-row-text { flex: 1 1 auto; min-width: 0; }
+#dashboard-view .member-row-name { font-size: 13.5px; line-height: 1.4; }
+#dashboard-view .member-row-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 1px;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+#dashboard-view .member-row-facts { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#dashboard-view .member-row-sub .money-orig { flex: 0 0 auto; font-size: 11px; }
+#dashboard-view .member-row-net { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+#dashboard-view .member-row-amount { font-size: 13.5px; line-height: 1.3; }
+#dashboard-view .member-row-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+#dashboard-view .member-row-hint .money-orig { font-size: 11px; }
+#dashboard-view .member-row .you-badge { padding: 0 6px; font-size: 10.5px; line-height: 15px; }

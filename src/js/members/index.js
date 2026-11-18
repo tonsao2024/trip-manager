@@ -269,3 +269,44 @@ export function deleteMember(tripId, memberId, options = {}) {
 export function reorderMembers(tripId, ids, userId) {
   return withMemberInvalidation(tripId, () => reorderMembersInner(tripId, ids, userId));
 }
+
+/**
+ * Fill in missing profile photos (v44).
+ *
+ * The owner asked the debt map to show “ภาพโปรไฟล์จริง” for every member. A member
+ * document stores the photo that was on the account when the person joined, but
+ * older rows (and everyone who joined before photos were copied) have none — so
+ * the map fell back to an initial. The public profile directory is the same source
+ * the join flow reads, so it is asked for the missing pictures here.
+ *
+ * Best-effort by design: a denied or offline read just leaves the initial, and
+ * results are cached for the session so opening the page again costs nothing.
+ */
+const profilePhotoCache = new Map();
+
+export async function hydrateMemberPhotos(members = []) {
+  if (!db) return members || [];
+  const missing = (members || []).filter(m => m && !m.photoURL && m.uid);
+  if (!missing.length) return members || [];
+  const found = new Map();
+  await Promise.all(missing.map(async (member) => {
+    const uid = member.uid;
+    if (profilePhotoCache.has(uid)) {
+      const cached = profilePhotoCache.get(uid);
+      if (cached) found.set(member.id, cached);
+      return;
+    }
+    let photo = '';
+    for (const path of [`publicProfiles/${uid}`, `users/${uid}`]) {
+      try {
+        const snap = await getDoc(doc(db, path));
+        const value = snap.exists() ? String(snap.data()?.photoURL || '') : '';
+        if (value) { photo = value; break; }
+      } catch { /* not readable for this account — try the next source */ }
+    }
+    profilePhotoCache.set(uid, photo);
+    if (photo) found.set(member.id, photo);
+  }));
+  if (!found.size) return members || [];
+  return (members || []).map(member => (found.has(member.id) ? { ...member, photoURL: found.get(member.id) } : member));
+}

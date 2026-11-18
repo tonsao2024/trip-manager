@@ -1,4 +1,9 @@
-import { debtMapColor, debtMapLabelAngle, layoutDebtMapAmounts } from '../../src/js/utils/debtMap.js';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { debtMapColor, debtMapLabelAngle, layoutDebtMapAmounts, debtMapEdgeRuns } from '../../src/js/utils/debtMap.js';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
@@ -113,4 +118,47 @@ export function testCrowdedDebtMapFallsBackToNumbers() {
   );
   assert(hopeless[0].kind === 'none', 'a broken canvas degrades to the list instead of throwing');
   assert(hopeless[0].box === null, 'a “none” placement has no collision box');
+}
+
+// v44 (owner: “ชื่อสมาชิกในแผนภาพ ไม่ควรโดนเส้นบัง”): a transfer line is lifted out
+// of the way of every member name / role label, instead of being painted through it.
+export function testDebtMapEdgeBreaksAroundMemberNames() {
+  const edge = { start: { x: 60, y: 250 }, control: { x: 410, y: 150 }, end: { x: 760, y: 250 } };
+
+  // No label in the way → one unbroken run that starts at the payer.
+  const plain = debtMapEdgeRuns(edge, [], {});
+  assert(plain.length === 1, 'a clear arc is drawn as one run');
+  assert(plain[0].startsWith('M60.0,250.0'), 'the run starts at the payer');
+
+  // A member name sits right on the arc → the stroke stops on both sides of it.
+  const nameBox = { left: 380, right: 442, top: 175, bottom: 200 };
+  const runs = debtMapEdgeRuns(edge, [nameBox], { gap: 5 });
+  assert(runs.length === 2, `the arc is cut in two around the name (got ${runs.length})`);
+  const points = runs.flatMap(run => run.slice(1).split('L').map(pair => pair.split(',').map(Number)));
+  for (const [x, y] of points) {
+    assert(x < nameBox.left - 4 || x > nameBox.right + 4 || y < nameBox.top - 4 || y > nameBox.bottom + 4,
+      'no drawn point sits on the name');
+  }
+  // The arrow head must stay on the line: the last run still ends at the receiver.
+  const last = runs[runs.length - 1];
+  assert(last.trim().endsWith('760.0,250.0'), 'the last run still reaches the receiver');
+  assert(runs[0].startsWith('M60.0,250.0'), 'the first run still leaves the payer');
+}
+
+// The labels themselves are haloed in the drawing's background colour, and the
+// diagram can be exported as a PNG (the two other v44 debt-map requests).
+export function testDebtMapLabelsAndExportAreWired() {
+  const appSource = readFileSync(path.join(here, '../../src/js/app.js'), 'utf8');
+  const css = readFileSync(path.join(here, '../../src/css/components.css'), 'utf8');
+  const exportsSource = readFileSync(path.join(here, '../../src/js/exports/index.js'), 'utf8');
+  assert(/class="debt-map-label"/.test(appSource), 'the member name and role carry the halo class');
+  assert(/\.debt-map-label\s*\{[^}]*paint-order:\s*stroke fill/.test(css), 'the halo is painted behind the glyphs');
+  assert(/\.debt-map-label\s*\{[^}]*stroke:\s*var\(--bg-secondary\)/.test(css), 'the halo matches the drawing background');
+  assert(/id="export-debt-map-png"/.test(appSource), 'the diagram heading carries an export button');
+  assert(/exportSvgToPng\(svg, `debt-map-/.test(appSource), 'the button rasterises the diagram itself');
+  assert(/export async function exportSvgToPng/.test(exportsSource), 'the SVG → PNG helper exists');
+  assert(/@font-face\{font-family/.test(exportsSource), 'the export embeds the fonts, so Thai labels do not turn into boxes');
+  // Real profile photos: the map already draws <image> for a member with a photo,
+  // and member rows that predate photos are backfilled from the account directory.
+  assert(/hydrateMemberPhotos/.test(appSource), 'the settlement page backfills missing profile photos');
 }

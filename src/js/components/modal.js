@@ -13,6 +13,19 @@ function unlockBodyScroll() {
   document.body.style.paddingRight = '';
 }
 
+/**
+ * v44 — every popup carries the same ✕ in its top-right corner.
+ *
+ * The owner asked for one predictable way out of *any* window, on every page, so
+ * the control is created here (the only two popup constructors in the app) rather
+ * than pasted into 40-odd sheets. A literal ✕ glyph is used instead of a lucide
+ * icon: the icon font is loaded from a CDN and a popup must stay closable even
+ * when that request fails.
+ */
+function closeButtonHtml() {
+  return `<button type="button" class="popup-close no-export" data-popup-close aria-label="ปิด / Close" title="ปิด / Close"><span aria-hidden="true">✕</span></button>`;
+}
+
 export function showBottomSheet(htmlContent, { onClose } = {}) {
   // v18.2: a sheet that is animating out stays in the DOM for ~230 ms. If the app
   // opens the next sheet in that window (tapping a name, switching person, …) two
@@ -23,8 +36,8 @@ export function showBottomSheet(htmlContent, { onClose } = {}) {
   const backdrop = document.createElement('div');
   backdrop.className = 'bottom-sheet-backdrop animate-fadeIn';
   const sheet = document.createElement('div');
-  sheet.className = 'bottom-sheet';
-  sheet.innerHTML = `<div class="bottom-sheet-handle"></div><div class="bottom-sheet-content">${htmlContent}</div>`;
+  sheet.className = 'bottom-sheet has-popup-close';
+  sheet.innerHTML = `${closeButtonHtml()}<div class="bottom-sheet-handle"></div><div class="bottom-sheet-content">${htmlContent}</div>`;
 
   let closed = false;
   const close = () => {
@@ -61,6 +74,7 @@ export function showBottomSheet(htmlContent, { onClose } = {}) {
 
   // Close handle click
   sheet.querySelector('.bottom-sheet-handle')?.addEventListener('click', close);
+  sheet.querySelector('[data-popup-close]')?.addEventListener('click', close);
 
   // Render any lucide icons inside the sheet
   if (window.lucide) { try { lucide.createIcons(); } catch {} }
@@ -73,9 +87,9 @@ export function showModal(htmlContent, { closable = true, onClose, className = '
   backdrop.className = 'modal-backdrop animate-fadeIn';
 
   const modal = document.createElement('div');
-  modal.className = `modal-card animate-popIn${className ? ` ${className}` : ''}`;
+  modal.className = `modal-card animate-popIn${closable ? ' has-popup-close' : ''}${className ? ` ${className}` : ''}`;
   if (maxWidth) modal.style.maxWidth = maxWidth;
-  modal.innerHTML = htmlContent;
+  modal.innerHTML = `${closable ? closeButtonHtml() : ''}${htmlContent}`;
 
   let closed = false;
   const close = () => {
@@ -94,6 +108,7 @@ export function showModal(htmlContent, { closable = true, onClose, className = '
     }, 210);
   };
   if (closable) backdrop.onclick = (e) => { if (e.target === backdrop) close(); };
+  if (closable) modal.querySelector('[data-popup-close]')?.addEventListener('click', close);
 
   const esc = (e) => { if (e.key === 'Escape' && closable) { close(); document.removeEventListener('keydown', esc); } };
   document.addEventListener('keydown', esc);

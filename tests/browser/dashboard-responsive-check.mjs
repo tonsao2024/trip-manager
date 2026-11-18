@@ -78,6 +78,18 @@ async function inspect(page, width, state) {
   if (result.overflow > 1) failures.push(`horizontal overflow ${result.overflow}px`);
   if (result.outside.length) failures.push(`outside/empty ${result.outside.join(',')}`);
   if (!result.cover || result.cover.width < result.boardWidth - 2 || result.cover.bottom > result.titleTop + 1) failures.push('cover not above title or too narrow');
+  /* v44 — “การจองที่กำลังจะถึง” lives beside “รายการล่าสุด”, and the two together
+     are no taller than the members card (owner's height ceiling). */
+  const byName = Object.fromEntries(result.rects.map(r => [r.name, r]));
+  const bookings = byName.bookings, recent = byName['recent-expenses'], members = byName.members;
+  if (bookings && recent) {
+    const sameRow = Math.abs(bookings.top - recent.top) <= 1;
+    const sideBySide = Math.abs(bookings.right - recent.left) <= 20 || Math.abs(recent.right - bookings.left) <= 20;
+    if (width >= 761 && !(sameRow && sideBySide)) failures.push('bookings + recent-expenses are not one pair');
+    if (members && Math.max(bookings.height, recent.height) > members.height) {
+      failures.push(`booking/recent pair is taller than members (${Math.round(Math.max(bookings.height, recent.height))} > ${Math.round(members.height)})`);
+    }
+  }
   console.log(`${width}px ${state}: ${failures.length ? 'FAIL '+failures.join('; ') : 'PASS'} (${result.count} cards, grid ${result.columns}, overflow ${result.overflow}px)`);
   return {width,state,...result,failures};
 }

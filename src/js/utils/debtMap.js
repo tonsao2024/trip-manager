@@ -121,3 +121,59 @@ export function debtMapColor(index = 0) {
   const hue = ((Math.round(numericIndex * 137.508 + 203) % 360) + 360) % 360;
   return `hsl(${hue} 76% 43%)`;
 }
+
+/**
+ * The visible pieces of one transfer arc, with the member labels cut out.
+ *
+ * v44 (owner: “ชื่อสมาชิกในแผนภาพ ไม่ควรโดนเส้นบัง …”) — the amount plates were
+ * already kept off the names, but the *lines* themselves still ran straight
+ * through a person's name. A stroke across Thai text makes the label hard to read
+ * even when the text is painted on top of it, so each arc is now sampled and
+ * split into the runs that stay clear of every name/role box. The result is a
+ * clean gap where a line meets a label — the same trick printed maps use.
+ *
+ * Each run is a polyline `d` string (96 samples of a quadratic are visually
+ * identical to the curve). The first and last runs are always kept so the line
+ * still leaves the payer and reaches the receiver's arrow head.
+ *
+ * @param {{start:{x,y},control:{x,y},end:{x,y}}} edge
+ * @param {Array<{left:number,top:number,right:number,bottom:number}>} obstacles text boxes
+ * @param {{samples?:number,gap?:number,minRun?:number}} [options]
+ * @returns {string[]} one `d` per visible run, in drawing order
+ */
+export function debtMapEdgeRuns(edge, obstacles = [], { samples = 96, gap = 5, minRun = 7 } = {}) {
+  if (!edge?.start || !edge?.control || !edge?.end) return [];
+  const boxes = (obstacles || []).filter(Boolean);
+  if (!boxes.length) {
+    const points = [];
+    for (let i = 0; i <= samples; i++) points.push(curvePoint(edge.start, edge.control, edge.end, i / samples));
+    return [points.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')];
+  }
+  const blocked = (point) => boxes.some(box =>
+    point.x >= box.left - gap && point.x <= box.right + gap &&
+    point.y >= box.top - gap && point.y <= box.bottom + gap
+  );
+  const runs = [];
+  let current = [];
+  let sawBlocked = false;
+  for (let i = 0; i <= samples; i++) {
+    const point = curvePoint(edge.start, edge.control, edge.end, i / samples);
+    if (blocked(point)) {
+      sawBlocked = true;
+      if (current.length) runs.push(current);
+      current = [];
+    } else {
+      current.push(point);
+    }
+  }
+  if (current.length) runs.push(current);
+
+  // No name in the way → keep the single unbroken curve.
+  if (!sawBlocked) return [runs[0].map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')];
+
+  const length = (run) => run.reduce((sum, p, i) => (i ? sum + Math.hypot(p.x - run[i - 1].x, p.y - run[i - 1].y) : 0), 0);
+  const kept = runs.filter((run, i) => i === 0 || i === runs.length - 1 || (run.length > 1 && length(run) >= minRun));
+  return kept
+    .filter(run => run.length > 1)
+    .map(run => run.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
+}
