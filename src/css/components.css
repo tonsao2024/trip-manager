@@ -62,7 +62,7 @@ svg.lucide, i[data-lucide] + svg { flex-shrink: 0; display: inline-block; vertic
 }
 .input:hover { border-color: var(--border-strong); }
 .input:focus {
-  background: var(--card);
+  background-color: var(--card);
 }
 .input-hint { font-size: 12px; line-height: 1.4; }
 /* Select chevron = the app's chevron-down line icon (16px, stroke 1.5) in the

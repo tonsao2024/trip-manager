@@ -419,6 +419,7 @@ export async function createTrip(data, userId) {
     timezone: data.timezone || 'Asia/Bangkok',
     baseCurrency: data.baseCurrency || 'THB',
     coverImage: coverImageUrl,
+    ...(data.coverPosition ? { coverPosition: data.coverPosition } : {}),
     themeColor: data.themeColor || brandPrimary(), // brand-locked since v16 (kept for older exports)
     status: 'draft',
     memberUids: [userId],
@@ -649,6 +650,7 @@ export async function duplicateTrip(sourceTrip, userId, { nameSuffix = ' (สำ
     timezone: sourceTrip.timezone || 'Asia/Bangkok',
     baseCurrency: sourceTrip.baseCurrency || 'THB',
     coverImage: sourceTrip.coverImage || '',
+    coverPosition: sourceTrip.coverPosition,
     themeColor: sourceTrip.themeColor || brandPrimary(),
     creatorName: 'Admin'
   }, userId);

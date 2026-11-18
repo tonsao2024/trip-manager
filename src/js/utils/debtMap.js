@@ -177,3 +177,18 @@ export function debtMapEdgeRuns(edge, obstacles = [], { samples = 96, gap = 5, m
     .filter(run => run.length > 1)
     .map(run => run.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
 }
+
+/** Place amounts that could not fit on their arcs in a dedicated diagram column.
+ * The caller reserves this column and enough height; no plate overlaps a node. */
+export function layoutDebtMapCallouts(placements, edges, graphWidth, { charWidth = 7, labelHeight = 23 } = {}) {
+  let row = 0;
+  return placements.map((position, i) => {
+    if (position.kind === 'label') return position;
+    const label = String(edges[i]?.label ?? '');
+    const width = widthFor(label, charWidth);
+    const x = graphWidth + 18 + width / 2;
+    const y = 22 + row++ * (labelHeight + 8);
+    return { kind: 'callout', x, y, angle: 0, width, height: labelHeight, label,
+      box: boxFor({ x, y, width, height: labelHeight }) };
+  });
+}
