@@ -74,7 +74,7 @@
        menu is shaped here. It loads after the legacy sheets and before the
        compiled Tailwind utilities; Settings → Appearance can re-scale radius /
        density / depth live. -->
-  <link rel="stylesheet" href="./src/css/flat.css?v=41&amp;theme-fix=3">
+  <link rel="stylesheet" href="./src/css/flat.css?v=41&amp;theme-fix=3&amp;dashboard-fix=1">
   <!-- Tailwind: precompiled static utilities (tools/build-assets.mjs).
        Replaces the Play CDN runtime compiler. Loaded AFTER the app stylesheets
        to keep the same cascade order the CDN's injected <style> used to have. -->
@@ -438,6 +438,6 @@
   <script src="./fcm-vapid.js"></script>
 
   <!-- App (cache-busted) -->
-  <script type="module" src="./src/js/app.js?v=41&amp;expense-fix=3"></script>
+  <script type="module" src="./src/js/app.js?v=41&amp;expense-fix=3&amp;dashboard-fix=1"></script>
 </body>
 </html>

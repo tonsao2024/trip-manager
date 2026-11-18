@@ -1548,6 +1548,14 @@ body:has(#expense-form .form-submit-row) .back-to-top {
 @media (max-width: 760px) {
   .dashboard-board { grid-template-columns: minmax(0, 1fr); gap: 12px; }
 }
+@media (min-width: 761px) {
+  /* Keep adjacent pairs on one row, even if preceding cards are hidden, without
+     changing the card order saved by the trip manager. */
+  .dashboard-board > [data-dashboard-widget="estimate"]:has(+ [data-dashboard-widget="category"]:not(.is-hidden)),
+  .dashboard-board > [data-dashboard-widget="bookings"]:has(+ [data-dashboard-widget="recent-expenses"]:not(.is-hidden)) {
+    grid-column: 1;
+  }
+}
 /* v38: KPI strip — three equal tiles with a clean gutter that matches the
    dashboard board gap for visual rhythm. */
 .stat-grid,

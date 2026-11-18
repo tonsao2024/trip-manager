@@ -38,22 +38,22 @@ A member document carries a `permissions` map, edited in **สมาชิก �
 | --- | --- | --- |
 | `canEditItinerary` | แก้ไขแผนการเดินทาง | days, `itineraryItems`, sticky `notes` |
 | `canEditExpense` | แก้ไขค่าใช้จ่าย | `expenses` (+ `lineItems`), `settlements` (+ `payments`), `categories`, `cards`, `exchangeRates`, `transfers` |
-| `canManageMembers` | จัดการสมาชิก | member list, join requests, member PINs — a **co-admin for people only** |
+| `canManageMembers` | จัดการสมาชิก | member list, join requests, member PINs, and shared dashboard order/visibility |
 
 Defaults written by `buildMemberDoc()`: `canEditItinerary: true`, `canEditExpense: true`,
 `canManageMembers: false` (admins are always `true`).
 
 **Backward compatibility (important):** a member document written *before* v30 has no
-`permissions` map. The rules treat a **missing switch as allowed** (`permissionOn()` only blocks
-an explicit `false`), so publishing the new rules cannot lock out existing members on day one.
-An explicit `false` — or the `viewer` role — blocks the write.
+`permissions` map. A missing itinerary or expense switch still allows the corresponding edits. An explicit
+`false` — or the `viewer` role — blocks the write. For non-admins, `canManageMembers`
+must be explicitly `true`.
 
 ## 3) Admin vs member vs viewer — the matrix
 
 | Area | trip admin | member (default) | member with the switch off | viewer |
 | --- | --- | --- | --- | --- |
 | Trip details, dates, budget, currency, status, cover (`trips/{id}`) | ✅ | ❌ | ❌ | ❌ |
-| Shared dashboard layout (`dashboardLayout`, `dashboardHidden`) | ✅ | ✅ (not a viewer) | ✅ (not a viewer) | ❌ |
+| Shared dashboard layout (`dashboardLayout`, `dashboardHidden`) | ✅ | ✅ only if `canManageMembers` | ❌ if `canManageMembers = false` | read only |
 | Default map layer (`defaultMapLayer`) | ✅ | ✅ if `canEditItinerary` | ❌ if `canEditItinerary = false` | ❌ |
 | Trip payment cards (`cards`) | ✅ | ✅ if `canEditExpense` | ❌ if `canEditExpense = false` | ❌ |
 | Invite code / open-closed invites | ✅ rotate & close | ❌ (v30 fix — was open to every member before) | ❌ | ❌ |
@@ -125,7 +125,11 @@ callables apply these tighter boundaries:
    Rules require the preview to match the trip's current code, name, and dates. The minimal preview
    contains only `tripId`, name, and start/end dates; the full trip is readable only after membership.
 4. **Inactive/removed members** — a member document with `status: 'inactive'` no longer grants trip reads, even if a stale `memberUids` entry exists. Trip-list queries also check the member status; client deactivation/deletion updates the member record and trip UID list atomically.
-5. **Shared trip fields** — non-admin writes to the trip document are limited to dashboard layout/visibility for non-viewers, the default map layer when `canEditItinerary` is on, and payment cards when `canEditExpense` is on. Trip details, budgets, currency, status, cover, and invite settings are admin-only; `createdBy` is immutable through client writes. Delegated member managers only change membership fields through member operations.
+5. **Shared trip fields** — non-admin writes to the trip document are limited to dashboard layout/visibility
+   for delegated member managers, the default map layer when `canEditItinerary` is on, and payment cards
+   when `canEditExpense` is on. All trip members read the same saved dashboard. Trip details, budgets,
+   currency, status, cover, and invite settings are admin-only; `createdBy` is immutable through client
+   writes. Delegated managers change `memberUids` through member operations.
 6. **Notification spam** — any member can create feed items (with their own uid on them). Size
    caps + hourly pruning + admin delete keep it bounded; the author is visible to everybody.
 7. **Client clock** — the daily summary decides “today” from the trip timezone on the client and

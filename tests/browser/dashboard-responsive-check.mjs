@@ -81,6 +81,20 @@ async function inspect(page, width, state) {
   /* v44 — “การจองที่กำลังจะถึง” lives beside “รายการล่าสุด”, and the two together
      are no taller than the members card (owner's height ceiling). */
   const byName = Object.fromEntries(result.rects.map(r => [r.name, r]));
+  const { kpis, teams, estimate, category } = byName;
+  const cardOrder = result.rects.map(r => r.name);
+  const summaryIndex = cardOrder.indexOf('kpis');
+  if (summaryIndex < 0 || cardOrder.slice(summaryIndex, summaryIndex + 4).join() !== 'kpis,teams,estimate,category') {
+    failures.push('spending cards are not together under the summary');
+  } else {
+    if (teams.top < kpis.bottom - 1 || estimate.top < teams.bottom - 1 || category.top < teams.bottom - 1) {
+      failures.push('spending cards are out of row order');
+    }
+    if (width >= 761 && (Math.abs(estimate.top - category.top) > 1 || category.left < estimate.right - 1)) {
+      failures.push('estimate and category are not side by side in that order');
+    }
+    if (width <= 760 && category.top < estimate.bottom - 1) failures.push('category is not below estimate on mobile');
+  }
   const bookings = byName.bookings, recent = byName['recent-expenses'], members = byName.members;
   if (bookings && recent) {
     const sameRow = Math.abs(bookings.top - recent.top) <= 1;
@@ -110,9 +124,9 @@ async function main() {
       await page.setViewport({width,height:900}); await sleep(350);
       report.push(await inspect(page,width,'default'));
     }
-    // Hide a card via the real picker, so the real add button and persistence path run.
+    // Hiding one preceding half-width card must not split the bookings/recent row.
     await page.click('#dash-more-btn'); await page.click('#dash-widgets-btn');
-    await page.click('#dash-pick-list [data-pick="weather"]');
+    await page.click('#dash-pick-list [data-pick="current"]');
     await page.click('#dash-pick-done'); await sleep(500);
     for (const width of [320,375,760,761,768,1024,1440,1920]) {
       await page.setViewport({width,height:900}); await sleep(350);
@@ -130,7 +144,7 @@ async function main() {
     }
     await page.click('#dash-layout-done'); await sleep(350);
     report.push(await inspect(page,1280,'after-arrange'));
-    await page.click('#dash-add-tile'); await page.click('#dash-pick-list [data-pick=\"weather\"]');
+    await page.click('#dash-add-tile'); await page.click('#dash-pick-list [data-pick=\"current\"]');
     await page.click('#dash-pick-done'); await sleep(500);
     report.push(await inspect(page,1280,'restored-card'));
     fs.writeFileSync(path.join(shotDir,'report.json'), JSON.stringify(report,null,2));

@@ -38,9 +38,9 @@ export function testNoMeasuredMasonryLeft() {
   ok(!/packDashboard/.test(appSource), 'cards are placed by the grid, not by measured rows');
 }
 
-export function testSavedOrderStillDrivesPairing() {
-  ok(/const applyDashboardOrder = \(raw\) => \{[\s\S]*?dashboardBoard\.appendChild\(widget\)/.test(appSource),
-    'the saved order still re-appends the cards, which is what decides the pairs');
+export function testSavedOrderDrivesTheBoard() {
+  ok(/const applyDashboardOrder = \(raw\) => \{\s*const order = normalizeWidgetOrder\(raw\);[\s\S]*?dashboardBoard\.appendChild\(widget\)/.test(appSource),
+    'the board paints the stored order, with no card moved to force a pair');
   ok(/addTile\) dashboardBoard\.appendChild\(addTile\)/.test(appSource),
     'the “add card” tile stays after the cards');
 }

@@ -2261,33 +2261,71 @@ console.log('\n▶ v16 trip tools — bookings + calendar export');
 
 console.log('\n▶ dashboard widgets — shared drag layout');
 {
-  const sortableStub = await import(stub('sortable.mjs'));
-  const live = sortableStub.__sortable;
-  live.live = 0; live.created = 0; live.instances.length = 0;
-  await goto('#/trip/t1/dashboard');
+  const { __sortable: live } = await import(stub('sortable.mjs'));
+  const boardOrder = () => qa('#dashboard-board > [data-dashboard-widget]').map(el => el.dataset.dashboardWidget);
+  const showsOrder = (order) => boardOrder().join() === order.join();
+  const admin = authStub.__currentUser;
+  const tripPath = 'trips/t1';
+  const dashboardRoute = '#/trip/t1/dashboard';
+  await goto(dashboardRoute);
   await waitFor(() => q('#dashboard-board [data-dashboard-widget]'), { label: 'dashboard widget board' });
-  const widgetNodes = qa('#dashboard-board > [data-dashboard-widget]');
-  check(widgetNodes.length >= 10, `dashboard: all cards are named sortable widgets (${widgetNodes.length})`);
-  check(!!q('#dash-layout-edit-btn') && !!q('#dash-layout-reset'), 'dashboard: arrangement controls are available');
+  const originalOrder = boardOrder();
+  check(originalOrder.length >= 10, `dashboard: all cards are named sortable widgets (${originalOrder.length})`);
+  check(originalOrder.slice(2, 6).join() === 'kpis,teams,estimate,category', 'dashboard: spending cards are together directly under the summary');
   check(live.live === 0, 'dashboard: drag handles stay locked outside edit mode');
   await click('#dash-layout-edit-btn');
-  await waitFor(() => live.live === 1, { label: 'dashboard sortable instance' }).catch(() => {});
-  check(live.live === 1 && q('#dashboard-view')?.classList.contains('dashboard-layout-editing'), 'dashboard: edit mode enables dragging');
-  const originalOrder = qa('#dashboard-board > [data-dashboard-widget]').map(el => el.dataset.dashboardWidget);
+  await waitFor(() => live.live === 1, { label: 'dashboard sortable instance' });
+  check(q('#dashboard-view').classList.contains('dashboard-layout-editing'), 'dashboard: the admin can arrange cards');
   const draggedOrder = [...originalOrder].reverse();
-  draggedOrder.forEach(key => {
-    const node = q(`#dashboard-board [data-dashboard-widget="${key}"]`);
-    if (node) q('#dashboard-board').appendChild(node);
-  });
-  const instance = live.instances[live.instances.length - 1];
-  await instance?.options?.onEnd?.();
-  await waitFor(() => JSON.stringify(fsdb.__store.get('trips/t1')?.dashboardLayout) === JSON.stringify(draggedOrder), { label: 'shared dashboard layout saved' }).catch(() => {});
-  check(JSON.stringify(fsdb.__store.get('trips/t1')?.dashboardLayout) === JSON.stringify(draggedOrder), 'dashboard: drag order persists on the shared trip document');
-  await click('#dash-layout-reset');
-  await waitFor(() => fsdb.__store.get('trips/t1')?.dashboardLayout?.[0] === 'countdown', { label: 'dashboard layout reset' }).catch(() => {});
-  check(fsdb.__store.get('trips/t1')?.dashboardLayout?.[0] === 'countdown', 'dashboard: reset restores the default card order');
+  const drag = live.instances.at(-1).options;
+  drag.onStart();
+  for (const key of draggedOrder) q('#dashboard-board').appendChild(q(`[data-dashboard-widget="${key}"]`));
+  await drag.onEnd({ oldIndex: 0, newIndex: draggedOrder.length - 1 });
+  check(fsdb.__dump(tripPath)?.dashboardLayout?.join() === draggedOrder.join(), 'dashboard: drag order persists on the shared trip document');
+  await click('#dash-layout-done');
+  check(live.live === 0 && showsOrder(draggedOrder), 'dashboard: Done leaves the exact saved order in place');
+
+  await goto('#/trips');
+  const member = { uid: 'u2', email: 'nun@test.com', displayName: 'นุ่น', photoURL: null };
+  authStub.__emitAuth(member);
+  await goto(dashboardRoute);
+  check(showsOrder(draggedOrder), 'dashboard: the member opens the board in the admin’s saved order');
+  check(!q('#dash-layout-edit-btn, #dash-widgets-btn, .dash-widget-handle'), 'dashboard: ordinary members cannot change the shared board');
+
+  // A manager changes the shared document while the member already has it open.
+  const remoteOrder = [...originalOrder.slice(2), ...originalOrder.slice(0, 2)];
+  fsdb.__write(tripPath, { dashboardLayout: remoteOrder, dashboardHidden: ['weather'] }, { merge: true });
+  await waitFor(() => showsOrder(remoteOrder), { label: 'live shared dashboard update' });
+  check(showsOrder(remoteOrder) && q('[data-dashboard-widget="weather"]').classList.contains('is-hidden'),
+    'dashboard: a member’s open board updates its order and visibility without a refresh');
+
+  const memberPath = `${tripPath}/members/${member.uid}`;
+  const originalMember = fsdb.__dump(memberPath);
+  fsdb.__seed(memberPath, { ...originalMember, role: 'member', permissions: { canManageMembers: true } });
+  const { clearLastPermissions } = await import(pathToFileURL(path.join(outDir, 'app.js')).href);
+  perms.clearPermissionsCache(); clearLastPermissions();
+  await goto(dashboardRoute);
+  await waitFor(() => q('#dash-layout-edit-btn'), { label: 'delegated manager dashboard' });
+  check(!q('#dash-edit-trip'), 'dashboard: delegated managers can arrange cards without other trip admin rights');
   await click('#dash-layout-edit-btn');
-  check(live.live === 0 && !q('#dashboard-view')?.classList.contains('dashboard-layout-editing'), 'dashboard: Done closes edit mode');
+  await waitFor(() => live.live === 1, { label: 'manager dashboard sortable' });
+  const managerDrag = live.instances.at(-1).options;
+  managerDrag.onStart();
+  fsdb.__write(tripPath, { dashboardLayout: draggedOrder, dashboardHidden: [] }, { merge: true });
+  await sleep(40);
+  check(showsOrder(remoteOrder), 'dashboard: a live update does not move cards under an active drag');
+  await managerDrag.onEnd({ oldIndex: 0, newIndex: 0 });
+  check(showsOrder(draggedOrder), 'dashboard: a cancelled drag picks up the latest shared order');
+  await click('#dash-layout-reset');
+  check(showsOrder(originalOrder) && fsdb.__dump(tripPath)?.dashboardLayout?.length === 0,
+    'dashboard: the manager can reset the trip to the new default card order');
+  await click('#dash-layout-done');
+
+  if (originalMember) fsdb.__seed(memberPath, originalMember);
+  else fsdb.__remove(memberPath);
+  perms.clearPermissionsCache(); clearLastPermissions();
+  authStub.__emitAuth(admin);
+  await goto('#/trips');
 }
 
 console.log('\n▶ v18.2 itinerary — clean toolbar + Excel import behind edit mode');
@@ -3426,7 +3464,7 @@ console.log('\n▶ v28 requests: no swipe deck, one debt map, compact footer, he
     'rules: plan writes require สิทธิ์ “แก้ไขแผนการเดินทาง”');
   check(/request\.resource\.data\.get\('permissions', \{\}\) == resource\.data\.get\('permissions', \{\}\)/.test(rules30),
     'rules: a member cannot grant themselves rights (self-update is profile-only)');
-  check(/function memberMayUpdateDashboard\(tripId\)/.test(rules30)
+  check(/function managerMayUpdateDashboard\(tripId\) \{[^}]*&& canManageMembers\(tripId\)/.test(rules30)
     && /function memberMayUpdateMapDefault\(tripId\)/.test(rules30)
     && /function memberMayUpdateCards\(tripId\)/.test(rules30),
     'rules: shared trip updates use field-specific capability checks');

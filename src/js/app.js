@@ -1,5 +1,5 @@
 import { bindMoneyInputs } from './utils/moneyInput.js';
-import { DASHBOARD_WIDGETS, DASHBOARD_WIDGET_KEYS, normalizeWidgetOrder, normalizeHiddenWidgets, pairWidgetRows } from './dashboard/widgets.js';
+import { DASHBOARD_WIDGETS, DASHBOARD_WIDGET_KEYS, normalizeWidgetOrder, normalizeHiddenWidgets } from './dashboard/widgets.js?v=2';
 import { ideaCategoryId, placeCategoryLabel, placeCategoryColor, placeCategoryIcon } from './utils/categories.js';
 import { attachMapExpand } from './maps/index.js';
 import { expenseUpdateForCost } from './utils/reservations.js';
@@ -3669,12 +3669,11 @@ async function renderDashboard(params) {
   const tripId = params.tripId;
   const token = beginRender();
   const lang = getLang();
-  await loadTrip(tripId);
+  const trip = await loadTrip(tripId);
+  if (!trip || isStale(token)) return;
+  const perms = await resolvePermsCached(tripId, trip).catch(() => ({}));
   if (isStale(token)) return;
-  const trip = currentTrip;
-  const perms = await resolvePermsCached(tripId, trip).catch(() => ({ isAdmin: false, isViewer: true }));
-  if (isStale(token)) return;
-  const canEditDashboard = !perms.isViewer;
+  const canEditDashboard = !currentUser?.isMemberSession && perms.canManageMembers;
   const currency = trip?.baseCurrency || 'THB';
   const th = (a, b) => (lang === 'th' ? a : b);
 
@@ -3714,14 +3713,14 @@ async function renderDashboard(params) {
         </div>
       </header>
 
-      <div id="dash-layout-tools" class="dash-layout-tools hidden">
-        <span>${th('ลากการ์ดจากแถบจับเพื่อจัดวาง การจัดวางจะซิงก์ทุกอุปกรณ์ในทริปนี้','Drag a card by its handle. The layout syncs across this trip’s devices.')}</span>
+      ${canEditDashboard ? `<div id="dash-layout-tools" class="dash-layout-tools hidden">
+        <span>${th('ลากการ์ดเพื่อจัดลำดับใหม่ สมาชิกทุกคนในทริปจะเห็นลำดับเดียวกัน','Drag cards to reorder them. Everyone on this trip will see the same order.')}</span>
         <div class="flex items-center gap-2">
           <span id="dash-layout-status" class="dash-layout-status" aria-live="polite"></span>
           <button id="dash-layout-reset" type="button" class="btn btn-ghost btn-sm">${th('คืนค่าเริ่มต้น','Reset')}</button>
           <button id="dash-layout-done" type="button" class="btn btn-primary btn-sm">${th('เสร็จสิ้น','Done')}</button>
         </div>
-      </div>
+      </div>` : ''}
 
       <div id="dashboard-board" class="dashboard-board">
         <section class="dash-widget dash-widget--half" data-dashboard-widget="countdown">
@@ -3755,6 +3754,37 @@ async function renderDashboard(params) {
               <div class="progress stat-bar"><div class="progress-bar" id="kpi-budget-bar" style="width:0%;"></div></div>
               <p class="kpi-sub" id="kpi-budget-sub"></p>
             </div>
+          </div>
+        </section>
+
+        <section class="dash-widget dash-widget--full" data-dashboard-widget="teams">
+          ${dragHandle(th('การ์ดทีม','teams card'))}
+          <div class="card p-4" id="dash-teams-card">
+            <div class="card-head">
+              <h3 class="card-title"><span class="row-icon tile-grey" aria-hidden="true">${icon('users-round', 'w-4 h-4')}</span>${th('ทีม · ค่าใช้จ่ายต่อคนและรวมทีม','Teams · cost per person and per team')}</h3>
+              <button id="dash-teams-link" type="button" class="btn btn-ghost btn-sm">${th('จัดการทีม','Manage teams')}</button>
+            </div>
+            <div id="team-board" class="team-board"><div class="skeleton h-16"></div></div>
+          </div>
+        </section>
+
+        <section class="dash-widget dash-widget--half" data-dashboard-widget="estimate">
+          ${dragHandle(th('การ์ดประมาณการเทียบจ่ายจริง','estimated vs actual card'))}
+          <div class="card p-4">
+            <div class="card-head"><h3 class="card-title"><span class="row-icon tile-green" aria-hidden="true">${icon('bar-chart-3', 'w-4 h-4')}</span>${th('ประมาณการเทียบจ่ายจริง','Estimated vs actual')}</h3></div>
+            <div id="estimate-compare"></div>
+            <div id="summary-stats" class="card-foot"></div>
+          </div>
+        </section>
+
+        <section class="dash-widget dash-widget--half" data-dashboard-widget="category">
+          ${dragHandle(th('การ์ดค่าใช้จ่ายตามหมวด','spend by category card'))}
+          <div class="card p-4">
+            <div class="card-head">
+              <h3 class="card-title"><span class="row-icon tile-orange" aria-hidden="true">${icon('pie-chart', 'w-4 h-4')}</span>${th('ค่าใช้จ่ายตามหมวด','Spend by category')}</h3>
+              <button id="cat-expand-btn" type="button" class="btn btn-ghost btn-sm" style="display:none;"><span data-cat-label>${th('ดูทั้งหมด','Show all')}</span></button>
+            </div>
+            <div id="category-stats"><div class="skeleton h-24"></div></div>
           </div>
         </section>
 
@@ -3809,26 +3839,6 @@ async function renderDashboard(params) {
           </div>
         </section>
 
-        <section class="dash-widget dash-widget--half" data-dashboard-widget="category">
-          ${dragHandle(th('การ์ดค่าใช้จ่ายตามหมวด','spend by category card'))}
-          <div class="card p-4">
-            <div class="card-head">
-              <h3 class="card-title"><span class="row-icon tile-orange" aria-hidden="true">${icon('pie-chart', 'w-4 h-4')}</span>${th('ค่าใช้จ่ายตามหมวด','Spend by category')}</h3>
-              <button id="cat-expand-btn" type="button" class="btn btn-ghost btn-sm" style="display:none;"><span data-cat-label>${th('ดูทั้งหมด','Show all')}</span></button>
-            </div>
-            <div id="category-stats"><div class="skeleton h-24"></div></div>
-          </div>
-        </section>
-
-        <section class="dash-widget dash-widget--half" data-dashboard-widget="estimate">
-          ${dragHandle(th('การ์ดประมาณการเทียบจ่ายจริง','estimated vs actual card'))}
-          <div class="card p-4">
-            <div class="card-head"><h3 class="card-title"><span class="row-icon tile-green" aria-hidden="true">${icon('bar-chart-3', 'w-4 h-4')}</span>${th('ประมาณการเทียบจ่ายจริง','Estimated vs actual')}</h3></div>
-            <div id="estimate-compare"></div>
-            <div id="summary-stats" class="card-foot"></div>
-          </div>
-        </section>
-
         <section class="dash-widget dash-widget--half" data-dashboard-widget="ideas">
           ${dragHandle(th('การ์ดสถานที่ที่อยากไป','wishlist card'))}
           <div id="dash-ideas-board" class="card p-4">
@@ -3851,16 +3861,6 @@ async function renderDashboard(params) {
           </div>
         </section>
 
-        <section class="dash-widget dash-widget--full" data-dashboard-widget="teams">
-          ${dragHandle(th('การ์ดทีม','teams card'))}
-          <div class="card p-4" id="dash-teams-card">
-            <div class="card-head">
-              <h3 class="card-title"><span class="row-icon tile-grey" aria-hidden="true">${icon('users-round', 'w-4 h-4')}</span>${th('ทีม · ค่าใช้จ่ายต่อคนและรวมทีม','Teams · cost per person and per team')}</h3>
-              <button id="dash-teams-link" type="button" class="btn btn-ghost btn-sm">${th('จัดการทีม','Manage teams')}</button>
-            </div>
-            <div id="team-board" class="team-board"><div class="skeleton h-16"></div></div>
-          </div>
-        </section>
         ${canEditDashboard ? `<button id="dash-add-tile" type="button" class="dash-add-tile hidden">${icon('plus', 'w-4 h-4')} <span>${th('เพิ่มการ์ด','Add a card')}</span> <b data-add-count>0</b></button>` : ''}
       </div>
 
@@ -3872,7 +3872,7 @@ async function renderDashboard(params) {
   initReveal(appEl);
   if (isStale(token)) return;
 
-  bind('dash-edit-trip', 'click', () => openTripForm(trip, { onSaved: () => renderDashboard(params) }));
+  bind('dash-edit-trip', 'click', () => openTripForm(trip, { onSaved: () => router.handle() }));
   bind('add-place-quick', 'click', () => { location.hash = `#/trip/${tripId}/itinerary?action=add`; });
   bind('add-expense-quick', 'click', () => { location.hash = `#/trip/${tripId}/expenses/add`; });
   bind('dash-itinerary-link', 'click', () => { location.hash = `#/trip/${tripId}/itinerary`; });
@@ -3882,36 +3882,26 @@ async function renderDashboard(params) {
   bind('dash-teams-link', 'click', () => { location.hash = `#/trip/${tripId}/members`; });
   bindMenuPop('dash-more-btn', 'dash-more-menu');
 
-  // Dashboard layout is stored on the shared trip document so every device and
-  // trip member sees the same card order.
-  const dashboardWidgetKeys = DASHBOARD_WIDGET_KEYS;
+  // The trip document is the shared source of truth for order and visibility.
   const dashboardBoard = document.getElementById('dashboard-board');
-  const normalizeDashboardOrder = (raw) => normalizeWidgetOrder(raw);
-  const dashboardHiddenWidgetKeys = () => normalizeHiddenWidgets(trip?.dashboardHidden);
-  let lastDashboardOrder = normalizeDashboardOrder(trip?.dashboardLayout);
+  const addTile = document.getElementById('dash-add-tile');
+  const layoutReset = document.getElementById('dash-layout-reset');
+  const layoutStatus = document.getElementById('dash-layout-status');
+  let latestDashboardTrip = trip;
   let dashboardLayoutEditing = false;
   let dashboardLayoutSaving = false;
+  let dashboardDragging = false;
   let dashboardSortable = null;
-  /* v42 — cards pair into rows again.
-     The owner: “การ์ดสองการ์ด … มีความสูงไม่เท่ากัน มองแล้วไม่เป็นระเบียบ”.
-     v39 measured every card and packed it into whichever column was shorter, so
-     two cards side by side ended at different heights. The board is a plain
-     two-column grid again (flat.css): each row is as tall as its tallest card
-     and the neighbour stretches to match, so a pair shares one top and one
-     bottom. Full-width cards take a row of their own, and the saved order still
-     decides which cards pair up — so Arrange mode and the shared
-     `dashboardLayout` document are untouched. */
+  const readDashboardOrder = () => [...dashboardBoard.querySelectorAll(':scope > [data-dashboard-widget]')]
+    .map(node => node.dataset.dashboardWidget);
   const applyDashboardOrder = (raw) => {
-    if (!dashboardBoard) return;
-    // v44: “การจองที่กำลังจะถึง” and “รายการล่าสุด” are one pair, so the order is
-    // also made grid-aware — the pair always shares a row (see DASHBOARD_PAIRS).
-    const order = pairWidgetRows(dashboardHiddenWidgetKeys(), raw);
+    const order = normalizeWidgetOrder(raw);
+    const rendered = readDashboardOrder();
+    if (order.every((key, i) => key === rendered[i]) && (!addTile || dashboardBoard.lastElementChild === addTile)) return;
     for (const key of order) {
       const widget = dashboardBoard.querySelector(`[data-dashboard-widget="${key}"]`);
       if (widget) dashboardBoard.appendChild(widget);
     }
-    // the “เพิ่มการ์ด” tile always stays after the cards
-    const addTile = document.getElementById('dash-add-tile');
     if (addTile) dashboardBoard.appendChild(addTile);
   };
   const paintDashboardLayoutControls = () => {
@@ -3926,52 +3916,62 @@ async function renderDashboard(params) {
     }
     queueIcons();
   };
-  applyDashboardOrder(lastDashboardOrder);
+  applyDashboardOrder(trip.dashboardLayout);
 
   async function saveDashboardOrder(order) {
-    const next = normalizeDashboardOrder(order);
+    if (!canEditDashboard || dashboardDragging || dashboardLayoutSaving || isStale(token)) return;
     dashboardLayoutSaving = true;
-    const status = document.getElementById('dash-layout-status');
-    if (status) status.textContent = th('กำลังซิงก์…','Syncing…');
+    layoutReset.disabled = true;
+    dashboardSortable?.option?.('disabled', true);
+    layoutStatus.textContent = th('กำลังซิงก์…','Syncing…');
+    applyDashboardOrder(order);
     try {
-      await updateTrip(tripId, { dashboardLayout: next });
-      lastDashboardOrder = next;
-      currentTrip = { ...(currentTrip || trip || {}), dashboardLayout: next };
-      if (status) status.textContent = th('ซิงก์แล้ว','Synced');
+      await updateTrip(tripId, { dashboardLayout: order });
+      if (!isStale(token)) layoutStatus.textContent = th('ซิงก์แล้ว','Synced');
     } catch (e) {
-      applyDashboardOrder(lastDashboardOrder);
-      if (status) status.textContent = th('ซิงก์ไม่สำเร็จ','Sync failed');
+      if (isStale(token)) return;
+      paintSharedDashboard();
+      layoutStatus.textContent = th('ซิงก์ไม่สำเร็จ','Sync failed');
       toast.error(th('บันทึกการจัดวางการ์ดไม่สำเร็จ: ','Could not save card layout: ') + (e?.message || String(e)));
     } finally {
       dashboardLayoutSaving = false;
-      try { dashboardSortable?.option?.('disabled', false); } catch {}
+      layoutReset.disabled = false;
+      dashboardSortable?.option?.('disabled', false);
     }
   }
 
   async function setDashboardLayoutEditing(enabled) {
+    if (!canEditDashboard) return;
     dashboardLayoutEditing = Boolean(enabled);
     paintDashboardLayoutControls();
     if (!dashboardLayoutEditing) {
-      try { dashboardSortable?.destroy(); } catch {}
+      dashboardSortable?.destroy();
       dashboardSortable = null;
+      if (dashboardDragging) {
+        dashboardDragging = false;
+        paintSharedDashboard();
+      }
       return;
     }
     try {
       const Sortable = (await import('https://esm.sh/sortablejs@1.15.3')).default;
-      if (!dashboardLayoutEditing || isStale(token) || !dashboardBoard) return;
+      if (!dashboardLayoutEditing || isStale(token) || dashboardSortable) return;
       dashboardSortable = Sortable.create(dashboardBoard, {
         animation: 180,
-        draggable: '.dash-widget',
+        disabled: dashboardLayoutSaving,
+        draggable: '.dash-widget:not(.is-hidden)',
         handle: '.dash-widget-handle',
         filter: 'button, a, input, textarea, select',
         preventOnFilter: false,
-        onEnd: async () => {
-          const order = [...dashboardBoard.querySelectorAll(':scope > [data-dashboard-widget]')].map(node => node.dataset.dashboardWidget);
-          try { dashboardSortable?.option?.('disabled', true); } catch {}
-          await saveDashboardOrder(order);
+        onStart: () => { dashboardDragging = true; },
+        onEnd: ({ oldIndex, newIndex }) => {
+          dashboardDragging = false;
+          if (oldIndex === newIndex) return paintSharedDashboard();
+          return saveDashboardOrder(readDashboardOrder());
         }
       });
     } catch (e) {
+      if (isStale(token)) return;
       dashboardLayoutEditing = false;
       paintDashboardLayoutControls();
       toast.error(th('เปิดโหมดจัดวางการ์ดไม่ได้: ','Could not enable card layout editing: ') + (e?.message || String(e)));
@@ -3979,27 +3979,30 @@ async function renderDashboard(params) {
   }
   bind('dash-layout-edit-btn', 'click', () => setDashboardLayoutEditing(!dashboardLayoutEditing));
   bind('dash-layout-done', 'click', () => setDashboardLayoutEditing(false));
-  bind('dash-layout-reset', 'click', () => {
-    applyDashboardOrder(dashboardWidgetKeys);
-    saveDashboardOrder(dashboardWidgetKeys);
-  });
+  bind('dash-layout-reset', 'click', () => saveDashboardOrder([]));
   paintDashboardLayoutControls();
 
   // ---- Cards this trip shows: stored as dashboardHidden on the trip, like the order ----
-  let dashboardHidden = new Set(normalizeHiddenWidgets(trip?.dashboardHidden));
-  let dashboardHiddenSaving = false;
+  let dashboardHidden = new Set(normalizeHiddenWidgets(trip.dashboardHidden));
   const applyDashboardVisibility = () => {
-    if (!dashboardBoard) return;
     for (const key of DASHBOARD_WIDGET_KEYS) {
       dashboardBoard.querySelector(`[data-dashboard-widget="${key}"]`)?.classList.toggle('is-hidden', dashboardHidden.has(key));
     }
-    const tile = document.getElementById('dash-add-tile');
-    if (tile) {
-      tile.classList.toggle('hidden', dashboardHidden.size === 0);
-      const count = tile.querySelector('[data-add-count]');
-      if (count) count.textContent = String(dashboardHidden.size);
+    if (addTile) {
+      addTile.classList.toggle('hidden', dashboardHidden.size === 0);
+      addTile.querySelector('[data-add-count]').textContent = String(dashboardHidden.size);
     }
   };
+  function paintSharedDashboard() {
+    // Don't move or hide a widget under the pointer halfway through a drag.
+    if (dashboardDragging) return;
+    applyDashboardOrder(latestDashboardTrip.dashboardLayout);
+    const hidden = normalizeHiddenWidgets(latestDashboardTrip.dashboardHidden);
+    if (hidden.length === dashboardHidden.size && hidden.every(key => dashboardHidden.has(key))) return;
+    dashboardHidden = new Set(hidden);
+    applyDashboardVisibility();
+    repaintPicker();
+  }
   // Each card's drag bar gets a × (visible in Arrange mode) that hides that card.
   dashboardBoard?.querySelectorAll('[data-dashboard-widget]').forEach(section => {
     const handle = section.querySelector(':scope > .dash-widget-handle');
@@ -4030,28 +4033,29 @@ async function renderDashboard(params) {
     list.innerHTML = pickerRowsHtml();
     queueIcons();
   }
-  async function saveDashboardHidden() {
-    const list = DASHBOARD_WIDGET_KEYS.filter(k => dashboardHidden.has(k));
-    dashboardHiddenSaving = true;
+  async function saveDashboardHidden(next) {
+    if (!canEditDashboard || isStale(token)) return false;
+    dashboardHidden = next;
+    applyDashboardVisibility();
+    repaintPicker();
     try {
-      await updateTrip(tripId, { dashboardHidden: list });
-      currentTrip = { ...(currentTrip || trip || {}), dashboardHidden: list };
+      await updateTrip(tripId, { dashboardHidden: [...next] });
+      return !isStale(token);
     } catch (e) {
-      dashboardHidden = new Set(normalizeHiddenWidgets(currentTrip?.dashboardHidden));
-      applyDashboardVisibility();
-      repaintPicker();
-      toast.error(th('บันทึกการ์ดไม่สำเร็จ: ', 'Could not save cards: ') + (e?.message || String(e)));
-    } finally {
-      dashboardHiddenSaving = false;
+      if (!isStale(token)) {
+        paintSharedDashboard();
+        toast.error(th('บันทึกการ์ดไม่สำเร็จ: ', 'Could not save cards: ') + (e?.message || String(e)));
+      }
+      return false;
     }
   }
   function setWidgetHidden(key, hidden) {
-    if (hidden) dashboardHidden.add(key); else dashboardHidden.delete(key);
-    applyDashboardVisibility();
-    repaintPicker();
-    saveDashboardHidden();
+    const next = new Set(dashboardHidden);
+    if (hidden) next.add(key); else next.delete(key);
+    return saveDashboardHidden(next);
   }
   function openWidgetPicker() {
+    if (!canEditDashboard) return;
     const sheet = showBottomSheet(`
       <div class="space-y-3" id="dash-picker">
         <div>
@@ -4070,24 +4074,20 @@ async function renderDashboard(params) {
       const btn = ev.target.closest('[data-pick]');
       if (btn) setWidgetHidden(btn.dataset.pick, !dashboardHidden.has(btn.dataset.pick));
     });
-    body.querySelector('#dash-pick-all')?.addEventListener('click', () => {
-      dashboardHidden = new Set();
-      applyDashboardVisibility();
-      repaintPicker();
-      saveDashboardHidden();
-    });
+    body.querySelector('#dash-pick-all')?.addEventListener('click', () => saveDashboardHidden(new Set()));
     body.querySelector('#dash-pick-done')?.addEventListener('click', () => sheet.close());
   }
   applyDashboardVisibility();
   bind('dash-widgets-btn', 'click', openWidgetPicker);
   bind('dash-add-tile', 'click', openWidgetPicker);
   bind('dash-bookings-link', 'click', () => { location.hash = `#/trip/${tripId}/bookings`; });
-  dashboardBoard?.addEventListener('click', (ev) => {
+  dashboardBoard.addEventListener('click', async (ev) => {
     const btn = ev.target.closest('[data-remove-widget]');
     if (!btn) return;
     ev.preventDefault();
-    setWidgetHidden(btn.dataset.removeWidget, true);
-    toast.success(th('ซ่อนการ์ดแล้ว — กด “เพิ่มการ์ด” เพื่อนำกลับมา','Card hidden — tap “Add a card” to bring it back'));
+    if (await setWidgetHidden(btn.dataset.removeWidget, true)) {
+      toast.success(th('ซ่อนการ์ดแล้ว — กด “เพิ่มการ์ด” เพื่อนำกลับมา','Card hidden — tap “Add a card” to bring it back'));
+    }
   });
 
   // “การจองที่กำลังจะถึง” — the next three bookings from today on.
@@ -4121,21 +4121,14 @@ async function renderDashboard(params) {
 
   const stopDashboardTripSync = subscribeTrip(tripId, (latestTrip) => {
     if (!latestTrip || isStale(token)) return;
-    currentTrip = { ...(currentTrip || {}), ...latestTrip };
-    if (!dashboardLayoutEditing && !dashboardLayoutSaving) {
-      lastDashboardOrder = normalizeDashboardOrder(latestTrip.dashboardLayout);
-      applyDashboardOrder(lastDashboardOrder);
-    }
-    if (!dashboardHiddenSaving) {
-      dashboardHidden = new Set(normalizeHiddenWidgets(latestTrip.dashboardHidden));
-      applyDashboardVisibility();
-      repaintPicker();
-    }
+    latestDashboardTrip = latestTrip;
+    currentTrip = latestTrip;
+    paintSharedDashboard();
   });
   document.addEventListener('routechange', () => {
-    try { dashboardSortable?.destroy(); } catch {}
+    stopDashboardTripSync();
+    dashboardSortable?.destroy();
     dashboardSortable = null;
-    try { stopDashboardTripSync?.(); } catch {}
   }, { once: true });
 
   // Dashboard density: comfortable (default) vs compact — remembered per device.
