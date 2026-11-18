@@ -2958,6 +2958,43 @@ main#app { padding-top: 16px; padding-bottom: 24px; }
 @media (max-width: 767px) {
   #team-board { grid-template-columns: minmax(0, 1fr); }
 }
+/* v43 — “ทั้งทริป” never sits in half an empty row (owner: on an iPad the card
+   “ทางขวาดูว่าง มีพื้นที่เปลือง”). The benchmark row now takes the whole width
+   of the card whenever the teams above already fill their own rows:
+   · tablet — two columns, so an odd card count (teams + the benchmark) would
+     start a new row by itself → it spans both columns instead. An even count
+     means it pairs with the last team, which leaves no hole either.
+   · desktop — the column counts above are picked from `data-team-count`, so the
+     only counts still landing the card alone are listed here.
+   Once the card is that wide it stops stacking: figures on the left, the
+   categories / facts / leftover members on the right, split by the dashed rule
+   the card already used on a phone. A container query decides that from the
+   card's own width, so a half-width benchmark row still stacks neatly. */
+#team-board .team-card--trip { container-type: inline-size; }
+.team-trip-body,
+.team-trip-side { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+@media (min-width: 768px) and (max-width: 1023px) {
+  #team-board > .team-card--trip:nth-child(odd) { grid-column: 1 / -1; }
+}
+@media (min-width: 1024px) {
+  #team-board[data-team-count="6"] > .team-card--trip,
+  #team-board[data-team-count="9"] > .team-card--trip,
+  #team-board[data-team-count="13"] > .team-card--trip,
+  #team-board[data-team-count="17"] > .team-card--trip { grid-column: 1 / -1; }
+}
+@container (min-width: 460px) {
+  #team-board .team-card--trip .team-trip-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 4px 18px;
+  }
+  #team-board .team-card--trip .team-trip-side {
+    border-left: 1px dashed var(--border-light);
+    padding-left: 18px;
+  }
+  #team-board .team-card--trip .team-facts { border-top: 0; margin-top: 0; padding-top: 0; }
+}
 .summary-stats-row {
   display: flex;
   align-items: center;
