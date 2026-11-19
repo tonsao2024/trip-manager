@@ -18,6 +18,7 @@ import {
 import { normalizeInviteCode, isValidInviteCode } from '../utils/invite.js';
 import { isPermissionError } from '../utils/rulesHelper.js';
 import { cacheForget } from '../utils/datacache.js';
+import { planMyJoinRequestSync, JOIN_PENDING, JOIN_APPROVED } from '../utils/membershipRepair.js';
 
 /** Keep the Firebase code + cause so the UI can explain *why* it failed. */
 function rethrow(e, fallbackTh, fallbackEn = null) {
@@ -171,6 +172,100 @@ export async function listMyJoinRequests(uid) {
     console.warn('listMyJoinRequests failed', e?.code, e?.message);
     return [];
   }
+}
+
+/**
+ * Re-connect THIS account's private request mirrors with the admin's queue.
+ *
+ * `requestToJoin` writes two documents: the trip-side queue (what the admin
+ * reads) and `users/{uid}/joinRequests/{tripId}` (what the member sees). When
+ * the first write was denied by older rules (or dropped offline), only the
+ * mirror survives: the member keeps seeing "รอแอดมินอนุมัติ" while the admin's
+ * queue is empty. Firestore rules deliberately let only the owner read/write
+ * that mirror, so the admin cannot sweep it — this member-side sync must do it.
+ *
+ * Also clears mirrors for trips the account can already see, including the
+ * "approved but mirror cleanup was denied" case. Idempotent and read-fresh:
+ * a denied trip-side read is reported, never guessed at.
+ */
+export async function syncMyJoinRequests(uid, { joinedTripIds = [] } = {}) {
+  const report = { created: [], resolved: [], updated: [], cleared: [], denied: [], warnings: [] };
+  if (!db || !uid) return report;
+  let mirrors = [];
+  try {
+    mirrors = await listMyJoinRequests(uid);
+  } catch (e) {
+    report.warnings.push(e?.message || 'mirror read failed');
+    return report;
+  }
+  if (!mirrors.length) return report;
+
+  const primaries = {};
+  const deniedTripIds = [];
+  await Promise.all(mirrors.map(async (mirror) => {
+    const tripId = String(mirror?.tripId || mirror?.id || '').trim();
+    if (!tripId || tripId.includes('/')) return;
+    try {
+      const snap = await getDoc(doc(db, 'trips', tripId, 'joinRequests', uid));
+      if (snap.exists()) primaries[tripId] = { ...snap.data() };
+    } catch (e) {
+      // Can't tell whether a primary exists — never overwrite or recreate it.
+      deniedTripIds.push(tripId);
+      report.denied.push({ tripId, code: e?.code || null, permission: isPermissionError(e) });
+    }
+  }));
+
+  const plan = planMyJoinRequestSync({ mirrors, primaries, joinedTripIds, deniedTripIds });
+  for (const { tripId, request } of plan.create) {
+    try {
+      await setDoc(doc(db, 'trips', tripId, 'joinRequests', uid), {
+        uid,
+        tripId,
+        displayName: request.displayName || '',
+        email: request.email || null,
+        photoURL: request.photoURL || null,
+        tripName: request.tripName || null,
+        note: request.note || '',
+        status: JOIN_PENDING,
+        requestedAt: request.requestedAt || serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        repairedFromMirror: true
+      }, { merge: true });
+      report.created.push(tripId);
+    } catch (e) {
+      if (isPermissionError(e)) report.denied.push({ tripId, code: e?.code || null, permission: true });
+      else report.warnings.push(`${tripId}: ${e?.message || e}`);
+    }
+  }
+  for (const { tripId } of plan.resolve) {
+    try {
+      await updateDoc(doc(db, 'trips', tripId, 'joinRequests', uid), {
+        status: JOIN_APPROVED, updatedAt: serverTimestamp(), resolvedBy: 'member-sync'
+      });
+      report.resolved.push(tripId);
+    } catch (e) {
+      report.warnings.push(`${tripId}: ${e?.message || e}`);
+    }
+  }
+  for (const { tripId } of plan.clear) {
+    try {
+      await deleteDoc(doc(db, 'users', uid, 'joinRequests', tripId));
+      report.cleared.push(tripId);
+    } catch (e) {
+      report.warnings.push(`${tripId}: ${e?.message || e}`);
+    }
+  }
+  for (const { tripId, status } of plan.update) {
+    try {
+      await setDoc(doc(db, 'users', uid, 'joinRequests', tripId), {
+        status, updatedAt: serverTimestamp()
+      }, { merge: true });
+      report.updated.push(tripId);
+    } catch (e) {
+      report.warnings.push(`${tripId}: ${e?.message || e}`);
+    }
+  }
+  return report;
 }
 
 export async function cancelJoinRequest(tripId, uid) {
