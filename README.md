@@ -8,6 +8,14 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > และทริปที่ทำสำเนาได้ `memberUids` ครบแล้ว. **ต้อง deploy กฎ+ดัชนีก่อนจึงจะมีผล:**
 > `firebase deploy --only firestore:rules,firestore:indexes` — รายละเอียด: [docs/MEMBER-TRIP-VISIBILITY.md](docs/MEMBER-TRIP-VISIBILITY.md).
 >
+> **กวาดสถานะสมาชิกค้าง (19 Nov 2026):** แอดมินเห็นว่ามีสมาชิกแล้ว แต่สมาชิกไม่เห็นทริป / บางคนค้าง “รออนุมัติ” /
+> แอดมินไม่เห็นคำขอ — เกิดจาก `memberUids` เพี้ยน, เอกสารสมาชิกที่ติด `status: 'pending'`, และคำขอเข้าร่วมที่เขียน
+> **2 ที่** (คิวในทริป + mirror ส่วนตัวใน `users/{uid}`) โดยฝั่งใดฝั่งหนึ่งเขียนไม่สำเร็จ. ตอนนี้หน้า **สมาชิก** มีปุ่ม
+> **“กวาดสถานะค้าง”** (อ่านข้อมูลจากเซิร์ฟเวอร์ใหม่ เติม uid, เปลี่ยน pending→active, ปิดคำขอของคนที่เป็นสมาชิกแล้ว)
+> และหน้า **ทริปของฉัน** มีปุ่ม **“ซิงก์คำขอค้าง”** (ส่งคำขอที่ค้างอยู่แค่ใน mirror กลับเข้าคิวแอดมิน + เคลียร์ badge เก่า).
+> แอดมินแตะ mirror ของคนอื่นไม่ได้ตามกฎความเป็นส่วนตัว จึงต้องมีปุ่มฝั่งสมาชิกด้วย — รายละเอียด/ลำดับ deploy:
+> [docs/MEMBERSHIP-REPAIR-2026-11-19.md](docs/MEMBERSHIP-REPAIR-2026-11-19.md).
+>
 > **Firebase deployment:** Spark supports the current Google sign-in, Firestore joins, and the static site;
 > legacy username/PIN account flows, member-email lookup, and the invite fallback use secure Cloud Functions
 > and require Blaze. On Spark, use Google sign-in + invite code + admin approval; do not expose PIN or

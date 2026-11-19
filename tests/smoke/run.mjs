@@ -1844,6 +1844,26 @@ const newCode = shownCode();
 check(newCode.length === 6 && newCode !== 'FUJI23', 'invite: new code generated and shown');
 check(fsdb.__dump('trips/t1')?.inviteCode === newCode, 'invite: new code saved on the trip');
 
+console.log('\n▶ membership repair: admin sweep + member-side request sync');
+{
+  // v7 left the admin account signed in; the sweep is admin-only by design.
+  await goto('#/trip/t1/members');
+  await waitFor(() => q('#repair-membership-btn'), { label: 'admin sweep button' });
+  check(!!q('#repair-membership-btn') && !!q('#membership-repair-report'),
+    'repair: the admin sweep button and its report live on the members page');
+  await click('#repair-membership-btn');
+  await waitFor(() => /กวาดสถานะเสร็จ|ไม่มีอะไรต้องแก้|Firestore/.test(q('#membership-repair-report')?.textContent || ''),
+    { timeout: 12000, label: 'repair report' }).catch(() => {});
+  check(/กวาดสถานะเสร็จ|ไม่มีอะไรต้องแก้|Firestore/.test(q('#membership-repair-report')?.textContent || ''),
+    'repair: one tap produces a readable report instead of a silent failure');
+  check(!!q('#join-requests'), 'repair: the request queue is refreshed after the sweep');
+
+  await goto('#/trips');
+  await waitFor(() => q('#sync-join-requests-btn'), { label: 'member sync button' });
+  check(!!q('#sync-join-requests-btn') && !!q('#join-sync-status'),
+    'repair: the member-side sync button and its status live on my trips');
+}
+
 console.log('\n▶ v11: ความเห็น/ทักท้วงบนรายการ + ประวัติการแก้ไข (ใครแก้ล่าสุด)');
 {
   await goto('#/trip/t1/expenses');

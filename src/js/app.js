@@ -21,8 +21,10 @@ import {
 } from './auth/accountAuth.js';
 import {
   findTripByInviteCode, isUserAlreadyTripMember, requestToJoin, listJoinRequests, listMyJoinRequests,
-  approveJoinRequest, rejectJoinRequest, cancelJoinRequest, addMemberFromProfile
+  approveJoinRequest, rejectJoinRequest, cancelJoinRequest, addMemberFromProfile, syncMyJoinRequests
 } from './members/join.js';
+import { repairTripMembership } from './members/repair.js';
+import { isActionableJoinRequest } from './utils/membershipRepair.js';
 import { formatInviteCode, isValidInviteCode, normalizeInviteCode } from './utils/invite.js';
 import {
   isPermissionError, joinPermissionHelp, adminHelpMessage, fetchRulesText,
@@ -3354,6 +3356,10 @@ async function renderTripSelector() {
           <button id="join-code-btn" class="btn btn-secondary">${icon('log-in', 'w-4 h-4')} ${lang === 'th' ? 'ขอเข้าร่วม' : 'Request to join'}</button>
         </div>
         <div id="my-join-requests" class="space-y-2"></div>
+        <div class="btn-row mt-1" id="join-sync-row">
+          <button id="sync-join-requests-btn" type="button" class="btn btn-ghost btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${lang === 'th' ? 'ซิงก์คำขอค้าง' : 'Sync pending requests'}</button>
+          <span id="join-sync-status" class="text-xs text-[var(--text-tertiary)]" role="status" aria-live="polite"></span>
+        </div>
         <div id="profile-rules-notice" class="hidden diag-row" data-status="warn">
           ${icon('shield-alert', 'w-4 h-4 shrink-0')}
           <div class="min-w-0">
@@ -3374,9 +3380,36 @@ async function renderTripSelector() {
   let tripsCache = [];
 
   // ---- join with an invite code ----
-  async function renderMyJoinRequests() {
+  function joinSyncMessage(report, lang) {
+    if (report.created.length) return lang === 'th'
+      ? `ส่งคำขอ ${report.created.length} รายการถึงแอดมินแล้ว — รออนุมัติได้เลย`
+      : `Reconnected ${report.created.length} request(s) with the admin queue.`;
+    if (report.denied.length) return lang === 'th'
+      ? 'คำขอยังไปไม่ถึงแอดมิน — ให้แอดมิน Publish Firestore Rules/Indexes แล้วกดซิงก์อีกครั้ง'
+      : 'The admin queue is still unreadable — publish Firestore rules/indexes, then sync again.';
+    if (report.cleared.length || report.resolved.length || report.updated.length) return lang === 'th'
+      ? 'เคลียร์สถานะคำขอค้างแล้ว'
+      : 'Stale request status cleared.';
+    return '';
+  }
+
+  async function renderMyJoinRequests({ sync = true } = {}) {
     const box = document.getElementById('my-join-requests');
     if (!box) return;
+    const statusEl = document.getElementById('join-sync-status');
+    if (sync) {
+      try {
+        const report = await syncMyJoinRequests(currentUser.uid, {
+          joinedTripIds: tripsCache.map(t => t.id)
+        });
+        if (!isStale(token) && statusEl) statusEl.textContent = joinSyncMessage(report, lang);
+      } catch (e) {
+        console.warn('join request sync failed', e?.message || e);
+        if (!isStale(token) && statusEl) statusEl.textContent = lang === 'th'
+          ? 'ซิงก์คำขอไม่สำเร็จ — ลองอีกครั้งหรือตรวจการเชื่อมต่อ'
+          : 'Could not sync requests — check your connection and retry.';
+      }
+    }
     // Read the box again AFTER the await: switching routes while the request is
     // in flight replaces #my-join-requests, and the old node must not be written.
     const requests = await listMyJoinRequests(currentUser.uid);
@@ -3384,7 +3417,7 @@ async function renderTripSelector() {
     if (!liveBox || isStale(token)) return;
     // Once the admin approves, the trip shows up in the list — drop the badge.
     const joinedIds = new Set(tripsCache.map(t => t.id));
-    const pending = requests.filter(r => !joinedIds.has(r.tripId || r.id));
+    const pending = requests.filter(r => !joinedIds.has(r.tripId || r.id) && r.status !== 'approved');
     liveBox.innerHTML = pending.length ? pending.map(r => `
       <div class="diag-row" data-join-request="${escapeHtml(r.tripId || r.id)}">
         ${icon(r.status === 'rejected' ? 'x-circle' : 'clock', 'w-4 h-4 shrink-0')}
@@ -3402,11 +3435,19 @@ async function renderTripSelector() {
         try {
           await cancelJoinRequest(btn.dataset.cancelRequest, currentUser.uid);
           toast.info(lang === 'th' ? 'ยกเลิกคำขอแล้ว' : 'Request cancelled');
-          renderMyJoinRequests();
+          renderMyJoinRequests({ sync: false });
         } catch (e) { toast.error(e.message); btn.disabled = false; }
       });
     });
   }
+
+  bind('sync-join-requests-btn', 'click', async () => {
+    const btn = document.getElementById('sync-join-requests-btn');
+    if (btn) btn.disabled = true;
+    await renderMyJoinRequests({ sync: true });
+    const live = document.getElementById('sync-join-requests-btn');
+    if (live) live.disabled = false;
+  });
 
   let foundTrip = null;
   bind('join-code-btn', 'click', async () => {
@@ -3457,7 +3498,10 @@ async function renderTripSelector() {
       tLoad.close();
       btn.disabled = false;
       if (isPermissionError(e)) {
-        toast.error(lang === 'th' ? 'Firestore Rules ยังไม่อนุญาต — ต้อง Publish กฎก่อน' : 'Firestore rules deny this — publish the rules first');
+        toast.error(e?.savedLocally
+          ? (lang === 'th' ? 'คำขอถูกเก็บในบัญชีคุณแล้ว แต่ยังไปไม่ถึงแอดมิน — ให้ Publish กฎ แล้วกด "ซิงก์คำขอค้าง"' : 'Request saved on your account but not in the admin queue — publish rules, then tap "Sync pending requests".')
+          : (lang === 'th' ? 'Firestore Rules ยังไม่อนุญาต — ต้อง Publish กฎก่อน' : 'Firestore rules deny this — publish the rules first'));
+        renderMyJoinRequests({ sync: false });
         await showRulesHelpSheet({ lang, trip: foundTrip, action: 'join' });
       } else {
         toast.error(e.message);
@@ -3465,7 +3509,7 @@ async function renderTripSelector() {
     }
   });
 
-  renderMyJoinRequests();
+  renderMyJoinRequests({ sync: false });   // sync again once the trip list is known
 
   const grid = document.getElementById('trip-grid');
   if (!grid) return;
@@ -3545,6 +3589,7 @@ async function renderTripSelector() {
       })}</div>`;
       bind('empty-create', 'click', () => openTripForm(null, { onSaved: () => renderTripSelector() }));
       queueIcons();
+      renderMyJoinRequests();   // still reconcile a stale "waiting" badge
       return;
     }
     const partialNotice = trips.incomplete
@@ -11879,6 +11924,26 @@ async function removeMemberFlow(tripId, member, onSaved) {
   } catch (e) { tLoad2.close(); toast.error(e.message); }
 }
 
+/** Human-readable summary of an admin sweep; never claims a write that failed. */
+function repairReportHtml(report, lang) {
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const rows = [
+    [report.added.length, th('เติม uid สมาชิกที่ขาด', 'restored member uids')],
+    [report.pruned.length, th('ลบ uid ที่ปิดใช้งาน', 'removed inactive uids')],
+    [report.activated.length, th('เปลี่ยนสถานะ pending → ใช้งานอยู่', 'activated pending members')],
+    [report.resolvedRequests.length, th('ปิดคำขอของคนที่เป็นสมาชิกแล้ว', 'closed requests of existing members')],
+    [report.normalizedRequests.length, th('ทำให้คำขอที่สถานะไม่ชัดกลับมากดอนุมัติได้', 're-opened requests with an unknown status')]
+  ].filter(([n]) => n > 0)
+    .map(([n, label]) => `<span class="badge badge-planned text-xs">${n} · ${escapeHtml(label)}</span>`).join(' ');
+  const warnings = [];
+  if (report.requestsUnavailable) warnings.push(th('อ่านคิวคำขอไม่ได้ — ยังซ่อมรายชื่อได้ แต่ให้ Publish Firestore Rules/Indexes แล้วกดใหม่', 'Request queue unreadable — memberships were still repaired. Publish rules/indexes and run again.'));
+  if (report.warnings.some(w => w.permission)) warnings.push(th('บางรายการเขียนไม่ได้เพราะกฎยังเก่า (หรือคุณเป็นผู้จัดการร่วม ซึ่งเปลี่ยนสถานะสมาชิกไม่ได้) — ให้เจ้าของทริป Publish กฎใหม่แล้วกดอีกครั้ง', 'Some writes were denied by older rules (or by co-admin restrictions). Ask the trip owner to publish the rules and retry.'));
+  const other = report.warnings.filter(w => !w.permission && w.step !== 'joinRequests');
+  if (other.length) warnings.push(th(`มี ${other.length} รายการที่ซ่อมไม่สำเร็จ — ดูรายละเอียดใน Console`, `${other.length} item(s) could not be repaired — see the console.`));
+  const summary = rows || `<span class="text-xs text-[var(--text-tertiary)]">${th('ข้อมูลตรงกันแล้ว ไม่มีอะไรต้องแก้', 'Everything already matches — nothing to change.')}</span>`;
+  return `<div class="flex flex-wrap gap-1 mt-1">${summary}</div>${warnings.length ? `<p class="text-xs mt-1" style="color:var(--danger);">${warnings.map(w => escapeHtml(w)).join(' ')}</p>` : ''}`;
+}
+
 async function renderMembers(params) {
   const tripId = params.tripId;
   const token = beginRender();
@@ -11920,10 +11985,12 @@ async function renderMembers(params) {
         <h3 class="font-semibold flex items-center gap-2">${icon('user-check', 'w-4 h-4')} ${th('สมาชิกที่ล็อกอินด้วยบัญชี (Google / อีเมล)','Members with an account (Google / email)')}</h3>
         <p class="text-xs text-[var(--text-secondary)]">${th('สมาชิกสมัครบัญชีเองได้ แล้วส่งคำขอเข้าร่วมด้วยรหัสเชิญ — แอดมินกดอนุมัติได้เลย (ไม่ต้องใช้ Cloud Functions)','Members create their own account and ask to join with the invite code — approve them here (no Cloud Functions needed).')}</p>
         ${canApprove ? `<p id="member-repair-status" class="text-xs text-[var(--text-secondary)]" role="status">${th('กำลังตรวจสอบการเชื่อมโยงสมาชิก…', 'Checking member access…')}</p>` : ''}
+        ${canApprove ? `<div id="membership-repair-report" class="text-xs text-[var(--text-secondary)]" role="status" aria-live="polite"></div>` : ''}
         <div id="join-requests" class="space-y-2"><div class="skeleton h-10"></div></div>
         <div class="btn-row">
           <button id="add-by-email-btn" class="btn btn-secondary btn-sm">${icon('mail-plus', 'w-4 h-4')} ${th('เพิ่มด้วยอีเมล','Add by email')}</button>
           <button id="refresh-requests-btn" class="btn btn-ghost btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${th('รีเฟรชคำขอ','Refresh requests')}</button>
+          ${canApprove ? `<button id="repair-membership-btn" type="button" class="btn btn-secondary btn-sm" title="${th('อ่านข้อมูลจากเซิร์ฟเวอร์ใหม่ แล้วซ่อม uid สมาชิก สถานะ pending และคำขอที่ค้าง — ไม่ลบสมาชิก ไม่เปลี่ยนสิทธิ์', 'Re-read the server, then repair member uids, pending statuses and stale join requests — never deletes members or changes roles')}">${icon('wrench', 'w-4 h-4')} ${th('กวาดสถานะค้าง','Sweep stale status')}</button>` : ''}
         </div>
       </div>
       <div class="card p-5 space-y-3 mb-5" id="groups-card">
@@ -11975,11 +12042,14 @@ async function renderMembers(params) {
     box.innerHTML = `<div class="skeleton h-10"></div>`;
     let requests = [];
     try { requests = await listJoinRequests(tripId); } catch (e) {
-      box.innerHTML = `<p class="text-xs" style="color:var(--danger);">${escapeHtml(e.message)}</p>`;
+      box.innerHTML = `<p class="text-xs" style="color:var(--danger);">${escapeHtml(e.message)}</p>
+        <p class="text-xs text-[var(--text-secondary)] mt-1">${th('ถ้าเพิ่ง Publish กฎ/ดัชนี ให้กด "กวาดสถานะค้าง" หรือรีเฟรชหน้านี้ — คำขอที่ค้างในบัญชีสมาชิกจะกลับมาที่นี่เมื่อสมาชิกกด "ซิงก์คำขอค้าง"', 'If rules/indexes were just published, press "Sweep stale status" or reload. Requests kept in a member’s private mirror return here when that member taps "Sync pending requests".')}</p>`;
       return;
     }
     if (isStale(token)) return;
-    const pending = requests.filter(r => r.status !== 'rejected');
+    const actionable = requests.filter(isActionableJoinRequest);
+    const closedCount = requests.length - actionable.length;
+    const pending = actionable;   // keep the name used by the approve/reject handlers
     box.innerHTML = pending.length ? pending.map(r => `
       <div class="diag-row" data-request="${escapeHtml(r.uid || r.id)}">
         <div class="w-9 h-9 rounded-full grid place-items-center overflow-hidden flex-shrink-0 text-xs font-semibold text-white" style="background:var(--gradient-primary);">
@@ -11994,7 +12064,8 @@ async function renderMembers(params) {
           <button class="btn btn-ghost btn-sm" data-reject="${escapeHtml(r.uid || r.id)}">${th('ปฏิเสธ','Decline')}</button>
         </div>
       </div>`).join('') : `
-      <p class="text-xs text-[var(--text-tertiary)] flex items-center gap-2">${icon('inbox', 'w-3.5 h-3.5')} ${th('ยังไม่มีคำขอเข้าร่วม — แชร์รหัสเชิญให้เพื่อนได้ที่หน้าตั้งค่า','No pending requests — share the invite code from Settings.')}</p>`;
+      <p class="text-xs text-[var(--text-tertiary)] flex items-center gap-2">${icon('inbox', 'w-3.5 h-3.5')} ${th('ยังไม่มีคำขอเข้าร่วม — แชร์รหัสเชิญให้เพื่อนได้ที่หน้าตั้งค่า','No pending requests — share the invite code from Settings.')}</p>`
+      + (closedCount ? `<p class="text-xs text-[var(--text-tertiary)] mt-1">${th(`มีคำขอที่จัดการแล้ว ${closedCount} รายการ (ไม่แสดงปุ่มอนุมัติ)`, `${closedCount} handled request(s) hidden — no action needed`)}</p>` : '');
 
     box.querySelectorAll('[data-approve]').forEach(btn => btn.addEventListener('click', async () => {
       const req = pending.find(x => (x.uid || x.id) === btn.dataset.approve);
@@ -12039,6 +12110,39 @@ async function renderMembers(params) {
   }
 
   bind('refresh-requests-btn', 'click', () => loadJoinRequests());
+  bind('repair-membership-btn', 'click', async () => {
+    const btn = document.getElementById('repair-membership-btn');
+    const reportEl = document.getElementById('membership-repair-report');
+    if (btn) btn.disabled = true;
+    if (reportEl) reportEl.textContent = th('กำลังกวาดสถานะและเชื่อมต่อสมาชิก…', 'Sweeping stale membership state…');
+    const tLoad = toast.loading(th('กำลังกวาดสถานะค้าง…', 'Sweeping stale status…'));
+    try {
+      const report = await repairTripMembership(tripId);
+      tLoad.close();
+      if (isStale(token)) return;
+      if (reportEl) reportEl.innerHTML = repairReportHtml(report, lang);
+      const statusEl = document.getElementById('member-repair-status');
+      if (statusEl) statusEl.textContent = th('กวาดสถานะเสร็จแล้ว — รายการด้านล่างเป็นข้อมูลจากเซิร์ฟเวอร์', 'Sweep finished — the lists below were refreshed from the server.');
+      const changed = report.added.length + report.pruned.length + report.activated.length
+        + report.resolvedRequests.length + report.normalizedRequests.length;
+      if (changed) toast.success(th(`ซ่อมสถานะค้าง ${changed} รายการแล้ว — ให้สมาชิกรีเฟรชหน้าเว็บ`, `Repaired ${changed} item(s) — ask members to refresh.`));
+      else toast.info(th('ข้อมูลตรงกันแล้ว ไม่มีอะไรต้องแก้', 'Everything already matches.'));
+      await loadJoinRequests();
+      await loadMembersList();
+    } catch (e) {
+      tLoad.close();
+      if (isStale(token)) return;
+      if (reportEl) {
+        reportEl.innerHTML = `<p class="text-xs" style="color:var(--danger);">${escapeHtml(e.message)}</p>
+          <p class="text-xs mt-1 text-[var(--text-secondary)]">${th('ต้องเป็นเจ้าของทริป/แอดมิน และ Publish Firestore Rules + Indexes ล่าสุดก่อน: firebase deploy --only firestore:rules,firestore:indexes', 'You must be a trip admin and publish the latest rules + indexes first: firebase deploy --only firestore:rules,firestore:indexes')}</p>`;
+      }
+      toast.error(e.message);
+      if (isPermissionError(e)) await showRulesHelpSheet({ lang, trip, action: 'approve' });
+    } finally {
+      const live = document.getElementById('repair-membership-btn');
+      if (live) live.disabled = false;
+    }
+  });
   bind('add-by-email-btn', 'click', async () => {
     const email = await promptAction({
       title: th('เพิ่มสมาชิกด้วยอีเมล', 'Add member by email'),
@@ -12102,7 +12206,7 @@ async function renderMembers(params) {
           }
         } catch (e) {
           console.warn('memberUids reconcile failed', e?.code || e?.message);
-          if (repairStatus) repairStatus.textContent = th('ตรวจหรือซ่อมรายการบัญชีไม่สำเร็จ — ตรวจการเชื่อมต่อและ Firestore Rules แล้วเปิดหน้านี้ใหม่', 'Could not check or repair account entries — check connectivity and Firestore Rules, then reopen this page.');
+          if (repairStatus) repairStatus.textContent = th('ตรวจอัตโนมัติไม่สำเร็จ — กด "กวาดสถานะค้าง" หลัง Publish Firestore Rules/Indexes', 'Automatic check failed — press "Sweep stale status" after publishing Firestore rules/indexes.');
         }
       }
       if (!members.length) {
