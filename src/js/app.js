@@ -3614,7 +3614,35 @@ async function renderTripSelector() {
     console.error('List trips failed', e);
     let msg = e.message;
     let hint = '';
-    if (e.code === 'permission-denied' || msg.includes('permission') || msg.includes('Missing') || msg.includes('insufficient')) {
+    if (e.code === 'trip-list-incomplete') {
+      // The account has no visible trip *and* at least one source could not be
+      // read. Say which one, and what to do — an approved member used to see one
+      // generic sentence that pointed at rules and indexes even when the only
+      // problem was a trip listing that had not been written yet.
+      msg = lang === 'th' ? 'ตรวจสิทธิ์การเข้าร่วมทริปได้ไม่ครบ' : 'Could not verify your trip membership';
+      const codes = (e.details || []).map(d => d.code).filter(Boolean);
+      const deploy = e.requiresDeploy
+        || codes.some(c => /permission-denied|failed-precondition/.test(c));
+      hint = `
+        <div class="notice text-left mt-3 p-3 rounded-xl text-xs leading-relaxed">
+          <strong class="flex items-center gap-1">${icon(deploy ? 'shield-alert' : 'cloud-off', 'w-3.5 h-3.5')} ${deploy
+            ? (lang === 'th' ? 'อ่านข้อมูลสมาชิกจากเซิร์ฟเวอร์ไม่ได้' : 'Could not read your membership from the server')
+            : (lang === 'th' ? 'เชื่อมต่อเซิร์ฟเวอร์ไม่ครบ' : 'The server could not be reached completely')}</strong>
+          <ul class="mt-2 space-y-1 list-disc pl-5">
+            <li>${lang === 'th'
+              ? 'ถ้าแอดมินเพิ่งกดอนุมัติ ให้กด "ตรวจสิทธิ์อีกครั้ง" ด้านล่าง — ระบบจะอ่านทริปที่คุณขอเข้าร่วมจากเซิร์ฟเวอร์โดยตรง'
+              : 'If the admin just approved you, press "Re-check access" below — it reads the trips you asked to join straight from the server.'}</li>
+            ${deploy ? `<li>${lang === 'th'
+              ? 'ถ้ายังไม่หาย ให้แอดมิน deploy กฎและดัชนี: <code>firebase deploy --only firestore:rules,firestore:indexes</code>'
+              : 'If it persists, the admin must deploy rules and indexes: <code>firebase deploy --only firestore:rules,firestore:indexes</code>'}</li>` : ''}
+            <li>${lang === 'th'
+              ? 'ตรวจว่าล็อกอินด้วยบัญชีเดิม (Google/อีเมล) ที่ใช้ตอนขอเข้าร่วม'
+              : 'Make sure you signed in with the same account (Google/email) you used to ask to join.'}</li>
+          </ul>
+          ${(e.details || []).length ? `<details class="mt-2"><summary class="cursor-pointer">${lang === 'th' ? 'รายละเอียดทางเทคนิค' : 'Technical details'}</summary>
+            <div class="mt-1 font-mono text-[10px] break-all">${escapeHtml((e.details || []).map(d => `${d.code || 'error'}: ${d.message}`).join('\n'))}</div></details>` : ''}
+        </div>`;
+    } else if (e.code === 'permission-denied' || msg.includes('permission') || msg.includes('Missing') || msg.includes('insufficient')) {
       hint = `
         <div class="notice text-left mt-3 p-3 rounded-xl text-xs leading-relaxed">
           <strong class="flex items-center gap-1">${icon('alert-triangle', 'w-3.5 h-3.5')} Firestore Rules ยังไม่ deploy</strong>
@@ -3658,13 +3686,16 @@ async function renderTripSelector() {
       <p class="text-sm font-semibold mb-1" style="color: var(--danger);">${escapeHtml(msg)}</p>
       ${hint}
       <div class="flex gap-2 justify-center mt-4 flex-wrap">
-        <button id="retry-trips" class="btn btn-primary btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${lang==='th' ? 'ลองใหม่' : 'Retry'}</button>
+        <button id="retry-trips" class="btn btn-primary btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${e.code === 'trip-list-incomplete'
+          ? (lang === 'th' ? 'ตรวจสิทธิ์อีกครั้ง' : 'Re-check access')
+          : (lang === 'th' ? 'ลองใหม่' : 'Retry')}</button>
         <button id="show-rules" class="btn btn-secondary btn-sm">${icon('scroll-text', 'w-4 h-4')} ${lang==='th' ? 'ดู Rules' : 'View Rules'}</button>
         <button id="clear-cfg-btn" class="btn btn-ghost btn-sm">${icon('eraser', 'w-4 h-4')} ${lang==='th' ? 'ล้าง Config' : 'Clear Config'}</button>
       </div>
       <p class="text-xs text-[var(--text-tertiary)] mt-3">UID: ${currentUser?.uid?.slice(0,8)} • ${escapeHtml(currentUser?.email || '')}</p>
     </div>`;
-    bind('retry-trips', 'click', () => renderTripSelector());
+    // A re-check must not be answered from the cache that produced the failure.
+    bind('retry-trips', 'click', () => { try { clearTripsCache(); } catch {} renderTripSelector(); });
     bind('clear-cfg-btn', 'click', () => { localStorage.removeItem('fuji_firebase_config'); location.reload(); });
     bind('show-rules', 'click', async () => {
       try {
@@ -12073,10 +12104,21 @@ async function renderMembers(params) {
       btn.disabled = true;
       const tLoad = toast.loading(th('กำลังเพิ่มสมาชิก...', 'Adding member...'));
       try {
-        await approveJoinRequest(tripId, req);
+        const result = await approveJoinRequest(tripId, req);
         tLoad.close();
         confetti({ y: 160 });
-        toast.success(th(`อนุมัติ ${req.displayName || ''} แล้ว`, `${req.displayName || 'Member'} added`));
+        if (result?.listed === false) {
+          // The member document was written but the trip's `memberUids` array
+          // does not list the account yet — exactly the state where the admin
+          // sees the member and the member sees no trip. The members list below
+          // reconciles it; say so instead of a plain "approved".
+          toast.warning(th(
+            `อนุมัติ ${req.displayName || ''} แล้ว แต่รายชื่อในทริป (memberUids) ยังไม่อัปเดต — กำลังซ่อมให้ ถ้าสมาชิกยังไม่เห็นทริป ให้กด "กวาดสถานะค้าง"`,
+            `${req.displayName || 'Member'} was approved, but the trip listing (memberUids) has not updated yet — repairing now. If they still see no trip, press "Sweep stale status".`
+          ));
+        } else {
+          toast.success(th(`อนุมัติ ${req.displayName || ''} แล้ว`, `${req.displayName || 'Member'} added`));
+        }
         await loadJoinRequests();
         await loadMembersList();
       } catch (e) {

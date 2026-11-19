@@ -16,6 +16,17 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > แอดมินแตะ mirror ของคนอื่นไม่ได้ตามกฎความเป็นส่วนตัว จึงต้องมีปุ่มฝั่งสมาชิกด้วย — รายละเอียด/ลำดับ deploy:
 > [docs/MEMBERSHIP-REPAIR-2026-11-19.md](docs/MEMBERSHIP-REPAIR-2026-11-19.md).
 >
+> **อนุมัติแล้วแต่สมาชิกยังไม่เห็นทริป (19 Nov 2026, รอบ 2):** อาการ “ใส่รหัสเชิญ → แอดมินอนุมัติแล้ว →
+> หน้าทริปของสมาชิกยังขึ้น *ตรวจสอบทริปที่เคยเข้าร่วมไม่ครบ*” มีสองชั้นซ้อนกัน: (1) `approveJoinRequest` เดิม
+> อ่านทริปด้วย `getDoc()` ที่อาจเป็นแคช แล้ว **ข้ามการเขียน `memberUids`** เมื่อเห็นว่า uid “อยู่ในลิสต์แล้ว”
+> (2) ถ้า `memberUids` ขาดพร้อมกับที่ยังไม่ deploy collection-group index การค้นทั้ง 3 ทางเดิมจะว่างพร้อมกัน.
+> ตอนนี้การอนุมัติ **เขียน `memberUids` เสมอ** (`arrayUnion`, อ่านทริปจากเซิร์ฟเวอร์, ตรวจซ้ำหลัง commit),
+> รายการทริปมี **แหล่งที่ 4** คือทริปที่บัญชีนั้นเคย “ขอเข้าร่วม” (mirror ส่วนตัว + รายการบนเครื่อง) ซึ่งอ่านทริป
+> เป็นรายใบได้แม้ index ยังไม่มา, และหน้า ทริปของฉัน แสดงสาเหตุที่แท้จริงพร้อมปุ่ม **“ตรวจสิทธิ์อีกครั้ง”**
+> แทนข้อความเดิม. **รอบนี้ไม่ต้อง deploy กฎใหม่** (ใช้ `isTripMember` + `memberMayRestoreOwnListing` เดิม) —
+> deploy เฉพาะไฟล์เว็บ; ถ้าอยากให้การค้นหาครบทุกทางให้ `firebase deploy --only firestore:indexes` ด้วย.
+> รายละเอียด: [docs/MEMBER-TRIP-VISIBILITY.md](docs/MEMBER-TRIP-VISIBILITY.md) หัวข้อ “รอบ 2”.
+>
 > **Firebase deployment:** Spark supports the current Google sign-in, Firestore joins, and the static site;
 > legacy username/PIN account flows, member-email lookup, and the invite fallback use secure Cloud Functions
 > and require Blaze. On Spark, use Google sign-in + invite code + admin approval; do not expose PIN or

@@ -1800,6 +1800,10 @@ console.log('\n▶ v8: rules not published yet → actionable help instead of a 
   // the member mirror so the app can still show "waiting for approval"
   fsdb.__allowAll();
   fsdb.__deny('trips/t1/joinRequests');
+  // A pending member cannot read the trip document itself — the rules only allow
+  // that once the member document exists (this is what keeps a *pending* request
+  // from being mistaken for access).
+  fsdb.__deny('trips/t1');
   window.document.querySelector('.bottom-sheet')?.remove();
   window.document.querySelector('.bottom-sheet-backdrop')?.remove();
   await goto('#/trips');
@@ -1813,8 +1817,14 @@ console.log('\n▶ v8: rules not published yet → actionable help instead of a 
   window.document.querySelector('.bottom-sheet')?.remove();
   window.document.querySelector('.bottom-sheet-backdrop')?.remove();
 
-  // ... admin publishes the rules, member retries
+  // ... admin publishes the rules, member retries on a fresh device: the local
+  // “asked to join” memory and the private mirror are gone, so nothing shortcuts
+  // the request (and, as with any pending request, the trip document itself
+  // stays unreadable — the rules only open it once the member document exists).
   fsdb.__allowAll();
+  window.localStorage.removeItem('fuji_join_targets');
+  fsdb.__store.delete('users/g2/joinRequests/t1');
+  fsdb.__store.delete('users/g2/joinRequests/g2');
   window.document.querySelector('#rules-copy')?.closest('.bottom-sheet')?.remove();
   window.document.querySelector('.bottom-sheet-backdrop')?.remove();
   await goto('#/trips');

@@ -163,3 +163,73 @@ test('an unreadable request queue does not block the membership half of the swee
   assert.deepEqual(report.activated, ['g1']);
   assert.equal(report.warnings.some(w => w.step === 'joinRequests'), true, 'the UI gets a clear warning');
 });
+
+/* ------------------------------------------------------------------ *
+ * A newly approved member must get in even when the listing drifted and the
+ * collection-group index is not deployed yet (the reported incident).
+ * ------------------------------------------------------------------ */
+
+test('approval always lands the uid in memberUids — never skipped because a cached trip looked right', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', role: 'member', status: 'active' });
+  // The device's cache claims g1 is already listed; the server copy does not.
+  // Deciding from that snapshot is how an approval created the member document
+  // but left the trip listing empty (admin sees them, they see no trip).
+  fsdb.__staleGet('trips/t1', { createdBy: 'admin', memberUids: ['admin', 'g1'] });
+  const result = await joins.approveJoinRequest('t1', { uid: 'g1', displayName: 'น้องใหม่' });
+  assert.equal(result.listed, true, 'the approval reports the listing as verified');
+  assert.deepEqual(fsdb.__dump('trips/t1').memberUids, ['admin', 'g1'], 'server array repaired');
+  assert.deepEqual(fsdb.__dump('trips/t1/members/g1').status, 'active');
+});
+
+test('approving twice does not duplicate the memberUids entry', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin', 'g1'] });
+  await joins.approveJoinRequest('t1', { uid: 'g1' });
+  await joins.approveJoinRequest('t1', { uid: 'g1' });
+  assert.deepEqual(fsdb.__dump('trips/t1').memberUids, ['admin', 'g1']);
+});
+
+test('an approved member gets in through their join mirror when the list query and discovery both fail', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', status: 'active' });
+  fsdb.__seed('users/g1/joinRequests/t1', { uid: 'g1', tripId: 't1', status: 'approved' });
+  // Exactly the production combination: the memberUids entry is missing (so the
+  // indexed query finds nothing) and the collection-group index is not deployed
+  // (so member-document discovery fails too).
+  fsdb.__denyQueryField('trips', 'memberUids');
+  fsdb.__deny('members');
+  const found = await trips.listTrips('g1');
+  assert.deepEqual(found.map(t => t.id), ['t1'], 'the trip named by the member’s own request is readable by id');
+  assert.ok(fsdb.__dump('trips/t1').memberUids.includes('g1'), 'the listing is repaired on the way');
+  assert.equal(found.incomplete, true, 'the page can still say it was a partial check');
+});
+
+test('a trip remembered on the device is re-checked even after the mirror is gone', async () => {
+  fsdb.__seed('trips/t9', { createdBy: 'admin', memberUids: ['admin'] });
+  fsdb.__seed('trips/t9/members/g9', { uid: 'g9', status: 'active' });
+  joins.rememberJoinTarget('g9', 't9');
+  fsdb.__denyQueryField('trips', 'memberUids');
+  fsdb.__deny('members');
+  const found = await trips.listTrips('g9');
+  assert.deepEqual(found.map(t => t.id), ['t9']);
+  assert.ok(fsdb.__dump('trips/t9').memberUids.includes('g9'));
+});
+
+test('a request the admin has not approved yet stays pending — no trip and no scary error', async () => {
+  fsdb.__seed('trips/t2', { createdBy: 'admin', memberUids: ['admin'] });
+  fsdb.__seed('users/g2/joinRequests/t2', { uid: 'g2', tripId: 't2', status: 'pending' });
+  // Not a member: the rules keep the trip document closed.
+  fsdb.__deny('trips/t2');
+  const found = await trips.listTrips('g2');
+  assert.deepEqual(found, [], 'no trip invented for a pending request');
+});
+
+test('a failed lookup reports which source failed instead of one generic sentence', async () => {
+  fsdb.__denyQueryField('trips', 'memberUids');
+  fsdb.__deny('members');
+  const error = await trips.listTrips('member').then(() => null, e => e);
+  assert.equal(error.code, 'trip-list-incomplete');
+  assert.ok(Array.isArray(error.details) && error.details.length >= 2, 'per-source details for the notice');
+  assert.ok(error.details.some(d => d.code === 'failed-precondition'), 'the missing index is named');
+  assert.equal(error.requiresDeploy, true, 'the UI knows to point at rules/indexes');
+});

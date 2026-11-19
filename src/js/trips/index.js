@@ -3,6 +3,7 @@ import { brandPrimary } from '../utils/brand.js';
 import { deleteTransfer } from '../settlement/transfers.js';
 import { collection, collectionGroup, doc, getDoc, getDocFromServer, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, runTransaction, query, where, limit, startAfter, arrayUnion, arrayRemove, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { missingMemberUids, mergeTripsById, tripIdFromMemberPath } from '../utils/memberUids.js';
+import { listJoinTargets, forgetJoinTarget } from '../members/join.js';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { compressImage } from '../utils/helpers.js';
 import { normalizeCoverPosition } from '../utils/coverPosition.js';
@@ -88,6 +89,20 @@ function invitePreviewData(tripId, trip) {
 function permissionDenied(error) {
   return String(error?.code || '').includes('permission-denied')
     || /missing or insufficient permissions/i.test(String(error?.message || ''));
+}
+
+/**
+ * A failure that only deploying the current rules/indexes can fix.
+ * Used to decide whether the trip list error should tell the user to deploy
+ * (`permission-denied`, missing composite/collection-group index) or to check
+ * the connection instead — the old single message told everybody both.
+ */
+function deployFixableFailure(error) {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '');
+  return permissionDenied(error)
+    || code.includes('failed-precondition')
+    || /requires an index|create.*index|no matching index/i.test(message);
 }
 
 async function uniqueInviteCode(except = null) {
@@ -213,7 +228,25 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false) {
     noteFailure(e);
   }
 
-  const trips = mergeTripsById(listedTrips, createdTrips, discoveredTrips);
+  let trips = mergeTripsById(listedTrips, createdTrips, discoveredTrips);
+
+  // Source 4 — only when everything above came back empty: the trips this
+  // account *asked to join*. The admin's approval creates the member document
+  // and the `memberUids` entry, but if either the array entry or the
+  // collection-group index is missing, sources 1–3 all fail and an approved
+  // member is told “ตรวจสอบทริปที่เคยเข้าร่วมไม่ครบ”. Their own request mirrors
+  // (`users/{uid}/joinRequests/{tripId}`, owner-only) still name the trip, and
+  // the rules let a real member read that trip by id — so read it, show it, and
+  // repair the array entry on the way. A request that is not approved yet is
+  // simply not readable: no trip, and no error either.
+  if (!trips.length) {
+    try {
+      trips = await discoverTripsFromJoinTargets(userId);
+    } catch (e) {
+      console.warn('join-target lookup failed', e?.code || e?.message || e);
+    }
+  }
+
   if (trips.length) {
     if (failures.length) Object.defineProperty(trips, 'incomplete', { value: true });
     else setCachedTrips(trips, userId);
@@ -226,7 +259,71 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false) {
     const error = new Error('ตรวจสอบทริปที่เคยเข้าร่วมไม่ครบ — ตรวจการเชื่อมต่อและการ deploy Firestore Rules/Indexes แล้วลองใหม่');
     error.code = 'trip-list-incomplete';
     error.cause = failures[0];
+    // The UI needs to say *what* failed (missing index / denied rules / offline)
+    // instead of repeating one message for every cause.
+    error.details = failures.map(f => ({ code: f?.code || null, message: String(f?.message || f || '') }));
+    error.requiresDeploy = failures.some(deployFixableFailure);
+    error.network = !error.requiresDeploy;
     throw error;
+  }
+  return trips;
+}
+
+/**
+ * Restore this account's own `memberUids` entry on a trip it can already read.
+ * The rules allow exactly one entry — the caller's own — and nothing else, so a
+ * member can only ever repair their own listing (see `memberMayRestoreOwnListing`
+ * in firestore.rules). Under older rules the write is denied and retried the
+ * next time the trip list is loaded.
+ */
+async function restoreOwnListing(trip, userId) {
+  if (!trip?.id || !userId) return false;
+  if (Array.isArray(trip.memberUids) && trip.memberUids.includes(userId)) return false;
+  try {
+    await updateDoc(doc(db, 'trips', trip.id), {
+      memberUids: arrayUnion(userId), updatedAt: serverTimestamp()
+    });
+    trip.memberUids = [...(Array.isArray(trip.memberUids) ? trip.memberUids : []), userId];
+    return true;
+  } catch (e) {
+    console.warn('memberUids self-repair failed (rules not published yet?)', e?.code || e?.message);
+    return false;
+  }
+}
+
+/**
+ * Trips found through this account's own join requests (source 4).
+ *
+ * Only reads: for each remembered/ mirrored trip id, read the trip document
+ * from the server. `isTripMember` allows that read exactly when the membership
+ * is real (member document present and not inactive), so an approval that
+ * landed shows up here even while `memberUids`/indexes are broken, and a
+ * request the admin has not approved yet stays invisible.
+ */
+async function discoverTripsFromJoinTargets(userId) {
+  const trips = [];
+  if (!db || !userId) return trips;
+  let tripIds = [];
+  try {
+    tripIds = await listJoinTargets(userId);
+  } catch (e) {
+    console.warn('join targets unavailable', e?.code || e?.message || e);
+    return trips;
+  }
+  for (const tripId of tripIds) {
+    try {
+      const snap = await getDocFromServer(doc(db, 'trips', tripId));
+      if (!snap.exists()) continue;
+      const trip = { id: snap.id, ...snap.data() };
+      trips.push(trip);
+      await restoreOwnListing(trip, userId);
+      // Found: the device does not need to re-check this trip on every load.
+      forgetJoinTarget(userId, tripId);
+    } catch (e) {
+      // Not a member (yet): the rules keep the trip closed. That is the normal
+      // answer for a pending/declined request — never an error for the page.
+      console.warn('join-target trip not readable (not approved yet?)', tripId, e?.code || e?.message);
+    }
   }
   return trips;
 }
@@ -273,16 +370,7 @@ async function discoverTripsByMemberDocs(userId, knownTripIds = new Set()) {
       if (!snap.exists()) continue;
       const trip = { id: snap.id, ...snap.data() };
       trips.push(trip);
-      if (!Array.isArray(trip.memberUids) || !trip.memberUids.includes(userId)) {
-        try {
-          await updateDoc(doc(db, 'trips', tripId), {
-            memberUids: arrayUnion(userId), updatedAt: serverTimestamp()
-          });
-          trip.memberUids = [...(Array.isArray(trip.memberUids) ? trip.memberUids : []), userId];
-        } catch (e) {
-          console.warn('memberUids self-repair failed (rules not published yet?)', e?.code || e?.message);
-        }
-      }
+      await restoreOwnListing(trip, userId);
     } catch (e) {
       // Not actually readable (inactive/removed member, rules not yet
       // published): skip this candidate, never fail the whole list.
