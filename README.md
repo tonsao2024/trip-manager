@@ -36,6 +36,14 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > **ผู้ดูแลทริป** เปลี่ยนสถานะ. ต้อง deploy กฎชุดใหม่ (`firebase deploy --only firestore:rules`) เพื่อให้
 > เอกสารเก่าที่ค้าง `disabled` ถูกตัดสิทธิ์ด้วย — รายละเอียด: [docs/PERMISSIONS.md](docs/PERMISSIONS.md) § 6.1.
 >
+> **ตรวจทั้งระบบ + เทสจริง (19 Nov 2026, รอบ 4):** รันชุดทดสอบทุกชุดที่ environment นี้รันได้ —
+> unit 272, membership/indexes 26, deploy guard 6, Cloud Functions 3, push sender 12, E2E jsdom
+> **941 ข้อ ใน 85 section** (เดิมรันได้แค่ 324 เพราะ smoke ตายที่ PNG ข้อแรก) = **ผ่าน 1,260 ข้อ ตก 0**.
+> เพิ่ม section **v37** ยืนยัน “ระงับ → ตัดสิทธิ์ → เปิดคืน → ได้สิทธิ์คืน” ผ่าน UI จริง และแก้ข้อความสถานะ
+> ที่กำกวม “ปิดใช้งาน” → **“ระงับการใช้งาน”**. ชุดที่ sandbox นี้รันไม่ได้ (Firestore Rules 14 เคส,
+> puppeteer 9 ชุด) พร้อมคำสั่งรันบนเครื่องคุณอยู่ใน **[docs/TEST-REPORT.md](docs/TEST-REPORT.md)**
+> (รายการเช็กทั้งหมด 941 ข้อ: [docs/test-cases-smoke.txt](docs/test-cases-smoke.txt)).
+>
 > **Firebase deployment:** Spark supports the current Google sign-in, Firestore joins, and the static site;
 > legacy username/PIN account flows, member-email lookup, and the invite fallback use secure Cloud Functions
 > and require Blaze. On Spark, use Google sign-in + invite code + admin approval; do not expose PIN or

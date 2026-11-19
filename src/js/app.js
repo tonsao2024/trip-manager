@@ -229,7 +229,7 @@ function memberStateLabel(status, lang = getLang()) {
   const value = String(status || 'active').trim().toLowerCase();
   // `inactive` and `disabled` are the same (revoked) state — see
   // utils/memberUids.js REVOKED_MEMBER_STATUSES and firestore.rules isTripMember.
-  if (value === 'inactive' || value === 'disabled') return lang === 'th' ? 'ปิดใช้งาน' : 'Disabled';
+  if (value === 'inactive' || value === 'disabled') return lang === 'th' ? 'ระงับการใช้งาน' : 'Disabled';
   if (value === 'pending' || value === 'waiting' || value === 'review') return lang === 'th' ? 'รออนุมัติ' : 'Pending';
   return lang === 'th' ? 'ใช้งานอยู่' : 'Active';
 }

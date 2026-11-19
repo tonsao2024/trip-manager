@@ -1,0 +1,1138 @@
+# Smoke (jsdom E2E) — every executed check, grouped by section
+# source: node tests/smoke/run.mjs  (branch arena/8a260163-trip-manager)
+# 941 checks passed, 0 failed, 23 environment-limited (⚠ = needs a real browser rasterizer)
+
+
+## 01. JSON expense import batch boundaries
+  ✓ JSON import: persists 0 records
+  ✓ JSON import: 0 records commit in [] fresh batch(es)
+  ✓ JSON import: persists 1 records
+  ✓ JSON import: 1 records commit in [1] fresh batch(es)
+  ✓ JSON import: persists 399 records
+  ✓ JSON import: 399 records commit in [399] fresh batch(es)
+  ✓ JSON import: persists 400 records
+  ✓ JSON import: 400 records commit in [400] fresh batch(es)
+  ✓ JSON import: persists 401 records
+  ✓ JSON import: 401 records commit in [400,1] fresh batch(es)
+  ✓ JSON import: persists 800 records
+  ✓ JSON import: 800 records commit in [400,400] fresh batch(es)
+  ✓ JSON import: persists 801 records
+  ✓ JSON import: 801 records commit in [400,400,1] fresh batch(es)
+
+## 02. boot & trip list
+  ✓ trip list renders the seeded trip
+  ✓ trip card markup present
+
+## 03. dashboard (single page + animated countdown card)
+  ✓ countdown: flat Fuji mark rendered
+  ✓ countdown: day count and animated traveller rendered
+  ✓ countdown: progress track rendered
+  ✓ countdown: runner, fill and accessible progress stay in sync
+  ✓ countdown: update reaches the end and switches to finished state
+  ✓ countdown: reduced motion is supported
+  ✓ countdown: the runner scene fills the available frame width
+  ✓ countdown: compact mode does not scale the scene down inside its frame
+  ✓ dashboard: plain page header with the trip name (no hero banner)
+  ✓ countdown: date action opens trip settings focused on departure dates
+  ✓ dashboard: KPI tiles
+  ✓ dashboard: totals computed
+  ✓ dashboard: member paid/share board
+  ✓ dashboard: category bars
+  ✓ dashboard: every system category listed (even without spending)
+  ✓ dashboard: recent expenses
+  ✓ dashboard: up-next list
+  ✓ dashboard: no innerHTML-on-null errors
+
+## 04. cover crop: the reader chooses what the cover shows (v45)
+  ✓ cover crop: the banner shows the trip cover
+  ✓ cover crop: the banner reads the saved x/y crop (30% 70%)
+  ✓ cover crop: the banner reads the saved zoom
+  ✓ cover crop: the banner can be repainted when a member saves a new crop
+  ✓ cover crop: the control sits ON the cover, not only in the ⋯ menu
+  ✓ cover crop: the ⋯ menu still offers the same editor
+  ✓ cover crop: the editor opens
+  ✓ cover crop: the editor previews the three frames the photo appears in
+  ✓ cover crop: the zoom control starts at the saved crop
+  ✓ cover crop: the zoom is announced in percent
+  ✓ cover crop: quick positions are one tap away
+  ✓ cover crop: the zoom slider tightens the crop live
+  ✓ cover crop: the announced zoom follows the slider
+  ✓ cover crop: the horizontal slider moves the crop live
+  ✓ cover crop: “บน” pins the crop to the top edge
+  ✓ cover crop: the crop is saved on the shared trip ({"x":12,"y":0,"zoom":2.2})
+  ✓ cover crop: the editor closes after saving
+  ✓ cover crop: the banner shows the new crop without a reload
+  ✓ cover crop: an axis with no overflow is hidden, not shown as a dead slider
+  ✓ cover crop: the shared rules accept the zoom a crop stores
+
+## 05. nav active-state follows the route without needless rebuilds (v33)
+  ✓ nav: dashboard highlighted on the desktop menu
+  ✓ nav: expenses highlighted after navigating
+  ✓ nav: dashboard no longer highlighted
+  ✓ nav: desktop menu reuses the same anchors (no rebuild on in-trip nav)
+  ✓ nav: bottom bar highlights expenses
+  ✓ nav: dashboard highlighted again on return
+
+## 06. itinerary (map, 16:9 image, edit/delete, estimate → expense)
+  ✓ itinerary: card layout
+  ✓ itinerary: fixed 16:9 thumbnail element
+  ✓ itinerary: place image rendered in thumbnail
+  ✓ itinerary: CSS fixes the thumbnail at 16:9 with rounded corners
+  ✓ itinerary: card is a flex row so the thumb sits on the right
+  ✓ itinerary: map container present
+  ✓ itinerary: per-item edit/delete buttons
+  ✓ map: tapping an itinerary card pans the map to that pin (zoom >= 15)
+  ✓ itinerary: edit form opens for an existing item
+  ✓ itinerary: estimate cost fields present
+  ✓ itinerary: edit form prefilled with item data
+
+## 07. expenses (list + add/edit form)
+  ✓ expenses: KPI strip
+  ✓ expenses: cards rendered
+  ✓ expenses: edit/delete actions per card
+  ✓ expense add: amount field
+  ✓ expense add: currency select
+  ✓ expense add: payer tiles
+  ✓ expense add: split tiles
+  ✓ expense add: equal/unequal toggle
+
+## 08. members (add + edit + delete)
+  ✓ members: rows rendered
+  ✓ members: edit button
+  ✓ members: delete button
+  ✓ members: add member persists (no internal error)
+  ✓ members: no "internal" error surfaced
+  ✓ members: new member appears in the list
+
+## 09. documents (add + edit + delete)
+  ✓ documents: list rendered
+  ✓ documents: edit button
+  ✓ documents: delete button
+  ✓ documents: add persists
+
+## 10. import / export (admin-only Excel)
+  ✓ import page: template buttons present
+  ✓ import page: Excel buttons enabled for trip admin
+  ✓ import page: Excel export buttons
+  ✓ import page: file inputs
+  ✓ import page: admin badge shown
+
+## 11. settings (editable + deletable trip)
+  ✓ settings: trip name prefilled
+  ✓ settings: travel dates editable
+  ✓ settings: currency/timezone editable
+  ✓ settings: save button
+  ✓ settings: delete trip button
+  ✓ settings: duplicate trip button
+  ✓ settings: trip default basemap choices render
+  ✓ settings: default basemap also updates the device fallback
+  ✓ itinerary: saved trip basemap is selected by default
+  ✓ settings: trip update persists
+  ✓ settings: multi-currency manager present
+  ✓ settings: trip starts with no extra currencies
+  ✓ settings: add-currency row appears
+  ✓ settings: trip currencies persisted
+  ✓ settings: extra exchange rate persisted
+  ✓ multi-currency: added currency offered in the expense form
+  ✓ multi-currency: expense form prefills the trip rate for the added currency
+
+## 12. settlement & more
+  ✓ settlement: renders
+  ✓ more: menu renders
+  ✓ more: weather forecast has its own menu entry
+  ✓ weather page offers the requested Japanese destinations
+  ✓ weather page opens in the trip month and highlights the departure date
+  ✓ weather page credits the free Open-Meteo forecast source
+
+## 13. itinerary: add a place with coordinates (map must not re-init)
+  ✓ itinerary: new place persisted
+  ✓ itinerary: coordinates stored
+  ✓ itinerary: map container alive after adding coordinates
+  ✓ itinerary: failed map tiles explain the impact and offer retry
+  ✓ itinerary: map error clears when tiles recover
+  ✓ itinerary: no "map container is initialized" error
+
+## 14. v19 plan → money: one expense form, two screens + teams per place
+  ✓ v19: the place with a cost is on the plan
+  ✓ v19: the card offers “แก้ไขค่าใช้จ่าย”
+  ✓ v19: “รายละเอียดสถานที่” is gone from the plan (a request)
+  ✓ v19: the plan sheet shows the same four expense sections
+  ✓ v19: same fields as the expenses page
+  ✓ v19: the sheet stays linked to the place
+  ✓ v19: the cost saved through the plan sheet (net 1400)
+  ✓ v19: discount entered in the sheet is stored on the expense
+  ✓ v19: one expense stays linked to the place (1)
+  ✓ v19: the place estimate follows the expense (1400)
+  ✓ v19: the place remembers its linked expense (e2 / e2)
+  ✓ v19: the place form offers the team picker
+  ✓ v19: the team picker explains what it is for
+  ✓ paging: first page shows 30 of the matching rows (30)
+  ✓ paging: “Load more” is offered while rows remain
+  ✓ paging: the running total counts every matching row, not just the page (48)
+  ✓ paging: “Load more” reveals the next rows (48)
+  ✓ paging: settlement loads with 45+ expenses
+
+## 15. estimate auto-aggregates into expenses
+  ✓ estimate: linked expense auto-created in the expense book
+  ✓ estimate: expense keeps estimate flag + category
+  ✓ estimate: split across the selected members
+  ✓ estimate: payer recorded
+  ✓ expenses: itinerary estimate appears in the list
+
+## 16. expense edit + delete
+  ✓ expenses: delete removes the document (was blocked by rules before)
+  ✓ expenses: deleted expense is gone (or voided)
+
+## 17. expenses: แก้ไขในป๊อปอัป + ปุ่มบันทึกลอย (v22)
+  ✓ itinerary (phone): the flex column stretches its children
+  ✓ itinerary (phone): the day column can never be wider than the screen
+  ✓ popup: tapping a row opens the expense form in a sheet
+  ✓ popup: the route does not change (no page jump)
+  ✓ popup: the save button sits in the floating action row
+  ✓ popup: editing from the list can also delete the expense
+  ✓ popup: the form is prefilled with the expense
+  ✓ popup: saving updates the expense
+  ✓ popup: the same document is updated (no duplicate)
+  ✓ popup: closes after saving
+  ✓ popup: the list shows the change without leaving the page
+  ✓ add page: the save button lives in the floating action row
+  ✓ add page: the action row is sticky (it follows the scroll)
+  ✓ add page: the form does not clip the sticky row
+  ✓ add page: the bar parks above the bottom edge on desktop too
+
+## 18. itinerary: มุมมองกระทัดรัด (v23)
+  ✓ compact: the plan toolbar offers a compact view
+  ✓ compact: the plan starts in the comfortable view
+  ✓ compact: the button offers to switch TO compact
+  ✓ compact: the toggle folds the plan
+  ✓ compact: the page carries the state too
+  ✓ compact: the toggle reports its state
+  ✓ compact: the active view is highlighted
+  ✓ compact: the choice is remembered on this device
+  ✓ compact: the place name stays
+  ✓ compact: the category chip stays (icon only)
+  ✓ compact: the navigate button stays
+  ✓ compact: the item menu stays reachable
+  ✓ compact: the time line stays
+  ✓ compact: details are folded at every width
+  ✓ compact: the photo thumbnail folds into a small action
+  ✓ compact: travel legs fold away except a real schedule warning
+  ✓ compact: the category/navigation labels collapse to icons
+  ✓ compact: remembered when the plan is re-opened
+  ✓ compact: toggling back restores the full cards
+  ✓ compact: the comfortable view is remembered too
+  ✓ compact: the label flips back to offering compact
+
+## 19. v37: ระงับสมาชิก = ตัดสิทธิ์ทันที (ฟอร์มจริง → ผลจริง)
+  ✓ member status: the edit form has a status control
+  ✓ member status: the trip admin may change it
+  ✓ member status: two choices only, written as the values the rules revoke on (active/inactive)
+  ✓ member status: the option says the account loses access ("ระงับการใช้งาน")
+  ✓ member status: suspend saves status=inactive
+  ✓ member status: the suspended uid leaves the trip listing in the same action (that is what the rules check)
+  ✓ member status: the roster spells out that the member is suspended
+  ✓ member status: re-activate saves status=active
+  ✓ member status: re-activating puts the uid back in the trip listing
+
+## 20. member edit + delete
+  ✓ members: edit saves changes
+  ✓ members: delete removes the member doc
+
+## 21. documents: edit + delete
+  ✓ documents: edit saves changes
+  ✓ documents: delete removes exactly one document (2 → 1)
+
+## 22. permissions: Excel buttons hidden from non-admins
+  ✓ permissions: Excel template buttons disabled for members
+  ✓ permissions: Excel export buttons disabled for members
+  ✓ permissions: PNG export still available to members
+  ✓ permissions: trip details and budgets are read-only for members
+  ✓ permissions: members cannot delete trips or rotate invite codes
+  ✓ permissions: members with expense rights may manage payment cards
+  ✓ permissions: members cannot edit trip details from the dashboard
+  ✓ permissions: the countdown has no trip-settings shortcut for members
+
+## 23. Excel round trip (real SheetJS)
+  ✓ excel: bilingual header sheet picked correctly
+  ✓ excel: readSpreadsheet parses the sheet (2 rows)
+  ✓ excel: itinerary import parses 2 rows (0 errors)
+  ✓ excel: place + coordinates imported
+  ✓ excel: estimated cost + category imported
+  ✓ excel: payer + participants resolved to member ids
+  ✓ excel: expense sheet parsing does not throw
+  ✓ excel: template + workbook export run without error
+
+## 24. UI: import the itinerary workbook (admin)
+  ✓ import: button enables after choosing a file
+  ✓ import: preview sheet is shown before writing
+  ✓ import: rows written to Firestore (3)
+  ✓ import: coordinates carried over
+  ✓ import: estimated expense auto-created for imported row
+  ✓ import: imported place shows on the itinerary page
+
+## 25. v5 → v35: every menu page opens with a plain page header (the animated scenes were retired in the calm pass)
+  ✓ page head: trips page shows its title header
+  ✓ page head: trips carries no decorative illustration (v35)
+  ✓ page head: itinerary page shows its title header
+  ✓ page head: itinerary carries no decorative illustration (v35)
+  ✓ page head: expenses page shows its title header
+  ✓ page head: expenses carries no decorative illustration (v35)
+  ✓ page head: members page shows its title header
+  ✓ page head: members carries no decorative illustration (v35)
+  ✓ page head: documents page shows its title header
+  ✓ page head: documents carries no decorative illustration (v35)
+  ✓ page head: import page shows its title header
+  ✓ page head: import carries no decorative illustration (v35)
+  ✓ page head: settings page shows its title header
+  ✓ page head: settings carries no decorative illustration (v35)
+  ✓ page head: settlement page shows its title header
+  ✓ page head: settlement carries no decorative illustration (v35)
+  ✓ page head: map page shows its title header
+  ✓ page head: map carries no decorative illustration (v35)
+
+## 26. v5: Settings > system check explains broken member login
+  ✓ system check: button present in settings
+  ✓ system check: ran every probe (15 rows)
+  ✓ system check: missing optional Blaze Functions is a warning on Spark
+  ✓ system check: explains the optional Functions path on Spark
+  ✓ system check: Actions setup must be verified by the owner
+  ✓ system check: verifies PIN documents stay private
+  ✓ system check: report can be copied
+  ✓ system check: fujiDiagnose() console helper exposed
+
+## 27. v5: dashboard does not re-render icons every second
+  ✓ dashboard: countdown text is stable between minute ticks
+  ✓ dashboard: clock icon is not re-created (no flicker)
+  ✓ dashboard: live tick runs every 30s, not every second
+
+## 28. v5: map layers (street / satellite / terrain)
+  ✓ map: base tiles created
+  ✓ map: satellite layer uses Esri imagery (got https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=cb1_40yb_1_32)
+  ✓ map: satellite imagery adds a place-labels overlay
+  ✓ map: satellite button marked active
+  ✓ map: terrain layer switches
+  ✓ map: back to the street map layer
+  ✓ map: CARTO tiles carry the CARTO API key (no watermark)
+
+## 29. v5: Google Maps navigation links
+  ✓ google maps: directions URL for a place with coordinates
+  ✓ google maps: search URL falls back to the address
+  ✓ google maps: saved URL wins over coordinates
+  ✓ google maps: directions also use saved URL
+  ✓ google maps: navigate button on the itinerary card
+  ✓ google maps: inline "open in maps" link on the card
+
+## 30. v5: sticky notes board
+  ✓ notes: post-it board rendered
+  ✓ notes: note persists in Firestore
+  ✓ notes: chosen paper color saved
+  ✓ notes: note shows as a post-it card
+  ✓ notes: edit + delete on the post-it
+  ✓ notes: edit saves changes
+  ✓ notes: delete removes the note
+
+## 31. v5/v12: mobile layout (toolbars, chips, viewport)
+  ✓ mobile: toolbars stay on one row so the content below is reachable
+  ✓ mobile: the buttons of a scrolling toolbar keep a tappable size
+  ✓ mobile: bottom nav items share the width evenly
+
+## 32. v5: PNG export survives color-mix()
+  ✓ png: color-mix with transparent resolves to rgba()
+  ✓ png: var()-based values left for the browser to resolve
+  ✓ png: gradients with nested color-mix() are fully rewritten
+  ✓ png: oklch() normalized through the canvas fallback
+  ✓ png: export sanitizes colors before html2canvas runs
+
+## 33. v9: THB is shown next to every amount
+  ✓ thb: dashboard shows a baht equivalent (trip is in JPY)
+  ✓ thb: total KPI has a dedicated THB line
+  ✓ thb: recent expense rows show the baht value
+  ✓ thb: member board shows the baht value
+  ✓ thb: category breakdown shows the baht value
+  ✓ thb: expense card shows the baht value
+  ✓ thb: expense summary strip shows the baht value
+
+## 34. v9: expense groups can be added, edited and deleted
+  ✓ groups: built-in groups listed (9)
+  ✓ groups: built-in rows present
+  ✓ groups: new group saved to Firestore
+  ✓ groups: name + icon stored
+  ✓ groups: new group appears in the expense form
+  ✓ groups: manage shortcut inside the expense form
+  ✓ groups: dashboard shows the trip group name (not the raw id)
+  ✓ groups: no raw id leaks into the dashboard
+  ✓ groups: new group appears in the place category picker
+  ✓ category: the place form asks for the category only once
+  ✓ groups: settings lists the trip group
+  ✓ groups: an existing group can be renamed
+  ✓ groups: a trip group can be deleted
+  ✓ groups: built-in groups cannot be deleted
+  ✓ groups: deleting a built-in group is refused with a warning
+
+## 35. expense groups keep working before the rules are published
+  ✓ groups: saved locally while Firestore denies the write
+  ✓ groups: the user is told the rules still need publishing
+  ✓ groups: local group usable in the expense form (0 options before)
+
+## 36. baht amounts appear even when the trip never set a rate
+  ✓ thb: dashboard shows baht without a trip rate (from expense snapshots)
+  ✓ thb: the baht line is not mislabelled with the trip currency
+  ✓ thb: the settlement overview shows baht amounts
+  ✓ thb: no "set a rate" warning when a snapshot exists
+
+## 37. settlement explains where each payment comes from
+  ✓ settlement: transactions have a details block
+  ✓ settlement: the detail names the bills being settled
+  ✓ settlement: explains that the transfer is netted
+
+## 38. v9: clear-bill receipts (received / deducted / balance + per-person PNG)
+  ✓ settlement: opens on the overview (default view)
+  ✓ settlement: one receipt per member (2)
+  ✓ settlement: receipt keyed by member id
+  ✓ settlement: receipt shows received / deducted / balance
+  ✓ settlement: payment method shown (cash / card / transfer)
+  ✓ settlement: the items this member paid are listed
+  ✓ settlement: shares show which bill they belong to
+  ✓ settlement: rows carry the expense date
+  ✓ settlement: shares name who paid
+  ✓ settlement: baht equivalent present
+  ✓ settlement: per-person PNG export button
+  ✓ settlement: receipt text can be copied
+  ✓ settlement: every member can export their own receipt
+  ✓ settlement: overview PNG + print/PDF buttons
+  ✓ settlement: overview / receipts switch
+  ✓ settlement: transaction detail available
+  ✓ settlement: overview splits cash vs card
+  ✓ settlement: overview renders a statement table
+  ✓ settlement: overview PNG export runs without colour errors
+  ✓ settlement: per-person PNG export runs without colour errors
+
+## 39. performance: switching menus with a slow connection
+  ✓ perf: a cold menu (empty cache) is ready in < 2s @120ms latency
+  ✓ perf: slowest menu ready in 190ms (target < 1500ms @120ms latency)
+  ✓ perf: the 8 menus together cost 27 Firestore reads (target ≤ 27)
+
+## 40. PNG export can never be blocked by modern colors
+  ✓ png: the overview is the default view
+  ✓ png: overview table is rendered first
+  ⚠ overview png download — jsdom cannot rasterize HTML→PNG (covered by tests/browser/export-check.mjs)
+  ⚠ png: overview exported to a file — jsdom cannot rasterize HTML→PNG
+  ⚠ png: html2canvas never saw a modern color (1 rejects) — jsdom cannot rasterize HTML→PNG
+  ⚠ png: background colour handed to html2canvas is plain rgb() — jsdom cannot rasterize HTML→PNG
+  ✓ png: every receipt element exists (missing: none)
+  ⚠ receipt png download — jsdom cannot rasterize HTML→PNG (covered by tests/browser/export-check.mjs)
+  ⚠ png: per-person receipt exported (no "element หายไป") — jsdom cannot rasterize HTML→PNG
+  ⚠ receipt png download after a failed attempt — jsdom cannot rasterize HTML→PNG (covered by tests/browser/export-check.mjs)
+  ⚠ png: retries with the flat palette and still produces the image — jsdom cannot rasterize HTML→PNG
+  ✓ png: two capture attempts were made (3)
+  ✓ png: the retry consumed the forced failure
+  ⚠ second receipt png — jsdom cannot rasterize HTML→PNG (covered by tests/browser/export-check.mjs)
+  ⚠ png: the second member receipt exports as well — jsdom cannot rasterize HTML→PNG
+  ⚠ png: no color reject on the second receipt — jsdom cannot rasterize HTML→PNG
+  ⚠ itinerary png download — jsdom cannot rasterize HTML→PNG (covered by tests/browser/export-check.mjs)
+  ⚠ png: itinerary export works too — jsdom cannot rasterize HTML→PNG
+  ⚠ png: the itinerary file is named after the trip (undefined) — jsdom cannot rasterize HTML→PNG
+  ⚠ png: the capture ran on the plain-style clone (not the live DOM) — jsdom cannot rasterize HTML→PNG
+
+## 41. v10: receipt photo is optional and never blocks saving
+  ✓ receipt photo: the form offers an upload with a preview
+  ✓ receipt photo: no preview before a photo is chosen
+  ✓ receipt photo: the chosen photo is previewed
+  ✓ receipt photo: the expense is saved even when the image cannot be processed
+
+## 42. v10: itinerary page (days left, map right) + full-plan PNG
+  ✓ layout: days and chips sit in the left column
+  ✓ layout: the map sits in the right column
+  ✓ layout: two columns on desktop
+  ✓ layout: the map appears above sticky notes on phones
+  ✓ layout: place titles can use the full card width without vertical word breaks
+  ✓ layout: mobile “see more” is a compact button
+  ✓ layout: the map stays visible while scrolling the days
+  ⚠ plan png download — jsdom cannot rasterize HTML→PNG (covered by tests/browser/export-check.mjs)
+  ⚠ plan png: exported as one file — jsdom cannot rasterize HTML→PNG
+  ✓ plan png: the export sheet was built
+  ✓ plan png: the image contains a map block
+  ✓ plan png: the map is a captured image, a sketch or an explicit note
+  ✓ plan png: every day has its own section (7)
+  ✓ plan png: the places of the plan are listed with their details
+  ✓ plan png: amounts carry the baht equivalent
+  ✓ plan png: each item shows its status
+  ⚠ plan png: no colour reject while rendering the plan (1) — jsdom cannot rasterize HTML→PNG
+
+## 43. v10: dashboard shows the baht amount of the remaining budget
+  ✓ dashboard: งบคงเหลือ shows the baht equivalent
+  ✓ dashboard: the main budget amount uses baht
+  ✓ dashboard: original currency is secondary to the main baht amount
+
+## 44. v13: managed card dropdown on an expense + per-card summary
+  ✓ cards: the card field is hidden while paying cash
+  ✓ cards: choosing บัตรเครดิต reveals the card field
+  ✓ cards: the card field is a dropdown (free-typed names are gone)
+  ✓ cards: the trip’s managed cards are offered (plus “add / manage cards”)
+  ✓ cards: a card payment without a picked card is refused
+  ✓ receipt photo: the expense form offers a photo upload
+  ✓ cards: the expense was saved
+  ✓ cards: the card name is stored on the expense (KBank Visa)
+  ✓ cards: the payment method stays บัตรเครดิต
+  ✓ cards: the card is remembered for the next expense
+  ✓ cards: the settlement has a card summary block
+  ✓ cards: the summary names the card
+  ✓ cards: each card gets its own tile
+
+## 45. v10: per-person receipts are colour-coded and the overview is the default
+  ✓ receipt: opens on ภาพรวม (not per person)
+  ✓ receipt: no per-person receipt is mounted first
+  ✓ receipt: three clearly separated sections (received,deduct,balance)
+  ✓ receipt: each section has its own colour
+  ✓ receipt: payment methods appear as coloured chips
+  ✓ receipt: the balance is boxed at the bottom
+  ✓ receipt: receive / pay / net are separate colour-coded cards
+  ✓ receipt: the net answer names exactly who to pay / who pays back
+  ✓ receipt: each answer card is labelled in Thai
+  ✓ receipt: รับ → หัก → คงเหลือ in order
+  ✓ receipt: the colours survive the PNG export (export-flat overrides)
+
+## 46. v10: sticky notes fold away when empty and can be filed as done
+  ✓ notes: with no notes the card is folded away (no empty box)
+  ✓ notes: an existing note is shown on the board
+  ✓ notes: the folded line is hidden while notes exist
+  ✓ notes: every note can be filed as done
+  ✓ notes: the "เก็บแล้ว" section appears
+  ✓ notes: the section is labelled เก็บแล้ว
+  ✓ notes: the filed note is listed under เก็บแล้ว
+  ✓ notes: a filed note can be brought back (no data loss)
+  ✓ notes: the note is gone (0 cards left)
+  ✓ notes: with no notes the section is folded (not a big empty box)
+  ✓ notes: the empty board is hidden
+  ✓ notes: the folded line explains how to add one
+
+## 47. v9: one simple login screen (Google + email only)
+  ✓ login: Google button is the primary action
+  ✓ login: Google-only — no email/password form
+  ✓ login: Google-only — no sign-up / forgot-password
+  ✓ login: Google button with one Thai guidance note
+  ✓ login: username + PIN form removed
+  ✓ login: no member/admin tabs to choose from
+  ✓ login: PIN wording gone from the page
+  ✓ login: an existing local member session still restores
+  ✓ members: add-member form no longer asks for a username/PIN login
+  ✓ members: no PIN generator button
+  ✓ members: core member fields still there
+
+## 48. v7: member joins with a Google account + invite code (no Cloud Functions)
+  ✓ google: login page offers "Continue with Google"
+  ✓ google: signed in and landed on the trip list
+  ✓ google: user profile document created
+  ✓ google: public directory entry created
+  ✓ join: invite-code card shown on the trip list
+  ✓ join: found the trip by code (case/format insensitive)
+  ✓ join: request stored for the admin to approve
+  ✓ join: member can see their own request status
+  ✓ join: pending status shown to the member
+  ✓ approve: pending request listed for the admin
+  ✓ approve: member document created
+  ✓ approve: member doc keyed by the account uid (rules allow access)
+  ✓ approve: uid added to trip memberUids
+  ✓ approve: request cleaned up
+  ✓ approve: new member appears in the members list
+  ✓ join: approved trip appears in the member trip list
+  ✓ join: pending badge cleared after approval
+
+## 49. v8: rules not published yet → actionable help instead of a raw error
+  ✓ rules help: sheet opens when Firestore denies the write
+  ✓ rules help: explains the Publish step
+  ✓ rules help: names the missing collections
+  ✓ rules help: button to open the Firebase console
+  ✓ rules help: ready-made message for the trip admin
+  ✓ rules help: nothing silently half-written
+  ✓ rules help: request kept in the member mirror (status still visible)
+  ✓ rules help: retry works once the rules are published
+
+## 50. v7: admin shares the invite code from Settings
+  ✓ invite: settings shows the trip code formatted (ABC-123)
+  ✓ invite: new code generated and shown
+  ✓ invite: new code saved on the trip
+
+## 51. membership repair: admin sweep + member-side request sync
+  ✓ repair: the admin sweep button and its report live on the members page
+  ✓ repair: one tap produces a readable report instead of a silent failure
+  ✓ repair: the request queue is refreshed after the sweep
+  ✓ repair: the member-side sync button and its status live on my trips
+
+## 52. v11: ความเห็น/ทักท้วงบนรายการ + ประวัติการแก้ไข (ใครแก้ล่าสุด)
+  ✓ comments: every expense row offers a comment button
+  ✓ comments: the sheet lists the existing comments
+  ✓ comments: the comment is stored on the trip
+  ✓ comments: it is linked to the expense it questions
+  ✓ comments: the author is stored with it (สมชาย)
+  ✓ comments: the sheet shows the same author
+  ✓ comments: it appears in the sheet right away
+  ✓ comments: the row shows how many comments it has
+  ✓ comments: the last comment is previewed on the row
+  ✓ activity: the row says who touched it last
+  ✓ activity: the log names the member
+  ✓ activity: the log says what was done
+  ✓ activity: entries are written to the trip
+
+## 53. v11: expense list grouped by day
+  ✓ by day: the list view is still there
+  ✓ by day: a toggle switches the list to day groups
+  ✓ by day: the list renders day blocks
+  ✓ by day: every block has a day header
+  ✓ by day: the header shows the date
+  ✓ by day: every day shows its own total
+  ✓ by day: the cards are inside the day blocks (7)
+  ✓ by day: the choice is remembered
+  ✓ by day: the active chip is highlighted
+  ✓ by day: switching back returns the flat list
+
+## 54. v11: itin day PNG + แผนที่พอดีจอ
+  ✓ map fit: the CSS height comes from a measured value
+  ✓ map fit: the map height is measured from the viewport
+  ✓ map fit: the measured height is in pixels
+  ✓ map frame: sticky desktop map stays below the app header
+  ✓ map labels: long place names wrap instead of being clipped
+  ✓ day png: each day has its own export button
+  ✓ day png: the toolbar has a per-day PNG button
+  ⚠ day png download — jsdom cannot rasterize HTML→PNG (covered by tests/browser/export-check.mjs)
+  ⚠ day png: one image per day (none) — jsdom cannot rasterize HTML→PNG
+  ✓ day png: the image holds that single day only (1)
+  ✓ day png: the sheet names the day it shows
+  ⚠ day png: no colour reject while rendering (1) — jsdom cannot rasterize HTML→PNG
+  ⚠ plan png download — jsdom cannot rasterize HTML→PNG (covered by tests/browser/export-check.mjs)
+  ⚠ day png: the full-plan PNG is still exported — jsdom cannot rasterize HTML→PNG
+
+## 55. v11: ใบเสร็จ — เลือกดูรายคน, ชื่อเด่นชัด, ทักท้วงในใบเสร็จ
+  ✓ receipt: the member name is the headline of the receipt
+  ✓ receipt: the headline reads the member name
+  ✓ receipt: the headline carries the avatar
+  ✓ receipt: the name has its own (large) style
+  ✓ receipt: a picker filters the receipts
+  ✓ receipt: ทุกคน is offered
+  ✓ receipt: every member has their own chip
+  ✓ receipt: choosing a member shows that receipt only
+  ✓ receipt: the chosen member is highlighted
+  ✓ receipt: ทุกคน brings every receipt back
+  ✓ receipt: items offer a ทักท้วง button
+  ✓ receipt: the comment shows inside the receipt itself
+  ✓ receipt: comments are styled as flags on the item
+  ✓ receipt: the page still opens on ภาพรวม
+
+## 56. v12: จอเล็ก (iPhone) — header ไม่ดันจอ และชื่อยาวไม่ทำจอล้น
+  ✓ phone: the page can never be wider than the screen (no zoom-out, no cut-off edge)
+  ✓ phone: the header row shrinks instead of pushing the layout wider
+  ✓ phone: the header keeps a name element for wide screens
+  ✓ phone: the name is hidden on small screens and shown from md up
+  ✓ phone: the name block is not forced visible on phones
+  ✓ phone: the full display name is kept as a tooltip
+  ✓ header: the email is omitted to save navigation space
+  ✓ phone: the avatar button is still there
+
+## 57. grouped expense form, exact custom split, multiple payers
+  ✓ expense form: a non-admin member is the default payer instead of the first/admin member
+  ✓ expense form: the saved single-payer bill credits the member who entered it
+  ✓ expense input: thousands separators while typing
+  ✓ expense preview: correct baht total
+  ✓ expense form: four explicit groups
+  ✓ custom split: exact subtotal valid
+  ✓ custom split: VAT, discount and service breakdown shown
+  ✓ custom split: live difference warning
+  ✓ custom split: mismatch is not saved or silently assigned to first member
+  ✓ multiple payers: mismatch blocks save
+  ✓ multiple payers: exact contributions persisted
+  ✓ custom split: proportional final amount persisted
+  ✓ edit: custom split method restored
+  ✓ edit: adjustment mode restored
+  ✓ edit: original before-adjustment amount restored
+  ✓ edit: actual payment amount restored
+
+## 58. estimates without an assigned payer
+  ✓ payer-pending: the TBD tile is selectable for estimates
+  ✓ payer-pending: the form explains that it stays out of balances
+  ✓ payer-pending: saved as an estimate with an explicit pending flag
+  ✓ payer-pending: no payer/payment is fabricated
+
+## 59. compact expenses density and mobile date headings
+  ✓ expenses: extra controls start collapsed on mobile
+  ✓ expenses: extra controls open accessibly
+  ✓ expenses: selected category remains visible in the filter summary
+  ✓ expenses: extra controls close without resetting filters
+  ✓ expenses: compact density toggles on
+  ✓ expenses: density is remembered per trip on this device
+  ✓ expenses: day grouping renders date headings
+  ✓ expenses: mobile date headings have a dedicated readable layout
+  ✓ expenses: compact density can be turned off
+
+## 60. expense with a receipt photo — must save, and the upload toast must never stick
+  ✓ receipt: preview shown after choosing a photo
+  ✓ receipt: exactly one expense saved per submit
+  ✓ receipt: no loading toast left behind after the save/upload (ไม่ค้าง "กำลังอัปโหลดรูปใบเสร็จ")
+
+## 61. v16 trip tools — prep checklists
+  ✓ prep: page renders the lists container
+  ✓ prep: ready-made templates offered
+  ✓ prep: template items created
+  ✓ prep: checklist stored in Firestore
+  ✓ prep: ticking an item marks it done
+  ✓ prep: tick persisted to Firestore
+  ✓ prep: custom item added to the list
+  ✓ prep: removing an item updates the list
+
+## 62. v16 trip tools — ideas board (vote + add to plan)
+  ✓ ideas: summary tiles
+  ✓ ideas: idea saved
+  ✓ ideas: title rendered
+  ✓ ideas: voting re-renders the board
+  ✓ ideas: vote button shows a count
+  ✓ ideas: day picker offered
+  ✓ ideas: “add to plan” created the itinerary item
+  ✓ ideas: card switches to “in the plan”
+
+## 63. v18.2 — ไอเดียยังบันทึกได้แม้กฎ Firestore ยังไม่อนุญาต (fix: missing permissions)
+  ✓ ideas: a denied write explains itself with the pending banner
+  ✓ ideas: the text the user typed is still shown on the board
+  ✓ ideas: the queued card is badged as waiting to sync
+  ✓ ideas: retry + “fix the rules” actions offered
+  ✓ ideas: the idea is queued in local storage (nothing lost)
+  ✓ ideas: retry syncs the queued idea once the rules allow it
+  ✓ ideas: the banner disappears after a successful sync
+
+## 64. v16 trip tools — bookings + calendar export
+  ✓ bookings: “next booking” card
+  ✓ bookings: reservation saved
+  ✓ bookings: confirmation code shown
+  ✓ bookings: copy-code button present
+  ✓ bookings: stored in Firestore
+  ✓ bookings: .ics export produced no error toast
+  ✓ bookings: .ics export reported success
+
+## 65. dashboard widgets — shared drag layout
+  ✓ dashboard: all cards are named sortable widgets (12)
+  ✓ dashboard: spending cards are together directly under the summary
+  ✓ dashboard: drag handles stay locked outside edit mode
+  ✓ dashboard: the admin can arrange cards
+  ✓ dashboard: drag order persists on the shared trip document
+  ✓ dashboard: Done leaves the exact saved order in place
+  ✓ dashboard: the member opens the board in the admin’s saved order
+  ✓ dashboard: ordinary members cannot change the shared board
+  ✓ dashboard: a member’s open board updates its order and visibility without a refresh
+  ✓ dashboard: delegated managers can arrange cards without other trip admin rights
+  ✓ dashboard: a live update does not move cards under an active drag
+  ✓ dashboard: a cancelled drag picks up the latest shared order
+  ✓ dashboard: the manager can reset the trip to the new default card order
+
+## 66. v18.2 itinerary — clean toolbar + Excel import behind edit mode
+  ✓ itinerary: the แชร์ button is gone
+  ✓ itinerary: the จัดเส้นทาง button is gone
+  ✓ itinerary: Excel import is hidden by default
+  ✓ itinerary: Excel export stays available to admins
+  ✓ itinerary: Excel import appears in edit mode
+  ✓ itinerary: Excel import disappears when edit mode is off
+
+## 67. v16 exports page — calendar (.ics)
+  ✓ exports: three .ics buttons
+  ✓ exports: itinerary .ics built without an error
+  ✓ exports: “everything” .ics exported cleanly
+  ✓ exports: “everything” reports how many events were written
+
+## 68. v17 explore — curated place guides (ไกด์ชวนไปที่นี่)
+  ✓ explore: guide places render (6)
+  ✓ explore: hero + search block
+  ✓ explore: category chips with counts
+  ✓ explore: “suggested for this trip” strip
+  ✓ explore: destination switcher
+  ✓ explore: category filter narrows the list (1/6)
+  ✓ explore: search finds Thai keywords
+  ✓ explore: search result rendered
+  ✓ explore: no match → empty state
+  ✓ explore: “save as idea” writes to the ideas board
+  ✓ explore: “add to plan” created an itinerary item (ทะเลสาบคาวากุจิ)
+  ✓ explore: no error toast along the way
+
+## 69. v17 calendar — the plan on a month grid (ปฏิทินทริป)
+  ✓ calendar: 6 × 7 grid
+  ✓ calendar: month heading
+  ✓ calendar: next month moves the view
+  ✓ calendar: previous month comes back
+  ✓ calendar: weekday header
+  ✓ calendar: trip days highlighted (5)
+  ✓ calendar: planned items shown as pills
+  ✓ calendar: tapping a day opens its detail panel
+  ✓ calendar: detail links back to the plan
+  ✓ calendar: print / PDF button
+
+## 70. v17 share — invite link, LINE message & summary
+  ✓ share: tile grid
+  ✓ share: invite code banner
+  ✓ share: readable invite code (64X-8HM)
+  ✓ share: fallback box carries the invite link
+  ✓ share: no error toast when the clipboard is blocked
+  ✓ share: trip summary built without an error
+  ✓ share: trip summary has content
+
+## 71. v17 booking import — paste a confirmation e-mail
+  ✓ import: sample text button
+  ✓ import: sample filled in
+  ✓ import: fields recognised (12)
+  ✓ import: save button enabled after parsing
+  ✓ import: reservation written with the parsed code
+  ✓ import: confirmation code stored (XT4K9P)
+  ✓ import: flight route detected
+  ✓ import: cost read from the text
+  ✓ import: card appears on the bookings page
+
+## 72. v18.2 — สรุปการโอน / โหมดกระทัดรัด / แผนที่หนี้ / กลุ่มย่อย / เฉลี่ยต่อคน
+  ✓ settlement: a remotely added non-admin payer appears as a creditor
+  ✓ settlement: the transfer list directs the debtor to reimburse that member
+  ✓ settlement: tapping the payer name opens that member’s expense list
+  ✓ settlement: tapping the recipient name opens that member’s expense list
+  ✓ settlement: each payer is shown once with recipients nested beneath
+  ✓ settlement: a net chip per member (3)
+  ✓ settlement: net chips say who gets back / who pays
+  ✓ settlement: each chip carries its verdict text
+  ✓ settlement: transfer summary lists who pays whom under each chip
+  ✓ settlement: transfer summary says when payers get their money back
+  ✓ settlement: the overview member rows are tappable too
+  ✓ settlement: overview cards remain visible outside the collapsible member list
+  ✓ settlement: card-summary area stays visible in the overview
+  ✓ settlement: collapsing hides only the member rows, not the summary cards
+  ✓ settlement: member details expand beneath the cards
+  ✓ settlement: transfer summary opens the expense list instead of another net-summary screen
+  ✓ settlement: summary opens every expense row in detailed mode
+  ✓ settlement: the itemized receipt sheet has close and density controls
+  ✓ settlement: the receipt sheet has a compact toggle
+  ✓ settlement: the compact choice is remembered
+  ✓ settlement: compact mode is applied to the receipt
+  ✓ settlement: a compact saved preference never hides rows in the inspection sheet
+  ✓ settlement: receipts view offers ละเอียด / กระทัดรัด
+  ✓ settlement: the remembered compact mode is preselected
+  ✓ settlement: switching back to detailed persists too
+  ✓ receipt: compact mode keeps all four answer cards (only the item rows fold)
+  ✓ receipt: compact mode keeps the item lists in the DOM for printing/export
+  ✓ debt map: the whole trip is ONE map (no per-receiver wheels)
+  ✓ debt map: person nodes render (3)
+  ✓ debt map: receivers and payers are both on the map
+  ✓ debt map: a line points from the debtor to the member who paid
+  ✓ debt map: every transfer carries an amount tag (3)
+  ✓ debt map: amount-tag boxes have guaranteed spacing (no overlap)
+  ✓ debt map: every line uses the receiver’s colour
+  ✓ debt map: every person keeps a distinct node colour
+  ✓ debt map: amounts use the readable tag style
+  ✓ debt map: nodes are announced as buttons
+  ✓ debt map: graph nodes expose full names to assistive technology
+  ✓ debt map: labels spell out who pays / who gets
+  ✓ debt map: legend explains the colours
+  ✓ debt map: the map comes first, always expanded (no collapsed drawer)
+  ✓ debt map: every transfer line carries its own amount tag
+  ✓ debt map: each transfer clearly labels payer, receiver and amount
+  ✓ debt map: payer and recipient names each open their own expense list (3 rows)
+  ✓ debt map: tapping a recipient name opens that recipient’s expense list
+  ✓ debt map: tapping a node opens itemized expense details directly
+  ✓ debt map: Enter on a focused node opens the itemized receipt
+  ✓ debt map: each row can record payment and explains the transfer total
+  ✓ debt map: payment sheet is prefilled with the remaining amount
+  ✓ debt map: partial payment is saved for the correct people
+  ✓ debt map: payer and recipient names are tappable (6 targets)
+  ✓ debt map: the drawing sits in its own zoomable viewport
+  ✓ debt map: the sheet never outgrows the card that shows it (780px)
+  ✓ debt map: the sheet stays landscape, so the whole map is one glance (780×440)
+  ✓ debt map: the full-screen “ขยายดูเต็มจอ” step is gone
+  ✓ debt map: expand / shrink / fit are on the map card itself
+  ✓ debt map: fit-to-screen is the default state
+  ✓ debt map: every row and its line share a number, so hovering a row can light up its own line
+  ✓ debt map: the drawing has an explicit size, so zoom can change it
+  ✓ debt map: one controller owns the in-page zoom
+  ✓ debt map: zoom in enlarges the drawing
+  ✓ debt map: zooming in releases the fit state
+  ✓ debt map: fit returns the drawing to the card width
+  ✓ debt map: the zoom level is announced
+  ✓ debt map: nothing opens over the page any more
+  ✓ settlement: an unreadable transfer history does not silently produce a wrong balance
+  ✓ settlement: the payer receipt links its paid item to the exact expense
+  ✓ settlement: the debtor receipt links their share to the same expense
+  ✓ settlement: the transaction breakdown links the reimbursement back to its source expense
+  ✓ settlement: the source link routes to the exact expense id
+  ✓ settlement: following a source link opens the matching expense editor
+  ✓ expenses: average per person computed (฿40,719.77≈¥40,720)
+  ✓ expenses: the tile is labelled เฉลี่ย / คน
+  ✓ expenses: day headers / list bar carry the per-person average
+  ✓ groups: admins get the “เพิ่มกลุ่ม” button
+  ✓ groups: colour swatches offered
+  ✓ groups: icon picker offered
+  ✓ groups: every member can be picked (3)
+  ✓ groups: the picked counter follows the selection
+  ✓ groups: the new group is listed
+  ✓ groups: the group carries its colour
+  ✓ groups: the budget report compares groups with the whole trip
+  ✓ groups: the budget report has no NaN
+  ✓ groups: the group is saved to Firestore (memberGroups)
+  ✓ groups: members show their group badge
+  ✓ visits: the Members page carries a statistics card
+  ✓ visits: one row per member (3)
+  ✓ visits: the accumulated time is shown
+  ✓ visits: the last visit is shown as a date/time
+  ✓ visits: a member with no data says so
+  ✓ visits: the summary counts the visits and the total time
+  ✓ visits: “เข้าบ่อยสุด” puts the most frequent visitor first
+  ✓ visits: “เวลามากสุด” puts the longest time first
+  ✓ visits: “เข้าล่าสุด” puts the latest visit first
+  ✓ visits: opening the app counts a session (visitStats/{uid})
+  ✓ visits: …and the per-trip slice (visitStats/{uid}/trips/{tripId})
+  ✓ groups: the edit form is prefilled
+  ✓ groups: edits are reflected on the card
+  ✓ groups: deleting removes the group (members stay)
+  ✓ groups: the members themselves are untouched
+  ✓ footer: global page footer removed
+  ✓ navigation: back-to-top control in the shared shell
+
+## 73. v17/v18 offline strip + colour themes
+  ✓ offline: strip container exists in the shell
+  ✓ palette v41: Google blue is the single accent in tokens.css
+  ✓ palette: the muted v17 hexes are gone from the tokens
+  ✓ palette: old True-tone colours gone
+  ✓ palette v41: green / red are AA-contrast money colours
+  ✓ palette v20: the older, softer status hexes are gone from the tokens
+  ✓ palette v20: the v19 status hexes are replaced, not mixed in
+  ✓ palette v41: Google grey 50 canvas — no brand tint behind the cards
+  ✓ palette v41: Google ink for typography
+  ✓ palette v41: a selected chip is Google's tinted filter chip, not a solid accent pill
+  ✓ palette v35: status badges are neutral (cancelled = red ink, no fill)
+  ✓ themes: LINE / Facebook / Instagram presets exist
+  ✓ themes: 13 presets to choose from
+  ✓ themes: the stored choice is a real theme id
+  ✓ nav: calendar / bookings / prep / explore / settings are not menu entries
+  ✓ nav: settings opens from the avatar
+  ✓ mascot: the mascot and the mood faces are removed from the system (v35)
+  ✓ deck: the swipe-card receipts are removed from the system
+  ✓ details: the optional place lookup module exists
+  ✓ shell: footer removed; version and update metadata remain
+  ✓ shell: renamed to Trip Manager by TonSkywalker
+  ✓ styles: v17 component sheet covers the new pages
+  ✓ styles: theme / debt-map styles shipped
+
+## 74. v19 requests: drag only in edit mode, teams every, per-group averages
+  ✓ drag & drop: locked while the plan is read-only (0 handles)
+  ✓ drag & drop: handles appear in edit mode (4)
+  ✓ drag & drop: leaving edit mode tears the handles down (0)
+  ✓ kpi: no width-based grid template can make the strip wrap
+  ✓ kpi: all five summary cards share ONE row (auto-flow column, equal tracks)
+  ✓ kpi: cards compress (min-width:0) instead of wrapping
+  ✓ teams: the team is saved before the analysis is read
+  ✓ dashboard teams: a team card is rendered
+  ✓ dashboard teams: each team shows cost per person AND the team total
+  ✓ dashboard teams: the team name is shown
+  ✓ expenses: the KPI headline is “average per group”
+  ✓ expenses: the same card still shows the per-person figure underneath
+  ✓ expenses: one card per team + the whole trip (2)
+  ✓ expenses: each team card shows its own per-person cost
+  ✓ expenses: team cards carry the number of places that team visits
+
+## 75. plan card: a second payer on the linked cost shows on the place
+  ✓ plan card: the edit form lists both payers
+  ✓ plan card: the linked expense keeps both payers and the full total
+  ✓ plan card: the place records every payer of its linked cost
+  ✓ plan card: the place card says 2 payers instead of one
+
+## 76. v28 requests: no swipe deck, one debt map, compact footer, header nav + clock city, map labels, big photos
+  ✓ settlement: three views only — ภาพรวม / แผนที่หนี้ / ใบเสร็จรายคน (no swipe-card chip)
+  ✓ settlement: the swipe-card wording is gone
+  ✓ settlement: the per-person receipts render as a plain list (no swipe deck)
+  ✓ debt map: rendered as ONE map
+  ✓ debt map: every money label sits in its own spot
+  ✓ debt map: every drawn line carries its own numbered pill (3)
+  ✓ debt map: the pill number on a line is the number of a row in the list
+  ✓ debt map: a transfer that cannot fit on the drawing says so instead of moving its money elsewhere
+  ✓ footer: no footer on the app shell
+  ✓ navigation: back-to-top control styled
+  ✓ header: the desktop menu lives inside the sticky top bar
+  ✓ header: trip menu chips render in the bar
+  ✓ header: one compact clock chip
+  ✓ header: the twin BKK/TYO clocks are gone
+  ✓ clock: tapping the chip opens the city picker
+  ✓ clock: choosing a city updates the chip and is remembered
+  ✓ map: the toolbar can show / hide place names
+  ✓ map: the label toggle switches off and is remembered
+  ✓ map: the label toggle switches back on
+  ✓ plan: the photo is a tappable zoom target
+  ✓ plan: tapping the photo opens the large viewer
+  ✓ plan: the viewer carries the shared ✕ in its corner
+  ✓ plan: the ✕ closes the viewer
+  ✓ ideas: an image opens the photo viewer
+  ✓ ideas: the zoom popup is the wide lightbox (image fully inside)
+  ✓ ideas: the lightbox CSS keeps the whole photo on screen
+  ✓ ideas: the ✕ closes the photo popup
+  ✓ popups: a dashboard sheet opens with the ✕
+  ✓ popups: the ✕ is pinned to the top-right corner by CSS
+  ✓ popups: the ✕ actually sits in that corner on screen
+  ✓ popups: the ✕ closes the sheet
+
+## 77. v29 requests: full menu row, countdown fills its card, line colour = receiver
+  ✓ header: the menu owns a row inside the sticky top bar
+  ✓ header: all eight trip menus render
+  ✓ header: every chip carries a full AND a short label (never icon-only)
+  ✓ header: the old icon-only collapse rule is gone
+  ✓ header: the two-row sticky height is declared
+  ✓ header: menu chips neither overlap nor hide in a scroll (geometry where measurable)
+  ✓ countdown: the scene stretches to fill its card
+  ✓ countdown: no dead band under the scene (n/a in jsdom)
+  ✓ debt map: every line is drawn in the receiver’s colour
+  ✓ debt map: the legend explains the receiver colour
+
+## 78. v30: การแจ้งเตือน (🔔 + Web Push) และสิทธิ์ตามที่ออกแบบไว้
+  ✓ notifications: 🔔 อยู่บนแถบด้านบนของทุกหน้า
+  ✓ notifications: the bell carries an unread badge
+  ✓ notifications: saving an expense writes into trips/{id}/notifications
+  ✓ notifications: the message says who recorded it and for how much
+  ✓ notifications: everybody but the author is a recipient
+  ✓ notifications: nothing is marked read yet
+  ✓ notifications: the row links straight to that bill
+  ✓ notifications: the day is stored with it (2026-11-19)
+  ✓ notifications: the bell opens the sheet
+  ✓ notifications: the “Web Push ยังไม่พร้อม” strip tells the owner to set the Pages source (a branch deploy never gets the key)
+  ✓ notifications: the badge counts exactly the unread items for me (10)
+  ✓ notifications: type filters are offered
+  ✓ notifications: the new row is marked unread
+  ✓ notifications: a filter chip narrows the list
+  ✓ notifications: tapping a row marks it read for me
+  ✓ notifications: …and only for me, not for the other member
+  ✓ notifications: tapping a row expands the full detail inside the sheet
+  ✓ notifications: opening details stays in the notification sheet
+  ✓ notifications: edit navigation is a separate explicit action
+  ✓ notifications: explicit edit action opens the linked expense editor
+  ✓ notifications: “อ่านทั้งหมด” clears every unread item (0 left)
+  ✓ notifications: the badge disappears when all is read
+  ✓ notifications: the badge starts clean for the receiving member
+  ✓ notifications: a ping from another device raises the badge for me (1)
+  ✓ notifications: …and the pop-up names what happened
+  ✓ notifications: the row from the other device is in the bell list
+  ✓ daily summary: written to trips/{id}/notifications/daily-YYYY-MM-DD
+  ✓ daily summary: totals the day in THB (250000 satang)
+  ✓ daily summary: the body is a readable sentence (วันนี้ทั้งทริปใช้จ่าย ฿2,500.00 จาก 1 รายการ • หมวดที่ใช้มากสุด:…)
+  ✓ daily summary: item count and per-member shares are stored
+  ✓ daily summary: the same trip-local day is never summarised twice
+  ✓ daily summary: exactly one document per day
+  ✓ daily summary: a day without spending stays quiet
+  ✓ settings: ?tab=notify (the link inside the bell) opens the notification tab
+  ✓ settings: the in-app, Web Push and trip-summary cards all render
+  ✓ settings: users are not asked to enter VAPID; a missing key points the site admin to deployment config
+  ✓ settings: the admin note names the Pages source setting too (a branch deploy ignores the injected key)
+  ✓ settings: the switch is remembered on this device
+  ✓ settings: switching “เมื่อมีคนบันทึกค่าใช้จ่าย” off hides those rows from the bell
+  ✓ settings: the account preference is mirrored for the Actions sender
+  ✓ settings: a trip admin may change the trip’s summary time
+  ✓ settings: the summary hour is saved trip-wide (settings/notifications)
+  ✓ push: this browser is told why Web Push is impossible instead of failing silently
+  ✓ push: the button is disabled while unsupported
+  ✓ push: device opt-in stays disabled until the deployed site supplies its VAPID key
+  ✓ push: the VAPID key is read from the deployment-injected window config
+  ✓ push: device opt-in becomes available when the deployment key exists
+  ✓ push: with service worker + Notification + PushManager + https it reports supported
+  ✓ push: a device token is obtained from FCM
+  ✓ push: the token is stored under users/{uid}/pushTokens for the Actions sender
+  ✓ push: the account-level preference is mirrored so the server knows what to send
+  ✓ push: pushEnabled() reflects token + permission
+  ✓ push: the card shows that this device is registered
+  ✓ push: turning it off removes the token from Firestore
+  ✓ permissions: no “เพิ่มค่าใช้จ่าย” when the admin switched that right off
+  ✓ permissions: a read-only chip explains why the button is gone
+  ✓ permissions: the expense-group manager is hidden too
+  ✓ permissions: the row edit/delete buttons are hidden without “แก้ไขค่าใช้จ่าย”
+  ✓ permissions: the ＋ FAB stays hidden on the expenses page
+  ✓ permissions: the same member may still edit the plan (canEditItinerary = true)
+  ✓ permissions: a viewer has no plan controls at all
+  ✓ permissions: a viewer cannot add sticky notes
+  ✓ permissions: the add FAB stays hidden for a viewer
+  ✓ permissions: viewer → read only (แก้แผน/ค่าใช้จ่าย/สมาชิก = false)
+  ✓ permissions: “จัดการสมาชิก” alone → co-admin for people, still read-only for money and the plan
+  ✓ rules: trips/{id}/notifications is covered
+  ✓ rules: an update may only touch readBy
+  ✓ rules: and only the caller’s own key
+  ✓ rules: push tokens are readable only by their owner
+  ✓ rules: expense writes require สิทธิ์ “แก้ไขค่าใช้จ่าย”
+  ✓ rules: plan writes require สิทธิ์ “แก้ไขแผนการเดินทาง”
+  ✓ rules: a member cannot grant themselves rights (self-update is profile-only)
+  ✓ rules: shared trip updates use field-specific capability checks
+  ✓ rules: trip creator identity is immutable through client writes
+  ✓ rules: a co-admin cannot change roles or the switches
+  ✓ rules: a transfer create/delete must arrive with its guard bump in the same write
+  ✓ rules: the settlement guard can only move forward one version
+  ✓ docs: the transfer guard and the transfers collection are documented
+  ✓ docs/PERMISSIONS.md documents the member-vs-admin design (สิทธิ์ผู้ใช้)
+  ✓ pwa: index.html links the manifest (iOS Web Push needs “เพิ่มไปที่หน้าจอโฮม”)
+  ✓ pwa: every icon the manifest declares exists on disk
+  ✓ push: the root service worker draws background messages and routes the tap
+  ✓ push: the client registers that exact worker file
+  ✓ build: index.html and buildInfo.js agree on the version
+  ✓ push: index.html loads the VAPID placeholder and the repo carries no real key
+  ✓ push: the app has no per-user VAPID entry flow
+  ✓ push: the Pages workflow injects the FCM_VAPID_KEY secret at deploy time
+  ✓ push: an Actions variable named FCM_VAPID_KEY also works (the key is public, rotation stays in one place)
+  ✓ push: the Pages workflow stops with the fix when Pages still serves a branch (the injected key would never go live)
+  ✓ push: after deploying, the workflow re-reads the live cache-busted fcm-vapid.js and fails when the key is missing
+  ✓ v32: a denied feed is reported as a Firestore-rules problem
+  ✓ v32: …and the message carries the exact deploy command
+  ✓ v32: a PIN member session is told to sign in with Google instead
+  ✓ v32: a missing Cloud Function points at the deploy command
+  ✓ v32: a network hiccup stays retryable
+  ✓ v32: a missing VAPID key points at the deploy secret
+  ✓ v32: a denied feed shows a warning banner inside the 🔔 sheet
+  ✓ v32: …naming the Firestore rules as the cause
+  ✓ v32: …with “วิธีแก้” and “ลองใหม่” buttons
+  ✓ v32: the header bell carries a warning dot
+  ✓ v32: a toast announces the failure (no console.warn only)
+  ✓ v32: …and it says what to run
+  ✓ v32: the banner spells out the command that fixes it
+  ✓ v32: the help sheet offers “คัดลอกกฎทั้งหมด” + “เปิด Firebase Console”
+  ✓ v32: …and repeats the one command that fixes it
+  ✓ v32: retrying after the fix clears the banner
+  ✓ v32: …and the bell loses its warning dot
+  ✓ v32: the System check flags the notification feed (fail)
+  ✓ v32: …and prints the command that fixes it
+  ✓ v32: Web Push readiness is reported as its own row
+  ✓ v32: enabling Push fails loudly when the device token cannot be stored
+  ✓ v32: …and tells the owner to publish the rules
+  ✓ v32: no token is pretended to exist in Firestore
+  ✓ Spark: Firebase workflow deploys rules + indexes, never Functions
+  ✓ v32: …with a documented credential (service account or CI token)
+  ✓ v32: …and it re-reads the published ruleset to prove the notifications block is live
+  ✓ Actions sender: test notification is persisted as pending
+  ✓ Actions sender: client does not forge delivery receipts
+  ✓ Actions sender: no endpoint, URL or GitHub token is needed by the browser
+  ✓ Actions sender: reading the bell does not remove the queued Push
+
+## 79. v36: transfers need the same permission as the rules + concurrent pays are serialized
+  ✓ permission: “Mark paid”/undo hidden when the member may not edit expenses (0/0)
+  ✓ permission: a viewer never sees a payment affordance
+  ✓ concurrency: two simultaneous payments record once (1 ok / 1 stored)
+  ✓ concurrency: the losing device is told to recalculate (มีการเปลี่ยนแปลงการโอน กรุณาคำนวณใหม่ / Transfers changed; please recalculate)
+  ✓ concurrency: more than the outstanding debt is refused before any write (ยอดค้างเปลี่ยนแล้ว กรุณาคำนวณใหม่ / Balance changed; please recalculate)
+  ✓ concurrency: the guard is bumped atomically ({"version":2,"transferId":"tev1zocxr5","operation":"create"})
+  ✓ concurrency: no partial transfer was written by the refused call
+
+## 80. v36: two accounts never share a trip list
+  ✓ accounts: A never receives B's trips (t1,sharedA)
+  ✓ accounts: B never receives A's trips (t1,sharedB)
+  ✓ accounts: a cache stamped for another account is not served (t1,sharedB)
+
+## 81. v36: the trip list is paged (no silent 30-trip cap)
+  ✓ trips: every trip is listed, not just the first 30 (36)
+  ✓ trips: the last page is included
+
+## 82. memberUids drift: a member document alone must surface the trip
+  ✓ drift: trip found through the member document (drift1)
+  ✓ drift: an inactive member document surfaces nothing
+  ✓ drift: memberUids entry restored for the next sign-in
+  ✓ drift: inactive member is not restored to memberUids
+  ✓ drift: admin reconcile adds missing active members
+
+## 83. v36: reference checks and comments are not capped at 300/200 rows
+  ✓ members: references past the first 300 bills are still counted (1/320)
+  ✓ comments: every comment is read, not just the first 200 (262)
+  ✓ comments: a comment on the first bill is not dropped
+
+## 84. delete the whole trip (UI)
+  ✓ trip: deleted from Firestore
+  ✓ trip: sub-collections deleted with it (rules allow admin delete)
+
+## 85. error log
+  ✓ no uncaught app errors (0 found)
