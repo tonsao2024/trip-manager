@@ -34,6 +34,7 @@ const viewerUid = 'viewer-a';
 const limitedUid = 'limited-a';
 const visitorUid = 'visitor-a';
 const inactiveUid = 'inactive-a';
+const disabledUid = 'disabled-a';   // legacy spelling of the revoked status
 const legacySecretUid = 'legacy-secret-a';
 const legacyPinMemberUid = 'legacy-pin-member';
 const inviteCode = 'ABC123';
@@ -64,6 +65,7 @@ describe('Firestore security rules', () => {
         setDoc(doc(db, 'users', viewerUid), { uid: viewerUid, role: 'member' }),
         setDoc(doc(db, 'users', limitedUid), { uid: limitedUid, role: 'member' }),
         setDoc(doc(db, 'users', inactiveUid), { uid: inactiveUid, role: 'member' }),
+        setDoc(doc(db, 'users', disabledUid), { uid: disabledUid, role: 'member' }),
         setDoc(doc(db, 'users', 'root-a'), { uid: 'root-a', role: 'super_admin' }),
         setDoc(doc(db, 'users', legacySecretUid), {
           uid: legacySecretUid,
@@ -77,7 +79,7 @@ describe('Firestore security rules', () => {
         }),
         setDoc(doc(db, 'trips', tripId), {
           createdBy: adminUid,
-          memberUids: [adminUid, memberUid, coadminUid, viewerUid, limitedUid, inactiveUid],
+          memberUids: [adminUid, memberUid, coadminUid, viewerUid, limitedUid, inactiveUid, disabledUid],
           name: 'Fuji trip',
           startDate: '2027-04-01',
           endDate: '2027-04-07',
@@ -113,6 +115,12 @@ describe('Firestore security rules', () => {
           role: 'member',
           status: 'active',
           permissions: { canEditItinerary: false, canEditExpense: false, canManageMembers: false }
+        }),
+        setDoc(doc(db, 'trips', tripId, 'members', disabledUid), {
+          uid: disabledUid,
+          role: 'member',
+          status: 'disabled',
+          permissions: { canManageMembers: false }
         }),
         setDoc(doc(db, 'trips', tripId, 'members', inactiveUid), {
           uid: inactiveUid,
@@ -438,6 +446,22 @@ describe('Firestore security rules', () => {
       collection(db, 'trips'),
       where('memberUids', 'array-contains', inactiveUid)
     )));
+  });
+
+  it('revokes access for a legacy `disabled` status too — the array entry does not help', async () => {
+    // Older builds of สมาชิก → แก้ไข wrote `disabled` while the rules only knew
+    // `inactive`, so a suspended account kept full access through memberUids.
+    const db = dbFor(disabledUid);
+    await assertFails(getDoc(doc(db, 'trips', tripId)));
+    await assertFails(getDoc(doc(db, 'trips', tripId, 'members', memberUid)));
+    await assertFails(getDocs(query(
+      collection(db, 'trips'),
+      where('memberUids', 'array-contains', disabledUid)
+    )));
+    // …and they cannot put themselves back into the listing either.
+    await assertFails(updateDoc(doc(db, 'trips', tripId), {
+      memberUids: arrayUnion(disabledUid), updatedAt: serverTimestamp()
+    }));
   });
 
   it('lets a drifted member find and restore their own trip listing, and nothing more', async () => {

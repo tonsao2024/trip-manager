@@ -16,6 +16,7 @@ const fsdb = await import('./smoke/stubs/firebase-firestore.mjs');
 const trips = await import(pathToFileURL(path.join(outDir, 'trips/index.js')).href);
 const joins = await import(pathToFileURL(path.join(outDir, 'members/join.js')).href);
 const repair = await import(pathToFileURL(path.join(outDir, 'members/repair.js')).href);
+const members = await import(pathToFileURL(path.join(outDir, 'members/index.js')).href);
 
 beforeEach(() => {
   fsdb.__reset();
@@ -232,4 +233,54 @@ test('a failed lookup reports which source failed instead of one generic sentenc
   assert.ok(Array.isArray(error.details) && error.details.length >= 2, 'per-source details for the notice');
   assert.ok(error.details.some(d => d.code === 'failed-precondition'), 'the missing index is named');
   assert.equal(error.requiresDeploy, true, 'the UI knows to point at rules/indexes');
+});
+
+/* ------------------------------------------------------------------ *
+ * Revoking access: a removed member must never keep a way in.
+ * ------------------------------------------------------------------ */
+
+test('deleting a member always drops the uid from the trip listing (no lingering access)', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin', 'g1'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', role: 'member', status: 'active' });
+  // A cached copy that already “looks clean” must not stop the removal: the
+  // legacy `memberUids` branch of isTripMember still grants access, so an entry
+  // left behind keeps a deleted person inside the trip.
+  fsdb.__staleGet('trips/t1', { createdBy: 'admin', memberUids: ['admin'] });
+  await members.deleteMember('t1', 'g1');
+  assert.equal(fsdb.__dump('trips/t1/members/g1'), undefined, 'member document removed');
+  assert.deepEqual(fsdb.__dump('trips/t1').memberUids, ['admin'], 'server array no longer lists them');
+});
+
+test('deleting a member whose uid was never listed still succeeds', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin'] });
+  fsdb.__seed('trips/t1/members/g2', { uid: 'g2', role: 'member', status: 'active' });
+  await members.deleteMember('t1', 'g2');
+  assert.equal(fsdb.__dump('trips/t1/members/g2'), undefined);
+  assert.deepEqual(fsdb.__dump('trips/t1').memberUids, ['admin']);
+});
+
+test('suspending a member revokes access in one write (member document + trip listing)', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin', 'g1'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', displayName: 'น้องใหม่', role: 'member', status: 'active' });
+  // The status select used to send 'disabled', which the rules never revoked —
+  // and it never touched memberUids, so the account kept reading the trip.
+  await members.updateMember('t1', 'g1', { displayName: 'น้องใหม่', status: 'disabled' });
+  assert.equal(fsdb.__dump('trips/t1/members/g1').status, 'inactive', 'stored as the canonical revoked status');
+  assert.deepEqual(fsdb.__dump('trips/t1').memberUids, ['admin'], 'the uid leaves the trip listing');
+});
+
+test('re-activating a member puts the listing back', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', displayName: 'น้องใหม่', role: 'member', status: 'inactive' });
+  await members.updateMember('t1', 'g1', { displayName: 'น้องใหม่', status: 'active' });
+  assert.equal(fsdb.__dump('trips/t1/members/g1').status, 'active');
+  assert.ok(fsdb.__dump('trips/t1').memberUids.includes('g1'), 'the member can list the trip again');
+});
+
+test('editing a member without touching the status keeps the listing untouched', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin', 'g1'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', displayName: 'เก่า', role: 'member', status: 'active' });
+  await members.updateMember('t1', 'g1', { displayName: 'ใหม่', status: 'active' });
+  assert.equal(fsdb.__dump('trips/t1/members/g1').displayName, 'ใหม่');
+  assert.deepEqual(fsdb.__dump('trips/t1').memberUids, ['admin', 'g1']);
 });

@@ -4,9 +4,11 @@ import { expensePayments } from '../utils/payments.js';
 import { db, serverTimestamp } from '../firebase.js';
 import { brandPrimary } from '../utils/brand.js';
 import {
-  collection, doc, getDoc, getDocs, getDocsFromServer, updateDoc, query, where, limit, writeBatch, arrayUnion, arrayRemove
+  collection, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, updateDoc, query, where, limit,
+  writeBatch, arrayUnion, arrayRemove
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { cachedRead, cacheInvalidate, cacheForget, seedFromPersist, persistSet, persistDelete } from '../utils/datacache.js';
+import { isInactiveMember } from '../utils/memberUids.js';
 import { setMemberPin, publishMemberLookup, clearMemberPin, normalizeUsername } from '../auth/memberAuth.js';
 
 export const MEMBER_ROLES = [
@@ -52,6 +54,17 @@ export async function getMember(tripId, memberId) {
   if (hit) return hit;
   const snap = await getDoc(doc(db, `trips/${tripId}/members`, memberId));
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+/**
+ * Canonical member status. `disabled` (the old label of the status select) means
+ * the same as `inactive`, which is the value firestore.rules reads to revoke
+ * access — store that one, so one vocabulary exists in the database.
+ */
+export function normalizeStatus(status) {
+  const value = String(status ?? '').trim().toLowerCase();
+  if (!value) return 'active';
+  return value === 'disabled' ? 'inactive' : value;
 }
 
 export function buildMemberDoc({ displayName, username = '', role = 'member', color = brandPrimary(), photoURL = '', permissions, order = 999, createdByName = '' }) {
@@ -160,7 +173,39 @@ async function updateMemberInner(tripId, memberId, updates, { pin = null } = {})
   }
 
   const memberRef = doc(db, `trips/${tripId}/members`, memberId);
-  await updateDoc(memberRef, { ...payload, updatedAt: serverTimestamp() });
+  let statusChanged = false;
+  let statusMemberUid = '';
+  if (payload.status != null) {
+    payload.status = normalizeStatus(payload.status);
+    // The status decides access, so it must be compared against the SERVER copy —
+    // the cached member list may still show the previous value.
+    const fresh = await getDocFromServer(memberRef).catch(() => null);
+    const current = fresh?.exists() ? { id: fresh.id, ...fresh.data() } : previous;
+    statusChanged = payload.status !== normalizeStatus(current?.status);
+    statusMemberUid = String(current?.uid || memberId);
+  }
+
+  // Suspending / re-activating a member IS an access change: the trip's
+  // `memberUids` array and the member document must move together, exactly like
+  // approve (add) and delete (remove). Writing only the member document left
+  // “ระงับการใช้งาน” doing nothing — the rules revoke on `inactive`, and the
+  // legacy `memberUids` branch of isTripMember kept the account inside the trip.
+  if (statusChanged) {
+    const tripRef = doc(db, 'trips', tripId);
+    const tripSnap = await getDocFromServer(tripRef).catch(() => null);
+    const batch = writeBatch(db);
+    batch.set(memberRef, { ...payload, updatedAt: serverTimestamp() }, { merge: true });
+    if (tripSnap?.exists()) {
+      // `arrayUnion`/`arrayRemove` are no-ops for an entry that is already there
+      // or already gone, so both directions are safe to write unconditionally.
+      batch.update(tripRef, isInactiveMember(payload)
+        ? { memberUids: arrayRemove(statusMemberUid), updatedAt: serverTimestamp() }
+        : { memberUids: arrayUnion(statusMemberUid), updatedAt: serverTimestamp() });
+    }
+    await batch.commit();
+  } else {
+    await updateDoc(memberRef, { ...payload, updatedAt: serverTimestamp() });
+  }
 
   try {
     if (pinValue) {
@@ -183,7 +228,9 @@ async function updateMemberInner(tripId, memberId, updates, { pin = null } = {})
 
 /**
  * Delete a member. Expenses that reference the member are kept (history) but the
- * member disappears from pickers. Set `removeFromTrips` to also drop the uid array entry.
+ * member disappears from pickers — and their uid is always dropped from the
+ * trip's `memberUids`, which is what actually revokes access (firestore.rules:
+ * `tripNoLongerListsMember` + the `memberUids` branch of `isTripMember`).
  */
 async function deleteMemberInner(tripId, memberId, { uid = null } = {}) {
   const docId = memberId;
@@ -192,10 +239,18 @@ async function deleteMemberInner(tripId, memberId, { uid = null } = {}) {
 
   const memberUid = uid || member?.uid || docId;
   const tripRef = doc(db, 'trips', tripId);
-  const tripSnap = await getDoc(tripRef);
+  // Server copy: the removal below is an authorization change (see isTripMember
+  // in firestore.rules — a `memberUids` entry alone still grants read access).
+  const tripSnap = await getDocFromServer(tripRef);
   const batch = writeBatch(db);
   batch.delete(doc(db, `trips/${tripId}/members`, docId));
-  if (tripSnap.exists() && (tripSnap.data().memberUids || []).includes(memberUid)) {
+  if (tripSnap.exists()) {
+    // ALWAYS remove the entry, never “only when the cached array still lists it”.
+    // `arrayRemove` is a no-op when the uid is absent, while skipping the write
+    // used to (a) leave the uid in the real document — the person could keep
+    // reading the trip through the legacy `memberUids` branch of isTripMember
+    // even though their member document was gone — and (b) make the delete fail
+    // the rules, which require the paired removal (`tripNoLongerListsMember`).
     batch.update(tripRef, { memberUids: arrayRemove(memberUid), updatedAt: serverTimestamp() });
   }
   await batch.commit();

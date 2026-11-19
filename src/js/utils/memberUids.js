@@ -38,9 +38,19 @@ export function memberAccessUids(member) {
   return out;
 }
 
-/** A member document that must not grant access any more. */
+/**
+ * A member document that must not grant access any more.
+ *
+ * Two spellings exist in the data: `inactive` (what firestore.rules and the
+ * membership sweep use) and `disabled` (what the สมาชิก → แก้ไข status select
+ * used to write). They mean the same thing — “this account must lose access” —
+ * so both are revoked here. Anything else (including a missing status, or a
+ * legacy `pending` row) keeps the historical behaviour.
+ */
+export const REVOKED_MEMBER_STATUSES = ['inactive', 'disabled'];
+
 export function isInactiveMember(member) {
-  return String(member?.status || 'active') === 'inactive';
+  return REVOKED_MEMBER_STATUSES.includes(String(member?.status || 'active').trim().toLowerCase());
 }
 
 /**

@@ -3,7 +3,7 @@
 // empty trip list while the admin still sees them in the trip.
 import {
   memberAccessUids, expectedMemberUids, missingMemberUids,
-  mergeTripsById, tripIdFromMemberPath
+  mergeTripsById, tripIdFromMemberPath, isInactiveMember
 } from '../../src/js/utils/memberUids.js';
 
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
@@ -23,6 +23,28 @@ export function testMemberAccessUids() {
   eq(memberAccessUids({ id: 'bad/uid' }), [], 'a path-like id is never a uid');
 
   console.log('All member access uid tests passed');
+}
+
+export function testRevokedMemberStatus() {
+  console.log('Testing revoked member statuses...');
+
+  // Both spellings revoke access: `inactive` is what the rules and the sweep
+  // write, `disabled` is what older builds of the สมาชิก status select wrote.
+  assert(isInactiveMember({ status: 'inactive' }), 'inactive is revoked');
+  assert(isInactiveMember({ status: 'disabled' }), 'disabled is revoked');
+  assert(isInactiveMember({ status: 'DISABLED' }), 'case does not matter');
+  assert(!isInactiveMember({ status: 'active' }), 'active is not revoked');
+  assert(!isInactiveMember({}), 'a legacy document without status stays a member');
+  assert(!isInactiveMember({ status: 'pending' }), 'a stuck pending row is not a revocation');
+
+  // A revoked member document never contributes a uid to the trip listing.
+  eq(expectedMemberUids([
+    { id: 'u1', uid: 'u1', status: 'active' },
+    { id: 'u2', uid: 'u2', status: 'disabled' },
+    { id: 'u3', uid: 'u3', status: 'inactive' }
+  ]), ['u1'], 'revoked members are not listed');
+
+  console.log('All revoked status tests passed');
 }
 
 export function testMissingMemberUids() {

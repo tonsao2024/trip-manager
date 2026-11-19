@@ -25,6 +25,7 @@ import {
 } from './members/join.js';
 import { repairTripMembership } from './members/repair.js';
 import { isActionableJoinRequest } from './utils/membershipRepair.js';
+import { isInactiveMember } from './utils/memberUids.js';
 import { formatInviteCode, isValidInviteCode, normalizeInviteCode } from './utils/invite.js';
 import {
   isPermissionError, joinPermissionHelp, adminHelpMessage, fetchRulesText,
@@ -222,8 +223,14 @@ function roleLabel(role, lang = getLang()) {
   if (extra) return lang === 'th' ? extra[0] : extra[1];
   return lang === 'th' ? 'สมาชิก' : 'Member';
 }
+const isRevokedMemberStatus = (status) => isInactiveMember({ status });
+
 function memberStateLabel(status, lang = getLang()) {
-  if (status === 'disabled') return lang === 'th' ? 'ปิดใช้งาน' : 'Disabled';
+  const value = String(status || 'active').trim().toLowerCase();
+  // `inactive` and `disabled` are the same (revoked) state — see
+  // utils/memberUids.js REVOKED_MEMBER_STATUSES and firestore.rules isTripMember.
+  if (value === 'inactive' || value === 'disabled') return lang === 'th' ? 'ปิดใช้งาน' : 'Disabled';
+  if (value === 'pending' || value === 'waiting' || value === 'review') return lang === 'th' ? 'รออนุมัติ' : 'Pending';
   return lang === 'th' ? 'ใช้งานอยู่' : 'Active';
 }
 
@@ -11843,10 +11850,12 @@ function openMemberForm(tripId, member = null, { onSaved, canSetRoles = true } =
         <div class="input-group"><label class="input-label">${th('รูปโปรไฟล์ (URL)','Photo URL')}</label><input id="m-photo" class="input" placeholder="https://..." autocomplete="off" value="${escapeHtml(m.photoURL || '')}"></div>
         ${isEdit ? `
         <div class="input-group"><label class="input-label">${th('สถานะ','Status')}</label>
-          <select id="m-status" class="input">
-            <option value="active" ${(m.status || 'active') === 'active' ? 'selected' : ''}>${th('ใช้งาน','Active')}</option>
-            <option value="disabled" ${m.status === 'disabled' ? 'selected' : ''}>${th('ระงับการใช้งาน','Disabled')}</option>
+          <select id="m-status" class="input" ${canSetRoles ? '' : 'disabled'}>
+            <option value="active" ${!isRevokedMemberStatus(m.status) ? 'selected' : ''}>${th('ใช้งาน','Active')}</option>
+            <option value="inactive" ${isRevokedMemberStatus(m.status) ? 'selected' : ''}>${th('ระงับการใช้งาน (ตัดสิทธิ์เข้าถึงทริป)','Disabled — revokes trip access')}</option>
           </select>
+          ${canSetRoles ? `<p class="text-xs text-[var(--text-tertiary)] mt-1">${th('ระงับแล้วบัญชีนี้จะเปิดทริปไม่ได้ทันที (ข้อมูลที่เคยสร้างยังอยู่) — เปิดใช้งานอีกครั้งได้ตลอด','A disabled account loses access to this trip immediately (nothing it created is deleted) and can be re-enabled any time.')}</p>`
+            : `<p class="text-xs text-[var(--text-tertiary)] mt-1">${th('เฉพาะผู้ดูแลทริปที่เปลี่ยนสถานะได้','Only a trip admin can change this.')}</p>`}
         </div>` : ''}
         <div class="p-3 rounded-xl space-y-2" style="background:var(--bg-secondary); border:1px solid var(--border);">
           <p class="text-xs font-semibold flex items-center gap-2">${icon('key-round', 'w-3.5 h-3.5')} ${th('สิทธิ์การใช้งาน','Permissions')}</p>

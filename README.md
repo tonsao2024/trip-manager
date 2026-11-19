@@ -27,6 +27,15 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > deploy เฉพาะไฟล์เว็บ; ถ้าอยากให้การค้นหาครบทุกทางให้ `firebase deploy --only firestore:indexes` ด้วย.
 > รายละเอียด: [docs/MEMBER-TRIP-VISIBILITY.md](docs/MEMBER-TRIP-VISIBILITY.md) หัวข้อ “รอบ 2”.
 >
+> **ตัดสิทธิ์เข้าถึงจริง (19 Nov 2026, รอบ 3):** ตรวจทั้งเส้นทางแล้วพบว่าการ “ระงับการใช้งาน” และ
+> “ลบสมาชิก” **ไม่ได้ตัดสิทธิ์จริงเสมอ**: dropdown สถานะเขียน `disabled` แต่กฎอ่าน `inactive`
+> (บัญชีที่ถูกระงับจึงยังเข้าทริปได้) และการลบสมาชิกเคยล้าง `memberUids` เฉพาะเมื่อ “แคชเห็นว่า uid อยู่”
+> (ถ้าแคชเพี้ยน uid จะค้าง → `isTripMember` ยังเปิดให้อ่านทริป). ตอนนี้ทั้งระงับ/เปิดใช้งาน/ลบ เขียน
+> เอกสารสมาชิก **และ** `memberUids` ใน writeBatch เดียว (อ่านสถานะจริงจากเซิร์ฟเวอร์), เก็บสถานะมาตรฐาน
+> `inactive`, และ `isInactiveMember()` ถือทั้ง `inactive`/`disabled` เป็นถูกตัดสิทธิ์. หน้าสมาชิกให้เฉพาะ
+> **ผู้ดูแลทริป** เปลี่ยนสถานะ. ต้อง deploy กฎชุดใหม่ (`firebase deploy --only firestore:rules`) เพื่อให้
+> เอกสารเก่าที่ค้าง `disabled` ถูกตัดสิทธิ์ด้วย — รายละเอียด: [docs/PERMISSIONS.md](docs/PERMISSIONS.md) § 6.1.
+>
 > **Firebase deployment:** Spark supports the current Google sign-in, Firestore joins, and the static site;
 > legacy username/PIN account flows, member-email lookup, and the invite fallback use secure Cloud Functions
 > and require Blaze. On Spark, use Google sign-in + invite code + admin approval; do not expose PIN or

@@ -140,6 +140,44 @@ The callable-backed PIN, email-search, and legacy invite fallback features requi
 on Blaze; Spark can continue with the visible Google sign-in and Firestore join-request flow. See
 `docs/DEPLOY.md` before changing the deployed client or rules.
 
+## 6.1) Revoking access — ระงับ / ลบสมาชิก (19 Nov 2026)
+
+การ “ตัดสิทธิ์เข้าถึงทริป” ของบัญชีหนึ่งต้องเขียน **สองที่พร้อมกัน** เสมอ เพราะกฎอ่านทั้งคู่:
+
+| การกระทำ | ต้องเขียนอะไร | กฎที่บังคับ |
+| --- | --- | --- |
+| อนุมัติ (`approveJoinRequest`) | `members/{uid}` + `memberUids: arrayUnion(uid)` | `memberMayRestoreOwnListing` / `managerOnlyChangesMemberUids` |
+| **ระงับการใช้งาน** (`updateMember` → status) | `members/{uid}.status = 'inactive'` **+** `memberUids: arrayRemove(uid)` | `revokedMemberStatus()` + `tripNoLongerListsMember()` |
+| เปิดใช้งานอีกครั้ง | `status = 'active'` **+** `memberUids: arrayUnion(uid)` | เหมือนด้านบน (ย้อนทาง) |
+| ลบสมาชิก (`deleteMember`) | `delete members/{uid}` **+** `memberUids: arrayRemove(uid)` | `tripNoLongerListsMember()` |
+
+สิ่งที่แก้ในรอบนี้ (ทั้งคู่เคยทำให้สิทธิ์ไม่ถูกตัดจริง):
+
+1. **`status: 'disabled'` ไม่เคยตัดสิทธิ์** — กฎเดิมเช็ค `!= 'inactive'` เท่านั้น แต่ dropdown สถานะเขียน
+   `'disabled'` → บัญชีที่ถูก “ระงับ” ยังอ่าน/เขียนทริปได้ครบ. ตอนนี้
+   - ไคลเอนต์แปลงเป็นค่ามาตรฐาน `inactive` (`normalizeStatus()` ใน `src/js/members/index.js`)
+   - `isInactiveMember()` (ทั้ง `utils/memberUids.js`, รายการซ่อม, และป้ายสถานะในหน้าสมาชิก) ถือทั้ง
+     `inactive` และ `disabled` เป็น “ถูกตัดสิทธิ์”
+   - `firestore.rules` เพิ่ม `revokedMemberStatus(data)` ถือทั้งสองค่า → เอกสารเก่าที่ค้าง `disabled`
+     ถูกตัดสิทธิ์ทันทีเมื่อ deploy กฎชุดนี้
+2. **การระงับ/เปิดใช้งานไม่แตะ `memberUids`** — เดิมเขียนแค่เอกสารสมาชิก (และโดนกฎปฏิเสธเพราะ
+   `tripNoLongerListsMember`) ตอนนี้เขียนเป็น **writeBatch เดียว** (อ่านสถานะจริงจากเซิร์ฟเวอร์ก่อนตัดสิน)
+3. **การลบสมาชิกอาจไม่ล้าง `memberUids`** — เดิมล้างเฉพาะเมื่อ “แคชเห็นว่า uid ยังอยู่ในลิสต์”
+   ถ้าแคชเพี้ยน รายการ `memberUids` จะค้างอยู่ → `isTripMember` ยังเปิดให้คนที่ถูกลบอ่านทริปได้
+   ตอนนี้ `arrayRemove` ถูกเขียนทุกครั้ง (idempotent)
+4. หน้าสมาชิก: dropdown สถานะแก้ได้เฉพาะ **ผู้ดูแลทริป** (ตรงกับกฎ `sameRoleAndPermissions()` ที่
+   co-admin เปลี่ยน status ของคนอื่นไม่ได้) และบอกชัดว่า “ระงับ = ตัดสิทธิ์เข้าถึงทริปทันที”
+
+> **ต้อง deploy กฎชุดใหม่ถ้าต้องการให้ข้อ 1 ครอบเอกสารเก่าที่เป็น `disabled`:**
+> `firebase deploy --only firestore:rules` — การซ่อมฝั่งไคลเอนต์ (ข้อ 2–4) ทำงานได้กับกฎที่ deploy อยู่แล้ว
+
+### ตรวจว่าเข้าถึงถูกตัดจริง
+
+1. แอดมิน → สมาชิก → แก้ไข → สถานะ = ระงับการใช้งาน → บันทึก
+2. ใน Firestore: `members/{uid}.status` ต้องเป็น `inactive` และ uid ต้องหายจาก `trips/{id}.memberUids`
+3. บัญชีนั้นรีเฟรชเว็บ → ต้องไม่เห็นทริป (และ `getDoc(trips/{id})` ต้อง `permission-denied`)
+4. เปิดใช้งานอีกครั้ง → uid กลับเข้าลิสต์ และทริปกลับมาแสดง
+
 ## 7) How to verify
 
 ```bash

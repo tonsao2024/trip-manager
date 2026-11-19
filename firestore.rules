@@ -12,15 +12,27 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
     }
 
+    /**
+     * A member status that must lose access. Two spellings exist in the data:
+     * `inactive` (written by the membership sweep and by the current สมาชิก →
+     * แก้ไข status select) and `disabled` (what older builds of that select
+     * wrote). They mean the same thing, so both are revoked — an admin who
+     * suspended somebody must not leave them inside the trip through the legacy
+     * `memberUids` branch below.
+     */
+    function revokedMemberStatus(data) {
+      return data.get('status', 'active') in ['inactive', 'disabled'];
+    }
+
     function isTripMember(tripId) {
       let tripPath = /databases/$(database)/documents/trips/$(tripId);
       let memberPath = /databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid);
       return isAuthenticated() && (
         isSuperAdmin()
         || (exists(tripPath) && get(tripPath).data.createdBy == request.auth.uid)
-        || (exists(memberPath) && get(memberPath).data.get('status', 'active') != 'inactive')
+        || (exists(memberPath) && !revokedMemberStatus(get(memberPath).data))
         // Keep the legacy memberUids fallback only when no member document exists.
-        // An inactive member document must revoke access even if an old array entry remains.
+        // A revoked member document must revoke access even if an old array entry remains.
         || (!exists(memberPath) && exists(tripPath)
           && get(tripPath).data.get('memberUids', []).hasAny([request.auth.uid]))
       );
@@ -136,7 +148,7 @@ service cloud.firestore {
       let after = request.resource.data.get('memberUids', null);
       return isAuthenticated()
         && hasMemberDoc(tripId)
-        && memberData(tripId).get('status', 'active') != 'inactive'
+        && !revokedMemberStatus(memberData(tripId))
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids', 'updatedAt'])
         && after is list
         && after.hasAll(before)
@@ -442,7 +454,7 @@ service cloud.firestore {
         (resource.data.memberUids != null
           && resource.data.memberUids.hasAny([request.auth.uid])
           && (!exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid))
-            || get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.get('status', 'active') != 'inactive'))
+            || !revokedMemberStatus(get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data)))
       );
       allow create: if isAuthenticated()
         && request.resource.data.createdBy == request.auth.uid;
@@ -489,7 +501,7 @@ service cloud.firestore {
         allow update: if memberHasNoClientCredentialFields(request.resource.data)
           && (((canManageMembers(tripId) && protectsAdminDoc(tripId)
                 && (isTripAdmin(tripId) || sameRoleAndPermissions()))
-              && (request.resource.data.get('status', resource.data.get('status', 'active')) != 'inactive'
+              && (!revokedMemberStatus(request.resource.data)
                 || tripNoLongerListsMember(tripId, memberId, resource.data.get('uid', memberId))))
             || memberSelfUpdateOnlyProfile(tripId, memberId));
         allow delete: if canManageMembers(tripId) && protectsAdminDoc(tripId)
