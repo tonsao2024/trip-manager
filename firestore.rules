@@ -448,13 +448,27 @@ service cloud.firestore {
       allow get: if isAuthenticated() && isTripMember(tripId);
       // Lists are scoped to trips the caller already belongs to. Invite-code
       // previews are resolved through publicTripInvites/{code}, never by listing trips.
+      //
+      // THIS RULE MUST NOT READ ANOTHER DOCUMENT. Firestore answers a query with
+      // one rule evaluation per returned document and caps a query at 10
+      // document access calls (get/exists/getAfter) in total; exceeding it fails
+      // the WHOLE query with permission-denied. The old rule did
+      // exists()+get() on `members/{uid}` for every trip, so a member with more
+      // than a handful of trips got an empty trip list (the app paged at 8 just
+      // to survive it) — one more trip and a working member “loses” every trip.
+      //
+      // Membership is therefore decided from the trip document alone (0 access
+      // calls): `createdBy` or `memberUids`. Suspension and removal keep that
+      // array in sync atomically with the member document (see
+      // src/js/members/index.js), and everything *inside* a trip — including
+      // reading the trip document itself with get — still runs the strict
+      // `isTripMember`, which re-reads `members/{uid}` and denies a revoked
+      // account. isSuperAdmin() is last so a plain member never pays its 2 calls.
       allow list: if isAuthenticated() && (
-        isSuperAdmin() ||
-        resource.data.createdBy == request.auth.uid ||
-        (resource.data.memberUids != null
-          && resource.data.memberUids.hasAny([request.auth.uid])
-          && (!exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid))
-            || !revokedMemberStatus(get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data)))
+        resource.data.get('createdBy', null) == request.auth.uid
+        || (resource.data.get('memberUids', null) is list
+          && resource.data.memberUids.hasAny([request.auth.uid]))
+        || isSuperAdmin()
       );
       allow create: if isAuthenticated()
         && request.resource.data.createdBy == request.auth.uid;

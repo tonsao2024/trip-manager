@@ -25,7 +25,7 @@ import {
 } from './members/join.js';
 import { repairTripMembership } from './members/repair.js';
 import { isActionableJoinRequest } from './utils/membershipRepair.js';
-import { isInactiveMember } from './utils/memberUids.js';
+import { isInactiveMember, isLegacyRevokedMember } from './utils/memberUids.js';
 import { formatInviteCode, isValidInviteCode, normalizeInviteCode } from './utils/invite.js';
 import {
   isPermissionError, joinPermissionHelp, adminHelpMessage, fetchRulesText,
@@ -38,7 +38,7 @@ import {
 } from './expenses/index.js';
 import { fetchSettlementData, recordTransfer, deleteTransfer } from './settlement/index.js';
 
-import { listMembers, createMember, updateMember, deleteMember, countMemberReferences, mapFunctionError, MEMBER_ROLES, hydrateMemberPhotos } from './members/index.js';
+import { listMembers, createMember, updateMember, deleteMember, countMemberReferences, mapFunctionError, MEMBER_ROLES, hydrateMemberPhotos, reactivateLegacyRevoked } from './members/index.js';
 import { dayjs, formatDate, formatTime, formatDuration, getTripDays, determineUpNextDay, parseDurationInput, thaiDate, thaiDateRange } from './utils/date.js';
 import { expensesInThb, convertCurrency, formatCurrency, formatCurrencyHtml, formatAmount, parseCurrencyInput, moneyHtml, thbPlusLabelHtml, origTextChipHtml, getCurrencyDecimals, toMinor, fromMinor, calculateNetTotal, toThbMinor, resolveTripThbRate, rememberThbRate, distributeBudgetEqually, tripCurrencyList } from './utils/currency.js';
 import { calculateSettlement, buildSettlementStatements, transactionSources, cardSummary, pendingPayerExpenses, groupTransfersByPayer } from './utils/settlement.js';
@@ -227,11 +227,63 @@ const isRevokedMemberStatus = (status) => isInactiveMember({ status });
 
 function memberStateLabel(status, lang = getLang()) {
   const value = String(status || 'active').trim().toLowerCase();
-  // `inactive` and `disabled` are the same (revoked) state — see
-  // utils/memberUids.js REVOKED_MEMBER_STATUSES and firestore.rules isTripMember.
-  if (value === 'inactive' || value === 'disabled') return lang === 'th' ? 'ระงับการใช้งาน' : 'Disabled';
+  // The legacy spelling written by older builds — same revocation, but worth
+  // saying so: the admin never chose it in the current form.
+  if (value === 'disabled') return lang === 'th' ? 'ระงับการใช้งาน (สถานะเก่า)' : 'Disabled (legacy value)';
+  // `inactive` (current spelling) and `disabled` (legacy, handled above) are the
+  // same revoked state — see utils/memberUids.js REVOKED_MEMBER_STATUSES and
+  // firestore.rules isTripMember.
+  if (value === 'inactive') return lang === 'th' ? 'ระงับการใช้งาน' : 'Disabled';
   if (value === 'pending' || value === 'waiting' || value === 'review') return lang === 'th' ? 'รออนุมัติ' : 'Pending';
   return lang === 'th' ? 'ใช้งานอยู่' : 'Active';
+}
+
+/**
+ * “These members lost access because of an old value, not because you pressed
+ * anything today.”
+ *
+ * Older builds of สมาชิก → แก้ไข wrote `status: 'disabled'` while the published
+ * rules ignored it. The moment rules that honour it are deployed, that member
+ * silently cannot open the trip any more — the exact report “after I updated the
+ * code and the rules, a member who was already in the trip cannot see it”.
+ * The value is a real revocation, so it is respected; this panel makes it
+ * visible and offers one tap to bring those accounts back.
+ */
+function renderLegacyRevokedPanel(tripId, members, canApprove, reload) {
+  const host = document.getElementById('member-legacy-report');
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  if (!host) return;
+  const legacy = canApprove ? (members || []).filter(isLegacyRevokedMember) : [];
+  if (!legacy.length) { host.innerHTML = ''; return; }
+  const names = legacy.map(m => escapeHtml(m.displayName || m.username || m.id)).slice(0, 6).join(' · ');
+  host.innerHTML = `
+    <div class="notice text-left p-3 rounded-xl text-xs leading-relaxed">
+      <strong class="flex items-center gap-1">${icon('shield-alert', 'w-3.5 h-3.5')} ${th(
+        `สมาชิก ${legacy.length} คนถูกระงับการเข้าถึงด้วยสถานะแบบเก่า (disabled)`,
+        `${legacy.length} member(s) lost access through the legacy “disabled” value`
+      )}</strong>
+      <p class="mt-1">${th(
+        'สถานะนี้ถูกเขียนโดยฟอร์มรุ่นเก่า และตอนนี้ Firestore Rules ตัดสิทธิ์เข้าถึงทริปจริงแล้ว — ถ้าคุณไม่ได้ตั้งใจระงับ กดเปิดใช้งานด้านล่างได้เลย',
+        'That value was written by the older form, and the Firestore rules now enforce it — so the account cannot open this trip. If you did not mean to suspend them, re-activate them below.'
+      )}</p>
+      <p class="mt-1 font-medium">${names}${legacy.length > 6 ? ' …' : ''}</p>
+      <button id="reactivate-legacy-btn" type="button" class="btn btn-primary btn-sm mt-2">${icon('user-check', 'w-4 h-4')} ${th('เปิดใช้งานทั้งหมด', 'Re-activate all')}</button>
+    </div>`;
+  queueIcons();
+  bind('reactivate-legacy-btn', 'click', async () => {
+    const t = toast.loading(th('กำลังเปิดใช้งาน...', 'Re-activating...'));
+    try {
+      const done = await reactivateLegacyRevoked(tripId, legacy);
+      t.close();
+      toast.success(th(`เปิดใช้งาน ${done.length} คนแล้ว — ให้สมาชิกรีเฟรชหน้าเว็บ`, `Re-activated ${done.length} member(s) — ask them to refresh.`));
+      await reload();
+    } catch (e) {
+      t.close();
+      console.warn('legacy reactivation failed', e?.code || e?.message);
+      toast.error(e?.message || th('เปิดใช้งานไม่สำเร็จ', 'Could not re-activate'));
+    }
+  });
 }
 
 // --- Icon helpers (Lucide) — replaces all text emoji with real icons ---
@@ -3645,6 +3697,9 @@ async function renderTripSelector() {
             <li>${lang === 'th'
               ? 'ตรวจว่าล็อกอินด้วยบัญชีเดิม (Google/อีเมล) ที่ใช้ตอนขอเข้าร่วม'
               : 'Make sure you signed in with the same account (Google/email) you used to ask to join.'}</li>
+            <li>${lang === 'th'
+              ? 'ถ้าแอดมิน “ระงับการใช้งาน” บัญชีนี้ไว้ บัญชีจะเปิดทริปไม่ได้ — ขอให้แอดมินเปิดใช้งานที่หน้า สมาชิก (ปุ่ม “เปิดใช้งาน” ในฟอร์มแก้ไข หรือแผง “สถานะแบบเก่า”)'
+              : 'If the admin suspended this account, it cannot open the trip — ask them to re-activate it on the Members page.'}</li>
           </ul>
           ${(e.details || []).length ? `<details class="mt-2"><summary class="cursor-pointer">${lang === 'th' ? 'รายละเอียดทางเทคนิค' : 'Technical details'}</summary>
             <div class="mt-1 font-mono text-[10px] break-all">${escapeHtml((e.details || []).map(d => `${d.code || 'error'}: ${d.message}`).join('\n'))}</div></details>` : ''}
@@ -3740,6 +3795,19 @@ async function loadTrip(tripId) {
       setTrip(null);
       currentTripId = null;
       location.hash = '#/trips';
+    } else if (e?.code === 'permission-denied' || /permission-denied|insufficient permissions/i.test(msg)) {
+      // The trip is listed for this account (the trips `list` rule only looks at
+      // `memberUids`) but the document itself is closed: the member document is
+      // missing, revoked (`inactive`) or carries the legacy `disabled` value.
+      // Saying “Missing or insufficient permissions” taught nobody anything.
+      toast.error(
+        getLang() === 'th'
+          ? 'บัญชีนี้เปิดทริปไม่ได้ — ผู้ดูแลอาจระงับการใช้งานไว้ หรือกฎ Firestore ยังไม่ถูก publish ล่าสุด'
+          : 'This account cannot open the trip — the admin may have suspended it, or the Firestore rules are not the latest.',
+        getLang() === 'th' ? 'ไม่มีสิทธิ์เข้าทริปนี้' : 'No access to this trip',
+        () => router.handle()
+      );
+      if (headerSubtitle) headerSubtitle.textContent = getLang() === 'th' ? 'ไม่มีสิทธิ์เข้าทริปนี้' : 'No access to this trip';
     } else {
       toast.error(
         msg + (getLang() === 'th' ? ' — กดปุ่มรีเฟรช (มุมขวาบน) เพื่อลองใหม่' : ' — tap Refresh to retry'),
@@ -12026,6 +12094,7 @@ async function renderMembers(params) {
         <p class="text-xs text-[var(--text-secondary)]">${th('สมาชิกสมัครบัญชีเองได้ แล้วส่งคำขอเข้าร่วมด้วยรหัสเชิญ — แอดมินกดอนุมัติได้เลย (ไม่ต้องใช้ Cloud Functions)','Members create their own account and ask to join with the invite code — approve them here (no Cloud Functions needed).')}</p>
         ${canApprove ? `<p id="member-repair-status" class="text-xs text-[var(--text-secondary)]" role="status">${th('กำลังตรวจสอบการเชื่อมโยงสมาชิก…', 'Checking member access…')}</p>` : ''}
         ${canApprove ? `<div id="membership-repair-report" class="text-xs text-[var(--text-secondary)]" role="status" aria-live="polite"></div>` : ''}
+        ${canApprove ? `<div id="member-legacy-report" role="status" aria-live="polite"></div>` : ''}
         <div id="join-requests" class="space-y-2"><div class="skeleton h-10"></div></div>
         <div class="btn-row">
           <button id="add-by-email-btn" class="btn btn-secondary btn-sm">${icon('mail-plus', 'w-4 h-4')} ${th('เพิ่มด้วยอีเมล','Add by email')}</button>
@@ -12244,6 +12313,7 @@ async function renderMembers(params) {
       const members = await listMembers(tripId, { fresh: canApprove });
       memberRows = members || [];
       if (isStale(token)) return;
+      renderLegacyRevokedPanel(tripId, memberRows, canApprove, loadMembersList);
       if (canApprove) {
         const repairStatus = document.getElementById('member-repair-status');
         try {

@@ -5,6 +5,36 @@
 - **PR:** #71
 - **เครื่องที่รัน:** sandbox Linux (Node.js, ไม่มีจอ/ไม่มีสิทธิ์ root) — ข้อจำกัดของ environment ระบุไว้ใน §5
 
+## 0. อัปเดตรอบ 5 (20 Nov 2026) — หลังรายงาน “สมาชิกที่เคยเข้าทริปได้ กลับมองไม่เห็น”
+
+ปัญหาที่แก้: (ก) กฎ `list` ของ `trips` เรียก `exists()+get()` ต่อทริปที่คืนมา และ Firestore จำกัด
+**10 document access ต่อ query** → สมาชิกที่อยู่หลายทริปโดน `permission-denied` ทั้งหน้า;
+(ข) ฟอร์มรุ่นเก่าเขียน `status: 'disabled'` ที่กฎเดิมไม่รู้จัก พอ deploy กฎใหม่ที่รู้จักค่านี้
+สมาชิกที่ติดค่าเก่าถูกตัดสิทธิ์ทันที. รายละเอียด: `docs/PERMISSIONS.md` § 6.2
+
+ผลรันใหม่ (branch เดียวกัน):
+
+| ชุด | คำสั่ง | ผล |
+|---|---|---|
+| unit / pure logic | `npm test` | ✅ **273/273** (เพิ่ม `testLegacyDisabledStatus`) |
+| membership + indexes | `npm run test:membership` | ✅ **28/28** (เพิ่มเคสเปิดใช้งานสถานะเก่า 2 เคส) |
+| **rules lint (ใหม่, ไม่ต้องมี emulator)** | `node --test tests/rules-lint.test.mjs` | ✅ **5/5** |
+| deploy guard + indexes | `node --test tests/deploy-spark.test.mjs tests/firestore-indexes.test.mjs` | ✅ 8/8 |
+| Cloud Functions | `npm --prefix functions test` | ✅ 3/3 |
+| push sender | `npm test --prefix tools/push-actions` | ✅ 12/12 |
+| E2E jsdom | `npm run test:smoke` | ✅ **948 ข้อ / 0 ตก / 23 ⚠** ใน **86 section** (เพิ่ม section v38: 7 ข้อ) |
+| Firestore Rules (emulator) | `firebase emulators:exec --only firestore "npm run test:rules"` | ⊘ ยังรันใน sandbox ไม่ได้ — ตอนนี้มี **15 เคส** (เพิ่ม “member with many trips can list all of them”) |
+
+รวมข้อที่รันจริงและผ่านรอบนี้: **1,269 ข้อ / ตก 0**
+
+เทสใหม่ที่กันไม่ให้บั๊กนี้กลับมา:
+1. `tests/rules-lint.test.mjs` — กฎ `list` ของ `trips` ต้องไม่มี `get()/exists()` เลย (กัน query budget) และ `isTripMember` ต้องยังตัดสิทธิ์ทั้ง `inactive`/`disabled`
+2. smoke **v38** — หน้าสมาชิกขึ้นแผง “สถานะแบบเก่า (disabled)” พร้อมชื่อสมาชิก, แถวขึ้น “ระงับการใช้งาน (สถานะเก่า)”, กดปุ่มเดียวแล้วเอกสารกลับเป็น `active` + uid ยังอยู่ใน `memberUids` + แผงหายไป
+3. `tests/rules/firestore.test.js` — “a member with many trips can list all of them” (12 ทริปในหน้าเดียว)
+4. CI: ขั้นตอน `Validate the rules query budget` ถูกเพิ่มใน `.github/workflows/deploy-firebase.yml` ก่อน deploy กฎจริง
+
+---
+
 ## 1. สรุปผลรวม
 
 | # | ชุดทดสอบ | คำสั่ง | ผลจริง |

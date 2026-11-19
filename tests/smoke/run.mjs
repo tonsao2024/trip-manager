@@ -856,6 +856,37 @@ console.log('\n▶ v37: ระงับสมาชิก = ตัดสิท�
   await sleep(250);
 }
 
+console.log('\n▶ v38: สมาชิกที่ติดสถานะเก่า `disabled` — เห็นชัด และเปิดใช้งานคืนได้ในคลิกเดียว');
+{
+  // The reported regression: a member who carried the OLD `disabled` value from
+  // a previous build lost the trip the moment rules honouring it were deployed.
+  fsdb.__seed('trips/t1', { ...fsdb.__dump('trips/t1'), memberUids: ['u1', 'u2', 'u3'] });
+  fsdb.__seed('trips/t1/members/u3', {
+    uid: 'u3', displayName: 'ป้าน้อย', role: 'member', color: '#c9a227',
+    status: 'disabled', permissions: { canEditItinerary: true, canEditExpense: true }
+  });
+  await goto('#/trip/t1/members');
+  await waitFor(() => /สถานะแบบเก่า/.test(text$()), { timeout: 6000, label: 'legacy status panel' }).catch(() => {});
+  check(/สถานะแบบเก่า/.test(text$()), 'legacy status: the members page names the old `disabled` value instead of hiding it');
+  check(/ป้าน้อย/.test(text$()), 'legacy status: it names the affected member');
+  check(/ระงับการใช้งาน \(สถานะเก่า\)/.test(q('.people-row[data-member="u3"]')?.textContent || ''),
+    'legacy status: the roster row says สถานะเก่า, not the current wording');
+  const btn = q('#reactivate-legacy-btn');
+  check(!!btn, 'legacy status: one button re-activates them');
+  if (btn) {
+    await click(btn);
+    await waitFor(() => fsdb.__dump('trips/t1/members/u3')?.status === 'active', { timeout: 6000, label: 'legacy re-activation' }).catch(() => {});
+    check(fsdb.__dump('trips/t1/members/u3')?.status === 'active', 'legacy status: the document becomes active again');
+    check((fsdb.__dump('trips/t1')?.memberUids || []).includes('u3'), 'legacy status: the account stays in the trip listing');
+    await waitFor(() => !q('#reactivate-legacy-btn'), { timeout: 6000, label: 'legacy panel cleared' }).catch(() => {});
+    check(!q('#reactivate-legacy-btn'), 'legacy status: the panel disappears once nobody is left in the legacy state');
+  }
+  // Leave the fixture as the later sections expect it.
+  fsdb.__remove('trips/t1/members/u3');
+  fsdb.__seed('trips/t1', { ...fsdb.__dump('trips/t1'), memberUids: ['u1', 'u2'] });
+  await sleep(150);
+}
+
 console.log('\n▶ member edit + delete');
 await goto('#/trip/t1/members');
 await waitFor(() => text$().includes('เคน'), { label: 'member list' });

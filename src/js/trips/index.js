@@ -2,7 +2,7 @@ import { db, storage, functions, httpsCallable, serverTimestamp, isStorageAvaila
 import { brandPrimary } from '../utils/brand.js';
 import { deleteTransfer } from '../settlement/transfers.js';
 import { collection, collectionGroup, doc, getDoc, getDocFromServer, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, runTransaction, query, where, limit, startAfter, arrayUnion, arrayRemove, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { missingMemberUids, mergeTripsById, tripIdFromMemberPath } from '../utils/memberUids.js';
+import { missingMemberUids, mergeTripsById, tripIdFromMemberPath, isInactiveMember } from '../utils/memberUids.js';
 import { listJoinTargets, forgetJoinTarget } from '../members/join.js';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { compressImage } from '../utils/helpers.js';
@@ -153,11 +153,16 @@ export async function listTrips(userId, isSuperAdmin = false, { maxAgeMs = 2 * 6
 
 async function fetchTripsFromServer(userId, isSuperAdmin = false) {
   const cached = getCachedTrips(userId);
-  // Every write below is page-by-page, so someone in more than 30 trips still
+  // Every read below is page-by-page, so someone in more than 30 trips still
   // sees the oldest one. A trip list silently cut at 30 looked like lost data.
-  // Rules check a per-trip member document when a trip-list result includes a
-  // member UID. Keep the page under Firestore's 10-document rule-access limit.
-  const PAGE = 8;
+  //
+  // This used to be 8 because the trips `list` rule did exists()+get() on
+  // `members/{uid}` for every returned trip and Firestore allows only 10
+  // document access calls per query — a member with a few trips then got
+  // permission-denied for the *whole* list and saw no trips at all. The rule is
+  // now decided from the trip document alone (see firestore.rules), so the page
+  // can be a normal size again and the count of trips no longer matters.
+  const PAGE = 30;
   const readAllPages = async (baseQuery, label, timeoutMs) => {
     const out = [];
     let cursor = null;
@@ -351,7 +356,9 @@ async function discoverTripsByMemberDocs(userId, knownTripIds = new Set()) {
       const snap = await getDocs(query(collectionGroup(db, 'members'), where(field, '==', userId)));
       for (const memberDoc of snap.docs) {
         const data = memberDoc.data() || {};
-        if (String(data.status || 'active') === 'inactive') continue;
+        // Same definition of “revoked” as the rules and the member roster:
+        // `inactive` (current) and the legacy `disabled` spelling.
+        if (isInactiveMember(data)) continue;
         const tripId = tripIdFromMemberPath(memberDoc.ref?.path || '');
         if (tripId && !candidates.has(tripId)) candidates.set(tripId, data);
       }

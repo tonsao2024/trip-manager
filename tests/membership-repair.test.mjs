@@ -277,6 +277,27 @@ test('re-activating a member puts the listing back', async () => {
   assert.ok(fsdb.__dump('trips/t1').memberUids.includes('g1'), 'the member can list the trip again');
 });
 
+test('a legacy `disabled` member is reported and can be re-activated in one call', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin', 'g1'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', displayName: 'รุ่นเก่า', role: 'member', status: 'disabled' });
+  fsdb.__seed('trips/t1/members/g2', { uid: 'g2', displayName: 'ปกติ', role: 'member', status: 'active' });
+  const legacy = [fsdb.__dump('trips/t1/members/g1'), fsdb.__dump('trips/t1/members/g2')]
+    .map((m, i) => ({ ...m, id: i ? 'g2' : 'g1' }));
+  const done = await members.reactivateLegacyRevoked('t1', legacy);
+  assert.deepEqual(done, ['g1'], 'only the legacy-revoked member is touched');
+  assert.equal(fsdb.__dump('trips/t1/members/g1').status, 'active', 'the document is active again');
+  assert.ok(fsdb.__dump('trips/t1').memberUids.includes('g1'), 'and the trip still lists the account');
+});
+
+test('re-activating legacy members is idempotent and never touches active ones', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin', 'g1'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', role: 'member', status: 'inactive' });
+  const done = await members.reactivateLegacyRevoked('t1', [{ ...fsdb.__dump('trips/t1/members/g1'), id: 'g1' }]);
+  assert.deepEqual(done, [], 'an `inactive` member is a deliberate suspension — the panel leaves it alone');
+  assert.equal(fsdb.__dump('trips/t1/members/g1').status, 'inactive');
+  assert.deepEqual(fsdb.__dump('trips/t1').memberUids, ['admin', 'g1']);
+});
+
 test('editing a member without touching the status keeps the listing untouched', async () => {
   fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin', 'g1'] });
   fsdb.__seed('trips/t1/members/g1', { uid: 'g1', displayName: 'เก่า', role: 'member', status: 'active' });

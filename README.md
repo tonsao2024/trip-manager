@@ -44,6 +44,18 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > puppeteer 9 ชุด) พร้อมคำสั่งรันบนเครื่องคุณอยู่ใน **[docs/TEST-REPORT.md](docs/TEST-REPORT.md)**
 > (รายการเช็กทั้งหมด 941 ข้อ: [docs/test-cases-smoke.txt](docs/test-cases-smoke.txt)).
 >
+> **สมาชิกที่เคยเข้าทริปได้ กลับมองไม่เห็นหลังอัปเดตกฎ (20 Nov 2026, รอบ 5):** มีสองสาเหตุซ้อนกัน —
+> (ก) กฎ `list` ของ `trips` เดิมเรียก `exists()+get()` บน `members/{uid}` **ต่อทริปที่คืนมา** และ Firestore
+> จำกัด document access รวม **10 ครั้งต่อ query** → สมาชิกที่อยู่หลายทริปโดน `permission-denied` ทั้งหน้า
+> (เจ้าของทริปไม่โดนเพราะเข้าเงื่อนไข `createdBy` ก่อน) ตอนนี้กฎ `list` ตัดสินจากเอกสารทริปเท่านั้น
+> (**0 document access**) ส่วน `get`/subcollection ยังเข้มด้วย `isTripMember()` เหมือนเดิม และไคลเอนต์
+> กลับมาแบ่งหน้า 30 ทริปได้ตามปกติ; (ข) ฟอร์มรุ่นเก่าเขียน `status: 'disabled'` ที่กฎเดิมไม่รู้จัก —
+> พอ deploy กฎใหม่ที่รู้จักค่านี้ สมาชิกที่ยังติดค่าเก่าจึงถูกตัดสิทธิ์ทันทีทั้งที่ไม่มีใครแตะการตั้งค่า
+> ตอนนี้หน้าสมาชิกขึ้นแผง **“สมาชิก N คนถูกระงับการเข้าถึงด้วยสถานะแบบเก่า (disabled)”** พร้อมปุ่ม
+> **“เปิดใช้งานทั้งหมด”** และแถวขึ้นว่า “ระงับการใช้งาน (สถานะเก่า)”. **ต้อง deploy ทั้ง 2 อย่าง:**
+> `firebase deploy --only firestore:rules` + ไฟล์เว็บ (Pages) — รายละเอียด: [docs/PERMISSIONS.md](docs/PERMISSIONS.md) § 6.2
+> (มีเทสกันกลับมา `node --test tests/rules-lint.test.mjs` และเคส “member with many trips” ใน `tests/rules/firestore.test.js`).
+>
 > **Firebase deployment:** Spark supports the current Google sign-in, Firestore joins, and the static site;
 > legacy username/PIN account flows, member-email lookup, and the invite fallback use secure Cloud Functions
 > and require Blaze. On Spark, use Google sign-in + invite code + admin approval; do not expose PIN or

@@ -8,7 +8,7 @@ import {
   writeBatch, arrayUnion, arrayRemove
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { cachedRead, cacheInvalidate, cacheForget, seedFromPersist, persistSet, persistDelete } from '../utils/datacache.js';
-import { isInactiveMember } from '../utils/memberUids.js';
+import { isInactiveMember, isLegacyRevokedMember } from '../utils/memberUids.js';
 import { setMemberPin, publishMemberLookup, clearMemberPin, normalizeUsername } from '../auth/memberAuth.js';
 
 export const MEMBER_ROLES = [
@@ -255,6 +255,42 @@ async function deleteMemberInner(tripId, memberId, { uid = null } = {}) {
   }
   await batch.commit();
   return true;
+}
+
+/**
+ * Re-activate members whose access was revoked by the *legacy* `disabled`
+ * spelling, in one tap, from the members page.
+ *
+ * Those documents were written by older builds of สมาชิก → แก้ไข while the
+ * published rules still ignored the value. As soon as rules that honour it are
+ * deployed, that member silently loses the trip — nobody changed a setting that
+ * day. This is the explicit way back: each member document and the trip's
+ * `memberUids` array move together (one batch per member, the same pairing the
+ * rules expect), and only members that are actually in the legacy revoked state
+ * are touched.
+ */
+export async function reactivateLegacyRevoked(tripId, members = []) {
+  if (!db || !tripId) throw new Error('DB not ready - Firebase not configured');
+  const targets = (members || []).filter(isLegacyRevokedMember);
+  if (!targets.length) return [];
+  const tripRef = doc(db, 'trips', tripId);
+  const done = [];
+  for (const member of targets) {
+    const memberId = String(member.id || '');
+    if (!memberId || memberId.includes('/')) continue;
+    // The uid the account signs in with — the field wins over the document id
+    // for a local member that was later linked to an account.
+    const uid = String(member.uid || memberId).trim();
+    const batch = writeBatch(db);
+    batch.set(doc(db, `trips/${tripId}/members`, memberId), { status: 'active', updatedAt: serverTimestamp() }, { merge: true });
+    if (uid && !uid.includes('/')) {
+      batch.update(tripRef, { memberUids: arrayUnion(uid), updatedAt: serverTimestamp() });
+    }
+    await batch.commit();
+    done.push(memberId);
+  }
+  invalidateMembers(tripId);
+  return done;
 }
 
 async function reorderMembersInner(tripId, ids, userId) {

@@ -54,6 +54,25 @@ export function isInactiveMember(member) {
 }
 
 /**
+ * The *old* spelling of a revoked status.
+ *
+ * Older builds of สมาชิก → แก้ไข wrote `status: 'disabled'` while the published
+ * rules still only knew `inactive`, so it had no effect — until the rules that
+ * honour it were deployed, and then every member who still carried the old value
+ * lost the trip without anybody touching a setting that day.
+ *
+ * The value is honoured (it is a real revocation, see REVOKED_MEMBER_STATUSES),
+ * but it is also *reported*: the members page shows these people explicitly and
+ * offers one tap to re-activate them, so a legacy value can never silently lock
+ * a working member out again.
+ */
+export const LEGACY_REVOKED_STATUSES = ['disabled'];
+
+export function isLegacyRevokedMember(member) {
+  return LEGACY_REVOKED_STATUSES.includes(String(member?.status || '').trim().toLowerCase());
+}
+
+/**
  * The uids `trips/{tripId}.memberUids` *should* contain for a member list:
  * every access uid of every active member document.
  */

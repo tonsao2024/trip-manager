@@ -442,7 +442,14 @@ describe('Firestore security rules', () => {
     const db = dbFor(inactiveUid);
     await assertFails(getDoc(doc(db, 'trips', tripId)));
     await assertFails(getDoc(doc(db, 'trips', tripId, 'members', memberUid)));
-    await assertFails(getDocs(query(
+    await assertFails(getDocs(collection(db, 'trips', tripId, 'expenses')));
+    // Listing is decided from the trip document alone (see the comment on the
+    // trips `allow list` rule: a per-document read would exhaust Firestore's
+    // 10-call query budget and deny the WHOLE list). A stale array entry can
+    // therefore still surface the trip *card* — but the trip cannot be opened
+    // (get is denied above) and nothing inside it can be read, which the
+    // subcollection assertion proves.
+    await assertSucceeds(getDocs(query(
       collection(db, 'trips'),
       where('memberUids', 'array-contains', inactiveUid)
     )));
@@ -454,14 +461,51 @@ describe('Firestore security rules', () => {
     const db = dbFor(disabledUid);
     await assertFails(getDoc(doc(db, 'trips', tripId)));
     await assertFails(getDoc(doc(db, 'trips', tripId, 'members', memberUid)));
-    await assertFails(getDocs(query(
-      collection(db, 'trips'),
-      where('memberUids', 'array-contains', disabledUid)
-    )));
+    await assertFails(getDocs(collection(db, 'trips', tripId, 'expenses')));
     // …and they cannot put themselves back into the listing either.
     await assertFails(updateDoc(doc(db, 'trips', tripId), {
       memberUids: arrayUnion(disabledUid), updatedAt: serverTimestamp()
     }));
+  });
+
+  it('lets a member with many trips list all of them (the list rule reads no document)', async () => {
+    // The bug this locks down: the trips `list` rule used to call exists()+get()
+    // on `members/{uid}` for every returned trip. Firestore allows only 10
+    // document access calls per query, so a member in more than a handful of
+    // trips got permission-denied for the entire list — “a member who was
+    // already in the trip cannot see it after the rules were deployed”.
+    const manyUid = 'many-trips-a';
+    const extra = 12;
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users', manyUid), { uid: manyUid, role: 'member' });
+      for (let i = 0; i < extra; i++) {
+        await setDoc(doc(db, 'trips', `trip-many-${i}`), {
+          createdBy: adminUid,
+          memberUids: [adminUid, manyUid],
+          name: `Trip ${i}`,
+          startDate: '2027-04-01',
+          endDate: '2027-04-07',
+          inviteEnabled: false
+        });
+        // A real member document for half of them: with the old rule these are
+        // the documents whose lookups blew the query budget.
+        if (i % 2 === 0) {
+          await setDoc(doc(db, 'trips', `trip-many-${i}`, 'members', manyUid), {
+            uid: manyUid, role: 'member', status: 'active',
+            permissions: { canManageMembers: false }
+          });
+        }
+      }
+    });
+    const db = dbFor(manyUid);
+    const snap = await getDocs(query(
+      collection(db, 'trips'),
+      where('memberUids', 'array-contains', manyUid)
+    ));
+    assert.equal(snap.size, extra);
+    // …and each of those trips is still openable as a real member.
+    await assertSucceeds(getDoc(doc(db, 'trips', 'trip-many-0')));
   });
 
   it('lets a drifted member find and restore their own trip listing, and nothing more', async () => {
