@@ -54,6 +54,10 @@ import {
   normalizeHex, onColorInk
 } from './utils/themes.js';
 import { observeA11y } from './utils/a11y.js';
+import {
+  OWNER_ALL, OWNER_MINE, OWNER_NONE, normalizeOwnerIds, docOwnerIds, isSharedDoc,
+  myMemberIds, docMatchesOwner, docOwnerFilters, sharedLabel, ownersSummary
+} from './utils/docOwners.js';
 import { showBottomSheet, showModal } from './components/modal.js';
 import { confirmAction, promptAction } from './components/confirm.js';
 import { mountCountdown, computeCountdown, countdownHeadline, setCountdownWeather } from './components/countdown.js?v=2';
@@ -12841,15 +12845,34 @@ async function renderDocuments(params) {
   const urlParams = new URLSearchParams(location.hash.split('?')[1] || '');
   const action = urlParams.get('action');
 
+  // v47 — เจ้าของเอกสาร. Four passports in one trip look identical in a list;
+  // the owner (one member, or several when the document is shared) is what
+  // tells them apart. The member list is read once here and used by both the
+  // filter row and the form's picker, so opening a form never costs a read.
+  let members = [];
+  try { members = await listMembers(tripId); } catch (e) { console.warn('documents: members unavailable', e?.message); }
+  // The owner chips and pills show a face, so a member whose profile photo only
+  // exists on the account directory gets it here — with a short deadline, so a
+  // slow lookup never holds the page (same pattern as the settlement page).
+  members = await Promise.race([
+    hydrateMemberPhotos(members).catch(() => members),
+    new Promise(resolve => setTimeout(() => resolve(members), 1200))
+  ]);
+  if (isStale(token)) return;
+
   appEl.innerHTML = `
     <div class="page-enter">
       <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
         ${renderPageScene('documents', { lang, title: `${icon('folder', 'w-5 h-5')} ${th('เอกสารสำคัญ','Documents')}`,
-          subtitle: th('พาสปอร์ต ตั๋ว โรงแรม ประกัน — เก็บไว้เปิดดูได้ทุกที่','Passports, tickets, hotel and insurance in one place') })}
+          subtitle: th('พาสปอร์ต ตั๋ว โรงแรม ประกัน — แยกได้ว่าเอกสารเป็นของใคร','Passports, tickets, hotel and insurance — sorted by owner') })}
         <button id="add-doc-btn" class="btn btn-primary btn-sm">${icon('plus', 'w-4 h-4')} ${th('เพิ่มเอกสาร','Add document')}</button>
       </div>
-      <div class="chip-row mb-4" id="doc-filters">
+      <div class="chip-row mb-2" id="doc-filters">
         ${DOC_CATS.map(c => `<button class="chip ${c.id === 'all' ? 'chip-active' : ''}" data-cat="${c.id}">${icon(c.icon, 'w-3.5 h-3.5')} ${lang==='th'?c.th:c.en}</button>`).join('')}
+      </div>
+      <p class="doc-filter-label" id="doc-owner-label">${icon('user-round', 'w-3.5 h-3.5')} ${th('เจ้าของเอกสาร','Document owner')}</p>
+      <div class="chip-row doc-owner-row mb-4" id="doc-owner-filters" role="group" aria-label="${th('กรองตามเจ้าของเอกสาร','Filter by document owner')}">
+        <div class="skeleton h-8 w-32 rounded-full"></div>
       </div>
       <div id="docs-list" class="grid gap-3 stagger"></div>
     </div>
@@ -12858,7 +12881,9 @@ async function renderDocuments(params) {
   initReveal(appEl);
 
   let selectedCat = 'all';
+  let selectedOwner = OWNER_ALL;
   let docs = [];
+  const mine = myMemberIds(members, currentUser?.uid);
 
   document.querySelectorAll('#doc-filters [data-cat]').forEach(btn => btn.addEventListener('click', () => {
     selectedCat = btn.dataset.cat;
@@ -12867,23 +12892,98 @@ async function renderDocuments(params) {
     renderDocs();
   }));
 
+  /** Avatar + name chip helpers (photo first, initials when there is none). */
+  const avatarHtml = (m, cls = 'avatar', size = '') => `<span class="${cls}" style="${avatarStyle(m?.color)};${size}">${m?.photoURL
+    ? `<img decoding="async" src="${escapeHtml(m.photoURL)}" class="w-full h-full rounded-full object-cover" alt="">`
+    : escapeHtml(getInitials(m?.displayName || ''))}</span>`;
+
+  /**
+   * The owner filter: “ทุกคน”, “ของฉัน”, then every member who owns a document
+   * (photo + name + count), plus “ไม่ระบุเจ้าของ” when some document has none.
+   * A member with no documents is left out, so the row never shows dead chips.
+   */
+  function renderOwnerFilters() {
+    const row = document.getElementById('doc-owner-filters');
+    if (!row) return;
+    const filters = docOwnerFilters(members, docs, { mine, lang });
+    // Keep a filter that no longer exists (the last document of that owner was
+    // deleted) from emptying the page mysteriously.
+    if (!filters.some(f => f.id === selectedOwner)) selectedOwner = OWNER_ALL;
+    row.innerHTML = filters.map(f => {
+      const on = f.id === selectedOwner;
+      const media = f.kind === 'member' || (f.kind === 'mine' && f.member)
+        ? avatarHtml(f.member)
+        : f.kind === 'all' ? icon('users', 'w-3.5 h-3.5')
+          : f.kind === 'none' ? icon('user-x', 'w-3.5 h-3.5') : icon('user-round', 'w-3.5 h-3.5');
+      return `<button type="button" class="chip doc-owner-chip ${media.startsWith('<span') ? 'doc-owner-chip--face' : ''} ${on ? 'chip-active' : ''}" data-owner="${escapeHtml(f.id)}"
+        aria-pressed="${on ? 'true' : 'false'}" title="${escapeHtml(f.name)} — ${f.count} ${th('รายการ','items')}">
+        ${media}
+        <span class="doc-owner-chip-name">${escapeHtml(f.kind === 'mine' ? f.name : String(f.name).split(' ')[0])}</span>
+        <span class="doc-owner-chip-count">${f.count}</span>
+      </button>`;
+    }).join('');
+    row.querySelectorAll('[data-owner]').forEach(btn => btn.addEventListener('click', () => {
+      selectedOwner = btn.dataset.owner;
+      renderOwnerFilters();
+      renderDocs();
+    }));
+    queueIcons();
+  }
+
+  /** The owner line on a card: one pill per owner, or “shared by N”. */
+  function ownersHtml(doc) {
+    const owners = docOwnerIds(doc).map(id => members.find(m => String(m.id) === id)).filter(Boolean);
+    const ids = docOwnerIds(doc);
+    if (!ids.length) {
+      return `<div class="doc-owners"><span class="doc-owner-pill doc-owner-pill--none">${icon('user-x', 'w-3 h-3')} ${th('ไม่ระบุเจ้าของ','No owner yet')}</span></div>`;
+    }
+    // Shared documents list their people, but a long list is cut to three and a
+    // “shared by N” note — the card must stay two lines tall on a phone.
+    const shown = owners.slice(0, 3);
+    return `<div class="doc-owners" title="${escapeHtml(ownersSummary(doc, members, lang))}">
+      ${shown.map(m => `<span class="doc-owner-pill">
+        ${avatarHtml(m)}
+        <span class="doc-owner-name">${escapeHtml(String(m.displayName || '').split(' ')[0])}</span>
+      </span>`).join('')}
+      ${ids.length > shown.length ? `<span class="doc-owner-pill doc-owner-pill--none">+${ids.length - shown.length}</span>` : ''}
+      ${ids.length > 1 ? `<span class="doc-owner-shared">${icon('users', 'w-3 h-3')} ${escapeHtml(sharedLabel(ids.length, lang))}</span>` : ''}
+    </div>`;
+  }
+
   function renderDocs() {
     const list = document.getElementById('docs-list');
     if (!list) return;
-    const filtered = selectedCat === 'all' ? docs : docs.filter(d => d.category === selectedCat);
+    renderOwnerFilters();
+    const byCat = selectedCat === 'all' ? docs : docs.filter(d => d.category === selectedCat);
+    const filtered = byCat.filter(d => docMatchesOwner(d, selectedOwner, mine));
+    const ownerName = selectedOwner === OWNER_MINE
+      ? th('ของฉัน', 'mine')
+      : selectedOwner === OWNER_NONE ? th('ไม่ระบุเจ้าของ', 'unassigned')
+        : selectedOwner === OWNER_ALL ? '' : (members.find(m => String(m.id) === selectedOwner)?.displayName || '');
     if (!filtered.length) {
+      const filteredOut = byCat.length > 0;
       list.innerHTML = `<div class="col-span-full">${renderEmptyState({
         icon: selectedCat === 'all' ? 'folder' : (DOC_ICONS[selectedCat] || 'file-text'),
-        title: th('ยังไม่มีเอกสาร','No documents'),
-        desc: th('เพิ่มพาสปอร์ต ตั๋ว โรงแรม หรือประกันไว้ที่นี่','Add passports, tickets, hotel or insurance docs here'),
-        actionHtml: `<button id="empty-add-doc" class="btn btn-secondary btn-sm mt-2">${icon('plus', 'w-4 h-4')} ${th('เพิ่มเอกสาร','Add document')}</button>`
+        title: filteredOut
+          ? th(`ไม่มีเอกสารของ ${ownerName || 'ทุกคน'} ในหมวดนี้`, `No documents for ${ownerName || 'anyone'} in this category`)
+          : th('ยังไม่มีเอกสาร','No documents'),
+        desc: filteredOut
+          ? th('ลองเลือกเจ้าของคนอื่น หรือกด “ทุกคน” เพื่อดูทั้งหมด','Pick another owner, or tap “Everyone” to see them all')
+          : th('เพิ่มพาสปอร์ต ตั๋ว โรงแรม หรือประกันไว้ที่นี่','Add passports, tickets, hotel or insurance docs here'),
+        actionHtml: filteredOut
+          ? `<button id="empty-owner-reset" class="btn btn-secondary btn-sm mt-2">${icon('users', 'w-4 h-4')} ${th('ดูของทุกคน','Show everyone')}</button>`
+          : `<button id="empty-add-doc" class="btn btn-secondary btn-sm mt-2">${icon('plus', 'w-4 h-4')} ${th('เพิ่มเอกสาร','Add document')}</button>`
       })}</div>`;
       bind('empty-add-doc', 'click', () => openDocForm(null));
+      bind('empty-owner-reset', 'click', () => { selectedOwner = OWNER_ALL; selectedCat = 'all';
+        document.querySelectorAll('#doc-filters .chip').forEach(c => c.classList.toggle('chip-active', c.dataset.cat === 'all'));
+        renderDocs(); });
       queueIcons();
       return;
     }
     list.innerHTML = filtered.map(doc => {
       const catLabel = DOC_CATS.find(c => c.id === doc.category);
+      const shared = isSharedDoc(doc);
       return `
       <div class="card card-hover p-4" data-doc="${doc.id}">
         <div class="flex gap-3">
@@ -12893,10 +12993,12 @@ async function renderDocuments(params) {
               <h3 class="font-semibold text-sm truncate">${escapeHtml(doc.title)}</h3>
               <div class="flex items-center gap-1 flex-shrink-0">
                 <span class="badge badge-planned text-xs">${icon(DOC_ICONS[doc.category] || 'file-text', 'w-2.5 h-2.5')} ${escapeHtml(catLabel ? (lang==='th'?catLabel.th:catLabel.en) : (doc.category || ''))}</span>
+                ${shared ? `<span class="badge badge-completed text-xs" title="${escapeHtml(sharedLabel(docOwnerIds(doc).length, lang))}">${icon('users', 'w-2.5 h-2.5')} ${docOwnerIds(doc).length}</span>` : ''}
                 <button class="icon-btn" data-act="edit" data-id="${doc.id}" title="${t('edit')}">${icon('pencil', 'w-3.5 h-3.5')}</button>
                 <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${doc.id}" title="${t('delete')}">${icon('trash-2', 'w-3.5 h-3.5')}</button>
               </div>
             </div>
+            ${ownersHtml(doc)}
             ${doc.date ? `<p class="meta-line mt-1">${icon('calendar', 'w-3 h-3')} ${escapeHtml(doc.date)}</p>` : ''}
             ${doc.description ? `<p class="text-xs mt-1 text-[var(--text-secondary)]">${escapeHtml(doc.description)}</p>` : ''}
             ${sanitizeUrl(doc.fileUrl) ? `<a href="${escapeHtml(sanitizeUrl(doc.fileUrl))}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-xs font-semibold mt-2" style="color: var(--primary-strong);">${icon('external-link', 'w-3.5 h-3.5')} ${th('เปิดไฟล์','Open file')}</a>` : ''}
@@ -12956,6 +13058,10 @@ async function renderDocuments(params) {
   function openDocForm(doc = null) {
     const isEdit = !!doc;
     const d = doc || {};
+    // A new document defaults to the person adding it — the common case is
+    // uploading one's own passport; “ทุกคน” is one tap away for a shared voucher.
+    const meMember = members.find(m => mine.includes(String(m.id)));
+    const picked = new Set(docOwnerIds(d).length ? docOwnerIds(d) : (isEdit || !meMember ? [] : [meMember.id]));
     const sheet = showBottomSheet(`
       <div class="space-y-3">
         <div class="flex items-center gap-3">
@@ -12973,6 +13079,27 @@ async function renderDocuments(params) {
             </div>
             <div class="input-group"><label class="input-label">${th('วันที่ (ใช้ถึง/หมดอายุ)','Date')}</label><input id="doc-date" class="input" type="date" value="${escapeHtml(d.date || '')}"></div>
           </div>
+          <!-- v47 เจ้าของเอกสาร: pick one, pick several (= shared), or none. -->
+          <div class="input-group">
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <span class="input-label" id="doc-owner-heading">${th('เจ้าของเอกสาร','Document owner')} <span id="doc-owner-count" class="text-xs text-[var(--text-tertiary)]"></span></span>
+              <div class="flex items-center gap-1">
+                <button type="button" id="doc-owner-me" class="btn btn-ghost btn-sm text-xs" style="min-height:26px;padding:2px 8px;">${th('ของฉัน','Mine')}</button>
+                <button type="button" id="doc-owner-all" class="btn btn-ghost btn-sm text-xs" style="min-height:26px;padding:2px 8px;">${th('ทุกคน','Everyone')}</button>
+                <button type="button" id="doc-owner-clear" class="btn btn-ghost btn-sm text-xs" style="min-height:26px;padding:2px 8px;">${th('ไม่ระบุ','Clear')}</button>
+              </div>
+            </div>
+            <div class="tile-grid doc-owner-tiles mt-2" id="doc-owner-tiles" role="group" aria-labelledby="doc-owner-heading">
+              ${members.map(m => `
+                <button type="button" class="tile ${picked.has(String(m.id)) ? 'tile-selected' : ''}" data-owner-pick="${escapeHtml(m.id)}" aria-pressed="${picked.has(String(m.id)) ? 'true' : 'false'}" title="${escapeHtml(m.displayName || '')}">
+                  <span class="flex items-center gap-2 min-w-0">
+                    ${avatarHtml(m, 'avatar w-7 h-7 text-xs', 'width:28px;height:28px;')}
+                    <span class="text-xs font-medium truncate">${escapeHtml(m.displayName || '')}</span>
+                  </span>
+                </button>`).join('') || `<p class="text-xs text-[var(--text-tertiary)]">${th('ยังไม่มีสมาชิกในทริป','No members on the trip yet')}</p>`}
+            </div>
+            <p class="input-hint mt-1">${th('เลือกคนเดียว = เอกสารส่วนตัว · เลือกหลายคน = เอกสารใช้ร่วมกัน · ไม่เลือก = ยังไม่ระบุเจ้าของ','One member = a personal document · several = shared · none = unassigned')}</p>
+          </div>
           <div class="input-group"><label class="input-label">${th('รายละเอียด','Description')}</label><textarea id="doc-desc" class="input" style="min-height:80px;">${escapeHtml(d.description || '')}</textarea></div>
           <div class="input-group"><label class="input-label">${th('ลิงก์ไฟล์','File link')}</label><input id="doc-file-url" class="input" placeholder="https://..." autocomplete="off" value="${escapeHtml(d.fileUrl || '')}"></div>
           <div class="input-group">
@@ -12989,9 +13116,12 @@ async function renderDocuments(params) {
     `);
     queueIcons();
 
-    const imgInput = document.getElementById('doc-image-url');
-    const preview = document.getElementById('doc-img-preview');
-    const previewImg = document.getElementById('doc-preview-img');
+    // Every lookup stays inside *this* sheet: while an older sheet animates out,
+    // document.getElementById would wire the new form to the dying copy.
+    const form = sheet.sheet;
+    const imgInput = form.querySelector('#doc-image-url');
+    const preview = form.querySelector('#doc-img-preview');
+    const previewImg = form.querySelector('#doc-preview-img');
     imgInput.addEventListener('input', () => {
       const url = imgInput.value.trim();
       if (url && url.startsWith('http')) {
@@ -13001,22 +13131,63 @@ async function renderDocuments(params) {
       } else preview.classList.add('hidden');
     });
 
-    bind('doc-delete', 'click', async () => { sheet.close(); await removeDoc(d); });
+    const ownerCount = () => {
+      const el = form.querySelector('#doc-owner-count');
+      if (!el) return;
+      el.textContent = picked.size === 0
+        ? `• ${th('ยังไม่ระบุเจ้าของ', 'unassigned')}`
+        : picked.size === 1
+          ? `• ${escapeHtml((members.find(m => String(m.id) === [...picked][0])?.displayName || '').split(' ')[0])}`
+          : `• ${sharedLabel(picked.size, lang)}`;
+    };
+    const paintPicked = () => {
+      form.querySelectorAll('#doc-owner-tiles [data-owner-pick]').forEach(btn => {
+        const on = picked.has(btn.dataset.ownerPick);
+        btn.classList.toggle('tile-selected', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      ownerCount();
+    };
+    // The tiles are buttons, so the tick + tint is the only state cue — see the
+    // `.tile.tile-selected` rule in flat.css (fixes “เลือกแล้วแต่ไม่ไฮไลต์”).
+    form.querySelectorAll('#doc-owner-tiles [data-owner-pick]').forEach(btn => btn.addEventListener('click', () => {
+      const id = btn.dataset.ownerPick;
+      if (picked.has(id)) picked.delete(id); else picked.add(id);
+      paintPicked();
+    }));
+    form.querySelector('#doc-owner-me')?.addEventListener('click', () => {
+      picked.clear();
+      (mine.length ? mine : []).forEach(id => picked.add(id));
+      paintPicked();
+    });
+    form.querySelector('#doc-owner-all')?.addEventListener('click', () => {
+      picked.clear();
+      members.forEach(m => picked.add(String(m.id)));
+      paintPicked();
+    });
+    form.querySelector('#doc-owner-clear')?.addEventListener('click', () => { picked.clear(); paintPicked(); });
+    paintPicked();
 
-    document.getElementById('doc-form').addEventListener('submit', async (ev) => {
+    form.querySelector('#doc-delete')?.addEventListener('click', async () => { sheet.close(); await removeDoc(d); });
+
+    form.querySelector('#doc-form').addEventListener('submit', async (ev) => {
       ev.preventDefault();
-      const btn = document.getElementById('doc-submit');
+      const btn = form.querySelector('#doc-submit');
       btn.disabled = true;
       const tLoad = toast.loading(th('กำลังบันทึก...', 'Saving...'));
       try {
         const { addDoc, updateDoc, doc: fsDoc, collection, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         const payload = {
-          title: document.getElementById('doc-title').value.trim(),
-          category: document.getElementById('doc-cat').value,
-          date: document.getElementById('doc-date').value,
-          description: document.getElementById('doc-desc').value.trim(),
-          fileUrl: document.getElementById('doc-file-url').value.trim(),
-          imageUrl: document.getElementById('doc-image-url').value.trim(),
+          title: form.querySelector('#doc-title').value.trim(),
+          category: form.querySelector('#doc-cat').value,
+          date: form.querySelector('#doc-date').value,
+          description: form.querySelector('#doc-desc').value.trim(),
+          fileUrl: form.querySelector('#doc-file-url').value.trim(),
+          imageUrl: form.querySelector('#doc-image-url').value.trim(),
+          // Owner list (one = personal, many = shared, empty = unassigned).
+          // `ownerId` is written too, so an older reader still sees an owner.
+          ownerIds: normalizeOwnerIds([...picked]),
+          ownerId: normalizeOwnerIds([...picked])[0] || '',
           updatedAt: serverTimestamp()
         };
         if (!payload.title) throw new Error(th('กรุณากรอกชื่อเอกสาร','Title is required'));

@@ -190,7 +190,11 @@ fsdb.__seed('trips/t1/expenses/e2', {
   actualMinor: 4400, paymentMethod: 'cash', itineraryItemId: 'i1',
   allocations: [{ memberId: 'u1', amountMinor: 2200 }, { memberId: 'u2', amountMinor: 2200 }], createdAt: now
 });
-fsdb.__seed('trips/t1/documents/d1', { title: 'พาสปอร์ตสมชาย', category: 'passport', date: TRIP.startDate, description: '', fileUrl: '', imageUrl: '' });
+fsdb.__seed('trips/t1/documents/d1', { title: 'พาสปอร์ตสมชาย', category: 'passport', date: TRIP.startDate, description: '', fileUrl: '', imageUrl: '', ownerIds: ['u1'] });
+// v47 — ownership: one passport per person + one hotel voucher the whole group shares.
+fsdb.__seed('trips/t1/documents/d2', { title: 'พาสปอร์ตนุ่น', category: 'passport', date: TRIP.startDate, ownerIds: ['u2'] });
+fsdb.__seed('trips/t1/documents/d3', { title: 'ใบจองโรงแรม (ใช้ร่วมกัน)', category: 'hotel', date: TRIP.startDate, ownerIds: ['u1', 'u2'] });
+fsdb.__seed('trips/t1/documents/d4', { title: 'เอกสารเก่ายังไม่ระบุเจ้าของ', category: 'other', date: TRIP.startDate });
 
 // ------------------------------------------------------------------ app boot
 await import(pathToFileURL(path.join(outDir, 'app.js')).href);
@@ -216,6 +220,19 @@ async function goto(hash) {
 }
 const q = (sel) => window.document.querySelector(sel);
 const qa = (sel) => [...window.document.querySelectorAll(sel)];
+
+// jsdom does not resolve the cascade, so the “picked tile is visible” checks read
+// the rule bodies straight out of the stylesheet that decides them (flat.css).
+const flatCssForTiles = fs.readFileSync(path.join(root, 'src/css/flat.css'), 'utf8');
+const cssRule = (selector) => {
+  const at = flatCssForTiles.indexOf(selector);
+  if (at < 0) return '';
+  return flatCssForTiles.slice(at, flatCssForTiles.indexOf('}', at));
+};
+const CSS_RULES = {
+  tileSelected: cssRule('.tile.tile-selected,'),
+  tileSelectedTick: cssRule('.tile-grid .tile.tile-selected::after')
+};
 
 console.log('\n▶ JSON expense import batch boundaries');
 const expenseModule = await import(pathToFileURL(path.join(outDir, 'expenses/index.js')).href);
@@ -473,6 +490,43 @@ window.document.getElementById('doc-cat').value = 'ticket';
 submit(q('#doc-form'));
 await waitFor(() => [...fsdb.__store.entries()].some(([k, v]) => k.startsWith('trips/t1/documents/') && v.title === 'ตั๋วเครื่องบิน'), { label: 'document created' }).catch(() => {});
 check([...fsdb.__store.entries()].some(([k, v]) => k.startsWith('trips/t1/documents/') && v.title === 'ตั๋วเครื่องบิน'), 'documents: add persists');
+
+console.log('\n▶ documents: owner (เจ้าของเอกสาร) — filter + picker');
+await goto('#/trip/t1/documents');
+await waitFor(() => q('#doc-owner-filters [data-owner]'), { label: 'owner filter chips' });
+// The filter row: everyone / mine / each owner with a document / unassigned.
+check(qa('#doc-owner-filters [data-owner]').length >= 4, 'documents: owner filter chips rendered');
+check(!!q('#doc-owner-filters [data-owner="mine"]'), 'documents: “ของฉัน” chip');
+check(!!q('#doc-owner-filters [data-owner="__none"]'), 'documents: unassigned chip');
+check(qa('.card[data-doc]').length >= 4, 'documents: every document listed under “ทุกคน”');
+check(text$().includes('ใช้ร่วมกัน'), 'documents: a shared document says how many owners share it');
+check(!!q('.doc-owner-pill--none'), 'documents: an unowned document says so');
+// Filtering by นุ่น (u2) hides สมชาย’s passport but keeps hers and the shared voucher.
+await click('#doc-owner-filters [data-owner="u2"]');
+const titlesFor = () => qa('.card[data-doc] h3').map(h => h.textContent.trim());
+check(titlesFor().length === 2 && titlesFor().some(t => t.includes('พาสปอร์ตนุ่น'))
+  && titlesFor().some(t => t.includes('ใบจองโรงแรม')) && !titlesFor().some(t => t === 'พาสปอร์ตสมชาย'),
+  `documents: filtering by owner keeps only that owner’s documents (${titlesFor().join(' | ')})`);
+check(q('#doc-owner-filters [data-owner="u2"]').getAttribute('aria-pressed') === 'true', 'documents: the active owner chip is pressed');
+await click('#doc-owner-filters [data-owner="__none"]');
+check(titlesFor().length === 1 && titlesFor()[0].includes('เอกสารเก่า'), 'documents: unassigned filter shows only unowned documents');
+await click('#doc-owner-filters [data-owner="all"]');
+check(qa('.card[data-doc]').length >= 4, 'documents: “ทุกคน” restores the full list');
+// The form: pick two owners → the tiles show it and the save stores both ids.
+await click('#add-doc-btn');
+await waitFor(() => q('#doc-form'), { label: 'document form' });
+check(qa('#doc-owner-tiles [data-owner-pick]').length >= 2, 'documents: form lists the trip members as owner tiles');
+check(q('#doc-owner-tiles [data-owner-pick="u1"]').classList.contains('tile-selected'),
+  'documents: a new document is owned by the person adding it');
+await click('#doc-owner-tiles [data-owner-pick="u2"]');
+check(q('#doc-owner-tiles [data-owner-pick="u2"]').classList.contains('tile-selected'),
+  'documents: picking a second owner highlights the tile');
+check((q('#doc-owner-count')?.textContent || '').includes('ใช้ร่วมกัน 2 คน'), 'documents: two owners read as shared');
+window.document.getElementById('doc-title').value = 'ใบจองรถเช่า';
+submit(q('#doc-form'));
+await waitFor(() => [...fsdb.__store.values()].some(d => d?.title === 'ใบจองรถเช่า'), { label: 'shared document saved' }).catch(() => {});
+const sharedSaved = [...fsdb.__store.values()].find(d => d?.title === 'ใบจองรถเช่า');
+check(JSON.stringify(sharedSaved?.ownerIds) === JSON.stringify(['u1', 'u2']), `documents: both owners are stored (${JSON.stringify(sharedSaved?.ownerIds)})`);
 
 console.log('\n▶ import / export (admin-only Excel)');
 await goto('#/trip/t1/import');
@@ -3016,8 +3070,22 @@ console.log('\n▶ v18.2 — สรุปการโอน / โหมดกร
   await click(qa('#group-colors [data-color]')[1]);
   await click(qa('#group-icons [data-icon]')[1]);
   await click(tiles[0]);
+  // v47 bug (“เลือกสมาชิกแล้วระบบไม่ไฮไลต์สีให้”) — a picked tile must carry the
+  // selected state *and* the stylesheet must paint it (the rule that used to lose
+  // to .tile:hover), so the member stays visibly picked.
+  check(tiles[0].classList.contains('tile-selected'), 'groups: a picked member tile is marked selected');
+  const selectedCss = CSS_RULES.tileSelected;
+  check(selectedCss.includes('--primary') && selectedCss.includes('color-mix'),
+    'groups: the selected tile paints a tinted surface that hover cannot wash out');
+  check(CSS_RULES.tileSelectedTick.includes('content') && CSS_RULES.tileSelectedTick.includes('"✓"'),
+    'groups: the selected tile shows a tick, not colour alone');
   await click(tiles[1]);
+  check(tiles[0].classList.contains('tile-selected') && tiles[1].classList.contains('tile-selected'),
+    'groups: picking a second member keeps the first one highlighted');
   check(/2/.test(q('#group-picked-count')?.textContent || ''), 'groups: the picked counter follows the selection');
+  await click(tiles[1]);
+  check(!tiles[1].classList.contains('tile-selected'), 'groups: clicking again clears the highlight');
+  await click(tiles[1]);
   await click('#group-save');
   await waitFor(() => q('.group-card[data-group]'), { timeout: 8000, label: 'group card' });
   const card = q('.group-card[data-group]');

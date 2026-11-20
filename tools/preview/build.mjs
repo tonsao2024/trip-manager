@@ -145,7 +145,22 @@ fsdb.__seed('trips/t1/checklists/c1', {
 fsdb.__seed('trips/t1/ideas/idea1', { title: 'ทะเลสาบคาวากุจิ', note: 'วิวฟูจิยามเช้า', category: 'sightseeing', votes: ['u2', 'u3'], status: 'idea', createdAt: now });
 fsdb.__seed('trips/t1/ideas/idea2', { title: 'ป่าไผ่อาราชิยามะ', note: 'ไปเช้า คนน้อย', category: 'nature', votes: ['u3'], status: 'idea', createdAt: now });
 fsdb.__seed('trips/t1/notes/n1', { title: 'รหัส WiFi เรียวกัง', body: 'fuji-2027 / 8888', color: 'amber', updatedAt: now });
-fsdb.__seed('trips/t1/documents/d1', { title: 'พาสปอร์ตสมชาย', category: 'passport', date: iso(20), description: '', fileUrl: '', imageUrl: '' });
+// v47: documents carry owners — one personal passport per person, a shared
+// ticket, and one legacy document with no owner at all.
+const docsPreview = [
+  ['d1', 'พาสปอร์ตสมชาย', 'passport', ['u1']],
+  ['d2', 'พาสปอร์ตนุ่น', 'passport', ['u2']],
+  ['d3', 'พาสปอร์ตข้าวหอม', 'passport', ['u3']],
+  ['d4', 'ตั๋วเครื่องบิน TG676 (ใช้ร่วมกัน)', 'ticket', ['u1', 'u2', 'u3']],
+  ['d5', 'ใบจองเรียวกังคาวากุจิ', 'hotel', ['u1', 'u2']],
+  ['d6', 'ประกันการเดินทาง', 'insurance', []]
+];
+for (const [id, title, category, ownerIds] of docsPreview) {
+  fsdb.__seed(`trips/t1/documents/${id}`, {
+    title, category, date: iso(20), description: '', fileUrl: '', imageUrl: '',
+    ...(ownerIds.length ? { ownerIds, ownerId: ownerIds[0] } : {}), createdAt: now
+  });
+}
 
 // English copy check: PREVIEW_LANG=en flips the stored language before boot, so
 // the screens can be proof-read in the second language too.
