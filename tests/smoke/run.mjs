@@ -817,6 +817,45 @@ if (delMember) {
   check(false, 'members: delete button found');
 }
 
+console.log('\n▶ account reconnect and live member access check');
+{
+  const admin = authStub.__currentUser;
+  const viewer = { uid: 'access-viewer', email: 'viewer@test.com', displayName: 'Viewer' };
+  const tripPath = 'trips/access-check';
+  fsdb.__seed(tripPath, { name: 'Access check', createdBy: admin.uid, memberUids: [admin.uid, viewer.uid] });
+  fsdb.__seed(`${tripPath}/members/${viewer.uid}`, { uid: viewer.uid, authType: 'account', role: 'viewer', displayName: 'Viewer' });
+  await goto('#/trip/access-check/members');
+  const action = `[data-member="${viewer.uid}"] [data-act="access"]`;
+  await waitFor(() => q(action), { label: 'admin reconnect action' });
+  fsdb.__write(tripPath, { memberUids: [admin.uid] }, { merge: true });
+  await click(action);
+  await waitFor(() => q('[data-access-reconnect]:enabled'), { label: 'reconnect enabled after server check' });
+  await click('[data-access-reconnect]');
+  await waitFor(() => q('[data-access-result]')?.textContent.includes('เชื่อมต่อรายการทริปให้สมาชิกแล้ว'), { label: 'reconnect verified' });
+  check(fsdb.__dump(tripPath).memberUids.includes(viewer.uid), 'access: reconnect restores the account listing');
+  await click('.bottom-sheet [data-popup-close]');
+
+  authStub.__emitAuth(null);
+  const link = '#/check-member-access/access-check';
+  await goto(link);
+  await waitFor(() => q('#google-signin-btn'), { label: 'member check sign-in' });
+  authStub.__setGoogleUser(viewer);
+  fsdb.__deny(`${tripPath}/joinRequests`);
+  await click('#google-signin-btn');
+  await waitFor(() => q('#my-access-result')?.textContent.includes('ไม่มีสิทธิ์อ่าน'), { label: 'live member access report' });
+  check(window.location.hash === link && text$().includes(viewer.email), 'access: the test link survives sign-in and uses the member account');
+  check(text$().includes('แก้ไขค่าใช้จ่าย: ไม่ได้'), 'access: a viewer cannot edit expenses');
+  fsdb.__seed(`users/${viewer.uid}/joinRequests/access-check`, { status: 'pending', tripName: 'Access check' });
+  fsdb.__denyQueryField('trips', 'memberUids');
+  fsdb.__deny('members');
+  await goto('#/trips');
+  await waitFor(() => q('[data-trip="access-check"]'), { label: 'approved trip shown via the request pointer' });
+  await waitFor(() => fsdb.__dump(`users/${viewer.uid}/joinRequests/access-check`)?.status === 'approved', { label: 'stale request status reconciled' });
+  check(!q('[data-join-request="access-check"]'), 'join: an accessible trip does not still show as pending when list queries fail');
+  fsdb.__allowAll();
+  authStub.__emitAuth(admin);
+}
+
 console.log('\n▶ documents: edit + delete');
 await goto('#/trip/t1/documents');
 await waitFor(() => q('.card[data-doc]'), { label: 'document cards' });
@@ -1749,12 +1788,12 @@ console.log('\n▶ v7: member joins with a Google account + invite code (no Clou
   await waitFor(() => q('[data-request="g1"]'), { timeout: 6000, label: 'pending request row' }).catch(() => {});
   check(!!q('[data-request="g1"]'), 'approve: pending request listed for the admin');
   await click('[data-approve="g1"]');
-  await waitFor(() => fsdb.__dump('trips/t1/members/g1') && !fsdb.__dump('trips/t1/joinRequests/g1'), { timeout: 6000, label: 'approval' }).catch(() => {});
+  await waitFor(() => fsdb.__dump('trips/t1/members/g1') && fsdb.__dump('trips/t1/joinRequests/g1')?.status === 'approved', { timeout: 6000, label: 'approval' }).catch(() => {});
   const approved = fsdb.__dump('trips/t1/members/g1');
   check(!!approved, 'approve: member document created');
   check(approved?.uid === 'g1' && approved?.authType === 'account', 'approve: member doc keyed by the account uid (rules allow access)');
   check((fsdb.__dump('trips/t1')?.memberUids || []).includes('g1'), 'approve: uid added to trip memberUids');
-  check(!fsdb.__dump('trips/t1/joinRequests/g1'), 'approve: request cleaned up');
+  check(fsdb.__dump('trips/t1/joinRequests/g1')?.status === 'approved', 'approve: member can read the decision');
   await sleep(300);
   check(text$().includes('เพื่อนใหม่'), 'approve: new member appears in the members list');
 

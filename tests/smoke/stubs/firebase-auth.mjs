@@ -3,7 +3,7 @@ export const browserLocalPersistence = 'local';
 export const browserSessionPersistence = 'session';
 export const indexedDBLocalPersistence = 'indexeddb';
 const listeners = new Set();
-export function getAuth() { return { __auth: true, currentUser: __currentUser, signOut: () => Promise.resolve() }; }
+export function getAuth() { return { __auth: true, get currentUser() { return __currentUser; }, signOut: () => Promise.resolve() }; }
 export let __currentUser = null;
 export function onAuthStateChanged(auth, cb) { listeners.add(cb); return () => listeners.delete(cb); }
 export function __emitAuth(user) { __currentUser = user; listeners.forEach(cb => cb(user)); }

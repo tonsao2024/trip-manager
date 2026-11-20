@@ -40,7 +40,7 @@ export function memberAccessUids(member) {
 
 /** A member document that must not grant access any more. */
 export function isInactiveMember(member) {
-  return String(member?.status || 'active') === 'inactive';
+  return ['inactive', 'disabled'].includes(String(member?.status || '').trim().toLowerCase());
 }
 
 /**

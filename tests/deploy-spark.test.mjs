@@ -6,10 +6,16 @@ const read = (file) => readFileSync(new URL(`../${file}`, import.meta.url), 'utf
 const config = JSON.parse(read('firebase.json'));
 const workflow = read('.github/workflows/deploy-firebase.yml');
 
-test('default Firebase config only deploys Spark-compatible services', () => {
-  assert.deepEqual(Object.keys(config).sort(), ['firestore', 'hosting']);
-  assert.ok(config.firestore.rules);
-  assert.ok(config.firestore.indexes);
+test('Firebase config supports static Hosting and a local Firestore emulator', () => {
+  // Optional Blaze Functions share this config. Spark safety comes from the
+  // workflow's explicit deploy targets, not from omitting the functions block.
+  const allowedSections = new Set(['firestore', 'hosting', 'functions', 'emulators']);
+  for (const key of Object.keys(config)) {
+    assert.ok(allowedSections.has(key), `Unexpected Firebase config section: ${key}`);
+  }
+  assert.ok(config.firestore?.rules);
+  assert.ok(config.firestore?.indexes);
+  if (config.emulators) assert.deepEqual(Object.keys(config.emulators), ['firestore']);
   assert.ok(!config.hosting.rewrites.some(rule => rule.function || rule.run));
   assert.ok(config.hosting.ignore.includes('functions'));
   assert.ok(config.hosting.ignore.includes('tools'));
