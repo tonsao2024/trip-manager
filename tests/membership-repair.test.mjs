@@ -13,14 +13,109 @@ globalThis.localStorage = dom.window.localStorage;
 globalThis.CustomEvent = dom.window.CustomEvent;
 
 const fsdb = await import('./smoke/stubs/firebase-firestore.mjs');
+const authStub = await import('./smoke/stubs/firebase-auth.mjs');
 const trips = await import(pathToFileURL(path.join(outDir, 'trips/index.js')).href);
 const joins = await import(pathToFileURL(path.join(outDir, 'members/join.js')).href);
+const members = await import(pathToFileURL(path.join(outDir, 'members/index.js')).href);
+const access = await import(pathToFileURL(path.join(outDir, 'members/access.js')).href);
 const repair = await import(pathToFileURL(path.join(outDir, 'members/repair.js')).href);
 
 beforeEach(() => {
   fsdb.__reset();
+  authStub.__emitAuth(null);
   localStorage.clear();
   trips.clearTripsCache();
+  members.invalidateMembers('t');
+});
+
+test('a Google/email member can be removed without the PIN callable or changes to expenses', async () => {
+  fsdb.__seed('trips/t', { createdBy: 'admin', memberUids: ['admin'] });
+  await joins.addMemberFromProfile('t', { uid: 'account-uid', email: 'member@example.test' });
+  assert.equal(fsdb.__dump('trips/t/members/account-uid').loginReady, true);
+  fsdb.__seed('trips/t/expenses/bill', { payerId: 'account-uid', amountMinor: 12000 });
+  const bill = fsdb.__dump('trips/t/expenses/bill');
+  const previousCommits = fsdb.__batchStats().commits.length;
+
+  await members.deleteMember('t', 'account-uid');
+
+  assert.equal(fsdb.__dump('trips/t/members/account-uid'), undefined);
+  assert.deepEqual(fsdb.__dump('trips/t').memberUids, ['admin']);
+  assert.deepEqual(fsdb.__batchStats().commits.slice(previousCommits), [2]);
+  assert.deepEqual(fsdb.__dump('trips/t/expenses/bill'), bill);
+});
+
+test('removing a linked member clears every access uid, even if the member list is stale', async () => {
+  fsdb.__seed('trips/t', { createdBy: 'admin', memberUids: ['admin', 'local-id', 'old-uid', 'account-uid'] });
+  fsdb.__seed('trips/t/members/local-id', { authType: 'local', uid: 'local-id', loginReady: false });
+  await members.listMembers('t');
+  fsdb.__seed('trips/t/members/local-id', { authType: 'local', uid: 'old-uid', authUid: 'account-uid' });
+
+  await members.deleteMember('t', 'local-id');
+
+  assert.equal(fsdb.__dump('trips/t/members/local-id'), undefined);
+  assert.deepEqual(fsdb.__dump('trips/t').memberUids, ['admin']);
+});
+
+test('a PIN or legacy login is not removed if server credential cleanup fails', async () => {
+  const memberUids = ['admin', 'pin-member', 'legacy-member'];
+  fsdb.__seed('trips/t', { createdBy: 'admin', memberUids });
+  fsdb.__seed('trips/t/members/pin-member', { authType: 'pin', loginReady: true });
+  fsdb.__seed('trips/t/members/legacy-member', { username: 'legacy-name' });
+
+  for (const memberId of ['pin-member', 'legacy-member']) {
+    await assert.rejects(members.deleteMember('t', memberId), (err) =>
+      err.code === 'member-pin-cleanup-failed' && err.cause?.code === 'functions/internal');
+    assert.ok(fsdb.__dump(`trips/t/members/${memberId}`));
+  }
+  assert.deepEqual(fsdb.__dump('trips/t').memberUids, memberUids);
+  assert.deepEqual(fsdb.__batchStats().commits, []);
+});
+
+test('reconnect restores only the approved account listing and preserves the member settings', async () => {
+  const trip = { createdBy: 'admin', memberUids: ['admin', 'other'] };
+  const member = { uid: 'account', authType: 'account', status: 'active', role: 'member', permissions: {
+    canEditItinerary: true, canEditExpense: false, canManageMembers: true
+  } };
+  fsdb.__seed('trips/t', trip);
+  fsdb.__seed('trips/t/members/account', member);
+  const before = await access.inspectMemberAccess('t', 'account');
+  assert.equal(before.state, 'unlisted');
+  assert.equal(before.permissions.canEditItinerary, true);
+  assert.equal(before.permissions.canEditExpense, false);
+  assert.equal(before.permissions.canManageMembers, true);
+  assert.equal(await access.reconnectMemberAccess('t', 'account'), 'restored');
+  assert.equal(await access.reconnectMemberAccess('t', 'account'), 'linked');
+  assert.equal((await access.inspectMemberAccess('t', 'account')).state, 'linked');
+  assert.deepEqual(fsdb.__dump('trips/t').memberUids, ['admin', 'other', 'account']);
+  assert.deepEqual(fsdb.__dump('trips/t/members/account'), member);
+});
+
+test('reconnect does not restore disabled, deleted, local or mismatched memberships', async () => {
+  fsdb.__seed('trips/t', { createdBy: 'admin', memberUids: ['admin'] });
+  fsdb.__seed('trips/t/members/closed', { uid: 'closed', authType: 'account', status: 'disabled' });
+  fsdb.__seed('trips/t/members/local', { uid: 'local', authType: 'local' });
+  fsdb.__seed('trips/t/members/alias', { uid: 'alias', authUid: 'other', role: 'viewer' });
+  assert.equal(await access.reconnectMemberAccess('t', 'closed'), 'closed');
+  assert.equal(await access.reconnectMemberAccess('t', 'deleted'), 'missing');
+  assert.equal(await access.reconnectMemberAccess('t', 'local'), 'not-account');
+  assert.equal(await access.reconnectMemberAccess('t', 'alias'), 'mismatch');
+  await trips.reconcileTripMemberUids('t', [{ id: 'closed', uid: 'closed', status: 'disabled' }]);
+  assert.deepEqual(fsdb.__dump('trips/t').memberUids, ['admin']);
+});
+
+test('the member-side test uses the current Auth account and reports denied reads separately', async () => {
+  fsdb.__seed('trips/t', { createdBy: 'admin', memberUids: ['admin', 'viewer'] });
+  fsdb.__seed('trips/t/members/viewer', { uid: 'viewer', role: 'viewer', permissions: { canEditExpense: true } });
+  await assert.rejects(access.testMyMemberAccess('t'), /Sign in required/);
+  authStub.__emitAuth({ uid: 'viewer' });
+  fsdb.__deny('trips/t/joinRequests');
+  const actual = await access.testMyMemberAccess('t');
+  assert.deepEqual([actual.trip, actual.itinerary, actual.expenses, actual.requests], ['ok', 'ok', 'ok', 'denied']);
+  assert.equal(actual.listed, true);
+  assert.equal(actual.permissions.canEditExpense, false);
+  assert.equal(actual.permissions.canEditItinerary, false);
+  assert.equal(actual.permissions.canManageMembers, false);
+  assert.deepEqual(fsdb.__dump('trips/t').memberUids, ['admin', 'viewer']);
 });
 
 test('admin repair re-reads the trip and member, even when the displayed list is stale', async () => {
@@ -91,23 +186,24 @@ test('member sync republishes a mirror-only pending request into the admin queue
   assert.ok(fsdb.__dump('users/g1/joinRequests/t1'), 'the member keeps the pending badge');
 });
 
-test('member sync clears a stale mirror for a joined trip without re-creating a request', async () => {
+test('member sync preserves an approved lookup pointer without re-creating a request', async () => {
   fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin', 'g1'] });
   fsdb.__seed('users/g1/joinRequests/t1', { uid: 'g1', tripId: 't1', status: 'pending' });
-  const report = await joins.syncMyJoinRequests('g1', { joinedTripIds: ['t1'] });
-  assert.deepEqual(report.cleared, ['t1']);
-  assert.equal(fsdb.__dump('users/g1/joinRequests/t1'), undefined, 'no more “รออนุมัติ” badge');
+  const report = await joins.syncMyJoinRequests('g1');
+  assert.equal(report.statuses.get('t1'), 'approved');
+  assert.equal(fsdb.__dump('users/g1/joinRequests/t1').status, 'approved', 'no more “รออนุมัติ” badge');
   assert.equal(fsdb.__dump('trips/t1/joinRequests/g1'), undefined, 'no ghost request in the admin queue');
 });
 
-test('member sync drops the mirror of an approved request and copies a rejection', async () => {
+test('member sync records approval and rejection without assuming the trip is readable', async () => {
   fsdb.__seed('trips/t1/joinRequests/g1', { uid: 'g1', status: 'approved' });
   fsdb.__seed('trips/t2/joinRequests/g1', { uid: 'g1', status: 'rejected' });
   fsdb.__seed('users/g1/joinRequests/t1', { uid: 'g1', tripId: 't1', status: 'pending' });
   fsdb.__seed('users/g1/joinRequests/t2', { uid: 'g1', tripId: 't2', status: 'pending' });
   const report = await joins.syncMyJoinRequests('g1');
-  assert.deepEqual(report.cleared, ['t1']);
-  assert.deepEqual(report.updated, ['t2']);
+  assert.deepEqual(report.updated, ['t1', 't2']);
+  assert.equal(report.statuses.get('t1'), 'approved');
+  assert.equal(await joins.getJoinedTrip('t1', 'g1'), null);
   assert.equal(fsdb.__dump('users/g1/joinRequests/t2')?.status, 'rejected');
 });
 
@@ -116,9 +212,51 @@ test('a denied trip-side read is reported, never guessed at or silently discarde
   fsdb.__deny('trips/t1/joinRequests');
   const report = await joins.syncMyJoinRequests('g1');
   assert.equal(report.created.length, 0, 'no blind write');
-  assert.equal(report.denied.length, 1, 'the UI can explain that rules must be published');
+  assert.equal(report.denied.length, 1);
+  assert.equal(report.statuses.get('t1'), 'unverified');
   assert.equal(fsdb.__dump('trips/t1/joinRequests/g1'), undefined);
   assert.ok(fsdb.__dump('users/g1/joinRequests/t1'), 'the member’s request is kept');
+});
+
+test('approval addresses the actual requester and keeps the decision readable even if the private mirror is unwritable by admins', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin'] });
+  fsdb.__seed('trips/t1/joinRequests/g1', { uid: 'stale-payload-uid', status: 'pending' });
+  fsdb.__seed('users/g1/joinRequests/t1', { status: 'pending' });
+  fsdb.__deny('users/g1/joinRequests');
+  await joins.approveJoinRequest('t1', (await joins.listJoinRequests('t1'))[0]);
+  assert.equal(fsdb.__dump('trips/t1/members/g1').uid, 'g1');
+  assert.equal(fsdb.__dump('trips/t1/members/stale-payload-uid'), undefined);
+  assert.deepEqual(fsdb.__dump('trips/t1').memberUids, ['admin', 'g1']);
+  assert.equal(fsdb.__dump('trips/t1/joinRequests/g1').status, 'approved');
+  fsdb.__allowAll();
+  await assert.rejects(joins.cancelJoinRequest('t1', 'g1'), /อนุมัติแล้ว/);
+  await assert.rejects(joins.rejectJoinRequest('t1', { id: 'g1' }), /กรุณารีเฟรชคำขอ/);
+  assert.equal((await joins.syncMyJoinRequests('g1')).statuses.get('t1'), 'approved');
+});
+
+test('a stale approve action does not grant access after the request was removed', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin'] });
+  await assert.rejects(joins.approveJoinRequest('t1', { id: 'g1' }), /กรุณารีเฟรชคำขอ/);
+  assert.equal(fsdb.__dump('trips/t1/members/g1'), undefined);
+  assert.deepEqual(fsdb.__dump('trips/t1').memberUids, ['admin']);
+});
+
+test('a legacy approved trip opens via its request pointer when both list lookups fail', async () => {
+  fsdb.__seed('users/g1/joinRequests/t1', { uid: 'g1', tripId: 't1', status: 'pending' });
+  fsdb.__seed('users/g1/joinRequests/other', { uid: 'g1', status: 'pending' });
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', role: 'member', status: 'active' });
+  fsdb.__seed('trips/other', { createdBy: 'admin', memberUids: ['admin'] });
+  fsdb.__denyQueryField('trips', 'memberUids');
+  fsdb.__deny('members');
+  for (let i = 0; i < 2; i++) {
+    const found = await trips.listTrips('g1', false, { fresh: true });
+    assert.deepEqual(found.map(trip => trip.id), ['t1']);
+    assert.equal(found.incomplete, true);
+    await joins.syncMyJoinRequests('g1');
+  }
+  assert.equal(fsdb.__dump('trips/t1/joinRequests/g1'), undefined, 'no new request for an approved member');
+  assert.equal(fsdb.__dump('users/g1/joinRequests/t1').status, 'approved');
 });
 
 test('admin sweep fixes pending members, drifted uids and stale requests together', async () => {

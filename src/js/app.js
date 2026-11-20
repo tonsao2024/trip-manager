@@ -20,10 +20,11 @@ import {
   ensureUserProfile, findProfileByEmail
 } from './auth/accountAuth.js';
 import {
-  findTripByInviteCode, isUserAlreadyTripMember, requestToJoin, listJoinRequests, listMyJoinRequests,
+  findTripByInviteCode, isUserAlreadyTripMember, requestToJoin, listJoinRequests,
   approveJoinRequest, rejectJoinRequest, cancelJoinRequest, addMemberFromProfile, syncMyJoinRequests
 } from './members/join.js';
 import { repairTripMembership } from './members/repair.js';
+import { inspectMemberAccess, isAccountMember, reconnectMemberAccess, testMyMemberAccess } from './members/access.js';
 import { isActionableJoinRequest } from './utils/membershipRepair.js';
 import { formatInviteCode, isValidInviteCode, normalizeInviteCode } from './utils/invite.js';
 import {
@@ -223,7 +224,7 @@ function roleLabel(role, lang = getLang()) {
   return lang === 'th' ? 'สมาชิก' : 'Member';
 }
 function memberStateLabel(status, lang = getLang()) {
-  if (status === 'disabled') return lang === 'th' ? 'ปิดใช้งาน' : 'Disabled';
+  if (status === 'inactive' || status === 'disabled') return lang === 'th' ? 'ปิดใช้งาน' : 'Disabled';
   return lang === 'th' ? 'ใช้งานอยู่' : 'Active';
 }
 
@@ -2412,6 +2413,8 @@ if (!isFirebaseConfigured) {
         // First auth resolution on page load
         if (!location.hash || location.hash === '#' || location.hash.includes('login')) location.hash = '#/trips';
         else router.handle();
+      } else if (router.match(location.hash.slice(1))?.params.checkTripId) {
+        router.handle();
       } else if (location.hash.includes('login')) {
         location.hash = '#/trips';
       }
@@ -2433,7 +2436,7 @@ if (!isFirebaseConfigured) {
       updateUserDisplay(null);
       userAvatarBtn.onclick = () => { location.hash = '#/login'; };
       renderDesktopNav();
-      if (!location.hash.includes('login') && !location.hash.includes('config')) location.hash = '#/login';
+      if (!router.match(location.hash.slice(1))?.params.checkTripId && !location.hash.includes('login') && !location.hash.includes('config')) location.hash = '#/login';
       else router.handle();
     }
     queueIcons();
@@ -2673,6 +2676,7 @@ function showAppearanceSheet() {
 const routes = [
   { path: '/login', handler: renderLogin },
   { path: '/trips', handler: renderTripSelector },
+  { path: '/check-member-access/:checkTripId', handler: renderMemberAccessCheck },
   { path: '/trip/:tripId/dashboard', handler: renderDashboard },
   { path: '/trip/:tripId/itinerary', handler: renderItinerary },
   { path: '/trip/:tripId/map', handler: renderItinerary }, // merged to itinerary
@@ -2733,7 +2737,7 @@ router.beforeEach = (matched) => {
   renderHeaderMoreMenu();
   updateBottomNav();
   renderFAB(matched.path);
-  if (!currentUser && matched.path !== '/login') {
+  if (!currentUser && matched.path !== '/login' && !matched.params.checkTripId) {
     location.hash = '#/login';
     return false;
   }
@@ -2904,7 +2908,7 @@ function renderLogin() {
       // null = we were redirected to Google and will come back here
       if (!user) return;
       toast.success(`ยินดีต้อนรับ ${user.displayName || user.email}`);
-      location.hash = '#/trips';
+      if (!router.match(location.hash.slice(1))?.params.checkTripId) location.hash = '#/trips';
     } catch (err) {
       toast.error(err.message || 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ');
       btn.disabled = false;
@@ -3330,7 +3334,7 @@ async function openTripActions(trip, { onChanged } = {}) {
   });
 }
 
-async function renderTripSelector() {
+async function renderTripSelector({ fresh = false } = {}) {
   if (!isFirebaseConfigured) return renderConfigNeeded();
   if (!currentUser) { location.hash = '#/login'; return; }
   const token = beginRender();
@@ -3355,9 +3359,9 @@ async function renderTripSelector() {
           <input id="join-code-input" class="input font-mono tracking-[0.3em]" maxlength="7" placeholder="ABC-123" autocomplete="off" aria-label="invite code">
           <button id="join-code-btn" class="btn btn-secondary">${icon('log-in', 'w-4 h-4')} ${lang === 'th' ? 'ขอเข้าร่วม' : 'Request to join'}</button>
         </div>
-        <div id="my-join-requests" class="space-y-2"></div>
+        <div id="my-join-requests" class="space-y-2" aria-live="polite"><p class="text-xs text-[var(--text-secondary)]">${lang === 'th' ? 'กำลังตรวจสถานะคำขอ…' : 'Checking request status…'}</p></div>
         <div class="btn-row mt-1" id="join-sync-row">
-          <button id="sync-join-requests-btn" type="button" class="btn btn-ghost btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${lang === 'th' ? 'ซิงก์คำขอค้าง' : 'Sync pending requests'}</button>
+          <button id="sync-join-requests-btn" type="button" class="btn btn-ghost btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${lang === 'th' ? 'ตรวจคำขอและรายการทริป' : 'Check requests and trips'}</button>
           <span id="join-sync-status" class="text-xs text-[var(--text-tertiary)]" role="status" aria-live="polite"></span>
         </div>
         <div id="profile-rules-notice" class="hidden diag-row" data-status="warn">
@@ -3380,74 +3384,61 @@ async function renderTripSelector() {
   let tripsCache = [];
 
   // ---- join with an invite code ----
-  function joinSyncMessage(report, lang) {
-    if (report.created.length) return lang === 'th'
-      ? `ส่งคำขอ ${report.created.length} รายการถึงแอดมินแล้ว — รออนุมัติได้เลย`
-      : `Reconnected ${report.created.length} request(s) with the admin queue.`;
-    if (report.denied.length) return lang === 'th'
-      ? 'คำขอยังไปไม่ถึงแอดมิน — ให้แอดมิน Publish Firestore Rules/Indexes แล้วกดซิงก์อีกครั้ง'
-      : 'The admin queue is still unreadable — publish Firestore rules/indexes, then sync again.';
-    if (report.cleared.length || report.resolved.length || report.updated.length) return lang === 'th'
-      ? 'เคลียร์สถานะคำขอค้างแล้ว'
-      : 'Stale request status cleared.';
-    return '';
-  }
-
-  async function renderMyJoinRequests({ sync = true } = {}) {
-    const box = document.getElementById('my-join-requests');
-    if (!box) return;
+  async function renderMyJoinRequests() {
     const statusEl = document.getElementById('join-sync-status');
-    if (sync) {
-      try {
-        const report = await syncMyJoinRequests(currentUser.uid, {
-          joinedTripIds: tripsCache.map(t => t.id)
-        });
-        if (!isStale(token) && statusEl) statusEl.textContent = joinSyncMessage(report, lang);
-      } catch (e) {
-        console.warn('join request sync failed', e?.message || e);
-        if (!isStale(token) && statusEl) statusEl.textContent = lang === 'th'
-          ? 'ซิงก์คำขอไม่สำเร็จ — ลองอีกครั้งหรือตรวจการเชื่อมต่อ'
-          : 'Could not sync requests — check your connection and retry.';
-      }
+    const box = document.getElementById('my-join-requests');
+    if (!box || isStale(token)) return;
+    const uid = currentUser.uid;
+    let report;
+    let requests;
+    try {
+      report = await syncMyJoinRequests(uid);
+      requests = report.requests;
+    } catch (e) {
+      if (!isStale(token)) box.textContent = lang === 'th'
+        ? 'ยังตรวจสถานะคำขอไม่ได้ กรุณาลองอีกครั้ง' : 'Request status could not be checked. Please retry.';
+      return;
     }
-    // Read the box again AFTER the await: switching routes while the request is
-    // in flight replaces #my-join-requests, and the old node must not be written.
-    const requests = await listMyJoinRequests(currentUser.uid);
-    const liveBox = document.getElementById('my-join-requests');
-    if (!liveBox || isStale(token)) return;
-    // Once the admin approves, the trip shows up in the list — drop the badge.
+    if (isStale(token) || currentUser?.uid !== uid) return;
+    if (report.created.length && statusEl) statusEl.textContent = lang === 'th'
+      ? 'ส่งคำขอที่ค้างไปให้แอดมินแล้ว' : 'Pending requests were sent to the admin.';
     const joinedIds = new Set(tripsCache.map(t => t.id));
-    const pending = requests.filter(r => !joinedIds.has(r.tripId || r.id) && r.status !== 'approved');
-    liveBox.innerHTML = pending.length ? pending.map(r => `
-      <div class="diag-row" data-join-request="${escapeHtml(r.tripId || r.id)}">
-        ${icon(r.status === 'rejected' ? 'x-circle' : 'clock', 'w-4 h-4 shrink-0')}
-        <div class="min-w-0">
-          <div class="font-semibold">${escapeHtml(r.tripName || r.tripId || '')}</div>
-          <div class="text-xs text-[var(--text-secondary)]">${r.status === 'rejected'
-            ? (lang === 'th' ? 'แอดมินปฏิเสธคำขอ' : 'The admin declined this request')
-            : (lang === 'th' ? 'รอแอดมินอนุมัติ' : 'Waiting for the admin to approve')}</div>
-        </div>
-        <button class="btn btn-ghost btn-sm ml-auto" data-cancel-request="${escapeHtml(r.tripId || r.id)}">${lang === 'th' ? 'ยกเลิก' : 'Cancel'}</button>
-      </div>`).join('') : '';
-    liveBox.querySelectorAll('[data-cancel-request]').forEach(btn => {
+    const labels = lang === 'th' ? {
+      accessible: 'อนุมัติแล้ว เปิดทริปได้',
+      approved: 'อนุมัติแล้ว แต่ทริปยังไม่แสดงในรายการ ลองตรวจสิทธิ์เปิดทริป',
+      rejected: 'แอดมินปฏิเสธคำขอ', pending: 'รอแอดมินอนุมัติ',
+      unverified: 'ยังยืนยันสถานะคำขอจากเซิร์ฟเวอร์ไม่ได้'
+    } : {
+      accessible: 'Approved and ready to open',
+      approved: 'Approved, but the trip is not in your list yet. Test trip access.',
+      rejected: 'The admin declined this request', pending: 'Waiting for the admin to approve',
+      unverified: 'Request status could not be verified with the server'
+    };
+    box.innerHTML = requests.filter(r => !joinedIds.has(r.id)).map(r => {
+      const status = report.accessibleTripIds.has(r.id) ? 'accessible' : report.statuses.get(r.id) || 'unverified';
+      return `<div class="diag-row" data-join-request="${escapeHtml(r.id)}">
+        ${icon(status === 'approved' || status === 'accessible' ? 'check-circle' : status === 'rejected' ? 'x-circle' : 'clock', 'w-4 h-4 shrink-0')}
+        <div class="min-w-0"><div class="font-semibold">${escapeHtml(r.tripName || r.id)}</div>
+          <div class="text-xs text-[var(--text-secondary)]">${labels[status]}</div></div>
+        ${status === 'accessible' ? `<a class="btn btn-ghost btn-sm ml-auto" href="#/trip/${escapeHtml(encodeURIComponent(r.id))}/dashboard">${lang === 'th' ? 'เปิดทริป' : 'Open trip'}</a>`
+          : status === 'approved' ? `<a class="btn btn-ghost btn-sm ml-auto" href="${escapeHtml(memberAccessCheckHash(r.id))}">${lang === 'th' ? 'ทดสอบสิทธิ์' : 'Test access'}</a>`
+          : `<button class="btn btn-ghost btn-sm ml-auto" data-cancel-request="${escapeHtml(r.id)}">${lang === 'th' ? 'ยกเลิก' : 'Cancel'}</button>`}
+      </div>`;
+    }).join('');
+    box.querySelectorAll('[data-cancel-request]').forEach(btn => {
       btn.addEventListener('click', async () => {
         btn.disabled = true;
         try {
-          await cancelJoinRequest(btn.dataset.cancelRequest, currentUser.uid);
+          await cancelJoinRequest(btn.dataset.cancelRequest, uid);
           toast.info(lang === 'th' ? 'ยกเลิกคำขอแล้ว' : 'Request cancelled');
-          renderMyJoinRequests({ sync: false });
+          renderMyJoinRequests();
         } catch (e) { toast.error(e.message); btn.disabled = false; }
       });
     });
+    queueIcons();
   }
 
-  bind('sync-join-requests-btn', 'click', async () => {
-    const btn = document.getElementById('sync-join-requests-btn');
-    if (btn) btn.disabled = true;
-    await renderMyJoinRequests({ sync: true });
-    const live = document.getElementById('sync-join-requests-btn');
-    if (live) live.disabled = false;
-  });
+  bind('sync-join-requests-btn', 'click', () => renderTripSelector({ fresh: true }));
 
   let foundTrip = null;
   bind('join-code-btn', 'click', async () => {
@@ -3499,17 +3490,15 @@ async function renderTripSelector() {
       btn.disabled = false;
       if (isPermissionError(e)) {
         toast.error(e?.savedLocally
-          ? (lang === 'th' ? 'คำขอถูกเก็บในบัญชีคุณแล้ว แต่ยังไปไม่ถึงแอดมิน — ให้ Publish กฎ แล้วกด "ซิงก์คำขอค้าง"' : 'Request saved on your account but not in the admin queue — publish rules, then tap "Sync pending requests".')
+          ? (lang === 'th' ? 'คำขอถูกเก็บในบัญชีคุณแล้ว แต่ยังไปไม่ถึงแอดมิน — ให้แอดมินตรวจการตั้งค่า แล้วกด "ตรวจคำขอและรายการทริป"' : 'Request saved on your account but not in the admin queue — ask the admin to check the settings, then tap "Check requests and trips".')
           : (lang === 'th' ? 'Firestore Rules ยังไม่อนุญาต — ต้อง Publish กฎก่อน' : 'Firestore rules deny this — publish the rules first'));
-        renderMyJoinRequests({ sync: false });
+        renderMyJoinRequests();
         await showRulesHelpSheet({ lang, trip: foundTrip, action: 'join' });
       } else {
         toast.error(e.message);
       }
     }
   });
-
-  renderMyJoinRequests({ sync: false });   // sync again once the trip list is known
 
   const grid = document.getElementById('trip-grid');
   if (!grid) return;
@@ -3564,6 +3553,7 @@ async function renderTripSelector() {
 
   // A background refresh (SWR) can land while the cached list is on screen.
   const onTripsUpdated = (e) => {
+    if (isStale(token)) { window.removeEventListener('trips:updated', onTripsUpdated); return; }
     // Another account's refresh (or one that started before this session) must
     // never repaint this list.
     if (e?.detail?.userId && currentUser?.uid && e.detail.userId !== currentUser.uid) return;
@@ -3577,7 +3567,7 @@ async function renderTripSelector() {
   document.addEventListener('routechange', () => window.removeEventListener('trips:updated', onTripsUpdated), { once: true });
 
   try {
-    const trips = await listTrips(currentUser.uid, false);
+    const trips = await listTrips(currentUser.uid, false, { fresh });
     if (isStale(token)) return;
     tripsCache = trips;
     if (!trips.length) {
@@ -3593,7 +3583,7 @@ async function renderTripSelector() {
       return;
     }
     const partialNotice = trips.incomplete
-      ? `<div class="notice col-span-full p-3 text-xs" role="status">${lang === 'th' ? 'โหลดได้บางทริปเท่านั้น — ตรวจการเชื่อมต่อและ Firestore Rules/Indexes แล้วลองใหม่' : 'Some trips could not be checked — verify connectivity and Firestore Rules/Indexes, then retry.'}</div>`
+      ? `<div class="notice col-span-full p-3 text-xs" role="status">${lang === 'th' ? 'โหลดรายการทริปได้ไม่ครบ แต่ยังเปิดทริปที่แสดงอยู่ได้' : 'Some trips could not be checked. You can still open the trips shown here.'}</div>`
       : '';
     grid.innerHTML = partialNotice + trips.map((trip, idx) => tripCardHtml(trip, idx)).join('');
     attachTripCards(grid);
@@ -3612,78 +3602,19 @@ async function renderTripSelector() {
   } catch (e) {
     if (isStale(token)) return;
     console.error('List trips failed', e);
-    let msg = e.message;
-    let hint = '';
-    if (e.code === 'permission-denied' || msg.includes('permission') || msg.includes('Missing') || msg.includes('insufficient')) {
-      hint = `
-        <div class="notice text-left mt-3 p-3 rounded-xl text-xs leading-relaxed">
-          <strong class="flex items-center gap-1">${icon('alert-triangle', 'w-3.5 h-3.5')} Firestore Rules ยังไม่ deploy</strong>
-          ต้อง publish กฎใหม่ที่ Firebase Console &gt; Firestore &gt; Rules<br>
-          <button id="trips-rules-help" class="btn btn-secondary btn-sm mt-2">${icon('shield-alert', 'w-4 h-4')} ดูวิธีแก้ทีละขั้น</button>
-        </div>`;
-      msg = 'ไม่มีสิทธิ์เข้าถึง — ต้อง deploy Firestore Rules';
-    }
-    if (msg.includes('index') || e.code === 'failed-precondition') {
-      hint = `<div class="notice text-left mt-3 p-3 rounded-xl text-xs"><strong class="flex items-center gap-1">${icon('database', 'w-3.5 h-3.5')} ต้องสร้าง Firestore Index</strong>รัน <code>firebase deploy --only firestore:indexes</code></div>`;
-      msg = 'ต้องสร้าง Index — ดูคำสั่งใน Console';
-    }
-    bind('trips-rules-help', 'click', () => showRulesHelpSheet({ lang }));
-    try {
-      const cached = localStorage.getItem('fuji_trips_cache');
-      if (cached) {
-        const { data, uid: cachedUid, timestamp } = JSON.parse(cached);
-        if (cachedUid === currentUser?.uid && Date.now() - timestamp <= 10 * 60 * 1000 && data?.length) {
-          tripsCache = data;
-          grid.innerHTML = `
-            <div class="notice col-span-full flex items-start gap-2 p-3 rounded-xl text-xs">
-              <span style="margin-top:1px;">${icon('cloud-off', 'w-4 h-4')}</span>
-              <span>${lang==='th' ? 'แสดงข้อมูลจากแคช' : 'Showing cached trips'} • ${data.length} ${lang==='th' ? 'ทริป' : 'trips'}</span>
-            </div>
-            ${data.map((trip, idx) => tripCardHtml(trip, idx, true)).join('')}
-          `;
-          attachTripCards(grid);
-          const retryDiv = document.createElement('div');
-          retryDiv.className = 'col-span-full flex gap-2 justify-center mt-4';
-          retryDiv.innerHTML = `<button id="retry-trips" class="btn btn-primary btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${lang==='th' ? 'ลองใหม่อีกครั้ง' : 'Retry'}</button>`;
-          grid.appendChild(retryDiv);
-          bind('retry-trips', 'click', () => renderTripSelector());
-          queueIcons();
-          return;
-        }
-      }
-    } catch {}
-
-    grid.innerHTML = `<div class="col-span-full card p-6 text-center">
+    const canShowHelp = isPermissionError(e) || [e?.code, e?.cause?.code].includes('failed-precondition');
+    grid.innerHTML = `<div class="col-span-full card p-6 text-center" role="status">
       <div class="row-icon mx-auto mb-3">${icon('cloud-off', 'w-6 h-6')}</div>
-      <p class="text-sm font-semibold mb-1" style="color: var(--danger);">${escapeHtml(msg)}</p>
-      ${hint}
+      <p class="text-sm font-semibold">${lang === 'th' ? 'ยังโหลดรายการทริปไม่สำเร็จ' : 'Could not load your trip list yet'}</p>
+      <p class="text-xs text-[var(--text-secondary)]">${lang === 'th' ? 'สถานะคำขอเข้าร่วมจะแสดงแยกด้านล่าง' : 'Join request status is checked separately below.'}</p>
       <div class="flex gap-2 justify-center mt-4 flex-wrap">
-        <button id="retry-trips" class="btn btn-primary btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${lang==='th' ? 'ลองใหม่' : 'Retry'}</button>
-        <button id="show-rules" class="btn btn-secondary btn-sm">${icon('scroll-text', 'w-4 h-4')} ${lang==='th' ? 'ดู Rules' : 'View Rules'}</button>
-        <button id="clear-cfg-btn" class="btn btn-ghost btn-sm">${icon('eraser', 'w-4 h-4')} ${lang==='th' ? 'ล้าง Config' : 'Clear Config'}</button>
-      </div>
-      <p class="text-xs text-[var(--text-tertiary)] mt-3">UID: ${currentUser?.uid?.slice(0,8)} • ${escapeHtml(currentUser?.email || '')}</p>
-    </div>`;
-    bind('retry-trips', 'click', () => renderTripSelector());
-    bind('clear-cfg-btn', 'click', () => { localStorage.removeItem('fuji_firebase_config'); location.reload(); });
-    bind('show-rules', 'click', async () => {
-      try {
-        const res = await fetch('./firestore.rules');
-        const rulesText = await res.text();
-        showBottomSheet(`
-          <h3 class="font-semibold mb-2 flex items-center gap-2">${icon('scroll-text', 'w-4 h-4')} Firestore Rules — คัดลอกไป deploy</h3>
-          <p class="text-xs mb-3 text-[var(--text-secondary)]">คัดลอกทั้งหมดไปวางใน Firebase Console &gt; Firestore &gt; Rules &gt; Publish</p>
-          <pre class="p-3 rounded-xl text-xs overflow-auto whitespace-pre-wrap" style="background:#111;color:#8ce8a5;max-height:400px;">${escapeHtml(rulesText)}</pre>
-          <button id="copy-rules-btn" class="btn btn-primary w-full mt-3 btn-sm">${icon('copy', 'w-4 h-4')} คัดลอก Rules</button>
-        `);
-        queueIcons();
-        bind('copy-rules-btn', 'click', async () => {
-          try { await navigator.clipboard.writeText(rulesText); toast.success('คัดลอก Rules แล้ว'); }
-          catch { toast.error('คัดลอกไม่สำเร็จ'); }
-        });
-      } catch { toast.error('โหลด rules ไม่สำเร็จ'); }
-    });
+        <button id="retry-trips" class="btn btn-primary btn-sm">${icon('refresh-cw')} ${lang === 'th' ? 'ลองใหม่' : 'Retry'}</button>
+        ${canShowHelp ? `<button id="trips-rules-help" class="btn btn-secondary btn-sm">${lang === 'th' ? 'วิธีแก้สำหรับแอดมิน' : 'Help for admins'}</button>` : ''}
+      </div></div>`;
+    bind('retry-trips', 'click', () => renderTripSelector({ fresh: true }));
+    bind('trips-rules-help', 'click', () => showRulesHelpSheet({ lang }));
     queueIcons();
+    renderMyJoinRequests();
   }
 }
 
@@ -11778,7 +11709,7 @@ async function openCardManager(tripId, { members = [], onSaved = null } = {}) {
 
 const ROLE_ICONS = { super_admin: 'crown', trip_admin: 'shield-check', member: 'user', viewer: 'eye' };
 
-function openMemberForm(tripId, member = null, { onSaved, canSetRoles = true } = {}) {
+function openMemberForm(tripId, member = null, { onSaved, canSetRoles = true, canDelete = false } = {}) {
   const lang = getLang();
   const th = (a, b) => (lang === 'th' ? a : b);
   const isEdit = !!member;
@@ -11826,7 +11757,7 @@ function openMemberForm(tripId, member = null, { onSaved, canSetRoles = true } =
         </div>
         <div class="flex gap-2">
           <button type="submit" id="m-submit" class="btn btn-primary flex-1">${icon('save', 'w-4 h-4')} ${isEdit ? t('save') : t('add')}</button>
-          ${isEdit ? `<button type="button" id="m-delete" class="btn btn-danger-quiet">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
+          ${isEdit && canDelete ? `<button type="button" id="m-delete" class="btn btn-danger-quiet" aria-label="${th('ลบสมาชิก', 'Remove member')}">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
         </div>
         ${isEdit ? `
           <div class="p-3 rounded-xl text-xs flex items-start gap-2" style="background:var(--bg-secondary); border:1px solid var(--border);">
@@ -11915,13 +11846,26 @@ async function removeMemberFlow(tripId, member, onSaved) {
   if (!ok) return;
   const tLoad2 = toast.loading(th('กำลังลบ...', 'Removing...'));
   try {
-    await deleteMember(tripId, member.id, { uid: member.uid || member.id });
-    // A removed member must not linger inside a sub-group chip.
-    await forgetMemberFromGroups(tripId, member.id);
+    await deleteMember(tripId, member.id);
+  } catch (e) {
+    console.warn('[Members] removal failed', e);
+    const code = String(e?.cause?.code || e?.code || '');
+    const message = isPermissionError(e)
+      ? th('ไม่มีสิทธิ์ลบสมาชิกคนนี้ กรุณาให้ผู้ดูแลทริปลบให้', 'You cannot remove this member. Ask a trip admin to remove them.')
+      : code.endsWith('unauthenticated')
+        ? th('กรุณาเข้าสู่ระบบใหม่แล้วลองลบอีกครั้ง', 'Sign in again and retry removing the member.')
+        : e?.code === 'member-pin-cleanup-failed'
+          ? th('ยังไม่ได้ลบสมาชิก เพราะระบบล้าง PIN เดิมไม่สำเร็จ กรุณาติดต่อผู้ดูแลระบบ', 'The member was not removed because PIN cleanup failed. Contact your system admin.')
+          : th('ลบสมาชิกไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่', 'Could not remove the member. Check your connection and try again.');
+    toast.error(message, th('ลบสมาชิกไม่สำเร็จ', 'Member removal failed'));
+    return;
+  } finally {
     tLoad2.close();
-    toast.success(th('ลบสมาชิกแล้ว', 'Member removed'));
-    await onSaved?.();
-  } catch (e) { tLoad2.close(); toast.error(e.message); }
+  }
+  toast.success(th('ลบสมาชิกแล้ว', 'Member removed'));
+  // Group cleanup and UI refresh are separate from the committed deletion.
+  await forgetMemberFromGroups(tripId, member.id);
+  try { await onSaved?.(); } catch (e) { console.warn('[Members] refresh after removal failed', e); }
 }
 
 /** Human-readable summary of an admin sweep; never claims a write that failed. */
@@ -11944,6 +11888,126 @@ function repairReportHtml(report, lang) {
   return `<div class="flex flex-wrap gap-1 mt-1">${summary}</div>${warnings.length ? `<p class="text-xs mt-1" style="color:var(--danger);">${warnings.map(w => escapeHtml(w)).join(' ')}</p>` : ''}`;
 }
 
+const memberAccessCheckHash = (tripId) => `#/check-member-access/${encodeURIComponent(tripId)}`;
+
+function accessPermissionSummary(permissions, th, lang) {
+  if (!permissions) return th('ยืนยันสิทธิ์จากข้อมูลสมาชิกไม่ได้', 'Permissions could not be determined from the membership record.');
+  const flag = (value) => value ? th('ได้', 'Allowed') : th('ไม่ได้', 'Not allowed');
+  return [
+    `${th('บทบาท', 'Role')}: ${roleLabel(permissions.role, lang)}`,
+    `${th('แก้ไขแผน', 'Edit itinerary')}: ${flag(permissions.canEditItinerary)}`,
+    `${th('แก้ไขค่าใช้จ่าย', 'Edit expenses')}: ${flag(permissions.canEditExpense)}`,
+    `${th('จัดการสมาชิก', 'Manage members')}: ${flag(permissions.canManageMembers)}`
+  ].join(' · ');
+}
+
+function openMemberAccessSheet(tripId, member) {
+  const lang = getLang();
+  const th = (a, b) => lang === 'th' ? a : b;
+  const { sheet } = showBottomSheet(`
+    <div class="space-y-3">
+      <h3 class="font-semibold text-base">${th('การเชื่อมต่อบัญชี', 'Account connection')} · ${escapeHtml(member.displayName || '')}</h3>
+      <p class="text-sm text-[var(--text-secondary)]">${th('เชื่อมต่อใหม่จะคืนรายการทริปให้บัญชีที่อนุมัติแล้ว ไม่เปลี่ยนบทบาท สิทธิ์ หรือสถานะสมาชิก', 'Reconnect restores the trip listing for an approved account without changing its role, permissions, or status.')}</p>
+      <div data-access-result class="card p-3 text-sm space-y-2" role="status" aria-live="polite"></div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-primary btn-sm" data-access-reconnect disabled>${icon('link-2')} ${th('เชื่อมต่ออีกครั้ง', 'Reconnect')}</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-access-refresh>${icon('refresh-cw')} ${th('ตรวจจากเซิร์ฟเวอร์', 'Check server')}</button>
+      </div>
+      <p class="text-xs text-[var(--text-secondary)]">${th('นี่คือผลตรวจการตั้งค่า ไม่ใช่การเข้าสู่ระบบแทนสมาชิก ส่งลิงก์ให้สมาชิกเปิดและทดสอบด้วยบัญชีเดิมได้', 'This checks stored settings, not the member’s session. Send the link so the member can run a live check using their own account.')}</p>
+      <button type="button" class="btn btn-secondary btn-sm" data-access-copy>${icon('copy')} ${th('คัดลอกลิงก์ทดสอบให้สมาชิก', 'Copy member test link')}</button>
+    </div>`);
+  const result = sheet.querySelector('[data-access-result]');
+  const reconnect = sheet.querySelector('[data-access-reconnect]');
+  const refresh = sheet.querySelector('[data-access-refresh]');
+  const statuses = {
+    linked: th('บัญชีอยู่ในรายการทริปแล้ว', 'Account is listed in this trip'),
+    unlisted: th('บัญชีได้รับอนุมัติ แต่ยังไม่อยู่ในรายการทริป', 'Approved account is missing from the trip listing'),
+    closed: th('สมาชิกถูกระงับ จึงไม่เชื่อมต่อใหม่', 'Membership is disabled; reconnect skipped'),
+    mismatch: th('บัญชีเดิมไม่ตรงกับรหัสสมาชิก ให้ตรวจบัญชีและอนุมัติผ่านคำขอเข้าทริป', 'The account UID does not match the member record. Verify the account through a join request.'),
+    missing: th('ไม่พบสมาชิกในทริปนี้แล้ว', 'This membership no longer exists'),
+    'not-account': th('รายการนี้ไม่ใช่บัญชี Google/อีเมล', 'This is not a Google/email membership')
+  };
+  async function check(repair = false) {
+    reconnect.disabled = refresh.disabled = true;
+    result.textContent = th('กำลังตรวจจากเซิร์ฟเวอร์…', 'Checking the server…');
+    let ready = false;
+    let change;
+    try {
+      if (repair) change = await reconnectMemberAccess(tripId, member.id);
+      const { state, permissions } = await inspectMemberAccess(tripId, member.id);
+      ready = state === 'unlisted' || state === 'linked';
+      const status = state === 'linked' && change === 'restored'
+        ? th('เชื่อมต่อรายการทริปให้สมาชิกแล้ว', 'Trip listing restored for this account') : statuses[state];
+      result.innerHTML = `<p class="font-semibold">${escapeHtml(status)}</p>${permissions ? `<p>${escapeHtml(accessPermissionSummary(permissions, th, lang))}</p>` : ''}`;
+    } catch (e) {
+      result.textContent = change === 'restored'
+        ? th('คืนรายการทริปแล้ว แต่ยังยืนยันผลจากเซิร์ฟเวอร์ไม่ได้', 'Trip listing updated, but verification failed')
+        : isPermissionError(e) ? th('เซิร์ฟเวอร์ไม่อนุญาตให้ตรวจหรือเชื่อมต่อสมาชิกคนนี้', 'The server did not allow this membership check or update')
+          : th('ตรวจจากเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองใหม่', 'Could not check the server. Try again.');
+    } finally {
+      refresh.disabled = false;
+      reconnect.disabled = !ready;
+    }
+  }
+  reconnect.onclick = () => check(true);
+  refresh.onclick = () => check();
+  sheet.querySelector('[data-access-copy]').onclick = () => copyToClipboard(
+    new URL(memberAccessCheckHash(tripId), location.href).href,
+    'คัดลอกลิงก์ทดสอบแล้ว', 'Test link copied');
+  check();
+}
+
+async function renderMemberAccessCheck({ checkTripId }) {
+  const token = beginRender();
+  if (!auth?.currentUser) return renderLogin();
+  const lang = getLang();
+  const th = (a, b) => lang === 'th' ? a : b;
+  const account = auth.currentUser;
+  appEl.innerHTML = `<div class="max-w-[720px] mx-auto page-enter card p-5 space-y-3">
+    <h1 class="page-title">${icon('shield-check')}${th('ทดสอบการเข้าถึงทริป', 'Test trip access')}</h1>
+    <p class="text-sm">${th('บัญชีที่ใช้ทดสอบ', 'Testing as')}: <strong>${escapeHtml(account.email || account.displayName || account.uid)}</strong></p>
+    <p class="text-sm text-[var(--text-secondary)]">${th('ทดสอบการอ่านด้วยบัญชีนี้จริง สิทธิ์แก้ไขแสดงตามการตั้งค่าโดยไม่ทดลองเขียนข้อมูล', 'Reads are tested with this account. Editing permissions are shown from the settings without attempting writes.')}</p>
+    <div id="my-access-result" class="space-y-2 text-sm" role="status" aria-live="polite"></div>
+    <div class="btn-row">
+      <button id="my-access-retry" class="btn btn-primary btn-sm" type="button">${th('ทดสอบอีกครั้ง', 'Run again')}</button>
+      <button id="my-access-copy" class="btn btn-secondary btn-sm" type="button" hidden>${th('คัดลอกผลให้แอดมิน', 'Copy results for admin')}</button>
+      <a class="btn btn-ghost btn-sm" href="#/trips">${th('กลับไปหน้าทริปของฉัน', 'Back to my trips')}</a>
+    </div>
+  </div>`;
+  queueIcons();
+  const result = el('my-access-result');
+  const retry = el('my-access-retry');
+  const copy = el('my-access-copy');
+  const label = (state) => ({ ok: th('อ่านได้', 'Readable'), denied: th('ไม่มีสิทธิ์อ่าน', 'Read denied'),
+    missing: th('ไม่พบ', 'Not found'), error: th('ทดสอบไม่สำเร็จ', 'Check failed') })[state];
+  async function check() {
+    retry.disabled = true;
+    copy.hidden = true;
+    result.textContent = th('กำลังทดสอบ…', 'Testing…');
+    try {
+      const tripId = decodeURIComponent(checkTripId);
+      if (!tripId || tripId.includes('/') || tripId.length > 1500) throw new Error('Invalid trip ID');
+      const report = await testMyMemberAccess(tripId);
+      if (isStale(token)) return;
+      const rows = [
+        `${th('เปิดทริป', 'Open trip')}: ${label(report.trip)}`,
+        `${th('รายการบัญชีของทริป', 'Trip account index')}: ${report.listed === null ? th('ยังตรวจไม่ได้', 'Not verified') : report.listed ? th('พบบัญชีนี้', 'Account listed') : th('ไม่พบบัญชีนี้', 'Account not listed')}`,
+        `${th('แผนการเดินทาง', 'Itinerary')}: ${label(report.itinerary)}`,
+        `${th('ค่าใช้จ่าย', 'Expenses')}: ${label(report.expenses)}`,
+        `${th('คิวคำขอเข้าร่วม (เฉพาะผู้จัดการสมาชิก)', 'Join requests (member managers only)')}: ${label(report.requests)}`,
+        `${th('สิทธิ์ตามที่ตั้งไว้', 'Configured permissions')}: ${accessPermissionSummary(report.permissions, th, lang)}`
+      ];
+      result.innerHTML = `<ul class="space-y-1">${rows.map(row => `<li>${escapeHtml(row)}</li>`).join('')}</ul>`;
+      copy.onclick = () => copyToClipboard(rows.join('\n'));
+      copy.hidden = false;
+    } catch {
+      result.textContent = th('ทดสอบไม่สำเร็จ ตรวจลิงก์ การเชื่อมต่อ และบัญชีที่ใช้อยู่ แล้วลองใหม่', 'Check failed. Verify the link, connection and signed-in account, then try again.');
+    } finally { retry.disabled = false; }
+  }
+  retry.onclick = check;
+  await check();
+}
+
 async function renderMembers(params) {
   const tripId = params.tripId;
   const token = beginRender();
@@ -11964,6 +12028,8 @@ async function renderMembers(params) {
   // Firestore rules enforce.
   const canApprove = perms.isAdmin || perms.canManageMembers || perms.role === 'trip_admin';
   const canManageGroups = canApprove;
+  const canDeleteMember = (member) => canApprove
+    && (perms.isAdmin || !['trip_admin', 'super_admin'].includes(member.role));
   // v18.2 — กลุ่มย่อย: a long trip splits into gangs (some fly home early), so
   // the trip can be sliced into named groups for per-group budget analysis.
   let groups = [];
@@ -11988,6 +12054,7 @@ async function renderMembers(params) {
         ${canApprove ? `<div id="membership-repair-report" class="text-xs text-[var(--text-secondary)]" role="status" aria-live="polite"></div>` : ''}
         <div id="join-requests" class="space-y-2"><div class="skeleton h-10"></div></div>
         <div class="btn-row">
+          <a class="btn btn-secondary btn-sm" href="${escapeHtml(memberAccessCheckHash(tripId))}">${icon('shield-check')} ${th('ทดสอบสิทธิ์ของฉัน', 'Test my access')}</a>
           <button id="add-by-email-btn" class="btn btn-secondary btn-sm">${icon('mail-plus', 'w-4 h-4')} ${th('เพิ่มด้วยอีเมล','Add by email')}</button>
           <button id="refresh-requests-btn" class="btn btn-ghost btn-sm">${icon('refresh-cw', 'w-4 h-4')} ${th('รีเฟรชคำขอ','Refresh requests')}</button>
           ${canApprove ? `<button id="repair-membership-btn" type="button" class="btn btn-secondary btn-sm" title="${th('อ่านข้อมูลจากเซิร์ฟเวอร์ใหม่ แล้วซ่อม uid สมาชิก สถานะ pending และคำขอที่ค้าง — ไม่ลบสมาชิก ไม่เปลี่ยนสิทธิ์', 'Re-read the server, then repair member uids, pending statuses and stale join requests — never deletes members or changes roles')}">${icon('wrench', 'w-4 h-4')} ${th('กวาดสถานะค้าง','Sweep stale status')}</button>` : ''}
@@ -12043,7 +12110,7 @@ async function renderMembers(params) {
     let requests = [];
     try { requests = await listJoinRequests(tripId); } catch (e) {
       box.innerHTML = `<p class="text-xs" style="color:var(--danger);">${escapeHtml(e.message)}</p>
-        <p class="text-xs text-[var(--text-secondary)] mt-1">${th('ถ้าเพิ่ง Publish กฎ/ดัชนี ให้กด "กวาดสถานะค้าง" หรือรีเฟรชหน้านี้ — คำขอที่ค้างในบัญชีสมาชิกจะกลับมาที่นี่เมื่อสมาชิกกด "ซิงก์คำขอค้าง"', 'If rules/indexes were just published, press "Sweep stale status" or reload. Requests kept in a member’s private mirror return here when that member taps "Sync pending requests".')}</p>`;
+        <p class="text-xs text-[var(--text-secondary)] mt-1">${th('ถ้าเพิ่ง Publish กฎ/ดัชนี ให้กด "กวาดสถานะค้าง" หรือรีเฟรชหน้านี้ — คำขอที่ค้างในบัญชีสมาชิกจะกลับมาที่นี่เมื่อสมาชิกกด "ตรวจคำขอและรายการทริป"', 'If rules/indexes were just published, press "Sweep stale status" or reload. Requests kept in a member’s private mirror return here when that member taps "Check requests and trips".')}</p>`;
       return;
     }
     if (isStale(token)) return;
@@ -12051,7 +12118,7 @@ async function renderMembers(params) {
     const closedCount = requests.length - actionable.length;
     const pending = actionable;   // keep the name used by the approve/reject handlers
     box.innerHTML = pending.length ? pending.map(r => `
-      <div class="diag-row" data-request="${escapeHtml(r.uid || r.id)}">
+      <div class="diag-row" data-request="${escapeHtml(r.id)}">
         <div class="w-9 h-9 rounded-full grid place-items-center overflow-hidden flex-shrink-0 text-xs font-semibold text-white" style="background:var(--gradient-primary);">
           ${r.photoURL ? `<img decoding="async" src="${escapeHtml(r.photoURL)}" class="w-full h-full object-cover rounded-full" alt="">` : escapeHtml(getInitials(r.displayName || 'M'))}
         </div>
@@ -12060,15 +12127,15 @@ async function renderMembers(params) {
           <div class="text-xs text-[var(--text-secondary)] truncate">${escapeHtml(r.email || '')}</div>
         </div>
         <div class="btn-row" style="grid-template-columns: repeat(2, minmax(0,1fr)); max-width:200px;">
-          <button class="btn btn-secondary btn-sm" data-approve="${escapeHtml(r.uid || r.id)}">${icon('check', 'w-3.5 h-3.5')} ${th('อนุมัติ','Approve')}</button>
-          <button class="btn btn-ghost btn-sm" data-reject="${escapeHtml(r.uid || r.id)}">${th('ปฏิเสธ','Decline')}</button>
+          <button class="btn btn-secondary btn-sm" data-approve="${escapeHtml(r.id)}">${icon('check', 'w-3.5 h-3.5')} ${th('อนุมัติ','Approve')}</button>
+          <button class="btn btn-ghost btn-sm" data-reject="${escapeHtml(r.id)}">${th('ปฏิเสธ','Decline')}</button>
         </div>
       </div>`).join('') : `
       <p class="text-xs text-[var(--text-tertiary)] flex items-center gap-2">${icon('inbox', 'w-3.5 h-3.5')} ${th('ยังไม่มีคำขอเข้าร่วม — แชร์รหัสเชิญให้เพื่อนได้ที่หน้าตั้งค่า','No pending requests — share the invite code from Settings.')}</p>`
       + (closedCount ? `<p class="text-xs text-[var(--text-tertiary)] mt-1">${th(`มีคำขอที่จัดการแล้ว ${closedCount} รายการ (ไม่แสดงปุ่มอนุมัติ)`, `${closedCount} handled request(s) hidden — no action needed`)}</p>` : '');
 
     box.querySelectorAll('[data-approve]').forEach(btn => btn.addEventListener('click', async () => {
-      const req = pending.find(x => (x.uid || x.id) === btn.dataset.approve);
+      const req = pending.find(x => x.id === btn.dataset.approve);
       if (!req) return;
       btn.disabled = true;
       const tLoad = toast.loading(th('กำลังเพิ่มสมาชิก...', 'Adding member...'));
@@ -12092,7 +12159,7 @@ async function renderMembers(params) {
     }));
 
     box.querySelectorAll('[data-reject]').forEach(btn => btn.addEventListener('click', async () => {
-      const req = pending.find(x => (x.uid || x.id) === btn.dataset.reject);
+      const req = pending.find(x => x.id === btn.dataset.reject);
       if (!req) return;
       const ok = await confirmAction({
         title: th(`ปฏิเสธคำขอของ "${req.displayName || ''}" ?`, `Decline "${req.displayName || ''}"?`),
@@ -12258,8 +12325,9 @@ async function renderMembers(params) {
             </div>
           </div>
           <div class="people-actions">
+            ${canApprove && isAccountMember(m) ? `<button type="button" class="icon-btn" data-act="access" data-id="${escapeHtml(m.id)}" title="${th('เชื่อมต่อ / ทดสอบสิทธิ์', 'Reconnect / test access')}" aria-label="${th('เชื่อมต่อ / ทดสอบสิทธิ์', 'Reconnect / test access')} ${escapeHtml(m.displayName || '')}">${icon('link-2')}</button>` : ''}
             <button class="icon-btn" data-act="edit" data-id="${m.id}" title="${t('edit')}" aria-label="${t('edit')} ${escapeHtml(m.displayName || '')}">${icon('pencil', 'w-4 h-4')}</button>
-            <button class="icon-btn icon-btn-danger" data-act="delete" data-id="${m.id}" title="${t('delete')}" aria-label="${t('delete')} ${escapeHtml(m.displayName || '')}">${icon('trash-2', 'w-4 h-4')}</button>
+            ${canDeleteMember(m) ? `<button class="icon-btn icon-btn-danger" data-act="delete" data-id="${m.id}" title="${t('delete')}" aria-label="${t('delete')} ${escapeHtml(m.displayName || '')}">${icon('trash-2', 'w-4 h-4')}</button>` : ''}
           </div>
         </div>
       `;
@@ -12267,8 +12335,13 @@ async function renderMembers(params) {
       list.querySelectorAll('[data-act]').forEach(btn => btn.addEventListener('click', async () => {
         const member = members.find(x => x.id === btn.dataset.id);
         if (!member) return;
-        if (btn.dataset.act === 'edit') openMemberForm(tripId, member, { onSaved: loadMembersList });
-        else await removeMemberFlow(tripId, member, loadMembersList);
+        if (btn.dataset.act === 'edit') {
+          openMemberForm(tripId, member, { onSaved: loadMembersList, canDelete: canDeleteMember(member) });
+        } else if (btn.dataset.act === 'access' && canApprove && isAccountMember(member)) {
+          openMemberAccessSheet(tripId, member);
+        } else if (btn.dataset.act === 'delete' && canDeleteMember(member)) {
+          await removeMemberFlow(tripId, member, loadMembersList);
+        }
       }));
       queueIcons();
       initReveal(list);

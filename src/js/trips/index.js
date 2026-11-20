@@ -1,7 +1,8 @@
 import { db, storage, functions, httpsCallable, serverTimestamp, isStorageAvailable } from '../firebase.js';
+import { getJoinedTrip, listMyJoinRequests } from '../members/join.js';
 import { brandPrimary } from '../utils/brand.js';
 import { deleteTransfer } from '../settlement/transfers.js';
-import { collection, collectionGroup, doc, getDoc, getDocFromServer, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, runTransaction, query, where, limit, startAfter, arrayUnion, arrayRemove, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { collection, collectionGroup, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, runTransaction, query, where, limit, startAfter, arrayUnion, arrayRemove, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { missingMemberUids, mergeTripsById, tripIdFromMemberPath } from '../utils/memberUids.js';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { compressImage } from '../utils/helpers.js';
@@ -122,9 +123,10 @@ function blobToDataURL(blob) {
  * first screen after login) and refreshed in the background, so a slow Firestore
  * query can never hold the screen for up to 3 × 10 s timeouts.
  */
-export async function listTrips(userId, isSuperAdmin = false, { maxAgeMs = 2 * 60 * 1000 } = {}) {
+export async function listTrips(userId, isSuperAdmin = false, { maxAgeMs = 2 * 60 * 1000, fresh = false } = {}) {
   if (!db) throw new Error('DB not ready - Firebase not configured');
   if (!userId) throw new Error('User not authenticated');
+  if (fresh) return fetchTripsFromServer(userId, isSuperAdmin, { allowCache: false });
 
   const cached = getCachedTrips(userId);
   if (cached?.length) {
@@ -136,8 +138,8 @@ export async function listTrips(userId, isSuperAdmin = false, { maxAgeMs = 2 * 6
   return fetchTripsFromServer(userId, isSuperAdmin);
 }
 
-async function fetchTripsFromServer(userId, isSuperAdmin = false) {
-  const cached = getCachedTrips(userId);
+async function fetchTripsFromServer(userId, isSuperAdmin = false, { allowCache = true } = {}) {
+  const cached = allowCache ? getCachedTrips(userId) : null;
   // Every write below is page-by-page, so someone in more than 30 trips still
   // sees the oldest one. A trip list silently cut at 30 looked like lost data.
   // Rules check a per-trip member document when a trip-list result includes a
@@ -149,7 +151,7 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false) {
     for (;;) {
       const q = cursor ? query(baseQuery, startAfter(cursor), limit(PAGE)) : query(baseQuery, limit(PAGE));
       const snap = await Promise.race([
-        getDocs(q),
+        (allowCache ? getDocs : getDocsFromServer)(q),
         new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout ${label}`)), timeoutMs))
       ]);
       out.push(...snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -213,7 +215,20 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false) {
     noteFailure(e);
   }
 
-  const trips = mergeTripsById(listedTrips, createdTrips, discoveredTrips);
+  // Submitted requests give us exact trip IDs. Use permission-checked document
+  // reads for those IDs even if list rules/indexes or member discovery failed.
+  const knownTrips = mergeTripsById(listedTrips, createdTrips, discoveredTrips);
+  const knownIds = new Set(knownTrips.map(t => t.id));
+  const requestTrips = [];
+  try {
+    const requests = await listMyJoinRequests(userId);
+    const results = await Promise.allSettled(requests.filter(r => !knownIds.has(r.id)).map(r => getJoinedTrip(r.id, userId)));
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value) requestTrips.push(result.value);
+      else if (result.status === 'rejected') failures.push(result.reason);
+    }
+  } catch (e) { noteFailure(e); }
+  const trips = mergeTripsById(knownTrips, requestTrips);
   if (trips.length) {
     if (failures.length) Object.defineProperty(trips, 'incomplete', { value: true });
     else setCachedTrips(trips, userId);
@@ -223,7 +238,7 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false) {
   // A successful creator query is not evidence that the membership query also
   // succeeded. Never label an incomplete lookup as an account with no trips.
   if (failures.length) {
-    const error = new Error('ตรวจสอบทริปที่เคยเข้าร่วมไม่ครบ — ตรวจการเชื่อมต่อและการ deploy Firestore Rules/Indexes แล้วลองใหม่');
+    const error = new Error('Some trips could not be checked');
     error.code = 'trip-list-incomplete';
     error.cause = failures[0];
     throw error;

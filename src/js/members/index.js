@@ -4,10 +4,11 @@ import { expensePayments } from '../utils/payments.js';
 import { db, serverTimestamp } from '../firebase.js';
 import { brandPrimary } from '../utils/brand.js';
 import {
-  collection, doc, getDoc, getDocs, getDocsFromServer, updateDoc, query, where, limit, writeBatch, arrayUnion, arrayRemove
+  collection, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, updateDoc, query, where, limit, writeBatch, arrayUnion, arrayRemove
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { cachedRead, cacheInvalidate, cacheForget, seedFromPersist, persistSet, persistDelete } from '../utils/datacache.js';
 import { setMemberPin, publishMemberLookup, clearMemberPin, normalizeUsername } from '../auth/memberAuth.js';
+import { memberAccessUids } from '../utils/memberUids.js';
 
 export const MEMBER_ROLES = [
   { id: 'trip_admin', th: 'ผู้ดูแลทริป', en: 'Trip admin', icon: 'shield-check' },
@@ -181,23 +182,32 @@ async function updateMemberInner(tripId, memberId, updates, { pin = null } = {})
   return true;
 }
 
-/**
- * Delete a member. Expenses that reference the member are kept (history) but the
- * member disappears from pickers. Set `removeFromTrips` to also drop the uid array entry.
- */
-async function deleteMemberInner(tripId, memberId, { uid = null } = {}) {
-  const docId = memberId;
-  const member = await getMember(tripId, docId).catch(() => null);
-  if (member?.username || member?.loginReady) await clearMemberPin(tripId, docId, member?.username);
+/** Delete membership and its access entries together; keep expense history. */
+async function deleteMemberInner(tripId, memberId) {
+  const memberRef = doc(db, 'trips', tripId, 'members', memberId);
+  // Don't make decisions about credentials or access aliases from a cached row.
+  const snap = await getDocFromServer(memberRef);
+  if (!snap.exists()) return false;
+  const member = snap.data();
 
-  const memberUid = uid || member?.uid || docId;
-  const tripRef = doc(db, 'trips', tripId);
-  const tripSnap = await getDoc(tripRef);
-  const batch = writeBatch(db);
-  batch.delete(doc(db, `trips/${tripId}/members`, docId));
-  if (tripSnap.exists() && (tripSnap.data().memberUids || []).includes(memberUid)) {
-    batch.update(tripRef, { memberUids: arrayRemove(memberUid), updatedAt: serverTimestamp() });
+  // Google/email approval also sets loginReady, but it doesn't set up a PIN.
+  // Keep cleaning up legacy credentials, which may have no authType at all.
+  const needsPinCleanup = member.authType === 'pin'
+    || Boolean(normalizeUsername(member.username))
+    || (member.authType !== 'account' && member.loginReady === true);
+  if (needsPinCleanup) {
+    try {
+      await clearMemberPin(tripId, memberId, member.username);
+    } catch (cause) {
+      // Never bypass failed credential cleanup for a PIN/legacy login.
+      throw Object.assign(new Error('Member PIN cleanup failed', { cause }), { code: 'member-pin-cleanup-failed' });
+    }
   }
+
+  const accessUids = memberAccessUids({ ...member, id: memberId });
+  const batch = writeBatch(db);
+  batch.delete(memberRef);
+  batch.update(doc(db, 'trips', tripId), { memberUids: arrayRemove(...accessUids), updatedAt: serverTimestamp() });
   await batch.commit();
   return true;
 }
@@ -263,8 +273,8 @@ export function updateMember(tripId, memberId, updates, options = {}) {
   return withMemberInvalidation(tripId, () => updateMemberInner(tripId, memberId, updates, options));
 }
 
-export function deleteMember(tripId, memberId, options = {}) {
-  return withMemberInvalidation(tripId, () => deleteMemberInner(tripId, memberId, options));
+export function deleteMember(tripId, memberId) {
+  return withMemberInvalidation(tripId, () => deleteMemberInner(tripId, memberId));
 }
 
 export function reorderMembers(tripId, ids, userId) {

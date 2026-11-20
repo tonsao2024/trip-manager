@@ -72,9 +72,7 @@ export async function testMyJoinRequestSyncPlan() {
     mirrors, primaries, joinedTripIds: ['d'], deniedTripIds: ['a']
   });
   eq(plan.create.length, 0, 'an unreadable primary is never guessed at');
-  eq(plan.clear.map(x => x.tripId).sort().join(','), 'b,d', 'approved + already-joined mirrors are dropped');
-  eq(plan.resolve.map(x => x.tripId).join(','), 'd', 'a joined trip with a pending primary gets an approved tombstone');
-  eq(plan.update.map(x => x.tripId).join(','), 'c', 'a rejection is copied into the mirror');
+  eq(plan.update.map(x => `${x.tripId}:${x.status}`).join(','), 'b:approved,c:rejected,d:approved', 'mirror keeps the decision and trip pointer');
 
   const republished = planMyJoinRequestSync({ mirrors, primaries, joinedTripIds: ['d'] });
   eq(republished.create.map(x => x.tripId).join(','), 'a', 'a mirror-only request is republished for the admin');
@@ -84,6 +82,6 @@ export async function testMyJoinRequestSyncPlan() {
     mirrors: [{ tripId: 'x', status: 'pending' }], joinedTripIds: ['x']
   });
   eq(joinedOnly.create.length, 0, 'an approved member never re-creates a request');
-  eq(joinedOnly.clear.length, 1, 'the stale badge is removed');
+  eq(joinedOnly.update[0]?.status, 'approved', 'the stale pending badge is cleared');
   console.log('All my-request sync plan tests passed');
 }

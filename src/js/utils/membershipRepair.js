@@ -27,7 +27,6 @@ export const JOIN_REJECTED = 'rejected';
 const STUCK_MEMBER_STATUSES = new Set([
   'pending', 'waiting', 'awaiting', 'awaiting_approval', 'wait', 'review'
 ]);
-const CLOSED_MEMBER_STATUSES = new Set(['inactive', 'disabled']);
 
 const norm = (value) => String(value ?? '').trim().toLowerCase();
 
@@ -38,7 +37,7 @@ export function isStuckMemberStatus(status) {
 
 /** A member row that must no longer grant access (inactive / disabled). */
 export function isClosedMemberStatus(status) {
-  return CLOSED_MEMBER_STATUSES.has(norm(status)) || isInactiveMember({ status });
+  return isInactiveMember({ status });
 }
 
 /** Only pending (or status-less legacy) requests get Approve/Decline buttons. */
@@ -130,45 +129,33 @@ export function planMembershipRepair({ trip = null, members = [], requests = [] 
  * map tripId -> trip-side request document (or undefined when it was absent),
  * `deniedTripIds` are reads that failed so we never guess about them.
  *
- * - joined trip: drop the private mirror and mark any still-pending primary as
- *   approved. Never create a new primary for somebody who is already in.
- * - mirror-only (no primary): re-publish the request so the admin can see it.
- * - primary approved: drop the mirror.
- * - primary rejected: copy the status into the mirror (no fake "waiting").
+ * - joined or approved: retain an approved mirror as a trip lookup hint.
+ * - pending mirror only: re-publish so the admin can see it.
+ * - primary rejected: copy the status into the mirror.
  */
 export function planMyJoinRequestSync({ mirrors = [], primaries = {}, joinedTripIds = [], deniedTripIds = [] } = {}) {
   const joined = new Set((joinedTripIds || []).map(String));
   const denied = new Set((deniedTripIds || []).map(String));
-  const create = [];
-  const resolve = [];
   const update = [];
-  const clear = [];
+  const create = [];
   const seen = new Set();
 
   for (const mirror of mirrors || []) {
-    const tripId = String(mirror?.tripId || mirror?.id || '').trim();
+    const tripId = String(mirror?.id || mirror?.tripId || '').trim();
     if (!tripId || tripId.includes('/') || seen.has(tripId)) continue;
     seen.add(tripId);
     const primary = primaries[tripId];
+    const mirrorStatus = norm(mirror.status);
+    const status = norm(primary?.status);
 
-    if (joined.has(tripId)) {
-      clear.push({ tripId, reason: 'joined' });
-      if (primary && norm(primary.status) !== JOIN_APPROVED) {
-        resolve.push({ tripId, status: primary.status });
-      }
-      continue;
-    }
-    if (denied.has(tripId)) continue;               // unreadable: leave untouched
-    if (!primary) {
+    if (joined.has(tripId) || status === JOIN_APPROVED) {
+      if (mirrorStatus !== JOIN_APPROVED) update.push({ tripId, status: JOIN_APPROVED });
+    } else if (denied.has(tripId)) continue; // don't guess if the server couldn't answer
+    else if (status === JOIN_REJECTED) {
+      if (mirrorStatus !== JOIN_REJECTED) update.push({ tripId, status: JOIN_REJECTED });
+    } else if (!primary && isActionableJoinRequest(mirror)) {
       create.push({ tripId, request: mirror, reason: 'mirror-only' });
-      continue;
-    }
-    const status = norm(primary.status);
-    if (status === JOIN_APPROVED) {
-      clear.push({ tripId, reason: 'approved' });
-    } else if (status === JOIN_REJECTED && norm(mirror.status) !== status) {
-      update.push({ tripId, status });
     }
   }
-  return { create, resolve, update, clear };
+  return { create, update };
 }

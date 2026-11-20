@@ -13,12 +13,12 @@
 import { db, functions, httpsCallable, serverTimestamp } from '../firebase.js';
 import { brandPrimary } from '../utils/brand.js';
 import {
-  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, limit, writeBatch, arrayUnion
+  collection, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, setDoc, updateDoc, query, where, limit, writeBatch, runTransaction, arrayUnion
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { normalizeInviteCode, isValidInviteCode } from '../utils/invite.js';
 import { isPermissionError } from '../utils/rulesHelper.js';
 import { cacheForget } from '../utils/datacache.js';
-import { planMyJoinRequestSync, JOIN_PENDING, JOIN_APPROVED } from '../utils/membershipRepair.js';
+import { isActionableJoinRequest, isClosedMemberStatus, planMyJoinRequestSync, JOIN_PENDING, JOIN_APPROVED } from '../utils/membershipRepair.js';
 
 /** Keep the Firebase code + cause so the UI can explain *why* it failed. */
 function rethrow(e, fallbackTh, fallbackEn = null) {
@@ -76,18 +76,31 @@ export async function findTripByInviteCode(code) {
   }
 }
 
-/** The full trip is read only when the caller is already an authorized member. */
-export async function isUserAlreadyTripMember(tripId, uid) {
-  if (!db || !tripId || !uid) return false;
+/** Check a known trip directly using the caller's actual read permissions. */
+export async function getJoinedTrip(tripId, uid) {
+  if (!db || !uid || !tripId || tripId === '.' || tripId === '..' || tripId.includes('/')) return null;
   try {
-    const snap = await getDoc(doc(db, 'trips', tripId));
-    if (!snap.exists()) return false;
+    const snap = await getDocFromServer(doc(db, 'trips', tripId));
+    if (!snap.exists()) return null;
     const trip = snap.data();
-    return trip.createdBy === uid || (Array.isArray(trip.memberUids) && trip.memberUids.includes(uid));
+    if (trip.createdBy === uid) return { ...trip, id: snap.id };
+    const listed = Array.isArray(trip.memberUids) && trip.memberUids.includes(uid);
+    // A canonical member document can authorize a read even before the index
+    // is repaired. Request metadata alone never authorizes a trip.
+    const member = await getDocFromServer(doc(db, 'trips', tripId, 'members', uid)).catch(e => {
+      if (isPermissionError(e) && listed) return null; // older rules / no member doc
+      throw e;
+    });
+    if (isClosedMemberStatus(member?.data()?.status)) return null;
+    return listed || member?.exists() ? { ...trip, id: snap.id } : null;
   } catch (e) {
-    if (isPermissionError(e)) return false;
+    if (isPermissionError(e)) return null;
     throw e;
   }
+}
+
+export async function isUserAlreadyTripMember(tripId, uid) {
+  return Boolean(await getJoinedTrip(tripId, uid));
 }
 
 /** Members ask to join; the admin decides. */
@@ -153,7 +166,7 @@ export async function requestToJoin(trip, user, { note = '' } = {}) {
 export async function listJoinRequests(tripId) {
   if (!db) throw new Error('DB not ready');
   const snap = await getDocs(collection(db, 'trips', tripId, 'joinRequests'));
-  const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const rows = snap.docs.map(d => ({ ...d.data(), id: d.id }));
   return rows.sort((a, b) => String(b.requestedAt?.seconds || 0).localeCompare(String(a.requestedAt?.seconds || 0)));
 }
 
@@ -165,105 +178,73 @@ function invalidateJoins(tripId) {
 /** Requests the signed-in user sent (status shown on the trips page). */
 export async function listMyJoinRequests(uid) {
   if (!db || !uid) return [];
-  try {
-    const snap = await getDocs(collection(db, 'users', uid, 'joinRequests'));
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  } catch (e) {
-    console.warn('listMyJoinRequests failed', e?.code, e?.message);
-    return [];
-  }
+  const snap = await getDocsFromServer(collection(db, 'users', uid, 'joinRequests'));
+  return snap.docs.map(d => ({ ...d.data(), id: d.id }));
 }
 
-/**
- * Re-connect THIS account's private request mirrors with the admin's queue.
- *
- * `requestToJoin` writes two documents: the trip-side queue (what the admin
- * reads) and `users/{uid}/joinRequests/{tripId}` (what the member sees). When
- * the first write was denied by older rules (or dropped offline), only the
- * mirror survives: the member keeps seeing "รอแอดมินอนุมัติ" while the admin's
- * queue is empty. Firestore rules deliberately let only the owner read/write
- * that mirror, so the admin cannot sweep it — this member-side sync must do it.
- *
- * Also clears mirrors for trips the account can already see, including the
- * "approved but mirror cleanup was denied" case. Idempotent and read-fresh:
- * a denied trip-side read is reported, never guessed at.
- */
-export async function syncMyJoinRequests(uid, { joinedTripIds = [] } = {}) {
-  const report = { created: [], resolved: [], updated: [], cleared: [], denied: [], warnings: [] };
+/** Sync from current server data, never from cached trip cards or mirror status alone. */
+export async function syncMyJoinRequests(uid) {
+  const report = { created: [], updated: [], denied: [], warnings: [], statuses: new Map(), accessibleTripIds: new Set(), requests: [] };
   if (!db || !uid) return report;
-  let mirrors = [];
-  try {
-    mirrors = await listMyJoinRequests(uid);
-  } catch (e) {
-    report.warnings.push(e?.message || 'mirror read failed');
-    return report;
-  }
-  if (!mirrors.length) return report;
-
-  const primaries = {};
-  const deniedTripIds = [];
-  await Promise.all(mirrors.map(async (mirror) => {
-    const tripId = String(mirror?.tripId || mirror?.id || '').trim();
-    if (!tripId || tripId.includes('/')) return;
-    try {
-      const snap = await getDoc(doc(db, 'trips', tripId, 'joinRequests', uid));
-      if (snap.exists()) primaries[tripId] = { ...snap.data() };
-    } catch (e) {
-      // Can't tell whether a primary exists — never overwrite or recreate it.
-      deniedTripIds.push(tripId);
-      report.denied.push({ tripId, code: e?.code || null, permission: isPermissionError(e) });
-    }
+  const mirrors = report.requests = await listMyJoinRequests(uid);
+  const primaries = Object.create(null);
+  const uncertain = new Set();
+  const joined = report.accessibleTripIds;
+  const noteFailure = (tripId, e) => {
+    uncertain.add(tripId);
+    report.denied.push({ tripId, code: e?.code || null, permission: isPermissionError(e) });
+  };
+  await Promise.all(mirrors.map(async ({ id: tripId }) => {
+    const ref = doc(db, 'trips', tripId, 'joinRequests', uid);
+    const [trip, primary] = await Promise.allSettled([getJoinedTrip(tripId, uid), getDocFromServer(ref)]);
+    if (trip.status === 'fulfilled' && trip.value) joined.add(tripId);
+    else if (trip.status === 'rejected') noteFailure(tripId, trip.reason);
+    if (primary.status === 'fulfilled') primaries[tripId] = primary.value.data();
+    else if (!joined.has(tripId)) noteFailure(tripId, primary.reason);
   }));
 
-  const plan = planMyJoinRequestSync({ mirrors, primaries, joinedTripIds, deniedTripIds });
+  const plan = planMyJoinRequestSync({ mirrors, primaries, joinedTripIds: [...joined], deniedTripIds: [...uncertain] });
   for (const { tripId, request } of plan.create) {
+    const ref = doc(db, 'trips', tripId, 'joinRequests', uid);
     try {
-      await setDoc(doc(db, 'trips', tripId, 'joinRequests', uid), {
-        uid,
-        tripId,
-        displayName: request.displayName || '',
-        email: request.email || null,
-        photoURL: request.photoURL || null,
-        tripName: request.tripName || null,
-        note: request.note || '',
-        status: JOIN_PENDING,
-        requestedAt: request.requestedAt || serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        repairedFromMirror: true
-      }, { merge: true });
-      report.created.push(tripId);
-    } catch (e) {
-      if (isPermissionError(e)) report.denied.push({ tripId, code: e?.code || null, permission: true });
-      else report.warnings.push(`${tripId}: ${e?.message || e}`);
-    }
-  }
-  for (const { tripId } of plan.resolve) {
-    try {
-      await updateDoc(doc(db, 'trips', tripId, 'joinRequests', uid), {
-        status: JOIN_APPROVED, updatedAt: serverTimestamp(), resolvedBy: 'member-sync'
+      // A request may have been approved or declined between our read and this
+      // repair. Never turn a decision back into pending.
+      const created = await runTransaction(db, async tx => {
+        const current = await tx.get(ref);
+        if (current.exists()) {
+          return { created: false, status: current.data().status };
+        }
+        tx.set(ref, {
+          uid,
+          tripId,
+          displayName: request.displayName || '',
+          email: request.email || null,
+          photoURL: request.photoURL || null,
+          tripName: request.tripName || null,
+          note: request.note || '',
+          status: JOIN_PENDING,
+          requestedAt: request.requestedAt || serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          repairedFromMirror: true
+        });
+        return { created: true, status: JOIN_PENDING };
       });
-      report.resolved.push(tripId);
-    } catch (e) {
-      report.warnings.push(`${tripId}: ${e?.message || e}`);
-    }
-  }
-  for (const { tripId } of plan.clear) {
-    try {
-      await deleteDoc(doc(db, 'users', uid, 'joinRequests', tripId));
-      report.cleared.push(tripId);
-    } catch (e) {
-      report.warnings.push(`${tripId}: ${e?.message || e}`);
-    }
+      primaries[tripId] = { status: created.status };
+      if (created.created) report.created.push(tripId);
+    } catch (e) { noteFailure(tripId, e); }
   }
   for (const { tripId, status } of plan.update) {
     try {
-      await setDoc(doc(db, 'users', uid, 'joinRequests', tripId), {
-        status, updatedAt: serverTimestamp()
-      }, { merge: true });
+      await updateDoc(doc(db, 'users', uid, 'joinRequests', tripId), { status, updatedAt: serverTimestamp() });
       report.updated.push(tripId);
-    } catch (e) {
-      report.warnings.push(`${tripId}: ${e?.message || e}`);
-    }
+    } catch (e) { report.warnings.push(`${tripId}: ${e?.code || e?.message || e}`); }
+  }
+  for (const mirror of mirrors) {
+    const tripId = mirror.id;
+    const primary = primaries[tripId];
+    const status = joined.has(tripId) || primary?.status === JOIN_APPROVED ? JOIN_APPROVED
+      : primary?.status === 'rejected' ? 'rejected' : primary ? JOIN_PENDING : 'unverified';
+    report.statuses.set(tripId, status);
   }
   return report;
 }
@@ -271,8 +252,13 @@ export async function syncMyJoinRequests(uid, { joinedTripIds = [] } = {}) {
 export async function cancelJoinRequest(tripId, uid) {
   if (!db) throw new Error('DB not ready');
   try {
-    await deleteDoc(doc(db, 'trips', tripId, 'joinRequests', uid));
-    await deleteDoc(doc(db, 'users', uid, 'joinRequests', tripId));
+    const ref = doc(db, 'trips', tripId, 'joinRequests', uid);
+    await runTransaction(db, async tx => {
+      const current = await tx.get(ref);
+      if (current.data()?.status === JOIN_APPROVED) throw new Error('คำขอนี้อนุมัติแล้ว — ตรวจคำขอและรายการทริปอีกครั้ง');
+      if (current.exists()) tx.delete(ref);
+      tx.delete(doc(db, 'users', uid, 'joinRequests', tripId));
+    });
     invalidateJoins(tripId);
   } catch (e) {
     console.warn('cancelJoinRequest failed', e?.code, e?.message);
@@ -285,13 +271,17 @@ export async function cancelJoinRequest(tripId, uid) {
  * Firestore rules (`members/{request.auth.uid}` + `memberUids`) let them in.
  */
 export async function approveJoinRequest(tripId, request, { role = 'member', permissions = DEFAULT_PERMISSIONS } = {}) {
+  return grantTripMembership(tripId, request, role, permissions, true);
+}
+
+async function grantTripMembership(tripId, request, role, permissions, recordApproval) {
   if (!db) throw new Error('DB not ready');
-  const uid = request.uid || request.id;
+  const uid = request.id || request.uid;
   if (!uid || typeof uid !== 'string' || uid.includes('/') || uid.length > 128) {
     throw new Error('คำขอไม่ถูกต้อง (uid ไม่ถูกต้อง)');
   }
   try {
-    const out = await approveJoinRequestInner(tripId, uid, request, role, permissions);
+    const out = await approveJoinRequestInner(tripId, uid, request, role, permissions, recordApproval);
     invalidateJoins(tripId);
     return out;
   } catch (e) {
@@ -299,60 +289,62 @@ export async function approveJoinRequest(tripId, request, { role = 'member', per
   }
 }
 
-async function approveJoinRequestInner(tripId, uid, request, role, permissions) {
+async function approveJoinRequestInner(tripId, uid, request, role, permissions, recordApproval) {
   const tripRef = doc(db, 'trips', tripId);
-  const tripSnap = await getDoc(tripRef);
-  if (!tripSnap.exists()) throw new Error('Trip not found');
-  const memberUids = Array.isArray(tripSnap.data().memberUids) ? tripSnap.data().memberUids : [];
 
   // Create membership and update the trip index atomically. Co-admin Rules permit
   // this paired change but reject an unpaired memberUids write.
-  const batch = writeBatch(db);
-  batch.set(doc(db, 'trips', tripId, 'members', uid), {
-    uid,
-    displayName: request.displayName || 'Member',
-    email: request.email || null,
-    photoURL: request.photoURL || null,
-    role,
-    status: 'active',
-    authType: 'account',
-    loginReady: true,
-    permissions,
-    color: request.color || brandPrimary(),
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    addedFrom: 'join-request'
-  }, { merge: true });
-  if (!memberUids.includes(uid)) {
-    batch.update(tripRef, { memberUids: arrayUnion(uid), updatedAt: serverTimestamp() });
-  }
-  await batch.commit();
-
-  // 3) clean up the request + mirror (the mirror belongs to the member, so a
-  //    denial there is harmless — the member's list filters approved trips).
-  try {
-    await deleteDoc(doc(db, 'trips', tripId, 'joinRequests', uid));
-  } catch (e) {
-    console.warn('cleanup request failed', e?.code, e?.message);
-  }
-  try {
-    await deleteDoc(doc(db, 'users', uid, 'joinRequests', tripId));
-  } catch (e) {
-    console.warn('cleanup mirror failed (member-owned)', e?.code, e?.message);
+  const writeMembership = (writer, profile) => {
+    writer.set(doc(db, 'trips', tripId, 'members', uid), {
+      uid,
+      displayName: profile.displayName || 'Member',
+      email: profile.email || null,
+      photoURL: profile.photoURL || null,
+      role,
+      status: 'active',
+      authType: 'account',
+      loginReady: true,
+      permissions,
+      color: profile.color || brandPrimary(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      addedFrom: 'join-request'
+    }, { merge: true });
+    writer.update(tripRef, { memberUids: arrayUnion(uid), updatedAt: serverTimestamp() });
+  };
+  if (recordApproval) {
+    const requestRef = doc(db, 'trips', tripId, 'joinRequests', uid);
+    // Keep the decision readable to the requester, and commit it with access.
+    await runTransaction(db, async tx => {
+      const current = await tx.get(requestRef);
+      if (!current.exists() || !isActionableJoinRequest(current.data())) {
+        throw new Error('คำขอนี้ไม่อยู่ในคิวแล้ว — กรุณารีเฟรชคำขอ');
+      }
+      writeMembership(tx, current.data());
+      tx.update(requestRef, {
+        status: JOIN_APPROVED, resolvedAt: serverTimestamp(), updatedAt: serverTimestamp()
+      });
+    });
+  } else {
+    const batch = writeBatch(db);
+    writeMembership(batch, request);
+    await batch.commit();
   }
 
   return { uid, role, permissions };
 }
 
 export async function rejectJoinRequest(tripId, request, { reason = '' } = {}) {
-  const uid = request.uid || request.id;
+  const uid = request.id || request.uid;
   try {
-    await updateDoc(doc(db, 'trips', tripId, 'joinRequests', uid), {
-      status: 'rejected', reason, updatedAt: serverTimestamp()
+    const ref = doc(db, 'trips', tripId, 'joinRequests', uid);
+    await runTransaction(db, async tx => {
+      const current = await tx.get(ref);
+      if (!current.exists() || !isActionableJoinRequest(current.data())) {
+        throw new Error('คำขอนี้ไม่อยู่ในคิวแล้ว — กรุณารีเฟรชคำขอ');
+      }
+      tx.update(ref, { status: 'rejected', reason, resolvedAt: serverTimestamp(), updatedAt: serverTimestamp() });
     });
-    await setDoc(doc(db, 'users', uid, 'joinRequests', tripId), {
-      ...request, tripId, uid, status: 'rejected', reason, updatedAt: serverTimestamp()
-    }, { merge: true });
     invalidateJoins(tripId);
   } catch (e) {
     console.warn('rejectJoinRequest failed', e?.code, e?.message);
@@ -362,10 +354,10 @@ export async function rejectJoinRequest(tripId, request, { reason = '' } = {}) {
 
 /** Admin-side: add somebody directly by their account email. */
 export async function addMemberFromProfile(tripId, profile, { role = 'member', permissions = DEFAULT_PERMISSIONS } = {}) {
-  return approveJoinRequest(tripId, {
+  return grantTripMembership(tripId, {
     uid: profile.id || profile.uid,
     displayName: profile.displayName,
     email: profile.email,
     photoURL: profile.photoURL
-  }, { role, permissions });
+  }, role, permissions, false);
 }
