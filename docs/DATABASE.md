@@ -362,6 +362,30 @@ Trip-wide notification settings, admin-writable — `{ "dailySummary": true, "su
 ### Other subcollections
 - `cards`, `exchangeRates`, `settings`, `activityLogs`, `imports`, `settlements`
 
+### trips/{tripId}/documents/{docId}  (v47 — เจ้าของเอกสาร)
+Documents (passports, tickets, hotel vouchers, insurance) with an owner so two
+documents of the same kind can be told apart:
+
+```json
+{
+  "title": "พาสปอร์ตสมชาย",
+  "category": "passport",                  // passport|ticket|hotel|insurance|booking|other
+  "date": "2027-11-10",
+  "description": "",
+  "fileUrl": "", "imageUrl": "",
+  "ownerIds": ["u1", "u2"],                // member ids — one = personal, many = shared, [] = unassigned
+  "ownerId": "u1",                         // first entry, mirrored for older readers
+  "createdBy": "uid", "updatedBy": "uid",
+  "createdAt": "serverTimestamp", "updatedAt": "serverTimestamp"
+}
+```
+
+`ownerIds` is what the page filters on: the chip row is built from the trip’s
+members (`src/js/utils/docOwners.js` → `docOwnerFilters`) and shows each owner’s
+photo, name and document count, plus “ของฉัน” and “ไม่ระบุเจ้าของ”.
+Documents written before v47 have no owner field — they appear under
+“ไม่ระบุเจ้าของ” until somebody assigns them.
+
 ### trips/{tripId}/transfers/{transferId}  (“จ่ายแล้ว”)
 A record of money actually sent between two members:
 `{ fromId, toId, amountMinor, currency: 'THB', date, note, createdBy, createdAt }`.
