@@ -21,11 +21,20 @@ import {
 import {
   doc, getDoc, setDoc, serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import {
+  currentBrowserEnv, webStorageStatus, redirectSignInSafety, REDIRECT_REASON
+} from '../utils/browserEnv.js';
 
 export const USER_ROLES = { member: 'member', superAdmin: 'super_admin' };
 
-async function persistence(remember, rememberFn) {
-  if (!rememberFn) return;
+/**
+ * Sign-in that could not even start because of the browser (embedded chat-app
+ * webview, blocked/partitioned storage). `authBrowserHelp` is the payload the
+ * login screen uses to show “open in a real browser” steps.
+ */
+export const AUTH_BROWSER_ERROR = 'auth/browser-environment';
+
+async function persistence(remember) {
   try {
     await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
   } catch (e) {
@@ -33,13 +42,71 @@ async function persistence(remember, rememberFn) {
   }
 }
 
+let persistenceRequest = null;
+
+/**
+ * Apply “remember this device” **before** the user taps, so the click handler can
+ * call `signInWithPopup()` synchronously. Safari only allows `window.open()` while
+ * the user gesture is still active; awaiting a storage write inside the click
+ * spends that gesture, the popup is blocked, and the user is sent through the
+ * redirect flow — which is exactly the flow that fails with
+ * “missing initial state” in storage-partitioned browsers.
+ */
+export function prepareAuthPersistence(remember = true) {
+  if (!auth) return Promise.resolve();
+  if (persistenceRequest?.remember === remember) return persistenceRequest.promise;
+  const promise = persistence(remember);
+  persistenceRequest = { remember, promise };
+  return promise;
+}
+
+function authBrowserError(env, reason) {
+  const err = new Error(reason === REDIRECT_REASON.storage
+    ? 'เบราว์เซอร์นี้บล็อกการเก็บข้อมูลของเว็บ — เปิดหน้านี้ใน Chrome หรือ Safari แล้วล็อกอินใหม่'
+    : 'Google ไม่อนุญาตให้ล็อกอินในเบราว์เซอร์ของแอปแชท — เปิดหน้านี้ใน Chrome หรือ Safari แล้วล็อกอินใหม่');
+  err.code = AUTH_BROWSER_ERROR;
+  err.authBrowserHelp = {
+    reason,
+    app: env?.app || null,
+    label: env?.label || null,
+    platform: env?.platform || 'other'
+  };
+  return err;
+}
+
+/**
+ * A failed redirect leaves Firebase's pending-event keys behind. Clearing them
+ * lets the next attempt start from a clean slate instead of failing again.
+ */
+function clearStaleRedirectState() {
+  try {
+    const store = window.sessionStorage;
+    const keys = [];
+    for (let i = 0; i < store.length; i += 1) {
+      const key = store.key(i);
+      if (key && /^firebase:(authEvent|pendingRedirect|redirectUser)/i.test(key)) keys.push(key);
+    }
+    keys.forEach(k => store.removeItem(k));
+  } catch { /* storage blocked — nothing to clear */ }
+}
+
 /** Thai/English message for the Firebase Auth errors users actually hit. */
 export function getAccountErrorMessage(error) {
   const code = String(error?.code || '');
+  const raw = String(error?.message || '');
+  if (code === AUTH_BROWSER_ERROR) return raw || 'เปิดหน้านี้ใน Chrome หรือ Safari แล้วล็อกอินใหม่';
+  // The auth handler's own wording for a lost redirect state; the user sees it on
+  // *.firebaseapp.com/__/auth/handler and then comes back to a blank page.
+  if (/missing initial state|storage-?partition/i.test(raw)) {
+    return 'การล็อกอินค้างอยู่ เพราะเบราว์เซอร์ไม่ได้เก็บสถานะการล็อกอินไว้ (missing initial state) — เปิดหน้านี้ใน Chrome หรือ Safari แล้วล็อกอินใหม่';
+  }
   const map = {
     'auth/popup-blocked': 'เบราว์เซอร์บล็อกหน้าต่าง Google — อนุญาต popup แล้วลองใหม่ หรือใช้การล็อกอินแบบเปลี่ยนหน้า',
     'auth/popup-closed-by-user': 'ปิดหน้าต่าง Google ก่อนล็อกอินเสร็จ — ลองใหม่ได้เลย',
     'auth/cancelled-popup-request': 'มีหน้าต่างล็อกอินเปิดอยู่แล้ว — ปิดแล้วลองใหม่',
+    'auth/web-storage-unsupported': 'เบราว์เซอร์นี้บล็อกที่เก็บข้อมูลของเว็บ (คุกกี้/โหมดส่วนตัว) — เปิดหน้านี้ใน Chrome หรือ Safari แล้วลองใหม่',
+    'auth/operation-not-supported-in-this-environment': 'เบราว์เซอร์ของแอปนี้ไม่รองรับการล็อกอิน Google — เปิดหน้านี้ใน Chrome หรือ Safari',
+    'auth/redirect-cancelled-by-user': 'ยกเลิกการล็อกอินก่อนเสร็จ — ลองใหม่ได้เลย',
     'auth/unauthorized-domain': 'โดเมนนี้ยังไม่ได้รับอนุญาตใน Firebase Console > Authentication > Settings > Authorized domains (ต้องเพิ่มโดเมนเว็บ เช่น xxx.github.io)',
     'auth/operation-not-allowed': 'ยังไม่เปิดวิธีล็อกอินนี้ — Firebase Console > Authentication > Sign-in method เปิด Google และ Email/Password',
     'auth/email-already-in-use': 'อีเมลนี้มีบัญชีอยู่แล้ว — กด "ล็อกอิน" แทนการสมัคร',
@@ -112,10 +179,24 @@ export async function ensureUserProfile(user, { displayName, role = USER_ROLES.m
   return profile;
 }
 
-/** Sign in with a Google account (popup, with redirect fallback for mobile). */
+/**
+ * Sign in with a Google account.
+ *
+ * Popup first, and the popup is opened **inside** the user gesture (no `await`
+ * before it) — see `prepareAuthPersistence`. The redirect fallback only runs when
+ * this browser can actually finish it: a chat-app webview or a browser with
+ * blocked/partitioned storage can never complete the redirect, and the user would
+ * end up on the Firebase handler's “missing initial state” page. In that case we
+ * throw an error carrying `authBrowserHelp` so the login screen can offer
+ * “open in Chrome / Safari” instead.
+ */
 export async function signInWithGoogle(remember = true) {
   if (!isFirebaseConfigured) throw new Error('ยังไม่ได้ตั้งค่า Firebase');
-  await persistence(remember);
+  const env = currentBrowserEnv();
+  const safety = redirectSignInSafety(env, webStorageStatus());
+  // Fire-and-forget on purpose: awaiting here would spend Safari's user gesture.
+  prepareAuthPersistence(remember);
+
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
   try {
@@ -124,11 +205,16 @@ export async function signInWithGoogle(remember = true) {
     return cred.user;
   } catch (error) {
     const code = String(error?.code || '');
-    // Popups are blocked or unsupported (iOS in-app browsers) → full redirect.
-    if (/popup-blocked|operation-not-supported-in-this-environment|cancelled-popup-request/i.test(code)) {
+    // A popup that never opens (blocked, or the webview "opens" and immediately
+    // closes it) is the moment a redirect would normally take over.
+    const popupDead = /popup-blocked|operation-not-supported-in-this-environment|cancelled-popup-request/i.test(code)
+      || (env.inApp && /popup-closed-by-user/i.test(code));
+    if (popupDead) {
+      if (!safety.safe) throw authBrowserError(env, safety.reason);
       await signInWithRedirect(auth, provider);
       return null;
     }
+    if (env.inApp && /web-storage-unsupported/i.test(code)) throw authBrowserError(env, REDIRECT_REASON.inAppBrowser);
     throw new Error(getAccountErrorMessage(error));
   }
 }
@@ -143,6 +229,16 @@ export async function completeRedirectSignIn() {
       return cred.user;
     }
   } catch (e) {
+    const raw = String(e?.code || '') + ' ' + String(e?.message || '');
+    // “Unable to process request due to missing initial state…” — the redirect
+    // state was lost between the app and the auth handler.
+    if (/missing initial state|storage-?partition/i.test(raw)) {
+      clearStaleRedirectState();
+      const env = currentBrowserEnv();
+      const err = authBrowserError(env, REDIRECT_REASON.missingState);
+      err.cause = e;
+      throw err;
+    }
     console.warn('redirect sign-in failed', e?.code, e?.message);
     throw new Error(getAccountErrorMessage(e));
   }
@@ -153,7 +249,7 @@ export async function signInEmailAccount(email, password, remember = true) {
   if (!isFirebaseConfigured) throw new Error('ยังไม่ได้ตั้งค่า Firebase');
   if (!email || !email.includes('@')) throw new Error('กรุณากรอกอีเมลที่ถูกต้อง');
   if (!password || password.length < 6) throw new Error('รหัสผ่านต้องอย่างน้อย 6 ตัวอักษร');
-  await persistence(remember);
+  await prepareAuthPersistence(remember);
   try {
     const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
     await ensureUserProfile(cred.user);
@@ -168,7 +264,7 @@ export async function signUpEmailAccount(email, password, displayName, remember 
   if (!isFirebaseConfigured) throw new Error('ยังไม่ได้ตั้งค่า Firebase');
   if (!email || !email.includes('@')) throw new Error('กรุณากรอกอีเมลที่ถูกต้อง');
   if (!password || password.length < 6) throw new Error('รหัสผ่านต้องอย่างน้อย 6 ตัวอักษร');
-  await persistence(remember);
+  await prepareAuthPersistence(remember);
   try {
     const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
     if (displayName) {

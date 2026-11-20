@@ -16,9 +16,12 @@ import { getMemberSession, clearMemberSession } from './auth/memberAuth.js';
 // utils/diagnostics.js is imported lazily at the system-check call sites.
 import { listTrips, getTrip, subscribeTrip, createTrip, updateTrip, deleteTrip, duplicateTrip, uploadCoverImage, clearTripsCache, clearAllDataCache, regenerateInviteCode, reconcileTripMemberUids } from './trips/index.js';
 import {
-  signInWithGoogle, completeRedirectSignIn,
+  signInWithGoogle, completeRedirectSignIn, prepareAuthPersistence,
   ensureUserProfile, findProfileByEmail
 } from './auth/accountAuth.js';
+import {
+  currentBrowserEnv, webStorageStatus, redirectSignInSafety, externalBrowserUrl, REDIRECT_REASON
+} from './utils/browserEnv.js';
 import {
   findTripByInviteCode, isUserAlreadyTripMember, requestToJoin, listJoinRequests,
   approveJoinRequest, rejectJoinRequest, cancelJoinRequest, addMemberFromProfile, syncMyJoinRequests
@@ -2515,7 +2518,12 @@ if (isFirebaseConfigured && auth) {
       toast.success(getLang() === 'th' ? `ยินดีต้อนรับ ${u.displayName || u.email}` : `Welcome ${u.displayName || u.email}`);
       if (!location.hash || location.hash.includes('login')) location.hash = '#/trips';
     }
-  }).catch(e => toast.error(e.message || 'Google sign-in failed'));
+  }).catch(e => {
+    // “missing initial state” (chat-app webview, partitioned storage) → give the
+    // user the path to a real browser instead of a dead end.
+    if (e?.authBrowserHelp) showAuthBrowserHelp(e.authBrowserHelp);
+    else toast.error(e.message || 'Google sign-in failed');
+  });
 }
 
 // No Firebase Auth session? Restore a legacy local-only session as cached, read-only state.
@@ -2942,12 +2950,36 @@ function renderConfigNeeded() {
 
 function renderLogin() {
   if (!isFirebaseConfigured) return renderConfigNeeded();
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  // Chat-app webviews (Messenger/Instagram/LINE…) and browsers with blocked or
+  // partitioned storage can never finish Google's redirect flow: the pending
+  // sign-in is kept in sessionStorage, and Firebase answers “missing initial
+  // state”. Say so up front instead of letting the user hit that page.
+  const env = currentBrowserEnv();
+  const safety = redirectSignInSafety(env, webStorageStatus());
+  // Applied here, not in the click handler — awaiting a storage write inside the
+  // gesture makes Safari block the Google popup (see auth/accountAuth.js).
+  prepareAuthPersistence(true).catch(() => {});
+
+  const envNotice = safety.safe ? '' : `
+        <div class="notice auth-env-notice" role="status">
+          <strong class="flex items-center gap-1">${icon('shield-alert', 'w-3.5 h-3.5')} ${th('ต้องเปิดในเบราว์เซอร์จริงก่อนล็อกอิน', 'Open this page in a real browser to sign in')}</strong>
+          <p class="mt-1">${safety.reason === REDIRECT_REASON.storage
+            ? th('เบราว์เซอร์นี้ไม่ให้เว็บเก็บข้อมูล (โหมดส่วนตัว หรือปิดคุกกี้) Google จึงล็อกอินไม่สำเร็จ',
+                'This browser blocks website storage (private mode or cookies off), so Google sign-in cannot complete.')
+            : th(`หน้านี้ถูกเปิดในเบราว์เซอร์ของ ${escapeHtml(env.label || 'แอปแชท')} ซึ่ง Google ไม่อนุญาตให้ล็อกอิน`,
+                `This page was opened inside ${escapeHtml(env.label || 'a chat app')}, where Google does not allow sign-in.`)}</p>
+          <button id="auth-open-browser" type="button" class="btn btn-secondary btn-sm mt-2">${icon('external-link', 'w-4 h-4')} ${th('วิธีเปิดในเบราว์เซอร์', 'How to open in a browser')}</button>
+        </div>`;
+
   appEl.innerHTML = `
     <div class="login-wrap page-enter">
       <div class="login-card">
         ${renderLogoMark(48)}
         <h1 class="login-title">${t('appName')}</h1>
         <p class="login-sub">${t('tagline')}</p>
+        ${envNotice}
         <!-- Google-only sign-in -->
         <button id="google-signin-btn" class="btn btn-google w-full btn-lg">
           <svg viewBox="0 0 48 48" class="w-5 h-5" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
@@ -2959,9 +2991,17 @@ function renderLogin() {
   `;
   queueIcons();
 
+  const openBrowserHelp = () => showAuthBrowserHelp({
+    reason: safety.reason,
+    label: env.label,
+    platform: env.platform
+  });
+  appEl.querySelector('#auth-open-browser')?.addEventListener('click', openBrowserHelp);
+
   // ---- Google-only sign-in ----
   appEl.querySelector('#google-signin-btn').onclick = async (e) => {
     const btn = e.currentTarget;
+    if (!safety.safe) { openBrowserHelp(); return; }
     const originalHtml = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = `${spinner('w-5 h-5')} กำลังเปิด Google…`;
@@ -2973,7 +3013,8 @@ function renderLogin() {
       toast.success(`ยินดีต้อนรับ ${user.displayName || user.email}`);
       if (!router.match(location.hash.slice(1))?.params.checkTripId) location.hash = '#/trips';
     } catch (err) {
-      toast.error(err.message || 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ');
+      if (err?.authBrowserHelp) showAuthBrowserHelp(err.authBrowserHelp);
+      else toast.error(err.message || 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ');
       btn.disabled = false;
       btn.innerHTML = originalHtml;
       queueIcons();
@@ -2981,6 +3022,75 @@ function renderLogin() {
   };
 
   queueIcons();
+}
+
+/**
+ * “Open this page in a real browser” sheet.
+ *
+ * Google refuses OAuth inside embedded webviews, and Firebase's redirect flow
+ * loses its state in them — both end as the auth handler's
+ * “Unable to process request due to missing initial state”. The only working
+ * path is Chrome/Safari, so give the exact tap sequence for the platform and,
+ * on Android, an intent: link that jumps straight into Chrome.
+ */
+function showAuthBrowserHelp({ reason = REDIRECT_REASON.inAppBrowser, label = '', platform = 'other' } = {}) {
+  const lang = getLang();
+  const th = (a, b) => (lang === 'th' ? a : b);
+  const url = location.href;
+  const chromeUrl = externalBrowserUrl(url, platform);
+  const appName = label || th('แอปแชท', 'a chat app');
+
+  const lead = reason === REDIRECT_REASON.storage
+    ? th('เบราว์เซอร์นี้ไม่ยอมให้เว็บเก็บข้อมูลชั่วคราว (โหมดส่วนตัว หรือตั้งค่าบล็อกคุกกี้) การล็อกอินด้วย Google จึงไม่สำเร็จ',
+        'This browser will not let the site keep temporary data (private mode or cookies blocked), so Google sign-in cannot complete.')
+    : reason === REDIRECT_REASON.missingState
+      ? th('การล็อกอินรอบก่อนค้างอยู่ เพราะเบราว์เซอร์ของแอปแชทไม่ได้เก็บสถานะไว้ (ข้อความ “missing initial state”)',
+          'The previous sign-in got stuck because the chat app\'s browser threw away its state (“missing initial state”).')
+      : th(`หน้านี้ถูกเปิดในเบราว์เซอร์ของ ${appName} ซึ่ง Google ไม่อนุญาตให้ล็อกอิน (ระบบจะขึ้นว่า “missing initial state” หรือปิดหน้าต่างล็อกอินทันที)`,
+          `This page was opened inside ${appName}, where Google does not allow sign-in — it ends with “missing initial state” or an instantly closed window.`);
+
+  const steps = platform === 'ios'
+    ? [
+        th('แตะปุ่ม ⋯ หรือไอคอนแชร์ ที่มุมขวาล่าง', 'Tap ⋯ (or the share icon) at the bottom right'),
+        th('เลือก “เปิดใน Safari”', 'Choose “Open in Safari”'),
+        th('กลับมากด “เข้าสู่ระบบด้วย Google” อีกครั้ง', 'Tap “Sign in with Google” again there')
+      ]
+    : platform === 'android'
+      ? [
+          th('แตะเมนู ⋮ ที่มุมขวาบน', 'Tap the ⋮ menu at the top right'),
+          th('เลือก “เปิดในเบราว์เซอร์” (Chrome)', 'Choose “Open in browser” (Chrome)'),
+          th('กลับมากด “เข้าสู่ระบบด้วย Google” อีกครั้ง', 'Tap “Sign in with Google” again there')
+        ]
+      : [
+          th('คัดลอกลิงก์ด้านล่าง แล้วเปิดใน Chrome หรือ Safari', 'Copy the link below and open it in Chrome or Safari'),
+          th('กด “เข้าสู่ระบบด้วย Google” อีกครั้ง', 'Tap “Sign in with Google” again')
+        ];
+
+  const sheet = showBottomSheet(`
+    <div class="space-y-3">
+      <div class="flex items-start gap-3">
+        <div class="row-icon">${icon('external-link', 'w-5 h-5')}</div>
+        <div class="min-w-0">
+          <h3 class="font-semibold text-base leading-tight" style="font-family: var(--font-display);">${th('เปิดในเบราว์เซอร์เพื่อล็อกอิน', 'Open in a browser to sign in')}</h3>
+          <p class="text-xs text-[var(--text-secondary)] mt-0.5">${lead}</p>
+        </div>
+      </div>
+      <ol class="auth-help-steps">
+        ${steps.map(s => `<li>${escapeHtml(s)}</li>`).join('')}
+      </ol>
+      <div class="flex flex-col gap-2">
+        ${chromeUrl ? `<a id="auth-help-open" class="btn btn-primary w-full" href="${escapeHtml(chromeUrl)}">${icon('external-link', 'w-4 h-4')} ${th('เปิดใน Chrome', 'Open in Chrome')}</a>` : ''}
+        <button id="auth-help-copy" type="button" class="btn btn-secondary w-full">${icon('link', 'w-4 h-4')} ${th('คัดลอกลิงก์หน้านี้', 'Copy this page link')}</button>
+        <button id="auth-help-close" type="button" class="btn btn-ghost w-full">${th('ปิด', 'Close')}</button>
+      </div>
+    </div>`);
+
+  sheet.sheet.querySelector('#auth-help-copy')?.addEventListener('click', () => {
+    copyToClipboard(url, th('คัดลอกลิงก์แล้ว — เปิดใน Chrome หรือ Safari', 'Link copied — open it in Chrome or Safari'), 'Link copied');
+  });
+  sheet.sheet.querySelector('#auth-help-close')?.addEventListener('click', () => sheet.close());
+  queueIcons();
+  return sheet;
 }
 
 /* ================================================================== *

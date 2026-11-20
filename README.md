@@ -599,6 +599,14 @@ callable is deployed in `asia-southeast1`, the client Firebase project matches t
 and the latest Rules are published. Inspect the function logs for the server-side error. Do not apply
 broad Cloud Run IAM changes without confirming the callable's intended invoker policy.
 
+**“Unable to process request due to missing initial state” on Google sign-in:** the link was opened
+in a chat app's in-app browser (Messenger, LINE, Instagram, Facebook, TikTok) or in a browser that
+blocks/partitions storage, so Firebase's redirect sign-in lost its `sessionStorage` state — and Google
+does not allow OAuth inside embedded webviews at all. The login screen now detects this and offers
+“Open in Chrome” / the ⋯ → *Open in Safari* steps instead of starting a flow that cannot finish
+(`src/js/utils/browserEnv.js`). Serving the app from Firebase Hosting (`<projectId>.web.app`) makes
+`/__/auth/handler` same-site and keeps the flow reliable everywhere; see `docs/DEPLOY.md`.
+
 ## Folder Structure
 
 ```
