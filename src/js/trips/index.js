@@ -1,9 +1,9 @@
 import { db, storage, functions, httpsCallable, serverTimestamp, isStorageAvailable } from '../firebase.js';
-import { getJoinedTrip, listMyJoinRequests } from '../members/join.js';
+import { getJoinedTrip, listJoinTargets, forgetJoinTarget } from '../members/join.js';
 import { brandPrimary } from '../utils/brand.js';
 import { deleteTransfer } from '../settlement/transfers.js';
 import { collection, collectionGroup, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, runTransaction, query, where, limit, startAfter, arrayUnion, arrayRemove, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { missingMemberUids, mergeTripsById, tripIdFromMemberPath } from '../utils/memberUids.js';
+import { missingMemberUids, mergeTripsById, tripIdFromMemberPath, isInactiveMember } from '../utils/memberUids.js';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { compressImage } from '../utils/helpers.js';
 import { normalizeCoverPosition } from '../utils/coverPosition.js';
@@ -91,6 +91,20 @@ function permissionDenied(error) {
     || /missing or insufficient permissions/i.test(String(error?.message || ''));
 }
 
+/**
+ * A failure that only deploying the current rules/indexes can fix.
+ * Used to decide whether the trip list error should tell the user to deploy
+ * (`permission-denied`, missing composite/collection-group index) or to check
+ * the connection instead — the old single message told everybody both.
+ */
+function deployFixableFailure(error) {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '');
+  return permissionDenied(error)
+    || code.includes('failed-precondition')
+    || /requires an index|create.*index|no matching index/i.test(message);
+}
+
 async function uniqueInviteCode(except = null) {
   for (let attempt = 0; attempt < 12; attempt++) {
     const candidate = generateInviteCode();
@@ -140,11 +154,16 @@ export async function listTrips(userId, isSuperAdmin = false, { maxAgeMs = 2 * 6
 
 async function fetchTripsFromServer(userId, isSuperAdmin = false, { allowCache = true } = {}) {
   const cached = allowCache ? getCachedTrips(userId) : null;
-  // Every write below is page-by-page, so someone in more than 30 trips still
+  // Every read below is page-by-page, so someone in more than 30 trips still
   // sees the oldest one. A trip list silently cut at 30 looked like lost data.
-  // Rules check a per-trip member document when a trip-list result includes a
-  // member UID. Keep the page under Firestore's 10-document rule-access limit.
-  const PAGE = 8;
+  //
+  // This used to be 8 because the trips `list` rule did exists()+get() on
+  // `members/{uid}` for every returned trip and Firestore allows only 10
+  // document access calls per query — a member with a few trips then got
+  // permission-denied for the *whole* list and saw no trips at all. The rule is
+  // now decided from the trip document alone (see firestore.rules), so the page
+  // can be a normal size again and the count of trips no longer matters.
+  const PAGE = 30;
   const readAllPages = async (baseQuery, label, timeoutMs) => {
     const out = [];
     let cursor = null;
@@ -215,18 +234,16 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false, { allowCache =
     noteFailure(e);
   }
 
-  // Submitted requests give us exact trip IDs. Use permission-checked document
-  // reads for those IDs even if list rules/indexes or member discovery failed.
+  // Source 4: submitted requests + remembered join targets give us exact trip IDs.
+  // Use permission-checked server document reads for those IDs even if list
+  // rules/indexes or member discovery failed, and repair `memberUids` on the way.
   const knownTrips = mergeTripsById(listedTrips, createdTrips, discoveredTrips);
   const knownIds = new Set(knownTrips.map(t => t.id));
   const requestTrips = [];
   try {
-    const requests = await listMyJoinRequests(userId);
-    const results = await Promise.allSettled(requests.filter(r => !knownIds.has(r.id)).map(r => getJoinedTrip(r.id, userId)));
-    for (const result of results) {
-      if (result.status === 'fulfilled' && result.value) requestTrips.push(result.value);
-      else if (result.status === 'rejected') failures.push(result.reason);
-    }
+    const discovery = await discoverTripsFromJoinTargets(userId, knownIds);
+    requestTrips.push(...discovery.trips);
+    failures.push(...discovery.failures);
   } catch (e) { noteFailure(e); }
   const trips = mergeTripsById(knownTrips, requestTrips);
   if (trips.length) {
@@ -241,9 +258,72 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false, { allowCache =
     const error = new Error('Some trips could not be checked');
     error.code = 'trip-list-incomplete';
     error.cause = failures[0];
+    // The UI needs to say *what* failed (missing index / denied rules / offline)
+    // instead of repeating one message for every cause.
+    error.details = failures.map(f => ({ code: f?.code || null, message: String(f?.message || f || '') }));
+    error.requiresDeploy = failures.some(deployFixableFailure);
+    error.network = !error.requiresDeploy;
     throw error;
   }
   return trips;
+}
+
+/**
+ * Restore this account's own `memberUids` entry on a trip it can already read.
+ * The rules allow exactly one entry — the caller's own — and nothing else, so a
+ * member can only ever repair their own listing (see `memberMayRestoreOwnListing`
+ * in firestore.rules). Under older rules the write is denied and retried the
+ * next time the trip list is loaded.
+ */
+async function restoreOwnListing(trip, userId) {
+  if (!trip?.id || !userId) return false;
+  if (Array.isArray(trip.memberUids) && trip.memberUids.includes(userId)) return false;
+  try {
+    await updateDoc(doc(db, 'trips', trip.id), {
+      memberUids: arrayUnion(userId), updatedAt: serverTimestamp()
+    });
+    trip.memberUids = [...(Array.isArray(trip.memberUids) ? trip.memberUids : []), userId];
+    return true;
+  } catch (e) {
+    console.warn('memberUids self-repair failed (rules not published yet?)', e?.code || e?.message);
+    return false;
+  }
+}
+
+/**
+ * Trips found through this account's own join requests (source 4).
+ *
+ * Only reads: for each remembered/ mirrored trip id, read the trip document
+ * from the server. `isTripMember` allows that read exactly when the membership
+ * is real (member document present and not inactive), so an approval that
+ * landed shows up here even while `memberUids`/indexes are broken, and a
+ * request the admin has not approved yet stays invisible.
+ */
+async function discoverTripsFromJoinTargets(userId, knownIds = new Set()) {
+  const trips = [];
+  const failures = [];
+  if (!db || !userId) return { trips, failures };
+  let tripIds = [];
+  try {
+    tripIds = (await listJoinTargets(userId)).filter(id => !knownIds.has(id));
+  } catch (e) {
+    console.warn('join targets unavailable', e?.code || e?.message || e);
+    return { trips, failures };
+  }
+  const results = await Promise.allSettled(tripIds.map(id => getJoinedTrip(id, userId)));
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    const tripId = tripIds[i];
+    if (result.status === 'fulfilled' && result.value) {
+      const trip = result.value;
+      await restoreOwnListing(trip, userId);
+      forgetJoinTarget(userId, tripId);
+      trips.push(trip);
+    } else if (result.status === 'rejected') {
+      failures.push(result.reason);
+    }
+  }
+  return { trips, failures };
 }
 
 /**
@@ -269,7 +349,9 @@ async function discoverTripsByMemberDocs(userId, knownTripIds = new Set()) {
       const snap = await getDocs(query(collectionGroup(db, 'members'), where(field, '==', userId)));
       for (const memberDoc of snap.docs) {
         const data = memberDoc.data() || {};
-        if (String(data.status || 'active') === 'inactive') continue;
+        // Same definition of “revoked” as the rules and the member roster:
+        // `inactive` (current) and the legacy `disabled` spelling.
+        if (isInactiveMember(data)) continue;
         const tripId = tripIdFromMemberPath(memberDoc.ref?.path || '');
         if (tripId && !candidates.has(tripId)) candidates.set(tripId, data);
       }
@@ -288,16 +370,7 @@ async function discoverTripsByMemberDocs(userId, knownTripIds = new Set()) {
       if (!snap.exists()) continue;
       const trip = { id: snap.id, ...snap.data() };
       trips.push(trip);
-      if (!Array.isArray(trip.memberUids) || !trip.memberUids.includes(userId)) {
-        try {
-          await updateDoc(doc(db, 'trips', tripId), {
-            memberUids: arrayUnion(userId), updatedAt: serverTimestamp()
-          });
-          trip.memberUids = [...(Array.isArray(trip.memberUids) ? trip.memberUids : []), userId];
-        } catch (e) {
-          console.warn('memberUids self-repair failed (rules not published yet?)', e?.code || e?.message);
-        }
-      }
+      await restoreOwnListing(trip, userId);
     } catch (e) {
       // Not actually readable (inactive/removed member, rules not yet
       // published): skip this candidate, never fail the whole list.

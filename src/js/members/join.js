@@ -13,7 +13,8 @@
 import { db, functions, httpsCallable, serverTimestamp } from '../firebase.js';
 import { brandPrimary } from '../utils/brand.js';
 import {
-  collection, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, setDoc, updateDoc, query, where, limit, writeBatch, runTransaction, arrayUnion
+  collection, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, setDoc, updateDoc, query, where, limit,
+  writeBatch, runTransaction, arrayUnion
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { normalizeInviteCode, isValidInviteCode } from '../utils/invite.js';
 import { isPermissionError } from '../utils/rulesHelper.js';
@@ -120,6 +121,10 @@ export async function requestToJoin(trip, user, { note = '' } = {}) {
     updatedAt: serverTimestamp()
   };
   let primarySaved = false;
+  // Remember the attempt on this device BEFORE writing: whether or not the
+  // trip-side queue accepts it, the member can later re-check access to this
+  // trip by id (see listJoinTargets) instead of being told their list is broken.
+  rememberJoinTarget(user.uid, trip.id);
   try {
     await setDoc(doc(db, 'trips', trip.id, 'joinRequests', user.uid), request, { merge: true });
     primarySaved = true;
@@ -180,6 +185,83 @@ export async function listMyJoinRequests(uid) {
   if (!db || !uid) return [];
   const snap = await getDocsFromServer(collection(db, 'users', uid, 'joinRequests'));
   return snap.docs.map(d => ({ ...d.data(), id: d.id }));
+}
+
+/* ------------------------------------------------------------------ *
+ * “Trips I asked to join” — the account's own memory of join attempts
+ *
+ * The trip list normally finds a trip through `trips.memberUids`, through the
+ * `createdBy` index, or through this account's member documents (collection
+ * group). All three need something the server may not have yet: an entry in the
+ * array, an index, a published rule. When all three come back empty the member
+ * is shown an error even though the admin DID approve them — the member
+ * document exists and the trip is readable by id.
+ *
+ * The one source that is always available is the account's own record of “I
+ * asked to join this trip”: the private mirror `users/{uid}/joinRequests/{id}`
+ * (owner-only by rules, so the admin's cleanup is denied and it survives) plus a
+ * small on-device list, which survives a deleted mirror. `listTrips` uses it to
+ * check those trips by id — the rules allow it exactly when the membership is
+ * real — and repair the missing array entry.
+ * ------------------------------------------------------------------ */
+const JOIN_TARGET_KEY = 'fuji_join_targets';
+const JOIN_TARGET_LIMIT = 20;
+
+const safeTripId = (value) => {
+  const id = String(value || '').trim();
+  return id && !id.includes('/') && id.length <= 200 ? id : '';
+};
+
+/** Trip ids this device remembers asking to join (most recent first). */
+export function rememberedJoinTargets(uid) {
+  if (!uid) return [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(JOIN_TARGET_KEY) || '{}');
+    const list = raw?.[uid];
+    return Array.isArray(list) ? list.map(safeTripId).filter(Boolean) : [];
+  } catch { return []; }
+}
+
+function writeRememberedJoinTargets(uid, ids) {
+  if (!uid) return;
+  try {
+    const raw = JSON.parse(localStorage.getItem(JOIN_TARGET_KEY) || '{}');
+    raw[uid] = [...new Set(ids.map(safeTripId).filter(Boolean))].slice(0, JOIN_TARGET_LIMIT);
+    localStorage.setItem(JOIN_TARGET_KEY, JSON.stringify(raw));
+  } catch {}
+}
+
+/** Remember that this account asked to join a trip (called by requestToJoin). */
+export function rememberJoinTarget(uid, tripId) {
+  const id = safeTripId(tripId);
+  if (!uid || !id) return;
+  writeRememberedJoinTargets(uid, [id, ...rememberedJoinTargets(uid)]);
+}
+
+/** Forget it again — the member cancelled, or the trip is visible now. */
+export function forgetJoinTarget(uid, tripId) {
+  const id = safeTripId(tripId);
+  if (!uid || !id) return;
+  writeRememberedJoinTargets(uid, rememberedJoinTargets(uid).filter(entry => entry !== id));
+}
+
+/**
+ * Every trip id this account may already belong to, taken from the two places
+ * only its owner can read/write: the request mirrors and the on-device list.
+ * Never throws — a missing mirror must not break the trip list.
+ */
+export async function listJoinTargets(uid) {
+  if (!uid) return [];
+  const out = new Set(rememberedJoinTargets(uid));
+  let mirrors = [];
+  try { mirrors = await listMyJoinRequests(uid); } catch (e) {
+    console.warn('join target mirrors unavailable', e?.code || e?.message);
+  }
+  for (const row of mirrors) {
+    const id = safeTripId(row?.tripId) || safeTripId(row?.id);
+    if (id) out.add(id);
+  }
+  return [...out];
 }
 
 /** Sync from current server data, never from cached trip cards or mirror status alone. */
@@ -259,6 +341,7 @@ export async function cancelJoinRequest(tripId, uid) {
       if (current.exists()) tx.delete(ref);
       tx.delete(doc(db, 'users', uid, 'joinRequests', tripId));
     });
+    forgetJoinTarget(uid, tripId);
     invalidateJoins(tripId);
   } catch (e) {
     console.warn('cancelJoinRequest failed', e?.code, e?.message);
@@ -293,7 +376,8 @@ async function approveJoinRequestInner(tripId, uid, request, role, permissions, 
   const tripRef = doc(db, 'trips', tripId);
 
   // Create membership and update the trip index atomically. Co-admin Rules permit
-  // this paired change but reject an unpaired memberUids write.
+  // this paired change but reject an unpaired memberUids write. Always write
+  // `memberUids: arrayUnion(uid)` unconditionally (never skip based on cache).
   const writeMembership = (writer, profile) => {
     writer.set(doc(db, 'trips', tripId, 'members', uid), {
       uid,
@@ -326,12 +410,36 @@ async function approveJoinRequestInner(tripId, uid, request, role, permissions, 
       });
     });
   } else {
+    const tripSnap = await getDocFromServer(tripRef);
+    if (!tripSnap.exists()) throw new Error('Trip not found');
     const batch = writeBatch(db);
     writeMembership(batch, request);
     await batch.commit();
   }
 
-  return { uid, role, permissions };
+  // Confirm from the server that the listing really landed. A member whose uid
+  // is not in `memberUids` cannot find the trip (and older rules could drop the
+  // paired write), so the admin is told instead of a silent “approved”.
+  const listed = await tripListsMember(tripId, uid);
+
+  return { uid, role, permissions, listed };
+}
+
+/**
+ * Does the trip's `memberUids` array list this uid, according to the server?
+ * Used right after an approval (never to decide access) — when the answer is
+ * “no”, the admin gets a warning instead of a success message.
+ */
+export async function tripListsMember(tripId, uid) {
+  if (!db || !tripId || !uid) return false;
+  try {
+    const snap = await getDocFromServer(doc(db, 'trips', tripId));
+    const uids = snap.data()?.memberUids;
+    return Array.isArray(uids) && uids.includes(uid);
+  } catch (e) {
+    console.warn('could not verify the trip listing', e?.code || e?.message);
+    return false;
+  }
 }
 
 export async function rejectJoinRequest(tripId, request, { reason = '' } = {}) {

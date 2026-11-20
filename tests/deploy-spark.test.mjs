@@ -6,19 +6,29 @@ const read = (file) => readFileSync(new URL(`../${file}`, import.meta.url), 'utf
 const config = JSON.parse(read('firebase.json'));
 const workflow = read('.github/workflows/deploy-firebase.yml');
 
-test('Firebase config supports static Hosting and a local Firestore emulator', () => {
-  // Optional Blaze Functions share this config. Spark safety comes from the
-  // workflow's explicit deploy targets, not from omitting the functions block.
-  const allowedSections = new Set(['firestore', 'hosting', 'functions', 'emulators']);
-  for (const key of Object.keys(config)) {
+test('default Firebase config only deploys Spark-compatible services', () => {
+  // A `firebase deploy` (no --only) must have nothing billable to publish.
+  // `functions` only *describes* the optional Blaze source that docs/DEPLOY.md
+  // deploys by hand (`--only functions`), and `emulators` is the local
+  // Firestore emulator used by `npm run test:rules`; neither is a deploy target
+  // of the CI workflow (asserted below), so they may stay in the config.
+  const allowedSections = new Set(['emulators', 'firestore', 'functions', 'hosting']);
+  const keys = Object.keys(config).sort();
+  for (const key of keys) {
     assert.ok(allowedSections.has(key), `Unexpected Firebase config section: ${key}`);
+  }
+  for (const required of ['firestore', 'hosting']) {
+    assert.ok(keys.includes(required), `Firebase config must keep ${required}`);
   }
   assert.ok(config.firestore?.rules);
   assert.ok(config.firestore?.indexes);
-  if (config.emulators) assert.deepEqual(Object.keys(config.emulators), ['firestore']);
   assert.ok(!config.hosting.rewrites.some(rule => rule.function || rule.run));
   assert.ok(config.hosting.ignore.includes('functions'));
   assert.ok(config.hosting.ignore.includes('tools'));
+  // The local emulator suite stays Firestore-only (no paid Functions/Auth emulators).
+  if (config.emulators) assert.deepEqual(Object.keys(config.emulators), ['firestore']);
+  // Hosting is static: it must never proxy to the (Blaze-only) Functions backend.
+  assert.equal(config.hosting.rewrites.every(rule => rule.destination === '/index.html'), true);
 });
 
 test('Firebase Hosting includes the static app source', () => {

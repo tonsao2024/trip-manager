@@ -301,3 +301,146 @@ test('an unreadable request queue does not block the membership half of the swee
   assert.deepEqual(report.activated, ['g1']);
   assert.equal(report.warnings.some(w => w.step === 'joinRequests'), true, 'the UI gets a clear warning');
 });
+
+/* ------------------------------------------------------------------ *
+ * A newly approved member must get in even when the listing drifted and the
+ * collection-group index is not deployed yet (the reported incident).
+ * ------------------------------------------------------------------ */
+
+test('approval always lands the uid in memberUids — never skipped because a cached trip looked right', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', role: 'member', status: 'active' });
+  fsdb.__seed('trips/t1/joinRequests/g1', { uid: 'g1', displayName: 'น้องใหม่', status: 'pending' });
+  // The device's cache claims g1 is already listed; the server copy does not.
+  // Deciding from that snapshot is how an approval created the member document
+  // but left the trip listing empty (admin sees them, they see no trip).
+  fsdb.__staleGet('trips/t1', { createdBy: 'admin', memberUids: ['admin', 'g1'] });
+  const result = await joins.approveJoinRequest('t1', { uid: 'g1', displayName: 'น้องใหม่' });
+  assert.equal(result.listed, true, 'the approval reports the listing as verified');
+  assert.deepEqual(fsdb.__dump('trips/t1').memberUids, ['admin', 'g1'], 'server array repaired');
+  assert.deepEqual(fsdb.__dump('trips/t1/members/g1').status, 'active');
+});
+
+test('granting membership twice does not duplicate the memberUids entry', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin', 'g1'] });
+  fsdb.__seed('trips/t1/joinRequests/g1', { uid: 'g1', status: 'pending' });
+  await joins.approveJoinRequest('t1', { uid: 'g1' });
+  await joins.addMemberFromProfile('t1', { uid: 'g1' });
+  assert.deepEqual(fsdb.__dump('trips/t1').memberUids, ['admin', 'g1']);
+});
+
+test('an approved member gets in through their join mirror when the list query and discovery both fail', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', status: 'active' });
+  fsdb.__seed('users/g1/joinRequests/t1', { uid: 'g1', tripId: 't1', status: 'approved' });
+  // Exactly the production combination: the memberUids entry is missing (so the
+  // indexed query finds nothing) and the collection-group index is not deployed
+  // (so member-document discovery fails too).
+  fsdb.__denyQueryField('trips', 'memberUids');
+  fsdb.__deny('members');
+  const found = await trips.listTrips('g1');
+  assert.deepEqual(found.map(t => t.id), ['t1'], 'the trip named by the member’s own request is readable by id');
+  assert.ok(fsdb.__dump('trips/t1').memberUids.includes('g1'), 'the listing is repaired on the way');
+  assert.equal(found.incomplete, true, 'the page can still say it was a partial check');
+});
+
+test('a trip remembered on the device is re-checked even after the mirror is gone', async () => {
+  fsdb.__seed('trips/t9', { createdBy: 'admin', memberUids: ['admin'] });
+  fsdb.__seed('trips/t9/members/g9', { uid: 'g9', status: 'active' });
+  joins.rememberJoinTarget('g9', 't9');
+  fsdb.__denyQueryField('trips', 'memberUids');
+  fsdb.__deny('members');
+  const found = await trips.listTrips('g9');
+  assert.deepEqual(found.map(t => t.id), ['t9']);
+  assert.ok(fsdb.__dump('trips/t9').memberUids.includes('g9'));
+});
+
+test('a request the admin has not approved yet stays pending — no trip and no scary error', async () => {
+  fsdb.__seed('trips/t2', { createdBy: 'admin', memberUids: ['admin'] });
+  fsdb.__seed('users/g2/joinRequests/t2', { uid: 'g2', tripId: 't2', status: 'pending' });
+  // Not a member: the rules keep the trip document closed.
+  fsdb.__deny('trips/t2');
+  const found = await trips.listTrips('g2');
+  assert.deepEqual(found, [], 'no trip invented for a pending request');
+});
+
+test('a failed lookup reports which source failed instead of one generic sentence', async () => {
+  fsdb.__denyQueryField('trips', 'memberUids');
+  fsdb.__deny('members');
+  const error = await trips.listTrips('member').then(() => null, e => e);
+  assert.equal(error.code, 'trip-list-incomplete');
+  assert.ok(Array.isArray(error.details) && error.details.length >= 2, 'per-source details for the notice');
+  assert.ok(error.details.some(d => d.code === 'failed-precondition'), 'the missing index is named');
+  assert.equal(error.requiresDeploy, true, 'the UI knows to point at rules/indexes');
+});
+
+/* ------------------------------------------------------------------ *
+ * Revoking access: a removed member must never keep a way in.
+ * ------------------------------------------------------------------ */
+
+test('deleting a member always drops the uid from the trip listing (no lingering access)', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin', 'g1'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', role: 'member', status: 'active' });
+  // A cached copy that already “looks clean” must not stop the removal: the
+  // legacy `memberUids` branch of isTripMember still grants access, so an entry
+  // left behind keeps a deleted person inside the trip.
+  fsdb.__staleGet('trips/t1', { createdBy: 'admin', memberUids: ['admin'] });
+  await members.deleteMember('t1', 'g1');
+  assert.equal(fsdb.__dump('trips/t1/members/g1'), undefined, 'member document removed');
+  assert.deepEqual(fsdb.__dump('trips/t1').memberUids, ['admin'], 'server array no longer lists them');
+});
+
+test('deleting a member whose uid was never listed still succeeds', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin'] });
+  fsdb.__seed('trips/t1/members/g2', { uid: 'g2', role: 'member', status: 'active' });
+  await members.deleteMember('t1', 'g2');
+  assert.equal(fsdb.__dump('trips/t1/members/g2'), undefined);
+  assert.deepEqual(fsdb.__dump('trips/t1').memberUids, ['admin']);
+});
+
+test('suspending a member revokes access in one write (member document + trip listing)', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin', 'g1'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', displayName: 'น้องใหม่', role: 'member', status: 'active' });
+  // The status select used to send 'disabled', which the rules never revoked —
+  // and it never touched memberUids, so the account kept reading the trip.
+  await members.updateMember('t1', 'g1', { displayName: 'น้องใหม่', status: 'disabled' });
+  assert.equal(fsdb.__dump('trips/t1/members/g1').status, 'inactive', 'stored as the canonical revoked status');
+  assert.deepEqual(fsdb.__dump('trips/t1').memberUids, ['admin'], 'the uid leaves the trip listing');
+});
+
+test('re-activating a member puts the listing back', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', displayName: 'น้องใหม่', role: 'member', status: 'inactive' });
+  await members.updateMember('t1', 'g1', { displayName: 'น้องใหม่', status: 'active' });
+  assert.equal(fsdb.__dump('trips/t1/members/g1').status, 'active');
+  assert.ok(fsdb.__dump('trips/t1').memberUids.includes('g1'), 'the member can list the trip again');
+});
+
+test('a legacy `disabled` member is reported and can be re-activated in one call', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin', 'g1'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', displayName: 'รุ่นเก่า', role: 'member', status: 'disabled' });
+  fsdb.__seed('trips/t1/members/g2', { uid: 'g2', displayName: 'ปกติ', role: 'member', status: 'active' });
+  const legacy = [fsdb.__dump('trips/t1/members/g1'), fsdb.__dump('trips/t1/members/g2')]
+    .map((m, i) => ({ ...m, id: i ? 'g2' : 'g1' }));
+  const done = await members.reactivateLegacyRevoked('t1', legacy);
+  assert.deepEqual(done, ['g1'], 'only the legacy-revoked member is touched');
+  assert.equal(fsdb.__dump('trips/t1/members/g1').status, 'active', 'the document is active again');
+  assert.ok(fsdb.__dump('trips/t1').memberUids.includes('g1'), 'and the trip still lists the account');
+});
+
+test('re-activating legacy members is idempotent and never touches active ones', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin', 'g1'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', role: 'member', status: 'inactive' });
+  const done = await members.reactivateLegacyRevoked('t1', [{ ...fsdb.__dump('trips/t1/members/g1'), id: 'g1' }]);
+  assert.deepEqual(done, [], 'an `inactive` member is a deliberate suspension — the panel leaves it alone');
+  assert.equal(fsdb.__dump('trips/t1/members/g1').status, 'inactive');
+  assert.deepEqual(fsdb.__dump('trips/t1').memberUids, ['admin', 'g1']);
+});
+
+test('editing a member without touching the status keeps the listing untouched', async () => {
+  fsdb.__seed('trips/t1', { createdBy: 'admin', memberUids: ['admin', 'g1'] });
+  fsdb.__seed('trips/t1/members/g1', { uid: 'g1', displayName: 'เก่า', role: 'member', status: 'active' });
+  await members.updateMember('t1', 'g1', { displayName: 'ใหม่', status: 'active' });
+  assert.equal(fsdb.__dump('trips/t1/members/g1').displayName, 'ใหม่');
+  assert.deepEqual(fsdb.__dump('trips/t1').memberUids, ['admin', 'g1']);
+});
