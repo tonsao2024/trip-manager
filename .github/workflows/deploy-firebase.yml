@@ -13,6 +13,7 @@ on:
       - 'firestore.rules'
       - 'firestore.indexes.json'
       - 'tests/firestore-indexes.test.mjs'
+      - 'tests/rules-lint.test.mjs'
       - 'firebase.json'
       - '.github/workflows/deploy-firebase.yml'
   workflow_dispatch:
@@ -33,6 +34,13 @@ jobs:
 
       - name: Validate Firestore index configuration
         run: node --test tests/firestore-indexes.test.mjs
+
+      # A query rule may not read other documents: Firestore allows only 10
+      # document access calls per query, so a per-trip exists()+get() in the
+      # trips `list` rule denied the WHOLE list for members with a few trips.
+      # This check needs no emulator, so it can gate the deploy.
+      - name: Validate the rules query budget
+        run: node --test tests/rules-lint.test.mjs
 
       - name: Which credential is available?
         id: creds

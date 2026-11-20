@@ -3,7 +3,8 @@
 // empty trip list while the admin still sees them in the trip.
 import {
   memberAccessUids, expectedMemberUids, missingMemberUids,
-  mergeTripsById, tripIdFromMemberPath
+  mergeTripsById, tripIdFromMemberPath, isInactiveMember,
+  isLegacyRevokedMember, LEGACY_REVOKED_STATUSES
 } from '../../src/js/utils/memberUids.js';
 
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
@@ -23,6 +24,28 @@ export function testMemberAccessUids() {
   eq(memberAccessUids({ id: 'bad/uid' }), [], 'a path-like id is never a uid');
 
   console.log('All member access uid tests passed');
+}
+
+export function testRevokedMemberStatus() {
+  console.log('Testing revoked member statuses...');
+
+  // Both spellings revoke access: `inactive` is what the rules and the sweep
+  // write, `disabled` is what older builds of the สมาชิก status select wrote.
+  assert(isInactiveMember({ status: 'inactive' }), 'inactive is revoked');
+  assert(isInactiveMember({ status: 'disabled' }), 'disabled is revoked');
+  assert(isInactiveMember({ status: 'DISABLED' }), 'case does not matter');
+  assert(!isInactiveMember({ status: 'active' }), 'active is not revoked');
+  assert(!isInactiveMember({}), 'a legacy document without status stays a member');
+  assert(!isInactiveMember({ status: 'pending' }), 'a stuck pending row is not a revocation');
+
+  // A revoked member document never contributes a uid to the trip listing.
+  eq(expectedMemberUids([
+    { id: 'u1', uid: 'u1', status: 'active' },
+    { id: 'u2', uid: 'u2', status: 'disabled' },
+    { id: 'u3', uid: 'u3', status: 'inactive' }
+  ]), ['u1'], 'revoked members are not listed');
+
+  console.log('All revoked status tests passed');
 }
 
 export function testMissingMemberUids() {
@@ -60,4 +83,28 @@ export function testMergeTripsAndMemberPath() {
   eq(tripIdFromMemberPath(''), '', 'empty path yields no trip');
 
   console.log('All trip merge/path tests passed');
+}
+
+/**
+ * The legacy `disabled` spelling — the value that made a working member lose the
+ * trip the day the rules that honour it were deployed. It is still a real
+ * revocation, but the app must be able to *name* it so the admin can undo it.
+ */
+export function testLegacyDisabledStatus() {
+  console.log('Testing legacy `disabled` status reporting...');
+
+  eq(LEGACY_REVOKED_STATUSES, ['disabled'], 'the legacy spelling is listed once');
+  assert(isLegacyRevokedMember({ status: 'disabled' }), 'a legacy disabled member document is reported');
+  assert(isLegacyRevokedMember({ status: ' DISABLED ' }), 'case and padding do not hide the legacy value');
+  assert(!isLegacyRevokedMember({ status: 'inactive' }), 'the current spelling is not reported as legacy');
+  assert(!isLegacyRevokedMember({ status: 'active' }), 'an active member is not legacy-revoked');
+  assert(!isLegacyRevokedMember({ status: 'pending' }), 'a pending member is not legacy-revoked');
+  assert(!isLegacyRevokedMember({}), 'a document with no status is not legacy-revoked');
+
+  // Legacy or not, it revokes: the array entry alone must not keep somebody in.
+  assert(isInactiveMember({ status: 'disabled' }), 'the legacy spelling still revokes access');
+  eq(expectedMemberUids([{ id: 'a' }, { id: 'b', status: 'disabled' }]), ['a'],
+    'a legacy-disabled member is never re-added to memberUids');
+
+  console.log('All legacy status tests passed');
 }

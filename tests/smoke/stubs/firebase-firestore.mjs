@@ -12,6 +12,7 @@ export function __reset() {
   store.clear();
   denyPaths = [];
   deniedQueryFields = [];
+  staleReads.clear();
   batchCreated = 0;
   batchCommitSizes.length = 0;
 }
@@ -35,6 +36,13 @@ function denyCheck(path) {
 }
 export function __seed(path, data) { store.set(path, { ...data }); }
 export function __dump(path) { return store.get(path); }
+
+// --- simulated local cache: `getDoc` is cache-first in the real SDK, while
+// --- `getDocFromServer` always returns the server copy. Tests use this to prove
+// --- that an authorization decision is never taken from a stale snapshot.
+const staleReads = new Map();
+export function __staleGet(path, data) { staleReads.set(path, { ...data }); }
+export function __clearStaleGet() { staleReads.clear(); }
 
 // --- simulated network: read latency + a counter, so the smoke test can prove
 // --- that switching menus does not cost a chain of round trips.
@@ -231,14 +239,25 @@ export async function getDocs(target) {
   return makeSnapshot(entries, path);
 }
 
-export async function getDoc(ref) {
-  denyCheck(ref.path);
-  await countRead(ref.path);
-  const data = store.get(ref.path);
+function docSnapshot(ref, data) {
   if (!data) {
     return { id: ref.id, ref, exists: () => false, data: () => undefined, get: () => undefined };
   }
   return { id: ref.id, ref, exists: () => true, data: () => ({ ...data }), get: (f) => readField(data, f) };
+}
+
+/** Cache-first read (what the SDK does by default). */
+export async function getDoc(ref) {
+  denyCheck(ref.path);
+  await countRead(ref.path);
+  return docSnapshot(ref, staleReads.has(ref.path) ? staleReads.get(ref.path) : store.get(ref.path));
+}
+
+/** Always the server copy — a cached snapshot can never answer this one. */
+export async function getDocFromServer(ref) {
+  denyCheck(ref.path);
+  await countRead(ref.path);
+  return docSnapshot(ref, store.get(ref.path));
 }
 
 function applyValue(existing, key, value) {
@@ -383,7 +402,6 @@ export default {
   setDoc, addDoc, updateDoc, deleteDoc, writeBatch, onSnapshot, serverTimestamp, Timestamp
 };
 
-export const getDocFromServer = getDoc;
 export const getDocsFromServer = getDocs;
 // Serialize transactions in the in-memory stand-in. This is not a rules emulator.
 let transactionQueue = Promise.resolve();

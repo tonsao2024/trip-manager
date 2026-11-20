@@ -4,11 +4,12 @@ import { expensePayments } from '../utils/payments.js';
 import { db, serverTimestamp } from '../firebase.js';
 import { brandPrimary } from '../utils/brand.js';
 import {
-  collection, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, updateDoc, query, where, limit, writeBatch, arrayUnion, arrayRemove
+  collection, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, updateDoc, query, where, limit,
+  writeBatch, arrayUnion, arrayRemove
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { cachedRead, cacheInvalidate, cacheForget, seedFromPersist, persistSet, persistDelete } from '../utils/datacache.js';
+import { isInactiveMember, isLegacyRevokedMember, memberAccessUids } from '../utils/memberUids.js';
 import { setMemberPin, publishMemberLookup, clearMemberPin, normalizeUsername } from '../auth/memberAuth.js';
-import { memberAccessUids } from '../utils/memberUids.js';
 
 export const MEMBER_ROLES = [
   { id: 'trip_admin', th: 'ผู้ดูแลทริป', en: 'Trip admin', icon: 'shield-check' },
@@ -53,6 +54,17 @@ export async function getMember(tripId, memberId) {
   if (hit) return hit;
   const snap = await getDoc(doc(db, `trips/${tripId}/members`, memberId));
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+/**
+ * Canonical member status. `disabled` (the old label of the status select) means
+ * the same as `inactive`, which is the value firestore.rules reads to revoke
+ * access — store that one, so one vocabulary exists in the database.
+ */
+export function normalizeStatus(status) {
+  const value = String(status ?? '').trim().toLowerCase();
+  if (!value) return 'active';
+  return value === 'disabled' ? 'inactive' : value;
 }
 
 export function buildMemberDoc({ displayName, username = '', role = 'member', color = brandPrimary(), photoURL = '', permissions, order = 999, createdByName = '' }) {
@@ -161,7 +173,39 @@ async function updateMemberInner(tripId, memberId, updates, { pin = null } = {})
   }
 
   const memberRef = doc(db, `trips/${tripId}/members`, memberId);
-  await updateDoc(memberRef, { ...payload, updatedAt: serverTimestamp() });
+  let statusChanged = false;
+  let statusAccessUids = [];
+  if (payload.status != null) {
+    payload.status = normalizeStatus(payload.status);
+    // The status decides access, so it must be compared against the SERVER copy —
+    // the cached member list may still show the previous value.
+    const fresh = await getDocFromServer(memberRef).catch(() => null);
+    const current = fresh?.exists() ? { id: fresh.id, ...fresh.data() } : previous;
+    statusChanged = payload.status !== normalizeStatus(current?.status);
+    statusAccessUids = memberAccessUids({ ...(current || {}), id: memberId });
+  }
+
+  // Suspending / re-activating a member IS an access change: the trip's
+  // `memberUids` array and the member document must move together, exactly like
+  // approve (add) and delete (remove). Writing only the member document left
+  // “ระงับการใช้งาน” doing nothing — the rules revoke on `inactive`, and the
+  // legacy `memberUids` branch of isTripMember kept the account inside the trip.
+  if (statusChanged && statusAccessUids.length) {
+    const tripRef = doc(db, 'trips', tripId);
+    const tripSnap = await getDocFromServer(tripRef).catch(() => null);
+    const batch = writeBatch(db);
+    batch.set(memberRef, { ...payload, updatedAt: serverTimestamp() }, { merge: true });
+    if (tripSnap?.exists()) {
+      // `arrayUnion`/`arrayRemove` are no-ops for an entry that is already there
+      // or already gone, so both directions are safe to write unconditionally.
+      batch.update(tripRef, isInactiveMember(payload)
+        ? { memberUids: arrayRemove(...statusAccessUids), updatedAt: serverTimestamp() }
+        : { memberUids: arrayUnion(...statusAccessUids), updatedAt: serverTimestamp() });
+    }
+    await batch.commit();
+  } else {
+    await updateDoc(memberRef, { ...payload, updatedAt: serverTimestamp() });
+  }
 
   try {
     if (pinValue) {
@@ -210,6 +254,40 @@ async function deleteMemberInner(tripId, memberId) {
   batch.update(doc(db, 'trips', tripId), { memberUids: arrayRemove(...accessUids), updatedAt: serverTimestamp() });
   await batch.commit();
   return true;
+}
+
+/**
+ * Re-activate members whose access was revoked by the *legacy* `disabled`
+ * spelling, in one tap, from the members page.
+ *
+ * Those documents were written by older builds of สมาชิก → แก้ไข while the
+ * published rules still ignored the value. As soon as rules that honour it are
+ * deployed, that member silently loses the trip — nobody changed a setting that
+ * day. This is the explicit way back: each member document and the trip's
+ * `memberUids` array move together (one batch per member, the same pairing the
+ * rules expect), and only members that are actually in the legacy revoked state
+ * are touched.
+ */
+export async function reactivateLegacyRevoked(tripId, members = []) {
+  if (!db || !tripId) throw new Error('DB not ready - Firebase not configured');
+  const targets = (members || []).filter(isLegacyRevokedMember);
+  if (!targets.length) return [];
+  const tripRef = doc(db, 'trips', tripId);
+  const done = [];
+  for (const member of targets) {
+    const memberId = String(member.id || '');
+    if (!memberId || memberId.includes('/')) continue;
+    const accessUids = memberAccessUids(member);
+    const batch = writeBatch(db);
+    batch.set(doc(db, `trips/${tripId}/members`, memberId), { status: 'active', updatedAt: serverTimestamp() }, { merge: true });
+    if (accessUids.length) {
+      batch.update(tripRef, { memberUids: arrayUnion(...accessUids), updatedAt: serverTimestamp() });
+    }
+    await batch.commit();
+    done.push(memberId);
+  }
+  invalidateMembers(tripId);
+  return done;
 }
 
 async function reorderMembersInner(tripId, ids, userId) {

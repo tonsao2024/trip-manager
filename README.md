@@ -16,6 +16,46 @@ Modern, production-ready trip planner with group expense splitting, smart schedu
 > แอดมินแตะ mirror ของคนอื่นไม่ได้ตามกฎความเป็นส่วนตัว จึงต้องมีปุ่มฝั่งสมาชิกด้วย — รายละเอียด/ลำดับ deploy:
 > [docs/MEMBERSHIP-REPAIR-2026-11-19.md](docs/MEMBERSHIP-REPAIR-2026-11-19.md).
 >
+> **อนุมัติแล้วแต่สมาชิกยังไม่เห็นทริป (19 Nov 2026, รอบ 2):** อาการ “ใส่รหัสเชิญ → แอดมินอนุมัติแล้ว →
+> หน้าทริปของสมาชิกยังขึ้น *ตรวจสอบทริปที่เคยเข้าร่วมไม่ครบ*” มีสองชั้นซ้อนกัน: (1) `approveJoinRequest` เดิม
+> อ่านทริปด้วย `getDoc()` ที่อาจเป็นแคช แล้ว **ข้ามการเขียน `memberUids`** เมื่อเห็นว่า uid “อยู่ในลิสต์แล้ว”
+> (2) ถ้า `memberUids` ขาดพร้อมกับที่ยังไม่ deploy collection-group index การค้นทั้ง 3 ทางเดิมจะว่างพร้อมกัน.
+> ตอนนี้การอนุมัติ **เขียน `memberUids` เสมอ** (`arrayUnion`, อ่านทริปจากเซิร์ฟเวอร์, ตรวจซ้ำหลัง commit),
+> รายการทริปมี **แหล่งที่ 4** คือทริปที่บัญชีนั้นเคย “ขอเข้าร่วม” (mirror ส่วนตัว + รายการบนเครื่อง) ซึ่งอ่านทริป
+> เป็นรายใบได้แม้ index ยังไม่มา, และหน้า ทริปของฉัน แสดงสาเหตุที่แท้จริงพร้อมปุ่ม **“ตรวจสิทธิ์อีกครั้ง”**
+> แทนข้อความเดิม. **รอบนี้ไม่ต้อง deploy กฎใหม่** (ใช้ `isTripMember` + `memberMayRestoreOwnListing` เดิม) —
+> deploy เฉพาะไฟล์เว็บ; ถ้าอยากให้การค้นหาครบทุกทางให้ `firebase deploy --only firestore:indexes` ด้วย.
+> รายละเอียด: [docs/MEMBER-TRIP-VISIBILITY.md](docs/MEMBER-TRIP-VISIBILITY.md) หัวข้อ “รอบ 2”.
+>
+> **ตัดสิทธิ์เข้าถึงจริง (19 Nov 2026, รอบ 3):** ตรวจทั้งเส้นทางแล้วพบว่าการ “ระงับการใช้งาน” และ
+> “ลบสมาชิก” **ไม่ได้ตัดสิทธิ์จริงเสมอ**: dropdown สถานะเขียน `disabled` แต่กฎอ่าน `inactive`
+> (บัญชีที่ถูกระงับจึงยังเข้าทริปได้) และการลบสมาชิกเคยล้าง `memberUids` เฉพาะเมื่อ “แคชเห็นว่า uid อยู่”
+> (ถ้าแคชเพี้ยน uid จะค้าง → `isTripMember` ยังเปิดให้อ่านทริป). ตอนนี้ทั้งระงับ/เปิดใช้งาน/ลบ เขียน
+> เอกสารสมาชิก **และ** `memberUids` ใน writeBatch เดียว (อ่านสถานะจริงจากเซิร์ฟเวอร์), เก็บสถานะมาตรฐาน
+> `inactive`, และ `isInactiveMember()` ถือทั้ง `inactive`/`disabled` เป็นถูกตัดสิทธิ์. หน้าสมาชิกให้เฉพาะ
+> **ผู้ดูแลทริป** เปลี่ยนสถานะ. ต้อง deploy กฎชุดใหม่ (`firebase deploy --only firestore:rules`) เพื่อให้
+> เอกสารเก่าที่ค้าง `disabled` ถูกตัดสิทธิ์ด้วย — รายละเอียด: [docs/PERMISSIONS.md](docs/PERMISSIONS.md) § 6.1.
+>
+> **ตรวจทั้งระบบ + เทสจริง (19 Nov 2026, รอบ 4):** รันชุดทดสอบทุกชุดที่ environment นี้รันได้ —
+> unit 272, membership/indexes 26, deploy guard 6, Cloud Functions 3, push sender 12, E2E jsdom
+> **941 ข้อ ใน 85 section** (เดิมรันได้แค่ 324 เพราะ smoke ตายที่ PNG ข้อแรก) = **ผ่าน 1,260 ข้อ ตก 0**.
+> เพิ่ม section **v37** ยืนยัน “ระงับ → ตัดสิทธิ์ → เปิดคืน → ได้สิทธิ์คืน” ผ่าน UI จริง และแก้ข้อความสถานะ
+> ที่กำกวม “ปิดใช้งาน” → **“ระงับการใช้งาน”**. ชุดที่ sandbox นี้รันไม่ได้ (Firestore Rules 14 เคส,
+> puppeteer 9 ชุด) พร้อมคำสั่งรันบนเครื่องคุณอยู่ใน **[docs/TEST-REPORT.md](docs/TEST-REPORT.md)**
+> (รายการเช็กทั้งหมด 941 ข้อ: [docs/test-cases-smoke.txt](docs/test-cases-smoke.txt)).
+>
+> **สมาชิกที่เคยเข้าทริปได้ กลับมองไม่เห็นหลังอัปเดตกฎ (20 Nov 2026, รอบ 5):** มีสองสาเหตุซ้อนกัน —
+> (ก) กฎ `list` ของ `trips` เดิมเรียก `exists()+get()` บน `members/{uid}` **ต่อทริปที่คืนมา** และ Firestore
+> จำกัด document access รวม **10 ครั้งต่อ query** → สมาชิกที่อยู่หลายทริปโดน `permission-denied` ทั้งหน้า
+> (เจ้าของทริปไม่โดนเพราะเข้าเงื่อนไข `createdBy` ก่อน) ตอนนี้กฎ `list` ตัดสินจากเอกสารทริปเท่านั้น
+> (**0 document access**) ส่วน `get`/subcollection ยังเข้มด้วย `isTripMember()` เหมือนเดิม และไคลเอนต์
+> กลับมาแบ่งหน้า 30 ทริปได้ตามปกติ; (ข) ฟอร์มรุ่นเก่าเขียน `status: 'disabled'` ที่กฎเดิมไม่รู้จัก —
+> พอ deploy กฎใหม่ที่รู้จักค่านี้ สมาชิกที่ยังติดค่าเก่าจึงถูกตัดสิทธิ์ทันทีทั้งที่ไม่มีใครแตะการตั้งค่า
+> ตอนนี้หน้าสมาชิกขึ้นแผง **“สมาชิก N คนถูกระงับการเข้าถึงด้วยสถานะแบบเก่า (disabled)”** พร้อมปุ่ม
+> **“เปิดใช้งานทั้งหมด”** และแถวขึ้นว่า “ระงับการใช้งาน (สถานะเก่า)”. **ต้อง deploy ทั้ง 2 อย่าง:**
+> `firebase deploy --only firestore:rules` + ไฟล์เว็บ (Pages) — รายละเอียด: [docs/PERMISSIONS.md](docs/PERMISSIONS.md) § 6.2
+> (มีเทสกันกลับมา `node --test tests/rules-lint.test.mjs` และเคส “member with many trips” ใน `tests/rules/firestore.test.js`).
+>
 > **Firebase deployment:** Spark supports the current Google sign-in, Firestore joins, and the static site;
 > legacy username/PIN account flows, member-email lookup, and the invite fallback use secure Cloud Functions
 > and require Blaze. On Spark, use Google sign-in + invite code + admin approval; do not expose PIN or

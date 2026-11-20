@@ -38,9 +38,38 @@ export function memberAccessUids(member) {
   return out;
 }
 
-/** A member document that must not grant access any more. */
+/**
+ * A member document that must not grant access any more.
+ *
+ * Two spellings exist in the data: `inactive` (what firestore.rules and the
+ * membership sweep use) and `disabled` (what the สมาชิก → แก้ไข status select
+ * used to write). They mean the same thing — “this account must lose access” —
+ * so both are revoked here. Anything else (including a missing status, or a
+ * legacy `pending` row) keeps the historical behaviour.
+ */
+export const REVOKED_MEMBER_STATUSES = ['inactive', 'disabled'];
+
 export function isInactiveMember(member) {
-  return ['inactive', 'disabled'].includes(String(member?.status || '').trim().toLowerCase());
+  return REVOKED_MEMBER_STATUSES.includes(String(member?.status || 'active').trim().toLowerCase());
+}
+
+/**
+ * The *old* spelling of a revoked status.
+ *
+ * Older builds of สมาชิก → แก้ไข wrote `status: 'disabled'` while the published
+ * rules still only knew `inactive`, so it had no effect — until the rules that
+ * honour it were deployed, and then every member who still carried the old value
+ * lost the trip without anybody touching a setting that day.
+ *
+ * The value is honoured (it is a real revocation, see REVOKED_MEMBER_STATUSES),
+ * but it is also *reported*: the members page shows these people explicitly and
+ * offers one tap to re-activate them, so a legacy value can never silently lock
+ * a working member out again.
+ */
+export const LEGACY_REVOKED_STATUSES = ['disabled'];
+
+export function isLegacyRevokedMember(member) {
+  return LEGACY_REVOKED_STATUSES.includes(String(member?.status || '').trim().toLowerCase());
 }
 
 /**

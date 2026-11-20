@@ -140,11 +140,94 @@ The callable-backed PIN, email-search, and legacy invite fallback features requi
 on Blaze; Spark can continue with the visible Google sign-in and Firestore join-request flow. See
 `docs/DEPLOY.md` before changing the deployed client or rules.
 
+## 6.1) Revoking access — ระงับ / ลบสมาชิก (19 Nov 2026)
+
+การ “ตัดสิทธิ์เข้าถึงทริป” ของบัญชีหนึ่งต้องเขียน **สองที่พร้อมกัน** เสมอ เพราะกฎอ่านทั้งคู่:
+
+| การกระทำ | ต้องเขียนอะไร | กฎที่บังคับ |
+| --- | --- | --- |
+| อนุมัติ (`approveJoinRequest`) | `members/{uid}` + `memberUids: arrayUnion(uid)` | `memberMayRestoreOwnListing` / `managerOnlyChangesMemberUids` |
+| **ระงับการใช้งาน** (`updateMember` → status) | `members/{uid}.status = 'inactive'` **+** `memberUids: arrayRemove(uid)` | `revokedMemberStatus()` + `tripNoLongerListsMember()` |
+| เปิดใช้งานอีกครั้ง | `status = 'active'` **+** `memberUids: arrayUnion(uid)` | เหมือนด้านบน (ย้อนทาง) |
+| ลบสมาชิก (`deleteMember`) | `delete members/{uid}` **+** `memberUids: arrayRemove(uid)` | `tripNoLongerListsMember()` |
+
+สิ่งที่แก้ในรอบนี้ (ทั้งคู่เคยทำให้สิทธิ์ไม่ถูกตัดจริง):
+
+1. **`status: 'disabled'` ไม่เคยตัดสิทธิ์** — กฎเดิมเช็ค `!= 'inactive'` เท่านั้น แต่ dropdown สถานะเขียน
+   `'disabled'` → บัญชีที่ถูก “ระงับ” ยังอ่าน/เขียนทริปได้ครบ. ตอนนี้
+   - ไคลเอนต์แปลงเป็นค่ามาตรฐาน `inactive` (`normalizeStatus()` ใน `src/js/members/index.js`)
+   - `isInactiveMember()` (ทั้ง `utils/memberUids.js`, รายการซ่อม, และป้ายสถานะในหน้าสมาชิก) ถือทั้ง
+     `inactive` และ `disabled` เป็น “ถูกตัดสิทธิ์”
+   - `firestore.rules` เพิ่ม `revokedMemberStatus(data)` ถือทั้งสองค่า → เอกสารเก่าที่ค้าง `disabled`
+     ถูกตัดสิทธิ์ทันทีเมื่อ deploy กฎชุดนี้
+2. **การระงับ/เปิดใช้งานไม่แตะ `memberUids`** — เดิมเขียนแค่เอกสารสมาชิก (และโดนกฎปฏิเสธเพราะ
+   `tripNoLongerListsMember`) ตอนนี้เขียนเป็น **writeBatch เดียว** (อ่านสถานะจริงจากเซิร์ฟเวอร์ก่อนตัดสิน)
+3. **การลบสมาชิกอาจไม่ล้าง `memberUids`** — เดิมล้างเฉพาะเมื่อ “แคชเห็นว่า uid ยังอยู่ในลิสต์”
+   ถ้าแคชเพี้ยน รายการ `memberUids` จะค้างอยู่ → `isTripMember` ยังเปิดให้คนที่ถูกลบอ่านทริปได้
+   ตอนนี้ `arrayRemove` ถูกเขียนทุกครั้ง (idempotent)
+4. หน้าสมาชิก: dropdown สถานะแก้ได้เฉพาะ **ผู้ดูแลทริป** (ตรงกับกฎ `sameRoleAndPermissions()` ที่
+   co-admin เปลี่ยน status ของคนอื่นไม่ได้) และบอกชัดว่า “ระงับ = ตัดสิทธิ์เข้าถึงทริปทันที”
+
+> **ต้อง deploy กฎชุดใหม่ถ้าต้องการให้ข้อ 1 ครอบเอกสารเก่าที่เป็น `disabled`:**
+> `firebase deploy --only firestore:rules` — การซ่อมฝั่งไคลเอนต์ (ข้อ 2–4) ทำงานได้กับกฎที่ deploy อยู่แล้ว
+
+### ตรวจว่าเข้าถึงถูกตัดจริง
+
+1. แอดมิน → สมาชิก → แก้ไข → สถานะ = ระงับการใช้งาน → บันทึก
+2. ใน Firestore: `members/{uid}.status` ต้องเป็น `inactive` และ uid ต้องหายจาก `trips/{id}.memberUids`
+3. บัญชีนั้นรีเฟรชเว็บ → ต้องไม่เห็นทริป (และ `getDoc(trips/{id})` ต้อง `permission-denied`)
+4. เปิดใช้งานอีกครั้ง → uid กลับเข้าลิสต์ และทริปกลับมาแสดง
+
+## 6.2) กฎ `list` ของ `trips` อ่านเอกสารอื่นไม่ได้ (20 Nov 2026)
+
+อาการที่ผู้ใช้รายงาน: “สมาชิกเป็นสมาชิกทริปอยู่แล้ว แต่พออัปเดตโค้ด + deploy กฎใหม่ สมาชิกกลับมองไม่เห็นทริป”
+มีสองสาเหตุที่เกิดพร้อมกันได้ และแก้ทั้งคู่แล้ว:
+
+### ก) กฎ `list` เดิมอ่านเอกสาร `members/{uid}` ต่อทริปหนึ่งครั้ง
+
+Firestore ตอบ query ด้วยการประเมินกฎ **ต่อเอกสารที่คืนมา** และจำกัด `get()/exists()/getAfter()`
+รวมกันที่ **10 ครั้งต่อ query** (เอกสารทางการ: *“10 for single-document requests and query requests …
+exceeding either limit results in a permission denied error”*) เกินเมื่อไหร่ **query ทั้งก้อนถูกปฏิเสธ**
+ไม่ใช่แค่เอกสารนั้น — สมาชิกที่อยู่ 5 ทริปขึ้นไปจึงเห็นลิสต์ว่างเปล่า ขณะที่เจ้าของทริป (ที่เข้าเงื่อนไข
+`createdBy` ก่อนจึงไม่ต้องอ่านเอกสาร) ยังเห็นครบ. ไคลเอนต์เคยเลี่ยงด้วยการแบ่งหน้าแค่ 8 ทริป
+(`PAGE = 8`) ซึ่งชนเพดานพอดี — ทริปที่ 9 ทำให้พังทั้งหน้า
+
+ตอนนี้ `allow list` ของ `/trips/{tripId}` ตัดสินจาก **เอกสารทริปเท่านั้น** (`createdBy` / `memberUids`)
+= 0 document access call, และ `isSuperAdmin()` ถูกวางไว้ท้ายสุดเพื่อให้สมาชิกทั่วไปไม่ต้องจ่าย 2 call
+ส่วนการอ่านที่เหลือยังเข้มเหมือนเดิม: `allow get` และทุก subcollection ใช้ `isTripMember()`
+ที่อ่าน `members/{uid}` ใหม่และปฏิเสธสถานะที่ถูกระงับ
+
+| การอ่าน | ตัดสินจาก | document access |
+| --- | --- | --- |
+| `list` (รายการทริป) | `createdBy` / `memberUids` บนเอกสารทริป | **0** |
+| `get` (เปิดทริป) | `isTripMember()` → `members/{uid}` | 2–4 (เพดาน 10) |
+| subcollection (ค่าใช้จ่าย/แผน/ฯลฯ) | `isTripMember()` | 2–4 ต่อ query (แคช) |
+
+ผลข้างเคียงที่ยอมรับ: ถ้า `memberUids` ค้าง (การลบ/ระงับที่เขียนไม่สำเร็จ) บัญชีนั้นอาจ **เห็นการ์ดทริป**
+ในลิสต์ แต่เปิดทริปไม่ได้ (get ถูกปฏิเสธ) — ปุ่ม “กวาดสถานะค้าง” และ `reconcileTripMemberUids()`
+จะล้างรายการที่ค้างให้เอง
+
+> เทสที่กันไม่ให้กลับมา: `node --test tests/rules-lint.test.mjs` (รันได้ทุกที่ ไม่ต้องมี emulator)
+> และ `tests/rules/firestore.test.js` เคส “a member with many trips list all of them”
+
+### ข) สถานะ `disabled` แบบเก่าถูกบังคับใช้ครั้งแรกตอน deploy กฎ
+
+ฟอร์มรุ่นเก่าเขียน `status: 'disabled'` ขณะที่กฎเดิมรู้จักแค่ `inactive` → การ “ระงับ” ไม่เคยได้ผล.
+พอกฎใหม่ (`revokedMemberStatus()`) ถูก deploy ค่านั้น **ได้ผลทันที** — สมาชิกที่ยังติดค่าเก่าอยู่จึง
+เข้าทริปไม่ได้ในวันนั้นโดยที่แอดมินไม่ได้แตะอะไร. ตอนนี้:
+
+- หน้าสมาชิกแสดงแผง **“สมาชิก N คนถูกระงับการเข้าถึงด้วยสถานะแบบเก่า (disabled)”**
+  พร้อมชื่อ และปุ่ม **“เปิดใช้งานทั้งหมด”** (`reactivateLegacyRevoked()` เขียนเอกสารสมาชิก + `memberUids`
+  เป็น batch เดียวต่อคน)
+- แถวในรายชื่อขึ้นว่า **“ระงับการใช้งาน (สถานะเก่า)”** ไม่ปนกับสถานะที่แอดมินตั้งเอง (`inactive`)
+- ฝั่งสมาชิก ข้อความแจ้งเตือนเพิ่มบรรทัด “ถ้าแอดมินระงับการใช้งานบัญชีนี้ไว้ … ขอให้แอดมินเปิดใช้งานที่หน้า สมาชิก”
+
 ## 7) How to verify
 
 ```bash
 npm test
 npm run test:smoke
+node --test tests/rules-lint.test.mjs   # the rules budgets, no emulator needed
 npm --prefix functions test       # PBKDF2/bcrypt PIN verification
 
 # Real Firestore Rules (requires Java + Firebase CLI)
