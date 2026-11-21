@@ -86,7 +86,10 @@ jobs:
 
       - name: Install firebase-tools
         if: steps.creds.outputs.mode != 'none'
-        run: npm install --global firebase-tools@13
+        # google-auth-library comes with firebase-tools as a nested dependency, so it is NOT
+        # resolvable from the verify script via NODE_PATH=$(npm root -g) — install it globally
+        # too, or the “verify the live rules” step warns and passes without checking anything.
+        run: npm install --global firebase-tools@13 google-auth-library@9
 
       - name: Deploy Firestore rules and indexes (no billing required)
         id: deploy

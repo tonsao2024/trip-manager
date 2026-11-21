@@ -3783,6 +3783,20 @@ async function renderTripSelector({ fresh = false } = {}) {
       const codes = (e.details || []).map(d => d.code).filter(Boolean);
       const deploy = e.requiresDeploy
         || codes.some(c => /permission-denied|failed-precondition/.test(c));
+      // If the trips list queries themselves succeeded and only the member-document
+      // discovery / join-target reads were denied, “deploy the rules” is usually the
+      // wrong advice: the account itself does not match its member document
+      // (legacy PIN record, a Google account linked later, or a suspended account).
+      const listQueryFailed = (e.details || []).some(d => /^trips\./.test(String(d?.source || ''))
+        || /failed-precondition/.test(String(d?.code || ''))
+        || /requires an index|create.*index|no matching index/i.test(String(d?.message || '')));
+      const memberSideOnly = !listQueryFailed && (e.details || []).length > 0;
+      const memberSideBullets = lang === 'th' ? `
+            <li>ถ้าสมาชิกถูกเพิ่มผ่านแบบฟอร์ม PIN หรือเชื่อมบัญชี Google ทีหลัง ให้แอดมินกด <strong>“กวาดสถานะค้าง”</strong> ในหน้า สมาชิก ของทริปนั้น แล้วกด “ตรวจสิทธิ์อีกครั้ง”</li>
+            <li>ถ้าเกิดกับทุกคน ให้เจ้าของโปรเจกต์รัน legacy PIN migration และ publish rules/indexes ล่าสุดอีกครั้ง (ดู docs/DEPLOY.md — ส่วน “Migrate legacy PIN fields before publishing Rules”)</li>`
+        : `
+            <li>If the member was added through a PIN form or a Google account linked later, the admin should tap <strong>“กวาดสถานะค้าง” (membership sweep)</strong> on the trip’s Members page, then “Re-check access”.</li>
+            <li>If this happens for everyone, the project owner should run the legacy PIN migration and publish the latest rules/indexes (see docs/DEPLOY.md — “Migrate legacy PIN fields before publishing Rules”).</li>`;
       hint = `
         <div class="notice text-left mt-3 p-3 rounded-xl text-xs leading-relaxed">
           <strong class="flex items-center gap-1">${icon(deploy ? 'shield-alert' : 'cloud-off', 'w-3.5 h-3.5')} ${deploy
@@ -3792,6 +3806,7 @@ async function renderTripSelector({ fresh = false } = {}) {
             <li>${lang === 'th'
               ? 'ถ้าแอดมินเพิ่งกดอนุมัติ ให้กด "ตรวจสิทธิ์อีกครั้ง" ด้านล่าง — ระบบจะอ่านทริปที่คุณขอเข้าร่วมจากเซิร์ฟเวอร์โดยตรง'
               : 'If the admin just approved you, press "Re-check access" below — it reads the trips you asked to join straight from the server.'}</li>
+            ${memberSideOnly ? memberSideBullets : ''}
             ${deploy ? `<li>${lang === 'th'
               ? 'ถ้ายังไม่หาย ให้แอดมิน deploy กฎและดัชนี: <code>firebase deploy --only firestore:rules,firestore:indexes</code>'
               : 'If it persists, the admin must deploy rules and indexes: <code>firebase deploy --only firestore:rules,firestore:indexes</code>'}</li>` : ''}
@@ -3803,7 +3818,7 @@ async function renderTripSelector({ fresh = false } = {}) {
               : 'If the admin suspended this account, it cannot open the trip — ask them to re-activate it on the Members page.'}</li>
           </ul>
           ${(e.details || []).length ? `<details class="mt-2"><summary class="cursor-pointer">${lang === 'th' ? 'รายละเอียดทางเทคนิค' : 'Technical details'}</summary>
-            <div class="mt-1 font-mono text-[10px] break-all">${escapeHtml((e.details || []).map(d => `${d.code || 'error'}: ${d.message}`).join('\n'))}</div></details>` : ''}
+            <div class="mt-1 font-mono text-[10px] break-all">${escapeHtml((e.details || []).map(d => `${d.source ? d.source + ' — ' : ''}${d.code || 'error'}: ${d.message}`).join('\n'))}</div></details>` : ''}
         </div>`;
     } else if (isPermissionError(e)) {
       msg = lang === 'th' ? 'ไม่มีสิทธิ์เข้าถึง — ต้อง deploy Firestore Rules' : 'Permission denied — Firestore Rules must be deployed';
