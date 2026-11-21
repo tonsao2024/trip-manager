@@ -29,6 +29,32 @@ deploy Firestore rules or Cloud Functions. For background Web Push, configure th
 [GitHub Actions sender](PUSH-ACTIONS.md). The VAPID key is public client configuration; never put a
 service-account key in the browser.
 
+## Google sign-in from chat apps
+
+Opening the site from Messenger, LINE, Instagram, Facebook or TikTok runs it inside that app's
+embedded webview. Google refuses OAuth in embedded webviews, and Firebase keeps the pending
+redirect sign-in in `sessionStorage`, which these webviews drop or partition between
+`<user>.github.io` and `<project>.firebaseapp.com`. The user then lands on the auth handler's page:
+
+> Unable to process request due to missing initial state…
+
+The app never starts a redirect there (`src/js/utils/browserEnv.js`). The login screen detects the
+webview or unusable storage, says the page has to be opened in a real browser, and offers
+**Open in Chrome** (an `intent://` link that targets Chrome with a browser fallback) or the
+⋯ → *Open in Safari* steps. Two things keep that situation rare:
+
+- Sign-in stays popup-first, and the popup opens **inside the user gesture**: “remember this
+  device” persistence is applied when the login screen renders, never between the tap and
+  `window.open()` (`prepareAuthPersistence` in `src/js/auth/accountAuth.js`).
+- Serve the site from the same site as `authDomain`. On `<projectId>.web.app` or
+  `<projectId>.firebaseapp.com`, `firebase.js` uses that host as `authDomain`, so
+  `/__/auth/handler` is same-site and the redirect flow survives storage partitioning. GitHub Pages
+  (`<user>.github.io` + `<project>.firebaseapp.com`) is cross-site: the popup still works, the
+  redirect cannot.
+
+When a user reports the error, ask them to open the link in Chrome/Safari rather than in the chat
+app; no Firebase console change is needed.
+
 ## Firestore rules and indexes
 
 Install/use Firebase CLI, then deploy rules and indexes to the intended project:

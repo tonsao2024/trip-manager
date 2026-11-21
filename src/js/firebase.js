@@ -5,6 +5,7 @@ import { getFirestore, enableIndexedDbPersistence, serverTimestamp } from 'https
 import { getStorage } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js';
 import { firebaseConfig as hardcodedConfig, isConfigHardcoded } from './firebase.config.js';
+import { sameSiteAuthDomain } from './utils/browserEnv.js';
 
 const placeholderConfig = {
   apiKey: "__FIREBASE_API_KEY__",
@@ -51,6 +52,20 @@ try {
 } catch (e) {
   console.warn('Config loading error:', e);
 }
+
+// Served from one of the project's own Firebase Hosting domains
+// (<project>.web.app / <project>.firebaseapp.com)? Then sign in on that same
+// site: /__/auth/handler is served there too, and same-site storage is the only
+// setup that survives storage-partitioned browsers (Safari ITP, Chrome
+// third-party storage partitioning). GitHub Pages + *.firebaseapp.com is
+// cross-site, which is why the redirect flow fails there.
+try {
+  const sameSite = sameSiteAuthDomain(finalConfig, location.hostname);
+  if (sameSite && sameSite !== finalConfig.authDomain) {
+    console.log('[Firebase] Using same-site authDomain:', sameSite);
+    finalConfig = { ...finalConfig, authDomain: sameSite };
+  }
+} catch { /* no location (tests / SSR) — keep the configured authDomain */ }
 
 export const isFirebaseConfigured = checkConfigured(finalConfig);
 // The config actually in use (window override → hardcoded → localStorage).
