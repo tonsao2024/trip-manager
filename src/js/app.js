@@ -3792,11 +3792,11 @@ async function renderTripSelector({ fresh = false } = {}) {
         || /requires an index|create.*index|no matching index/i.test(String(d?.message || '')));
       const memberSideOnly = !listQueryFailed && (e.details || []).length > 0;
       const memberSideBullets = lang === 'th' ? `
-            <li>ถ้าสมาชิกถูกเพิ่มผ่านแบบฟอร์ม PIN หรือเชื่อมบัญชี Google ทีหลัง ให้แอดมินกด <strong>“กวาดสถานะค้าง”</strong> ในหน้า สมาชิก ของทริปนั้น แล้วกด “ตรวจสิทธิ์อีกครั้ง”</li>
-            <li>ถ้าเกิดกับทุกคน ให้เจ้าของโปรเจกต์รัน legacy PIN migration และ publish rules/indexes ล่าสุดอีกครั้ง (ดู docs/DEPLOY.md — ส่วน “Migrate legacy PIN fields before publishing Rules”)</li>`
+            <li>ถ้าสมาชิกคนนี้เคยถูกเพิ่มแบบชื่อผู้ใช้/PIN (ระบบยุคเก่า) หรือเอกสารสมาชิกไม่ตรงกับบัญชี Google ที่ล็อกอิน ให้แอดมินกด <strong>“กวาดสถานะค้าง”</strong> ในหน้า สมาชิก ของทริปนั้น แล้วกด “ตรวจสิทธิ์อีกครั้ง”</li>
+            <li>ถ้าเกิดกับหลายคนและโปรเจกต์เคยมีสมาชิกยุค PIN เดิม ให้เจ้าของโปรเจกต์รัน legacy PIN migration (ดู docs/DEPLOY.md — “Migrate legacy PIN fields before publishing Rules”); ถ้าไม่เคยมีสมาชิก PIN เลย ข้ามขั้นนี้ได้เลย</li>`
         : `
-            <li>If the member was added through a PIN form or a Google account linked later, the admin should tap <strong>“กวาดสถานะค้าง” (membership sweep)</strong> on the trip’s Members page, then “Re-check access”.</li>
-            <li>If this happens for everyone, the project owner should run the legacy PIN migration and publish the latest rules/indexes (see docs/DEPLOY.md — “Migrate legacy PIN fields before publishing Rules”).</li>`;
+            <li>If this member was added with a username/PIN in an older release, or the member document does not match the Google account you sign in with, the admin should tap <strong>“กวาดสถานะค้าง” (membership sweep)</strong> on the trip’s Members page, then “Re-check access”.</li>
+            <li>If this happens for several people and the project once had username/PIN members, the owner should run the legacy PIN migration (docs/DEPLOY.md — “Migrate legacy PIN fields before publishing Rules”); if there were never PIN members, skip this step.</li>`;
       hint = `
         <div class="notice text-left mt-3 p-3 rounded-xl text-xs leading-relaxed">
           <strong class="flex items-center gap-1">${icon(deploy ? 'shield-alert' : 'cloud-off', 'w-3.5 h-3.5')} ${deploy

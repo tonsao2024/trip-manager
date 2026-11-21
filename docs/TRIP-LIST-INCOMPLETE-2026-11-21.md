@@ -12,6 +12,12 @@
 ถูกปฏิเสธด้วย `permission-denied` (ไม่ใช่ index หายและไม่ใช่เน็ตล่ม — ถ้าเป็น index จะเป็น `failed-precondition`)
 แอดมินได้ทริปจาก `createdBy`/`memberUids` เลยเหลือแค่แบนเนอร์ ส่วนสมาชิกใหม่ได้ 0 ทริป + มี failure ≥ 1 → เห็นหน้า error
 
+> **ระบบ PIN ตั้งไม่มีแล้วใน UI ปัจจุบัน** — หน้า login เป็น Google-only และฟอร์มเพิ่มสมาชิกไม่มีช่องชื่อผู้ใช้/PIN
+> (สมาชิกเข้าด้วยรหัสเชิญ + แอดมินอนุมัติเท่านั้น) โค้ด PIN ที่เหลืออยู่เป็น legacy/compat เท่านั้น:
+> `auth/memberAuth.js`, callable `loginWithUsernamePin`/`setMemberPin`, และตัว migration ใน `functions/scripts/`
+> ดังนั้นถ้าโปรเจกต์นี้ไม่เคยมีสมาชิก PIN รุ่นเก่า ให้ตัดข้อ “migration” ออกจากสมการได้เลย —
+> เหลือข้อ 1 (บัญชีคนละอัน) และข้อ 2 (กฎที่ publish จริงไม่ตรงกับ repo) เป็นตัวที่ต้องเช็คก่อน
+
 ## สถานะการ deploy (ตรวจจาก GitHub Actions 21 พ.ย. 2026)
 
 - workflow **Deploy Firestore rules & indexes (Spark)** เคยล้มเหลวทุกครั้งระหว่าง 6–20 พ.ย. 2026
@@ -28,21 +34,19 @@
 
 1. **บัญชีไม่ตรงกับตอนขอเข้าร่วม** — Google กับ Email/Password ของอีเมลเดียวกันคือคนละ `uid`
    → รายการ empty และ `getJoinedTrip` ถูกปฏิเสธ (เคสถูกที่สุดจากภาพ: ล็อกอินด้วยบัญชีเดิมที่ใช้กด “ขอเข้าร่วม”)
-2. **เอกสารสมาชิกของบัญชีนี้ยังมีฟิลด์ PIN แบบเก่า** (`pinHash`/`pinSalt`/`pinIterations`/`pinAlgo`)
-   → กฎ `match /{path=**}/members/{memberId}` ต้องการให้เอกสารไม่มีฟิลด์พวกนี้ จึงปฏิเสธ **query ทั้งชุด**
-   (แอดมินเห็นแบนเนอร์ในภาพ 1 จากสาเหตุเดียวกัน) — แก้ด้วยการรัน migration ก่อน publish rules (ดู `docs/DEPLOY.md` หัวข้อ “Migrate legacy PIN fields before publishing Rules”)
-3. **เอกสารสมาชิกเป็น PIN/legacy แล้วเชื่อมบัญชี Google ทีหลัง** — id ของเอกสารคือ `mb…` ส่วน rules อ่าน `members/{authUid}`
-   → ต้องมี `memberUids` ที่มี Google uid (ปุ่ม “กวาดสถานะค้าง” ในหน้า สมาชิก เพิ่มให้ได้)
-4. **บัญชีถูก “ระงับการใช้งาน”** (`status: inactive` / ค่าเก่า `disabled`) → เปิดทริปไม่ได้ตามกฎ
-5. **กฎที่ publish ไปจริง ๆ ไม่ใช่ของ repo** — ตรวจได้สองทาง: Firebase Console → Firestore → Rules (ต้องมีบล็อก
+2. **กฎที่ publish ไปจริง ๆ ไม่ใช่ของ repo** — ตรวจได้สองทาง: Firebase Console → Firestore → Rules (ต้องมีบล็อก
    `/notifications/{notificationId}` และ `match /{path=**}/members/{memberId}`) หรือรัน workflow ใหม่ด้วยมือ
    (Actions → Deploy Firestore rules & indexes (Spark) → Run workflow) — รันซ้ำปลอดภัย เป็น idempotent
+3. **เอกสารสมาชิกยุค PIN รุ่นเก่าที่ยังมีฟิลด์ PIN** (`pinHash` ฯลฯ) → กฎ `match /{path=**}/members/{memberId}` ต้องการให้เอกสารไม่มีฟิลด์พวกนี้ จึงปฏิเสธ **query ทั้งชุด** (ข้อนี้ใช้ได้เฉพาะกรณีโปรเจกต์เคยมีสมาชิก PIN — UI ปัจจุบันไม่มี PIN แล้ว ถ้าไม่เคยมี ตัดข้อนี้ทิ้งได้เลย)
+4. **เอกสารสมาชิกเป็น PIN/legacy แล้วเชื่อมบัญชี Google ทีหลัง** — id ของเอกสารคือ `mb…` ส่วน rules อ่าน `members/{authUid}`
+   → ต้องมี `memberUids` ที่มี Google uid (ปุ่ม “กวาดสถานะค้าง” ในหน้า สมาชิก เพิ่มให้ได้)
+5. **บัญชีถูก “ระงับการใช้งาน”** (`status: inactive` / ค่าเก่า `disabled`) → เปิดทริปไม่ได้ตามกฎ
 
 ## ลำดับแก้ที่แนะนำ (เจ้าของโปรเจกต์)
 
-1. Firebase Console → Firestore → Rules / Indexes: ยืนยันว่าตรงกับ repo (หรือกด Run workflow ข้อ 5 ข้างบน)
-2. `GOOGLE_CLOUD_PROJECT=trip-manager-93b22 npm --prefix functions run migrate:legacy-pins`
-   (เฉพาะถ้ามีสมาชิกแบบ PIN รุ่นเก่า — ต้องมี Admin credentials; อ่านหัวข้อที่อ้างในข้อ 2 ข้างบนก่อน)
+1. Firebase Console → Firestore → Rules / Indexes: ยืนยันว่าตรงกับ repo (หรือกด Run workflow ตามข้อ 2 ข้างบน) — **เช็คข้อนี้ก่อนเสมอ** เพราะระบบ PIN ไม่มีแล้ว ถ้ากฎที่ publish จริงยังเก่ากว่า repo นั่นแหละคือทั้งสองภาพ
+2. (ข้ามได้ ถ้าไม่เคยมีสมาชิก PIN รุ่นเก่า) `GOOGLE_CLOUD_PROJECT=trip-manager-93b22 npm --prefix functions run migrate:legacy-pins`
+   (เฉพาะถ้ามีสมาชิกแบบ PIN รุ่นเก่า — ต้องมี Admin credentials; อ่านหัวข้อที่อ้างในข้อ 3 ข้างบนก่อน)
 3. ทริปที่เกี่ยวข้อง → สมาชิก → กด **“กวาดสถานะค้าง”**
 4. สมาชิกที่มีปัญหา: ล็อกอินด้วยบัญชีเดิม → หน้า **ทริปของฉัน** → กด **“ตรวจคำขอและรายการทริป”** แล้วย้ำอีกครั้งด้วย
    **“ตรวจสิทธิ์อีกครั้ง”** บนหน้า error
