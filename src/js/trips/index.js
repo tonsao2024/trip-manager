@@ -92,6 +92,21 @@ function permissionDenied(error) {
 }
 
 /**
+ * Attach the source tag so the trip-list error screen can say *which* read
+ * failed ("trips.memberUids" vs "members discovery" vs "join targets") instead
+ * of one unlabelled “permission-denied” line.
+ */
+function withSource(e, source) {
+  if (e && typeof e === 'object') {
+    if (!e.source) e.source = source;
+    return e;
+  }
+  const err = new Error(String(e));
+  err.source = source;
+  return err;
+}
+
+/**
  * A failure that only deploying the current rules/indexes can fix.
  * Used to decide whether the trip list error should tell the user to deploy
  * (`permission-denied`, missing composite/collection-group index) or to check
@@ -200,23 +215,23 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false, { allowCache =
   // utils/memberUids.js) the member's list came back empty while the admin,
   // reading the member documents, still saw everybody.
   const failures = [];
-  const noteFailure = (e) => {
-    failures.push(e);
-    console.warn('trip list query failed', e?.code || e?.message || e);
+  const noteFailure = (e, source) => {
+    failures.push(withSource(e, source));
+    console.warn('trip list query failed', source, e?.code || e?.message || e);
   };
 
   // Source 1: array-contains on memberUids (indexed, scoped to the signed-in user)
   let listedTrips = [];
   try {
     listedTrips = await readAllPages(query(collection(db, 'trips'), where('memberUids', 'array-contains', userId)), 'memberUids', 5000);
-  } catch (e) { noteFailure(e); }
+  } catch (e) { noteFailure(e, 'trips.memberUids'); }
 
   // Source 2: trips this account created (scoped to the signed-in user). A
   // brand-new account has no trips yet — that is an empty list, not an error.
   let createdTrips = [];
   try {
     createdTrips = await readAllPages(query(collection(db, 'trips'), where('createdBy', '==', userId)), 'createdBy', 5000);
-  } catch (e) { noteFailure(e); }
+  } catch (e) { noteFailure(e, 'trips.createdBy'); }
 
   // Source 3: the member documents themselves. `trips/{id}/members/{uid}` is
   // the record the admin sees; finding trips through it makes the list immune
@@ -231,7 +246,7 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false, { allowCache =
     discoveredTrips = discovery.trips;
     failures.push(...discovery.failures);
   } catch (e) {
-    noteFailure(e);
+    noteFailure(e, 'members discovery');
   }
 
   // Source 4: submitted requests + remembered join targets give us exact trip IDs.
@@ -244,7 +259,7 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false, { allowCache =
     const discovery = await discoverTripsFromJoinTargets(userId, knownIds);
     requestTrips.push(...discovery.trips);
     failures.push(...discovery.failures);
-  } catch (e) { noteFailure(e); }
+  } catch (e) { noteFailure(e, 'join targets'); }
   const trips = mergeTripsById(knownTrips, requestTrips);
   if (trips.length) {
     if (failures.length) Object.defineProperty(trips, 'incomplete', { value: true });
@@ -259,8 +274,10 @@ async function fetchTripsFromServer(userId, isSuperAdmin = false, { allowCache =
     error.code = 'trip-list-incomplete';
     error.cause = failures[0];
     // The UI needs to say *what* failed (missing index / denied rules / offline)
-    // instead of repeating one message for every cause.
-    error.details = failures.map(f => ({ code: f?.code || null, message: String(f?.message || f || '') }));
+    // instead of repeating one message for every cause. `source` names the read
+    // that failed (trips.memberUids / trips.createdBy / members discovery /
+    // join targets), so a single “permission-denied” line is no longer a mystery.
+    error.details = failures.map(f => ({ code: f?.code || null, message: String(f?.message || f || ''), source: f?.source || null }));
     error.requiresDeploy = failures.some(deployFixableFailure);
     error.network = !error.requiresDeploy;
     throw error;
@@ -320,7 +337,7 @@ async function discoverTripsFromJoinTargets(userId, knownIds = new Set()) {
       forgetJoinTarget(userId, tripId);
       trips.push(trip);
     } else if (result.status === 'rejected') {
-      failures.push(result.reason);
+      failures.push(withSource(result.reason, `trip read (join target ${tripId})`));
     }
   }
   return { trips, failures };
@@ -337,7 +354,7 @@ async function discoverTripsFromJoinTargets(userId, knownIds = new Set()) {
  */
 async function discoverTripsByMemberDocs(userId, knownTripIds = new Set()) {
   if (!db || !userId || typeof collectionGroup !== 'function') {
-    return { trips: [], failures: [new Error('Member discovery is unavailable')] };
+    return { trips: [], failures: [withSource(new Error('Member discovery is unavailable'), 'members discovery')] };
   }
   const tripIds = new Set(knownTripIds);
   const failures = [];
@@ -358,7 +375,7 @@ async function discoverTripsByMemberDocs(userId, knownTripIds = new Set()) {
     } catch (e) {
       // One missing index or denied query must not discard results from the other.
       console.warn(`member-document discovery (${field}) unavailable`, e?.code || e?.message || e);
-      failures.push(e);
+      failures.push(withSource(e, `members discovery (${field})`));
     }
   }
 
@@ -375,7 +392,7 @@ async function discoverTripsByMemberDocs(userId, knownTripIds = new Set()) {
       // Not actually readable (inactive/removed member, rules not yet
       // published): skip this candidate, never fail the whole list.
       console.warn('discovered trip not readable', tripId, e?.code || e?.message);
-      failures.push(e);
+      failures.push(withSource(e, `trip read after discovery (${tripId})`));
     }
   }
   return { trips, failures };
