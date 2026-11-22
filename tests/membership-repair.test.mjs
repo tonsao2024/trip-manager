@@ -371,6 +371,8 @@ test('a failed lookup reports which source failed instead of one generic sentenc
   assert.equal(error.code, 'trip-list-incomplete');
   assert.ok(Array.isArray(error.details) && error.details.length >= 2, 'per-source details for the notice');
   assert.ok(error.details.some(d => d.code === 'failed-precondition'), 'the missing index is named');
+  assert.ok(error.details.some(d => d.source === 'trips.memberUids'), 'the denied trips query is named');
+  assert.ok(error.details.some(d => /members discovery/.test(String(d.source || ''))), 'the denied member discovery is named');
   assert.equal(error.requiresDeploy, true, 'the UI knows to point at rules/indexes');
 });
 
